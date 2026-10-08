@@ -1,0 +1,71 @@
+import { chromium } from '@playwright/test';
+import fs from 'node:fs/promises';
+
+const origin = process.env.STUDIO_URL || 'http://127.0.0.1:3000';
+const directory = 'docs/screenshots';
+await fs.mkdir(directory, { recursive: true });
+const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome' });
+try {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const entries=[];
+  async function shot(name, route, description, fullPage = true) {
+    if(route)await page.goto(`${origin}${route}`,{waitUntil:'networkidle'});
+    await page.screenshot({path:`${directory}/${name}.png`,fullPage});
+    entries.push({file:`${name}.png`,route:route||new URL(page.url()).pathname,description});
+  }
+  await shot('01-landing','/','Original public landing page');
+  await page.goto(`${origin}/login`);
+  await page.getByRole('button',{name:'Try the local demo',exact:true}).click();
+  await page.getByRole('heading',{name:'Good to see you, Alex.'}).waitFor();
+  await shot('02-dashboard',null,'Personal dashboard with persisted learning paths and target interviews');
+  await shot('03-learning-library','/learn','Seven original learning tracks');
+  await shot('04-system-design-lesson','/learn/system-design/caching','Original lesson with course outline, bookmark, progress and discussion');
+  await shot('05-coding-visualization','/learn/code/two-pointers','Interactive algorithm visualization');
+  await shot('06-course','/learn/courses/system-design','Structured course curriculum');
+  await shot('07-course-video','/learn/courses/system-design/video/system-design','Original captioned video player');
+  await page.goto(`${origin}/learn/courses/system-design`);
+  await page.getByRole('button',{name:'Enroll in this course',exact:true}).click();
+  await page.goto(`${origin}/dashboard`);
+  await page.getByRole('heading',{name:'Your enrolled courses',exact:true}).waitFor();
+  await shot('30-enrolled-dashboard',null,'Enrolled course progress and continuation link on the dashboard');
+  await shot('08-practice-library','/practice/system-design','Searchable guided design exercises');
+  await page.goto(`${origin}/practice/system-design/short-links`);
+  await page.getByRole('button',{name:'Start practice',exact:true}).click();
+  await page.getByRole('button',{name:'Add component',exact:true}).click();
+  await page.getByRole('button',{name:'Save draft',exact:true}).click();
+  await page.waitForTimeout(500);
+  await shot('09-design-workspace',null,'Movable architecture canvas with saved drafts and connections');
+  await shot('10-behavioral','/practice/behavioral','Behavioral session setup');
+  await shot('11-story-bank','/learn/behavioral/stories?new=1','Private STAR story builder');
+  await shot('12-quiz-library','/quiz','Quiz history and personalized review deck');
+  await page.goto(`${origin}/quiz/api-design`);
+  await page.getByRole('button',{name:'Start quiz',exact:true}).click();
+  await shot('13-quiz-question',null,'Original multiple-choice question flow');
+  await shot('14-community-questions','/community/questions','Filterable local question library');
+  await shot('15-community-stories','/community/stories','Illustrative stories, clearly marked as examples');
+  await shot('16-peer-designs','/community/submissions/system-design','Peer design library');
+  await shot('17-discussion','/community/discussion','Local community discussions');
+  await shot('18-company-guide','/guides/meta/senior','Original company and level planning guide');
+  await shot('19-journal','/blog','Original editorial articles');
+  await shot('20-pricing','/pricing','Explicitly labeled local commerce demo');
+  await shot('21-gift','/premium/gift','Functional local gift generation and redemption');
+  await shot('22-study-helper','/tutor','Transparent retrieval helper; optional configured AI provider');
+  await shot('23-account','/account','Local account, exports, bookmarks and entitlements');
+  await shot('24-support','/support','Local support ticket workflow');
+  await shot('25-search','/search?q=cache','Cross-library search');
+  await page.setViewportSize({width:390,height:844});
+  await shot('26-mobile-dashboard','/dashboard','Responsive mobile dashboard');
+  await shot('27-mobile-learning','/learn/code','Responsive mobile coding library');
+  await shot('28-mobile-practice','/practice/system-design','Responsive mobile practice listing');
+  await page.getByRole('button',{name:'Switch to dark theme'}).click();
+  await shot('29-mobile-dark-theme',null,'Persistent dark theme on a mobile viewport');
+  await fs.writeFile(`${directory}/manifest.json`,JSON.stringify({capturedAt:new Date().toISOString(),application:'Interview Studio',screenshots:entries},null,2));
+  if(errors.length)throw new Error(`Screenshot navigation raised browser errors: ${errors.join('; ')}`);
+  console.log(`Captured ${entries.length} original-application screenshots in ${directory}. No reference credentials or screenshots are included.`);
+  await context.close();
+} finally {
+  await browser.close();
+}

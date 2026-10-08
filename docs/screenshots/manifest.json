@@ -1,0 +1,156 @@
+{
+  "capturedAt": "2026-10-08T02:19:06.127Z",
+  "application": "Interview Studio",
+  "screenshots": [
+    {
+      "file": "01-landing.png",
+      "route": "/",
+      "description": "Original public landing page"
+    },
+    {
+      "file": "02-dashboard.png",
+      "route": "/dashboard",
+      "description": "Personal dashboard with persisted learning paths and target interviews"
+    },
+    {
+      "file": "03-learning-library.png",
+      "route": "/learn",
+      "description": "Seven original learning tracks"
+    },
+    {
+      "file": "04-system-design-lesson.png",
+      "route": "/learn/system-design/caching",
+      "description": "Original lesson with course outline, bookmark, progress and discussion"
+    },
+    {
+      "file": "05-coding-visualization.png",
+      "route": "/learn/code/two-pointers",
+      "description": "Interactive algorithm visualization"
+    },
+    {
+      "file": "06-course.png",
+      "route": "/learn/courses/system-design",
+      "description": "Structured course curriculum"
+    },
+    {
+      "file": "07-course-video.png",
+      "route": "/learn/courses/system-design/video/system-design",
+      "description": "Original captioned video player"
+    },
+    {
+      "file": "30-enrolled-dashboard.png",
+      "route": "/dashboard",
+      "description": "Enrolled course progress and continuation link on the dashboard"
+    },
+    {
+      "file": "08-practice-library.png",
+      "route": "/practice/system-design",
+      "description": "Searchable guided design exercises"
+    },
+    {
+      "file": "09-design-workspace.png",
+      "route": "/practice/system-design/short-links",
+      "description": "Movable architecture canvas with saved drafts and connections"
+    },
+    {
+      "file": "10-behavioral.png",
+      "route": "/practice/behavioral",
+      "description": "Behavioral session setup"
+    },
+    {
+      "file": "11-story-bank.png",
+      "route": "/learn/behavioral/stories?new=1",
+      "description": "Private STAR story builder"
+    },
+    {
+      "file": "12-quiz-library.png",
+      "route": "/quiz",
+      "description": "Quiz history and personalized review deck"
+    },
+    {
+      "file": "13-quiz-question.png",
+      "route": "/quiz/api-design",
+      "description": "Original multiple-choice question flow"
+    },
+    {
+      "file": "14-community-questions.png",
+      "route": "/community/questions",
+      "description": "Filterable local question library"
+    },
+    {
+      "file": "15-community-stories.png",
+      "route": "/community/stories",
+      "description": "Illustrative stories, clearly marked as examples"
+    },
+    {
+      "file": "16-peer-designs.png",
+      "route": "/community/submissions/system-design",
+      "description": "Peer design library"
+    },
+    {
+      "file": "17-discussion.png",
+      "route": "/community/discussion",
+      "description": "Local community discussions"
+    },
+    {
+      "file": "18-company-guide.png",
+      "route": "/guides/meta/senior",
+      "description": "Original company and level planning guide"
+    },
+    {
+      "file": "19-journal.png",
+      "route": "/blog",
+      "description": "Original editorial articles"
+    },
+    {
+      "file": "20-pricing.png",
+      "route": "/pricing",
+      "description": "Explicitly labeled local commerce demo"
+    },
+    {
+      "file": "21-gift.png",
+      "route": "/premium/gift",
+      "description": "Functional local gift generation and redemption"
+    },
+    {
+      "file": "22-study-helper.png",
+      "route": "/tutor",
+      "description": "Transparent retrieval helper; optional configured AI provider"
+    },
+    {
+      "file": "23-account.png",
+      "route": "/account",
+      "description": "Local account, exports, bookmarks and entitlements"
+    },
+    {
+      "file": "24-support.png",
+      "route": "/support",
+      "description": "Local support ticket workflow"
+    },
+    {
+      "file": "25-search.png",
+      "route": "/search?q=cache",
+      "description": "Cross-library search"
+    },
+    {
+      "file": "26-mobile-dashboard.png",
+      "route": "/dashboard",
+      "description": "Responsive mobile dashboard"
+    },
+    {
+      "file": "27-mobile-learning.png",
+      "route": "/learn/code",
+      "description": "Responsive mobile coding library"
+    },
+    {
+      "file": "28-mobile-practice.png",
+      "route": "/practice/system-design",
+      "description": "Responsive mobile practice listing"
+    },
+    {
+      "file": "29-mobile-dark-theme.png",
+      "route": "/practice/system-design",
+      "description": "Persistent dark theme on a mobile viewport"
+    }
+  ]
+}

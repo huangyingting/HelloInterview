@@ -1,0 +1,17 @@
+WEBVTT
+
+1
+00:00.000 --> 00:02.200
+Begin with behavior. A package needs an available locker with enough capacity.
+
+2
+00:02.200 --> 00:04.400
+Give one object the invariant. Inventory chooses compatible capacity and reserves it atomically.
+
+3
+00:04.400 --> 00:06.600
+Model a clear state. A reservation owns its pickup code, expiry, and legal transitions.
+
+4
+00:06.600 --> 00:08.800
+Complete the use case. Validate pickup, release the locker, and test invalid or expired codes.

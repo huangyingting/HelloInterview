@@ -1,0 +1,17 @@
+WEBVTT
+
+1
+00:00.000 --> 00:02.200
+Start at the boundary. A client sends a request. Validate input and permission before changing state.
+
+2
+00:02.200 --> 00:04.400
+Make the contract explicit. The API defines the operation, response, and errors the caller can depend on.
+
+3
+00:04.400 --> 00:06.600
+Protect the source of truth. Persist the change atomically. Keep invariants in the datastore.
+
+4
+00:06.600 --> 00:08.800
+Separate slower work. Publish background work with a durable identifier. Make retries safe.

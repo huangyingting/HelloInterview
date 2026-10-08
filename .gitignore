@@ -1,0 +1,12 @@
+.cred
+.cred*
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+data/
+test-results/
+playwright-report/
+.reference/
+*.log
