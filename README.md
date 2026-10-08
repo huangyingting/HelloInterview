@@ -12,8 +12,8 @@ See [the reference analysis and feature comparison](docs/REFERENCE-ANALYSIS.md)
 for inspected workflows, technical evidence, implementation coverage, and gaps.
 The [premium workflow design](docs/PREMIUM-WORKFLOWS.md) explains the original
 adaptive interviews, custom quizzes, study plans, and project workbench.
-The [researched curricula](docs/CONTENT-CURRICULUM.md) record the System Design
-and Coding flagships, primary sources, measured depth, and editorial limitations.
+The [researched curricula](docs/CONTENT-CURRICULUM.md) record the System Design,
+Coding, and Low-Level Design expansions, sources, depth, and editorial limitations.
 
 ![Original Interview Studio landing page](docs/screenshots/01-landing.png)
 
@@ -57,13 +57,13 @@ with the current startup command.
 
 | Area | Local functionality |
 | --- | --- |
-| Learning | Seven tracks, 66 original lessons; 24 substantial sourced lessons each for System Design and Coding, objectives, exercises, outlines, read progress, bookmarks, comments, and five algorithm labs |
-| Courses | Six structured paths, including the 52-step System Design and 60-step Coding text/quiz/practice flagships |
-| Practice | 55 original exercises; 16 worked System Design references and 24 executable Coding exercises with substantial original solutions |
+| Learning | Seven tracks, 74 original lessons; 24 substantial sourced lessons each for System Design and Coding, plus 12 for Low-Level Design, objectives, exercises, outlines, progress, bookmarks, comments, and five algorithm labs |
+| Courses | Seven structured paths, including 52-step System Design, 60-step Coding, and 28-step Low-Level Design text/quiz/practice paths |
+| Practice | 59 original exercises; 16 worked System Design references, 24 executable Coding exercises, eight worked object models including four new runnable stateful exercises |
 | Workspaces | Movable architecture nodes and directed connections, diagram export, saved drafts, history, explanation editor, timer, feedback |
 | Coding | Dedicated algorithm practice, original reference implementations, complexity analysis, isolated JavaScript `solve(input)` example execution and deadline; code-review line references |
 | Behavioral | Micro/mini/full sessions, company and level context, browser speech synthesis, private STAR story CRUD and export |
-| Quizzes | 26 topics and 366 questions; System Design and Coding each have 180 source-linked questions across 12 topics, canonical scoring, explanations, history, and review |
+| Quizzes | 33 topics and 443 questions; System Design and Coding each have 180 sourced questions, plus 80 Low-Level Design questions, canonical scoring, explanations, history, and review |
 | Premium mocks | Original topic-adaptive three/five-turn conversations, saved drafts/transcripts, optional AI grading, reports and export |
 | Custom quizzes | Mixed-topic or missed-only sessions, preserved question order, resume, canonical scores and review-deck updates |
 | Study plans | Company/level-focused two/four-week schedules, real progress integration, reflections and export |
@@ -119,9 +119,33 @@ lessons, 8,710 in solution reasoning, and 10,771 in question explanations, plus
 146 executable example fixtures. Code and metadata are excluded. Together with
 System Design, the two flagships contain **77,521 instructional words**.
 
-The remaining five tracks are still starter-depth; the four approximately
-nine-second video clips, generic company guides, and illustrative community
-entries are unchanged. Neither flagship has independent human expert review.
+## Researched Low-Level Design expansion
+
+Open **Learn -> Low-Level Design -> Explore the course**, or browse
+**[the worked object models](http://127.0.0.1:3000/learn/low-level-design/solutions)**.
+The 28-step path connects 12 substantial lessons, eight quizzes with 80
+questions, and eight original worked models: parcel lockers, parking, a grid
+game, a limiter, an inventory ledger, an LRU cache, an approval workflow, and
+an in-memory file catalog.
+
+The last four are **new runnable JavaScript exercises**. The original four
+open-ended briefs and starters are preserved; their reference-protocol examples
+are not an acceptance harness for those starters. Each model has six specified
+traces, an object sketch, substantial reasoning, and explicit complexity and
+infrastructure limits. The inventory, cache, workflow, and catalog references
+also have independent stateful test oracles.
+
+This expansion contributes **13,824 counted instructional words**: 6,323 in
+lessons, 3,118 in worked reasoning, and 4,383 in explanations. The three expanded
+disciplines total **91,345 words**, excluding code and metadata. Seven new
+primary references from MDN, Martin Fowler, PostgreSQL, and W3C bring the
+shared registry to 32.
+
+These are bounded sequential teaching models, **not verified production
+transactions, payment providers, distributed caches, or filesystem services**.
+The remaining four tracks are still starter-depth. The four short video clips,
+generic company guides, and illustrative community entries are unchanged.
+None of the expanded curricula has independent human expert review.
 
 ## Configuration and optional AI
 

@@ -5,6 +5,9 @@ import { systemDesignQuestions } from './content/system-design-questions';
 import { codingLessons } from './content/coding-lessons';
 import { codingProblems } from './content/coding-problems';
 import { codingQuestions } from './content/coding-questions';
+import { lowLevelDesignLessons } from './content/low-level-design-lessons';
+import { additionalLowLevelDesignProblems, lowLevelDesignSolutions } from './content/low-level-design-cases';
+import { lowLevelDesignQuestions } from './content/low-level-design-questions';
 
 const lesson = (
   id: string, title: string, group: string, summary: string,
@@ -28,27 +31,7 @@ export const tracks: Track[] = [
     id: 'low-level-design', title: 'Low-Level Design', short: 'Make your code easy to change',
     description: 'Translate requirements into cohesive objects, contracts, and reliable code.',
     color: '#b37a4c',
-    lessons: [
-      lesson('introduction', 'From requirements to responsibilities', 'Foundations', 'A small, explicit object model beats a web of clever abstractions.', [
-        { title: 'Identify behavior before classes', body: 'List the operations the application must support. Group related responsibilities and clarify which object owns each invariant.' },
-        { title: 'Keep boundaries small', body: 'Separate business rules from persistence and input/output. This makes domain behavior testable without real infrastructure.' },
-        { title: 'Show one complete use case', body: 'Walk through a representative operation, including validation and an error. A class diagram alone does not demonstrate a working design.' },
-      ], 'Model a parcel locker service. Explain how one package is assigned to a compatible locker.'),
-      lesson('design-principles', 'Cohesion and dependency direction', 'Object design', 'Put change behind a stable contract.', [
-        { title: 'One reason to change', body: 'A class should group responsibilities that evolve together. Formatting an invoice and deciding its tax are different reasons to change.' },
-        { title: 'Prefer composition', body: 'Composing a pricing policy often models variation more clearly than creating a deep inheritance hierarchy.' },
-        { title: 'Invert infrastructure dependencies', body: 'Business logic depends on a repository contract. An adapter implements that contract for the selected database.' },
-      ], 'Refactor a checkout service so discount policies can be tested separately.'),
-      lesson('concurrency', 'Concurrency and shared state', 'Concurrency', 'Protect invariants across overlapping operations.', [
-        { title: 'A check is not an atomic update', body: 'Two requests can both observe an available resource before either reserves it. Protect the check-and-update operation as one unit.' },
-        { title: 'Minimize critical sections', body: 'Do not hold a lock while making slow network calls. Lock only the data mutation that must be indivisible.' },
-        { title: 'Test competing operations', body: 'Tests should force overlapping requests. Use a database constraint or atomic operation when a process-local lock is not sufficient.' },
-      ], 'Describe how to prevent two users from reserving the same parking space.', true),
-      lesson('state-machines', 'Explicit state transitions', 'Patterns', 'Make illegal transitions impossible to miss.', [
-        { title: 'Name the states', body: 'An order might be draft, submitted, paid, shipped, or cancelled. Each state admits only a defined set of operations.' },
-        { title: 'Guard transitions', body: 'Validate the current state and event before persisting the next state. Store enough history to explain how the system arrived there.' },
-      ], 'Define the legal states and transitions for a file upload.'),
-    ],
+    lessons: lowLevelDesignLessons,
   },
   {
     id: 'behavioral', title: 'Behavioral Interviews', short: 'Tell the story behind your impact',
@@ -178,8 +161,9 @@ const originalProblems: Problem[] = [
   { id: 'upload-review', track: 'code-review', title: 'Review a file upload handler', difficulty: 'Hard', description: 'Inspect validation, storage boundaries, and failure handling in the upload handler.', requirements: ['Define acceptable input size.', 'Validate names and content.', 'Prevent overwriting unrelated files.', 'Report failure accurately.'], keywords: [['size', 'limit'], ['path', 'validate'], ['unique', 'overwrite'], ['error', 'failure'], ['test', 'content']], starter: 'async function upload(req) {\n  await storage.write(req.body.filename, req.body.data);\n  return { uploaded: true };\n}', premium: true },
 ];
 
-export const problems: Problem[] = [...originalProblems, ...additionalSystemDesignProblems, ...codingProblems].map(problem => ({
+export const problems: Problem[] = [...originalProblems, ...additionalSystemDesignProblems, ...codingProblems, ...additionalLowLevelDesignProblems].map(problem => ({
   ...problem, workedCase: systemDesignCaseStudies.find(study => study.problemId === problem.id),
+  solution: lowLevelDesignSolutions[problem.id] ?? problem.solution,
 }));
 
 const originalQuizQuestions: QuizQuestion[] = [
@@ -198,15 +182,15 @@ const originalQuizQuestions: QuizQuestion[] = [
   {id:'pointer-1',topic:'two-pointers',prompt:'In a sorted array, the two-pointer sum is below the target. Which move is appropriate?',options:['Move the right pointer left','Move the left pointer right','Move both pointers randomly','Stop immediately'],correct:1,difficulty:'Easy',sourceIds:['mit-algorithms','nist-algorithms'],explanation:'Moving the left pointer right can increase the sum because the array is sorted in nondecreasing order. For the current left value, every available right position is no larger than the current one, so none can reach a target above the current sum. The move eliminates an impossible family of candidates; it is not merely a guess based on a favorable example.'},
   {id:'pointer-2',topic:'two-pointers',prompt:'What is the search complexity for a sorted two-sum input?',options:['O(n²)','O(n) time and O(1) auxiliary space','O(2ⁿ)','O(1) time for every input'],correct:1,difficulty:'Easy',sourceIds:['mit-algorithms','nist-algorithms'],explanation:'The two pointers move inward without revisiting eliminated positions, so there are at most a linear number of advances. Searching an already-sorted array therefore uses O(n) time and constant auxiliary storage when returning one pair or its existence. This bound excludes any earlier sorting cost and does not apply to enumerating every pair, whose output can itself be quadratic.'},
   {id:'pointer-3',topic:'two-pointers',prompt:'What does an invariant help you explain?',options:['Why eliminated candidates cannot be answers','Which font looks best','Why tests are unnecessary','Why sorting has no cost'],correct:0,difficulty:'Easy',sourceIds:['mit-algorithms','nist-algorithms'],explanation:'An invariant states what remains true before and after each iteration. Together with the movement rule, it explains why a discarded candidate cannot be a required answer and why the remaining search still contains any valid solution. You also need initialization, termination, and the result contract. Passing a few examples supports debugging but does not replace that correctness argument or the complexity analysis.'},
-  {id:'object-1',topic:'design-principles',prompt:'What is a useful sign of high cohesion?',options:['A class owns unrelated concerns','Related responsibilities change together','Every method is static','There are no tests'],correct:1,explanation:'Cohesion groups behavior that belongs together and tends to evolve for the same reasons.'},
-  {id:'object-2',topic:'design-principles',prompt:'Which dependency direction improves domain testability?',options:['Domain logic depends on a concrete remote service','Domain logic depends on a small contract implemented by adapters','All layers import each other','Tests always require production data'],correct:1,explanation:'A stable contract lets tests provide simple adapters and keeps infrastructure choices outside business rules.'},
-  {id:'object-3',topic:'design-principles',prompt:'When is composition particularly helpful?',options:['When policies vary independently','When every class needs a deeper hierarchy','When all interfaces must be removed','When behavior should be hidden from tests'],correct:0,explanation:'Composed strategies allow independently varying policies without multiplying inheritance combinations.'},
+  {id:'object-1',topic:'design-principles',prompt:'What is a useful sign of high cohesion?',options:['A class owns unrelated concerns','Related responsibilities change together','Every method is static','There are no tests'],correct:1,difficulty:'Easy',sourceIds:['fowler-tell','fowler-di'],explanation:'High cohesion groups behavior and data that participate in the same responsibility and tend to evolve for related reasons. That makes a meaningful change easier to localize and inspect. Evaluate concrete change scenarios rather than counting methods or assuming static functions solve ownership. A class can have several operations when they jointly protect one lifecycle and its invariants.'},
+  {id:'object-2',topic:'design-principles',prompt:'Which dependency direction improves domain testability?',options:['Domain logic depends on a concrete remote service','Domain logic depends on a small contract implemented by adapters','All layers import each other','Tests always require production data'],correct:1,difficulty:'Easy',sourceIds:['fowler-di','fowler-unit'],explanation:'A domain-facing capability can describe the business observations and updates needed without requiring provider-specific construction or network access. Adapters implement that contract and can be supplied directly. A faithful test double supports deterministic domain tests, while integration tests still establish actual database or provider guarantees. A small interface does not eliminate coupling if its semantics remain unspecified.'},
+  {id:'object-3',topic:'design-principles',prompt:'When is composition particularly helpful?',options:['When policies vary independently','When every class needs a deeper hierarchy','When all interfaces must be removed','When behavior should be hidden from tests'],correct:0,difficulty:'Easy',sourceIds:['fowler-di','js-classes'],explanation:'Composition allows independently varying policies to be supplied without multiplying inheritance combinations. For example, a session owner can use a pricing function while retaining its own lifecycle checks. The collaborator still needs a defined contract for inputs, units, results, and failures. Use this boundary for a demonstrated variation rather than building machinery for every hypothetical future change.'},
   {id:'ml-1',topic:'evaluation',prompt:'Why can a random split be misleading for time-dependent data?',options:['It always removes labels','It can allow future or related information to leak into evaluation','It makes every model identical','It is impossible to implement'],correct:1,explanation:'A split must reflect the prediction setting. Temporal or entity-aware splits can prevent misleading leakage.'},
   {id:'ml-2',topic:'evaluation',prompt:'What is a useful online guardrail for a recommendation model?',options:['Only the training loss','Serving latency and harmful outcomes','Source file count','The number of model parameters alone'],correct:1,explanation:'A product experiment should monitor user and operational risks, not just an offline model score.'},
   {id:'ml-3',topic:'evaluation',prompt:'Which feature is valid at prediction time?',options:['A future cancellation event','An outcome only known next week','A prior activity count available at the decision timestamp','A later refund decision'],correct:2,explanation:'Valid features must exist when the prediction is made; future outcomes introduce leakage.'},
 ];
 
-export const quizQuestions: QuizQuestion[] = [...originalQuizQuestions, ...systemDesignQuestions, ...codingQuestions];
+export const quizQuestions: QuizQuestion[] = [...originalQuizQuestions, ...systemDesignQuestions, ...codingQuestions, ...lowLevelDesignQuestions];
 
 export const quizTopics = [...new Set(quizQuestions.map(q => q.topic))].map(id => {
   const track = tracks.find(t => t.lessons.some(l => l.id === id))!;

@@ -290,10 +290,11 @@ test('structured course enrollment, actual video playback, completion and certif
   }
   await page.goto('/quiz/design-principles');
   await page.getByRole('button',{name:'Start quiz',exact:true}).click();
-  for(const [index,answer] of [1,1,0].entries()){
-    await page.getByRole('radio').nth(answer).check();
+  const designQuestions=quizQuestions.filter(question=>question.topic==='design-principles');
+  for(const [index,question] of designQuestions.entries()){
+    await page.getByRole('radio').nth(question.correct).check();
     await page.getByRole('button',{name:'Check answer',exact:true}).click();
-    await page.getByRole('button',{name:index===2?'Finish quiz':'Next question',exact:true}).click();
+    await page.getByRole('button',{name:index===designQuestions.length-1?'Finish quiz':'Next question',exact:true}).click();
   }
   await expect(page.getByRole('heading',{name:'A clear understanding.'})).toBeVisible();
   await page.goto('/practice/low-level-design/parcel-lockers');

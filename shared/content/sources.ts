@@ -24,6 +24,13 @@ export const contentSources = {
   'js-map': { title: 'Map: Equality, Ordering, and Complexity', publisher: 'MDN', url: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map' },
   'js-number': { title: 'Number: Representation and Safe Integers', publisher: 'MDN', url: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number' },
   'js-bitwise': { title: 'Bitwise AND and Numeric Coercion', publisher: 'MDN', url: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Bitwise_AND' },
+  'js-classes': { title: 'Classes and Encapsulation', publisher: 'MDN', url: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Classes' },
+  'fowler-di': { title: 'Inversion of Control and Dependency Injection', publisher: 'Martin Fowler', url: 'https://martinfowler.com/articles/injection.html' },
+  'fowler-tell': { title: 'Tell-Do Not Ask and Its Limits', publisher: 'Martin Fowler', url: 'https://martinfowler.com/bliki/TellDontAsk.html' },
+  'fowler-unit': { title: 'Unit Testing: Boundaries and Collaborators', publisher: 'Martin Fowler', url: 'https://martinfowler.com/bliki/UnitTest.html' },
+  'pg-constraints': { title: 'Data Definition Constraints', publisher: 'PostgreSQL', url: 'https://www.postgresql.org/docs/current/ddl-constraints.html' },
+  'pg-locks': { title: 'Explicit Locking and Deadlocks', publisher: 'PostgreSQL', url: 'https://www.postgresql.org/docs/current/explicit-locking.html' },
+  'w3c-scxml': { title: 'State Chart XML: States, Events, and Transitions', publisher: 'W3C', url: 'https://www.w3.org/TR/scxml/' },
 } as const;
 
 export type SourceId = keyof typeof contentSources;

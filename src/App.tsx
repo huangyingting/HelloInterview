@@ -40,6 +40,7 @@ export function App() {
     else if(segments[1]==='changelog')content=<InfoPage id="changelog"/>;
     else if(segments[1]==='system-design'&&segments[2]==='cases')content=<CaseLibrary/>;
     else if(segments[1]==='code'&&segments[2]==='solutions')content=<CodingLibrary/>;
+    else if(segments[1]==='low-level-design'&&segments[2]==='solutions')content=<CodingLibrary track="low-level-design"/>;
     else if(segments[1]==='behavioral'&&['stories','story-builder'].includes(segments[2]))content=<StoryBank key={path}/>;
     else if(segments.length===2)content=<TrackOverview id={segments[1]}/>;
     else content=<LessonPage trackId={segments[1]} lessonId={segments.at(-1)!} key={path}/>;
@@ -48,6 +49,7 @@ export function App() {
     else if(!segments[2])content=<PracticeList track={segments[1]} key={path}/>;
     else if(segments[1]==='system-design'&&segments[3]==='writeup')content=<CaseReader problemId={segments[2]} key={path}/>;
     else if(segments[1]==='code'&&segments[3]==='writeup')content=<CodingReader problemId={segments[2]} key={path}/>;
+    else if(segments[1]==='low-level-design'&&segments[3]==='writeup')content=<CodingReader track="low-level-design" problemId={segments[2]} key={path}/>;
     else content=<PracticeSession track={segments[1]} id={segments[2]} key={`${path}${location.search}`}/>;
   }else if(segments[0]==='quiz')content=segments[1]==='custom'?<CustomQuizPage id={segments[2]} key={path}/>:segments[1]?<QuizRunner topic={segments[1]} key={`${path}${location.search}`}/>:<QuizIndex/>;
   else if(segments[0]==='community'&&['questions','stories','submissions','discussion'].includes(segments[1])){

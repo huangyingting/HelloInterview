@@ -48,6 +48,25 @@ test('substantial sourced lessons and the complete text-based course are discove
   const attempt = payload.state.attempts.find(attempt => attempt.problemId === problem.id)!;
   expect(attempt.code).toBe(problem.solution!.code);
   expect(attempt.completed).toBe(false);
+  await page.goto('/learn/courses/low-level-design-complete');
+  await expect(page.getByRole('heading', { name: '0 of 28 steps complete' })).toBeVisible();
+  await page.getByRole('button', { name: 'Enroll in this course', exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Continue your path', exact: false })).toHaveAttribute('href', '/learn/low-level-design/introduction');
+  await page.reload();
+  await expect(page.getByRole('link', { name: 'Continue your path', exact: false })).toBeVisible();
+  const ledger = problems.find(problem => problem.id === 'lld-inventory-ledger')!;
+  await page.goto(`/practice/low-level-design/${ledger.id}`);
+  await page.getByRole('button', { name: 'Start practice', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Code editor', exact: true }).fill(ledger.solution!.code);
+  await page.getByRole('button', { name: 'Run tests', exact: true }).click();
+  await expect(page.locator('.test-results .passed')).toHaveCount(6);
+  await expect(page.locator('.test-results .failed')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
+  await page.reload();
+  await expect(page.getByRole('textbox', { name: 'Code editor', exact: true })).toHaveValue(ledger.solution!.code);
+  const lldResponse = await page.request.get('/api/bootstrap'), lldPayload: Bootstrap = await lldResponse.json();
+  expect(lldPayload.state.enrollments).toContain('low-level-design-complete');
+  expect(lldPayload.state.attempts.find(attempt => attempt.problemId === ledger.id)?.code).toBe(ledger.solution!.code);
 });
 
 test('practice write-ups lead to real worked designs with capacity, sources and follow-ups', async ({ page }) => {
@@ -76,6 +95,7 @@ test('historical topic and custom quiz reports preserve their selected questions
     const response = await route.fetch(), payload: Bootstrap = await response.json();
     payload.state.quizzes.unshift({ id: 'legacy-api-report', topic: 'api-design', answers: { 'api-1': 1, 'api-2': 0, 'api-3': -1 }, score: 1, total: 3, completedAt: '2026-10-01T12:00:00Z' });
     payload.state.quizzes.unshift({ id: 'legacy-pointer-report', topic: 'two-pointers', answers: { 'pointer-1': 1, 'pointer-2': 1, 'pointer-3': 0 }, score: 3, total: 3, completedAt: '2026-10-01T12:00:00Z' });
+    payload.state.quizzes.unshift({ id: 'legacy-object-report', topic: 'design-principles', answers: { 'object-1': 1, 'object-2': 1, 'object-3': 0 }, score: 3, total: 3, completedAt: '2026-10-01T12:00:00Z' });
     payload.state.customQuizzes.unshift({ id: 'legacy-custom-report', title: 'A saved two-question session', topics: ['api-design', 'caching'], mode: 'all', questionIds: ['api-1', 'cache-1'], answers: { 'api-1': 1, 'cache-1': 2 }, revision: 2, createdAt: '2026-10-01T12:00:00Z', completedAt: '2026-10-01T12:02:00Z', score: 2 });
     await route.fulfill({ response, json: payload });
   });
@@ -115,6 +135,17 @@ test('historical topic and custom quiz reports preserve their selected questions
   expect(codingState.quizzes[0].total).toBe(15);
   expect(codingState.quizzes[0].score).toBe(1);
   expect(Object.keys(codingState.quizzes[0].answers)).toEqual(quizQuestions.filter(question => question.topic === 'two-pointers').map(question => question.id));
+  await page.goto('/quiz/design-principles?result=legacy-object-report');
+  await expect(page.locator('.result-score')).toHaveText('3/ 3');
+  await expect(page.locator('.quiz-explanations > article')).toHaveCount(3);
+  await page.getByRole('link', { name: 'Try again', exact: false }).click();
+  await expect(page.getByText('10 questions.', { exact: false })).toBeVisible();
+  const object = await page.request.post('/api/quiz', { data: { topic: 'design-principles', answers: { 'object-1': 1 } } });
+  expect(object.status()).toBe(200);
+  const objectState: UserState = await object.json();
+  expect(objectState.quizzes[0].score).toBe(1);
+  expect(objectState.quizzes[0].total).toBe(10);
+  expect(Object.keys(objectState.quizzes[0].answers)).toEqual(quizQuestions.filter(question => question.topic === 'design-principles').map(question => question.id));
 });
 
 test('worked diagrams, references and lesson links remain usable on mobile in both themes', async ({ page }) => {

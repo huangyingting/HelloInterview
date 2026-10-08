@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-10-08T09:40:22.428Z",
+  "capturedAt": "2026-10-08T10:49:15.242Z",
   "application": "Interview Studio",
   "screenshots": [
     {
@@ -159,12 +159,12 @@
     },
     {
       "file": "32-adaptive-mock.png",
-      "route": "/premium/mock/20367256-8115-4773-a118-70e0c3fcb4b6",
+      "route": "/premium/mock/ba963e7d-9fc7-488e-88ea-dd30b1896453",
       "description": "Follow-up selected from missing ownership concepts in the saved first response"
     },
     {
       "file": "33-mock-report.png",
-      "route": "/premium/mock/20367256-8115-4773-a118-70e0c3fcb4b6",
+      "route": "/premium/mock/ba963e7d-9fc7-488e-88ea-dd30b1896453",
       "description": "Completed local-rubric mock interview report with saved transcript and export"
     },
     {
@@ -174,27 +174,27 @@
     },
     {
       "file": "35-custom-quiz-results.png",
-      "route": "/quiz/custom/92b1fdb0-19ba-4b8d-91d3-77b8a0b978f6",
+      "route": "/quiz/custom/1785587e-223b-43f9-8619-a1e797d8ed88",
       "description": "Canonical saved quiz score and question explanations"
     },
     {
       "file": "36-prep-plan.png",
-      "route": "/premium/plans/e661d7bf-9a5e-47d5-8265-e2469451db85",
+      "route": "/premium/plans/a40f7d3c-c14d-4dea-a809-3af1ee9a021f",
       "description": "Company-focused schedule with progress-linked steps and reflection forms"
     },
     {
       "file": "37-project-workbench.png",
-      "route": "/premium/projects/a1b09180-46a5-47e7-8a2e-f63fd6eea250",
+      "route": "/premium/projects/0189adfc-2c6d-43b8-952a-98cac849cdaa",
       "description": "Source editor with real isolated JavaScript example results and saved baseline"
     },
     {
       "file": "38-project-diff.png",
-      "route": "/premium/projects/a1b09180-46a5-47e7-8a2e-f63fd6eea250",
+      "route": "/premium/projects/0189adfc-2c6d-43b8-952a-98cac849cdaa",
       "description": "Git-applicable changes against the immutable imported baseline"
     },
     {
       "file": "40-project-review.png",
-      "route": "/premium/projects/a1b09180-46a5-47e7-8a2e-f63fd6eea250",
+      "route": "/premium/projects/0189adfc-2c6d-43b8-952a-98cac849cdaa",
       "description": "Saved project explanation, explicit verification limits and local rubric review"
     },
     {
@@ -251,6 +251,41 @@
       "file": "50-mobile-coding-solution.png",
       "route": "/practice/code/alg-chain-reverse/writeup",
       "description": "Responsive original coding solution with JSON examples and public sources"
+    },
+    {
+      "file": "51-object-design-library.png",
+      "route": "/learn/low-level-design/solutions",
+      "description": "Eight original stateful models distinguishing executable exercises from reference-only protocols"
+    },
+    {
+      "file": "52-object-design-lesson.png",
+      "route": "/learn/low-level-design/testing-designs",
+      "description": "Substantial object design lesson with objectives, public sources and linked practice"
+    },
+    {
+      "file": "53-inventory-reference.png",
+      "route": "/practice/low-level-design/lld-inventory-ledger/writeup",
+      "description": "Original ledger invariant, object model, lifecycle reasoning, code and six explicit traces"
+    },
+    {
+      "file": "54-complete-object-design-course.png",
+      "route": "/learn/courses/low-level-design-complete",
+      "description": "Twenty-eight-step original lesson, quiz and object design path"
+    },
+    {
+      "file": "55-inventory-workspace.png",
+      "route": "/practice/low-level-design/lld-inventory-ledger",
+      "description": "Saved stateful JavaScript exercise with six passing isolated browser examples"
+    },
+    {
+      "file": "56-mobile-object-reference.png",
+      "route": "/practice/low-level-design/parcel-lockers/writeup",
+      "description": "Responsive reference-only parcel protocol preserving the original open-ended brief"
+    },
+    {
+      "file": "57-mobile-object-dark.png",
+      "route": "/practice/low-level-design/lld-workflow-engine/writeup",
+      "description": "Mobile dark-theme approval reference with explicit historical receipt and sequential-model boundaries"
     }
   ]
 }

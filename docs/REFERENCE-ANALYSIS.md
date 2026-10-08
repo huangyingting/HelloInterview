@@ -34,7 +34,7 @@ Evidence files:
 Account details, cookie values, authenticated reference screenshots, and
 proprietary text are intentionally not reproduced in this report.
 
-The application has **50 original desktop/mobile screenshots** with routes and
+The application has **57 original desktop/mobile screenshots** with routes and
 descriptions in [screenshots/manifest.json](screenshots/manifest.json).
 Representative views:
 
@@ -59,6 +59,8 @@ Representative views:
 | `41-worked-design-library.png`, `42-worked-design.png`, `43-complete-design-course.png`, `44-mobile-worked-design.png` | Substantial original System Design content and responsive readers |
 | `45-complete-coding-course.png`, `46-coding-practice.png`, `47-coding-solutions.png` | Complete original Coding path, dedicated practice, and solution discovery |
 | `48-coding-solution.png`, `49-coding-workspace.png`, `50-mobile-coding-solution.png` | Revealed original reference code, saved executable draft, and mobile reader |
+| `51-object-design-library.png`, `52-object-design-lesson.png`, `53-inventory-reference.png`, `54-complete-object-design-course.png` | Original object-model library, sourced lessons, worked ledger and 28-step path |
+| `55-inventory-workspace.png`, `56-mobile-object-reference.png`, `57-mobile-object-dark.png` | Saved runnable stateful exercise and responsive reference-protocol readers |
 
 ### Follow-up authenticated content-coverage pass
 
@@ -85,6 +87,13 @@ Coding was selected as the recommended next flagship while the user was
 unavailable for a scope choice. Its local 24 lessons, 24 original executable
 exercises/solutions, 180 questions, and 60-step path are independent material,
 not claims of reference catalog parity or expert-certified interview readiness.
+
+The subsequent recommended Low-Level Design expansion adds 12 substantial
+lessons, eight original worked models, four new runnable stateful exercises,
+80 questions, and a 28-step path. It draws on public primary references and
+the previously observed outline families, not another extraction of proprietary
+lessons. The original four open-ended briefs stay intact; their narrowed
+reference protocols are distinguished from executable acceptance cases.
 
 ## Observable reference stack
 
@@ -170,18 +179,18 @@ Status definitions:
 | --- | --- | --- |
 | Public homepage | `/` | Implemented; original name, copy, assets, and design |
 | Authenticated dashboard | `/dashboard` | Implemented; targets, progress, streak, recognition, enrolled course continuation |
-| Seven learning disciplines | `/learn`, `/learn/:track` | Implemented; 66 original lessons, including 24 substantial sourced lessons each in System Design and Coding; other five tracks remain starter-depth |
+| Seven learning disciplines | `/learn`, `/learn/:track` | Implemented; 74 original lessons, including 24 substantial sourced lessons each in System Design and Coding and 12 in Low-Level Design; other four tracks remain starter-depth |
 | Topic outline and lesson reader | `/learn/:track/:lesson` | Implemented; read state, bookmarks, comments, previous/next links |
 | Coding visualizations | `/learn/code` and coding lessons | Implemented; two pointers, sliding window, binary search, BFS, Fibonacci DP |
 | Premium learning locks | Premium-marked lessons/courses | Partial; local entitlement gates, not paid reference access |
-| Structured course catalog | `/learn/courses` | Implemented; six original courses, including 52-step System Design and 60-step Coding paths; not reference catalog parity |
+| Structured course catalog | `/learn/courses` | Implemented; seven original courses, including 52-step System Design, 60-step Coding and 28-step Low-Level Design paths; not reference catalog parity |
 | Mixed-media curriculum | `/learn/courses/:id` | Implemented; enroll, combine step progress, resume next incomplete step |
 | Course video lessons | `/learn/courses/:id/video/:id` | Partial; actual playback/captions/speed/download, four ~9-second original animations, no equivalent long-form video catalog |
 | Course completion record | Course completion action | Implemented locally; downloadable original SVG only after all steps; no accreditation claim |
 | System design problem catalog | `/practice/system-design` | Implemented; original prompts, filters, difficulty, reading state, history |
 | Worked architecture references | `/learn/system-design/cases`, `/practice/system-design/:id/writeup` | Implemented original content; 16 sourced worked designs, hypothetical workloads, 48 checkable calculations and follow-ups |
 | Algorithm practice and references | `/practice/code`, `/learn/code/solutions`, `/practice/code/:id/writeup` | Implemented original content; 24 runnable JS exercises, substantial solutions, bounded contracts, example fixtures, complexity analysis and public sources; not an exhaustive online judge |
-| Low-level design catalog | `/practice/low-level-design` | Implemented; original exercises and contracts/code/explanation workspace |
+| Low-level design catalog and references | `/practice/low-level-design`, `/learn/low-level-design/solutions` | Implemented; eight worked models with 48 reference traces, four new runnable exercises and four preserved open-ended briefs; sequential examples do not prove production concurrency |
 | Guided practice setup | `/practice/:track/:problem` | Implemented; same-tab local workspace, unlike reference new-page entry |
 | Design editor | System-design session | Implemented locally; nodes, movement, directed edges, removal, undo connection, JSON export; reference full editor parity unverified |
 | Saved sessions and feedback | `/history`, attempt query parameter | Implemented; drafts/history, stale-score invalidation, local rubric or optional provider |
@@ -191,7 +200,7 @@ Status definitions:
 | Behavioral session setup | `/practice/behavioral` | Implemented; micro/mini/full sessions, company/level context, browser speech synthesis |
 | Behavioral adaptive conversation | `/premium/mock`, `/premium/mock/:id` | Implemented original topic-gap follow-ups and saved reports, also across technical disciplines; reference private interviewing pipeline remains unverified |
 | Behavioral story bank | `/learn/behavioral/stories` | Implemented; private STAR create/edit/delete/export |
-| Quiz topic library | `/quiz` | Implemented; 26 topics and 366 questions, including 180 sourced questions each in System Design and Coding; no reference content parity claim |
+| Quiz topic library | `/quiz` | Implemented; 33 topics and 443 questions, including 180 sourced questions each in System Design and Coding plus 80 in Low-Level Design; no reference content parity claim |
 | Quiz session, grading, explanations | `/quiz/:topic` | Implemented; canonical server-side scoring, skips, explanations, results/history |
 | Personalized quiz review | `/quiz/review` | Implemented; missed questions retained until correctly reviewed |
 | Premium quiz customization | `/quiz/custom`, `/quiz/custom/:id` | Implemented original mixed-topic/missed-only builder, saved order/answers, canonical score, resume, results and export |
@@ -231,18 +240,20 @@ to recover the reference's private source:
 
 The supplied `.cred` is not an application dependency. Private reference
 artifacts are not deployment assets. Original content counts are seven tracks,
-66 lessons, 55 practice exercises, 26 quizzes/366 questions, six courses,
+74 lessons, 59 practice exercises, 33 quiz topics/443 questions, seven courses,
 four captioned original animations, and three articles.
 The System Design flagship supplies 24 substantial lessons and 16 worked
 designs; Coding adds 24 substantial lessons and 24 executable exercises with
-original reference solutions. See [the researched curricula](CONTENT-CURRICULUM.md) for measured
+original reference solutions. Low-Level Design supplies 12 substantial lessons
+and eight worked models, including four new runnable exercises.
+See [the researched curricula](CONTENT-CURRICULUM.md) for measured
 depth, sources, compatibility behavior, and editorial limitations.
 
 ## Verification and remaining blockers
 
 TypeScript checking and the Vite production build pass. Domain/content checks
-cover both flagship inventories and trusted algorithm references. Playwright
-covers 33 end-user workflows. The seven provider/restart fixture tests check
+cover all three expanded inventories and trusted algorithm/stateful references.
+Playwright covers 36 end-user workflows. The seven provider/restart fixture tests check
 configured tutoring/feedback, invalid upstream output, provider outage, and
 session/state persistence after a real application-process restart, premium
 mock/project grading, stale-response/access-ending protection, and persistence

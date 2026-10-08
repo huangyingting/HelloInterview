@@ -1,6 +1,7 @@
 import type { Course, CourseStep } from './types';
 import { systemDesignLessons } from './content/system-design-lessons';
 import { codingLessons } from './content/coding-lessons';
+import { lowLevelDesignLessons } from './content/low-level-design-lessons';
 import { problems, quizTopics } from './catalog';
 
 const reading = (track: string, id: string, title: string): CourseStep => ({ id: `${track}-${id}`, type: 'lesson', title, resource: `${track}/${id}`, to: `/learn/${track}/${id}` });
@@ -9,6 +10,16 @@ const practice = (track: string, id: string, title: string): CourseStep => ({ id
 const video = (course: string, title: string): CourseStep => ({ id: `video-${course}`, type: 'video', title, resource: course, to: `/learn/courses/${course}/video/${course}` });
 
 export const courses: Course[] = [
+  { id: 'low-level-design-complete', title: 'Low-level design: the complete Studio path', description: '12 substantial lessons, eight knowledge checks, and eight original worked models. Four new JavaScript exercises complement four preserved open-ended briefs. Includes existing premium-demo concurrency and limiter steps; sequential references do not prove production concurrency.', track: 'low-level-design', units: [
+    { title: 'Own the behavior and model the invariant', lessons: ['introduction','object-modeling','design-principles'], quizzes: ['object-modeling','design-principles'], exercises: ['parcel-lockers','parking-garage'] },
+    { title: 'Make contracts and transitions observable', lessons: ['interfaces','state-machines','error-contracts'], quizzes: ['interfaces','state-machines','error-contracts'], exercises: ['board-game','lld-workflow-engine'] },
+    { title: 'Coordinate ownership and bound resources', lessons: ['concurrency','collections','patterns'], quizzes: ['concurrency','collections'], exercises: ['rate-limiter','lld-lru-cache'] },
+    { title: 'Persist, verify, and defend the design', lessons: ['persistence','testing-designs','design-walkthrough'], quizzes: ['testing-designs'], exercises: ['lld-inventory-ledger','lld-file-catalog'] },
+  ].map(unit => ({ title: unit.title, steps: [
+    ...unit.lessons.map(id => reading('low-level-design', id, lowLevelDesignLessons.find(lesson => lesson.id === id)!.title)),
+    ...unit.quizzes.map(id => quiz(id, `Check: ${quizTopics.find(topic => topic.id === id)!.title}`)),
+    ...unit.exercises.map(id => practice('low-level-design', id, problems.find(problem => problem.id === id)!.title)),
+  ] })) },
   { id: 'coding-complete', title: 'Coding: the complete Studio path', description: '24 substantial lessons, 12 knowledge checks, and 24 runnable algorithm exercises with original reference solutions. JavaScript example runner; includes the existing premium-demo DP lesson, not a full online judge or video course.', track: 'code', units: [
     { title: 'Understand the contract and eliminate candidates', lessons: ['introduction', 'complexity', 'arrays-hashing', 'two-pointers'], quizzes: ['arrays-hashing', 'two-pointers'], exercises: ['alg-pair-load', 'alg-frequent-tags'] },
     { title: 'Maintain a changing range', lessons: ['sliding-window', 'prefix-sum', 'intervals', 'stacks'], quizzes: ['sliding-window', 'prefix-sum', 'stacks'], exercises: ['alg-window-budget', 'alg-prefix-queries', 'alg-merge-slots', 'alg-balanced-signals', 'alg-next-higher'] },

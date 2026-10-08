@@ -1,8 +1,8 @@
 # Original researched interview curricula
 
 The first substantial content expansion focuses on System Design; the second
-builds a Coding & Algorithms flagship. The other five disciplines remain
-starter libraries, not completed textbooks. This is
+builds a Coding & Algorithms flagship; the third expands Low-Level Design.
+The other four disciplines remain starter libraries, not completed textbooks. This is
 independently written instructional material, not copied Hello Interview
 content, an official company solution bank, or evidence of interview readiness.
 
@@ -22,8 +22,8 @@ assumptions, numerical annotations, diagrams, code, question prompts, and
 answer choices are excluded. Thus the totals do not count navigation or
 metadata as teaching depth.
 
-The whole application now contains seven tracks, 66 lessons, 55 practice
-problems, 26 quiz topics, 366 questions, and six courses. The System Design flagship accounts
+The whole application now contains seven tracks, 74 lessons, 59 practice
+problems, 33 quiz topics, 443 questions, and seven courses. The System Design flagship accounts
 for 24 lessons, 16 problems, 12 topics, and 180 questions. Four original short
 animated clips and three journal articles remain unchanged.
 
@@ -106,8 +106,8 @@ Review reports still snapshot only the submitted review subset.
 ## Research method and public references
 
 Research date: **2026-10-08**. The typed registry in
-`shared/content/sources.ts` holds 25 public references, including the 19 used
-for System Design and six added for Coding. Concepts were
+`shared/content/sources.ts` holds 32 public references, including the 19 used
+for System Design, six added for Coding, and seven added for Low-Level Design. Concepts were
 checked against provider/protocol documentation, then synthesized into original
 prose, hypothetical examples, diagrams, and questions. No vendor diagram,
 premium lesson, reference-site video, or third-party solution was imported.
@@ -142,7 +142,7 @@ documentation before using a design in production.
 The curriculum is a useful initial handbook and casebook, not full parity with
 the reference platform. It does not add a verified company-report corpus,
 long-form videos, a live IDE, production payments, or equivalent content depth
-in the remaining five disciplines. The static catalog is currently bundled in
+in the remaining four disciplines. The static catalog is currently bundled in
 the client; its increased payload is a known delivery tradeoff, not a server-side
 content publishing or editorial management system.
 
@@ -259,7 +259,7 @@ complete course coverage. Public browser tests cover actual reader discovery,
 mobile light/dark layouts, and every reference through the production browser
 runner; the existing authenticated content workflow also covers course
 enrollment, saved executable drafts, and old-versus-new pointer quiz archives.
-The delivered build passes 29 domain/content checks, seven provider/restart
+The Coding expansion's delivered build passed 29 domain/content checks, seven provider/restart
 checks, and 33 browser workflows. A real production 3/3 pointer report was
 created before the upgrade and remains 3/3 afterward; a new attempt grades
 15/15. The saved coding draft, course enrollment, and both reports also
@@ -270,3 +270,117 @@ were verified.
 Like the System Design material, this is a source-informed draft without
 independent human expert certification. It does not upgrade the remaining five
 disciplines, videos, verified company reports, or production-provider services.
+
+## Low-Level Design expansion
+
+The recommended next expansion provides **12 substantial lessons, eight
+worked references, four new runnable exercises, eight quiz topics, and 80
+questions**. It adds eight lessons, four problems, 77 questions, seven topics,
+and one course net. The four original lesson identities/titles, original four
+problem definitions/starters/rubrics, three original question prompts/options/
+answer indices, and all six existing curricula are preserved.
+
+| Low-Level Design material | Count | Counted instructional words | Per-item range |
+| --- | ---: | ---: | ---: |
+| Lessons | 12 | 6,323 | 511-540 |
+| Worked-model reasoning | 8 | 3,118 | 382-398 |
+| Question explanations | 80 | 4,383 | 51-61 |
+| Total | | 13,824 | |
+
+Counts include instructional section bodies/bullets and answer explanations,
+including prose that explains model contracts. Separate requirements lists,
+headings, objectives, links, code, diagrams, complexity metadata, prompts, and
+choices are excluded. Across System Design, Coding, and Low-Level Design,
+the expanded corpus has **91,345 counted instructional words**.
+
+### Learning progression and practice boundaries
+
+`/learn/courses/low-level-design-complete` connects **28 unique steps**:
+12 readings, eight whole-topic quizzes, and eight practice exercises.
+It has no new videos, and retains the existing concurrency lesson and limiter
+exercise's premium-demo gates. The original six-step object design course
+and concurrency course remain available.
+
+1. Requirements, object identity/value modeling, responsibility and dependency direction.
+2. Interfaces, lifecycle transitions, error categories, and uncertain outcomes.
+3. Shared ownership, collection/resource bounds, and appropriately scoped patterns.
+4. Persistence boundaries, independent tests, and a complete design walkthrough.
+
+The new reader library is `/learn/low-level-design/solutions`; actual references
+live at `/practice/low-level-design/:id/writeup`. Discovery, related lessons,
+course enrollment, practice links, and a dedicated Object designs search
+category are wired together. Coding solutions remain in their separate search
+category, and active editors do not gain links that discard unsaved drafts.
+
+| Preserved open-ended briefs with narrowed reference protocols | New runnable `solve(input)` exercises |
+| --- | --- |
+| Parcel lockers: allocation, pickup, inclusive expiry | Inventory ledger: conserved stock and identity lifecycle |
+| Parking garage: session ownership and injected pricing | LRU cache: touching/non-touching queries and eviction |
+| Board game: turn, victory, draw and rejected moves | Approval workflow: versioned edges and historical receipts |
+| Rate limiter: bounded fixed-window admission | File catalog: hierarchical kinds and nonrecursive deletion |
+
+Each reference has six independently specified traces, an original object
+sketch, four reasoning sections, explicit valid-input bounds, complexity
+assumptions, and public references. **All 48 cases** pass trusted-reference
+checks and the actual isolated browser-worker serialization protocol.
+Only the four new problems attach those traces as executable acceptance cases.
+The original parcel starter and other open-ended briefs are not silently
+reinterpreted as runnable solve harnesses.
+
+The references are sequential, synchronous teaching models. They do not prove
+real database compare-and-swap, overlapping allocation correctness, durable
+receipts, provider payment, distributed cache freshness, or actual filesystem
+safety. Parcel pickup identifiers are deliberately predictable teaching IDs,
+not production credentials. The approval table is not a full SCXML engine.
+The file catalog does not perform filesystem I/O.
+
+### Questions, public sources and verification
+
+Each of design principles, object modeling, interfaces, state machines, error
+contracts, concurrency, collections, and testing designs has ten questions.
+The full LLD bank contains **18 Easy, 46 Medium, and 16 Hard** questions.
+The 77 new questions place correct answers at indices 0-3 **20, 19, 19, 19**
+times; the original three maintain their old positions. Source-informed
+explanations explicitly distinguish local encapsulation from authorization,
+logical expiry from cleanup, and sequential traces from concurrent guarantees.
+
+Seven public primary references were added on **2026-10-08**:
+
+| Authority | Reference |
+| --- | --- |
+| MDN | [Classes and encapsulation](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Classes) |
+| Martin Fowler | [Dependency injection](https://martinfowler.com/articles/injection.html), [Tell-Don't-Ask](https://martinfowler.com/bliki/TellDontAsk.html), [Unit testing](https://martinfowler.com/bliki/UnitTest.html) |
+| PostgreSQL | [Constraints](https://www.postgresql.org/docs/current/ddl-constraints.html), [Explicit locking](https://www.postgresql.org/docs/current/explicit-locking.html) |
+| W3C | [SCXML state/event semantics](https://www.w3.org/TR/scxml/) |
+
+No proprietary lesson or third-party implementation was copied. Fowler's
+discussion does not prohibit useful queries; unit tests need not mock every
+pure collaborator. A PostgreSQL CHECK is not an arbitrary cross-row invariant,
+and row locks do not universally protect absent predicates. Reference-protocol
+claims stay separate from those real infrastructure mechanisms.
+
+`tests/low-level-design.test.ts` verifies exact scope, >=500 words per lesson,
+>=350 reasoning words per model, >=45 words per explanation, resolved resources,
+preserved contracts/gates, all fixtures, repeated calls, and input immutability.
+Four independent oracles use recomputed array-based stock accounting, array
+recency, declarative workflow edges/receipts, and a nested directory tree.
+They compare **4,800 deterministic trace prefixes** against the references.
+Additional checks cover last-cell victory, pricing edges, exact expiry, and
+hard active-key admission limits. Browser coverage exercises discovery, real
+reference code, responsive light/dark readers, old-versus-new quiz archives,
+saved runnable drafts, and enrollment.
+
+The delivered expansion passes **38 domain/content checks, seven provider/
+restart checks, and 36 browser workflows**. A genuine production 3/3 object
+design report was created before upgrading the question bank; it remains a
+three-question archive afterward, while a new whole-topic attempt grades
+10/10. The actual session, course enrollment, saved inventory-code draft,
+and both reports survived another production-process restart using the same
+SQLite database. All **57 original-application screenshots** and unique
+manifest entries were verified. Temporary QA authentication state was removed.
+
+This remains original, source-informed material without independent human
+expert review or reference-platform parity. Behavioral, AI-Assisted Coding,
+ML System Design, and Negotiation remain starter-depth. The static catalog's
+larger client bundle (approximately 1.55 MB minified, 480 KB gzip) is a known
+delivery limitation, not a publishing system.

@@ -37,13 +37,19 @@ export interface WorkedCase {
   lessonIds: string[];
   sourceIds: SourceId[];
 }
-export interface CodingSolution {
+export interface ExampleCase {
+  input: unknown;
+  expected: unknown;
+  label: string;
+}
+export interface WorkedSolution {
   sections: ContentSection[];
   code: string;
   timeComplexity: string;
   spaceComplexity: string;
   lessonIds: string[];
   sourceIds: SourceId[];
+  examples?: ExampleCase[];
 }
 export interface Track {
   id: TrackId;
@@ -62,10 +68,10 @@ export interface Problem {
   requirements: string[];
   keywords: string[][];
   starter?: string;
-  testCases?: { input: unknown; expected: unknown; label: string }[];
+  testCases?: ExampleCase[];
   premium?: boolean;
   workedCase?: WorkedCase;
-  solution?: CodingSolution;
+  solution?: WorkedSolution;
 }
 export interface QuizQuestion {
   id: string;
