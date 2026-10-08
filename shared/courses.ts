@@ -1,4 +1,6 @@
 import type { Course, CourseStep } from './types';
+import { systemDesignLessons } from './content/system-design-lessons';
+import { problems, quizTopics } from './catalog';
 
 const reading = (track: string, id: string, title: string): CourseStep => ({ id: `${track}-${id}`, type: 'lesson', title, resource: `${track}/${id}`, to: `/learn/${track}/${id}` });
 const quiz = (id: string, title: string): CourseStep => ({ id: `quiz-${id}`, type: 'quiz', title, resource: id, to: `/quiz/${id}` });
@@ -6,6 +8,18 @@ const practice = (track: string, id: string, title: string): CourseStep => ({ id
 const video = (course: string, title: string): CourseStep => ({ id: `video-${course}`, type: 'video', title, resource: course, to: `/learn/courses/${course}/video/${course}` });
 
 export const courses: Course[] = [
+  { id: 'system-design-complete', title: 'System design: the complete Studio path', description: '24 substantial lessons, 12 knowledge checks, and 16 original design exercises with worked references. Source-informed text; includes premium-demo steps, not a new video library.', track: 'system-design', units: [
+    { title: 'Frame a defensible contract', lessons: ['introduction', 'requirements', 'capacity-estimation', 'api-design'], quizzes: ['requirements', 'capacity-estimation', 'api-design'], cases: ['short-links'] },
+    { title: 'Protect state and make reads efficient', lessons: ['data-modeling', 'transactions', 'caching', 'http-caching'], quizzes: ['data-modeling', 'caching'], cases: ['ticket-reservations', 'payment-ledger', 'document-sync'] },
+    { title: 'Move work and distribute ownership', lessons: ['queues', 'event-streams', 'replication', 'sharding'], quizzes: ['queues', 'replication', 'sharding'], cases: ['job-scheduler', 'notification-platform', 'activity-feed'] },
+    { title: 'Operate within a measured budget', lessons: ['load-balancing', 'rate-limiting', 'reliability', 'observability'], quizzes: ['reliability', 'observability'], cases: ['api-gateway', 'metrics-platform', 'webhook-delivery'] },
+    { title: 'Build secure specialized paths', lessons: ['security', 'object-storage', 'search-indexing', 'realtime'], quizzes: ['security'], cases: ['object-storage', 'video-delivery', 'search-service', 'team-chat'] },
+    { title: 'Evolve, recover, and defend the tradeoff', lessons: ['stream-processing', 'multi-region', 'migrations', 'tradeoffs'], quizzes: ['tradeoffs'], cases: ['collaborative-editor', 'location-matching'] },
+  ].map(unit => ({ title: unit.title, steps: [
+    ...unit.lessons.map(id => reading('system-design', id, systemDesignLessons.find(lesson => lesson.id === id)!.title)),
+    ...unit.quizzes.map(id => quiz(id, `Check: ${quizTopics.find(topic => topic.id === id)!.title}`)),
+    ...unit.cases.map(id => practice('system-design', id, problems.find(problem => problem.id === id)!.title)),
+  ] })) },
   { id: 'system-design', title: 'A practical system design path', description: 'A structured journey from a single request to a defensible architecture. Read, watch, check, and practice.', track: 'system-design', units: [
     { title: 'Frame the problem', steps: [reading('system-design', 'introduction', 'A practical design interview'), video('system-design', 'Walk through one request')] },
     { title: 'Define the contract', steps: [reading('system-design', 'api-design', 'Designing useful APIs'), quiz('api-design', 'Check your API reasoning')] },

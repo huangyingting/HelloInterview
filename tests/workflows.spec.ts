@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { quizQuestions } from '../shared/catalog';
 
 async function demo(page: Page) {
   await page.goto('/login');
@@ -15,7 +16,7 @@ test('public landing, original learning library, and navigation', async ({page})
   await expect(page.getByRole('heading', {name:'System Design',exact:true})).toBeVisible();
   await page.getByRole('link', {name:'Start learning'}).click();
   await expect(page.getByRole('heading', {name:'A practical design interview'})).toBeVisible();
-  await expect(page.getByRole('heading', {name:'Start with the user'})).toBeVisible();
+  await expect(page.getByRole('heading', {name:'Treat the design as a chain of decisions'})).toBeVisible();
   await expect(page.getByText('Original Studio lesson')).toBeVisible();
   expect(errors).toEqual([]);
 });
@@ -155,13 +156,14 @@ test('quiz scoring, history and review deck remove mastered questions', async ({
   await demo(page);
   await page.goto('/quiz/api-design');
   await page.getByRole('button',{name:'Start quiz',exact:true}).click();
-  for(let i=0;i<3;i++){
-    await page.getByRole('radio').nth(i===0?0:1).check();
+  const questions=quizQuestions.filter(q=>q.topic==='api-design');
+  for(let i=0;i<questions.length;i++){
+    await page.getByRole('radio').nth(i===0?(questions[i].correct+1)%4:questions[i].correct).check();
     await page.getByRole('button',{name:'Check answer',exact:true}).click();
     await expect(page.locator('.quiz-answer-explanation')).toBeVisible();
-    await page.getByRole('button',{name:i===2?'Finish quiz':'Next question',exact:true}).click();
+    await page.getByRole('button',{name:i===questions.length-1?'Finish quiz':'Next question',exact:true}).click();
   }
-  await expect(page.locator('.result-score')).toHaveText('2/ 3');
+  await expect(page.locator('.result-score')).toHaveText(`${questions.length-1}/ ${questions.length}`);
   await page.goto('/quiz');
   await expect(page.getByText(/1 questions ready for another look/)).toBeVisible();
   await page.getByRole('link',{name:'Review now',exact:true}).click();
@@ -207,7 +209,7 @@ test('premium gates, explicit demo checkout, gift and plan reset', async ({page}
   await page.getByRole('button',{name:'Activate 1-year access demo',exact:true}).click();
   await expect(page.getByText('Your local premium demo is active.',{exact:true})).toBeVisible();
   await page.goto('/learn/system-design/replication');
-  await expect(page.getByRole('heading',{name:'Read replicas',exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Name the operation and guarantee',exact:true})).toBeVisible();
   await page.goto('/premium/gift');
   await page.getByRole('button',{name:'Generate demo code',exact:true}).click();
   const code=await page.locator('.gift-code code').textContent();

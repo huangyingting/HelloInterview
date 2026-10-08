@@ -20,7 +20,7 @@ test('catalog has unique IDs, original lesson bodies and valid quizzes', () => {
 });
 test('quiz scores are canonical and missing answers join review', () => {
   const result = gradeQuiz('api-design', { 'api-1': 1, 'api-2': 0, 'api-3': -1 });
-  assert.deepEqual(result, { score: 1, total: 3, missed: ['api-2', 'api-3'] });
+  assert.deepEqual(result, { score: 1, total: quizQuestions.filter(q => q.topic === 'api-design').length, missed: quizQuestions.filter(q => q.topic === 'api-design' && q.id !== 'api-1').map(q => q.id) });
   assert.throws(() => gradeQuiz('api-design', { 'cache-1': 0 }), /belong/);
   assert.throws(() => gradeQuiz('api-design', { 'api-1': 99 }), /Invalid/);
   assert.throws(() => gradeQuiz('review', {}), /empty/);

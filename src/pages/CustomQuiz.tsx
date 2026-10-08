@@ -4,7 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { quizQuestions, quizTopics } from '../../shared/catalog';
 import { customQuestionPool } from '../../shared/premium';
 import type { CustomQuiz, UserState } from '../../shared/types';
-import { AuthPrompt, Badge, Empty, PageHeading, Progress } from '../components';
+import { AuthPrompt, Badge, Empty, PageHeading, Progress, SourceLinks } from '../components';
 import { request, useStudio } from '../store';
 import { NotFound } from './Learn';
 import { PremiumAccess } from './Premium';
@@ -44,7 +44,7 @@ function CustomQuizSession({ id }: { id: string }) {
     <Link className="back-link" to="/quiz"><ArrowLeft size={15} /> Quiz library</Link>
     <PageHeading eyebrow="YOUR SAVED CUSTOM SESSION" title="Your custom quiz results." description={`${quiz.title} · ${new Date(quiz.completedAt).toLocaleString()}`} action={<button className="button secondary small" onClick={() => download('custom-quiz-result.json', JSON.stringify(quiz, null, 2))}><Download size={15} /> Export quiz result</button>} />
     <div className="quiz-result-hero"><ClipboardCheck size={32} /><div className="result-score">{quiz.score}<span>/ {quiz.questionIds.length}</span></div><p>Missed and skipped questions join your review deck. Correct answers remove these questions from it.</p></div>
-    <div className="quiz-explanations">{quiz.questionIds.map(id => { const question = quizQuestions.find(q => q.id === id)!; return <article className="panel" key={id}><div className="section-heading"><h3>{question.prompt}</h3><Badge tone={quiz.answers[id] === question.correct ? 'green' : 'amber'}>{quiz.answers[id] === question.correct ? 'Correct' : 'Review'}</Badge></div><p>Your answer: {quiz.answers[id] === -1 ? 'Skipped' : question.options[quiz.answers[id]]}</p><p>Correct answer: {question.options[question.correct]}</p><p>{question.explanation}</p></article>; })}</div>
+    <div className="quiz-explanations">{quiz.questionIds.map(id => { const question = quizQuestions.find(q => q.id === id)!; return <article className="panel" key={id}><div className="section-heading"><h3>{question.prompt}</h3><Badge tone={quiz.answers[id] === question.correct ? 'green' : 'amber'}>{quiz.answers[id] === question.correct ? 'Correct' : 'Review'}</Badge></div><p>Your answer: {quiz.answers[id] === -1 ? 'Skipped' : question.options[quiz.answers[id]]}</p><p>Correct answer: {question.options[question.correct]}</p><p>{question.explanation}</p><SourceLinks ids={question.sourceIds}/></article>; })}</div>
   </>;
   const question = quizQuestions.find(q => q.id === nextId);
   const advance = (answer: number) => act(async () => {

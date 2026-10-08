@@ -12,6 +12,8 @@ See [the reference analysis and feature comparison](docs/REFERENCE-ANALYSIS.md)
 for inspected workflows, technical evidence, implementation coverage, and gaps.
 The [premium workflow design](docs/PREMIUM-WORKFLOWS.md) explains the original
 adaptive interviews, custom quizzes, study plans, and project workbench.
+The [System Design curriculum](docs/CONTENT-CURRICULUM.md) records the researched
+flagship content, primary sources, measured depth, and editorial limitations.
 
 ![Original Interview Studio landing page](docs/screenshots/01-landing.png)
 
@@ -55,13 +57,13 @@ with the current startup command.
 
 | Area | Local functionality |
 | --- | --- |
-| Learning | Seven tracks, 30 original lessons, outlines, read progress, bookmarks, premium gates, comments, five interactive algorithm visualizations |
-| Courses | Four structured paths combining lessons, original captioned videos, quizzes, and practice; enrollment and dashboard continuation |
-| Practice | 21 original exercises across design, object design, AI-assisted coding, behavioral preparation, and code review |
+| Learning | Seven tracks, 47 original lessons; 24 substantial sourced System Design lessons, objectives, exercises, outlines, read progress, bookmarks, comments, and five algorithm labs |
+| Courses | Five structured paths; the new 52-step System Design flagship combines written lessons, quizzes, and practice without pretending to add videos |
+| Practice | 31 original exercises; all 16 System Design problems have worked references with architecture sketches, 48 capacity calculations, and follow-ups |
 | Workspaces | Movable architecture nodes and directed connections, diagram export, saved drafts, history, explanation editor, timer, feedback |
 | Coding | Isolated JavaScript `solve(input)` execution with example cases and an execution deadline; code-review line references |
 | Behavioral | Micro/mini/full sessions, company and level context, browser speech synthesis, private STAR story CRUD and export |
-| Quizzes | Seven topics and 21 questions, server-side scoring, explanations, history, and a personalized missed-question review deck |
+| Quizzes | 15 topics and 189 questions; System Design has 180 source-linked questions across 12 topics, canonical scoring, explanations, history, and review |
 | Premium mocks | Original topic-adaptive three/five-turn conversations, saved drafts/transcripts, optional AI grading, reports and export |
 | Custom quizzes | Mixed-topic or missed-only sessions, preserved question order, resume, canonical scores and review-deck updates |
 | Study plans | Company/level-focused two/four-week schedules, real progress integration, reflections and export |
@@ -76,6 +78,25 @@ A course completion record requires every course step to be complete. It is a
 local practice-completion record, not accreditation, hiring evidence, or proof
 of mastery. Videos are short original animated walkthroughs, not a substitute
 for the reference's video library.
+
+## Researched System Design flagship
+
+Open **Learn -> System Design -> Explore the course**, or browse
+**[the worked designs](http://127.0.0.1:3000/learn/system-design/cases)**.
+The flagship contains 24 lessons, 16 worked designs, and 180 questions informed
+by 19 public primary references, including IETF, PostgreSQL, Google SRE, AWS,
+Stripe, OWASP, Redis, RabbitMQ, Kafka, Flink, and Jepsen.
+
+The corpus has **43,773 counted instructional words**: 13,945 in lessons,
+17,408 in worked reasoning/follow-ups, and 12,420 in answer explanations.
+These counts exclude headings, objectives, exercises, assumptions, diagrams,
+question prompts, and answer choices. Workloads are hypothetical, not company
+benchmarks. Sources are linked in the readers and quiz explanations.
+
+This is an original, source-informed draft curriculum, **not expert-reviewed
+material or a verified set of current company interview questions**. The other
+six tracks remain starter-depth; the four approximately nine-second video
+clips, generic company guides, and illustrative community entries are unchanged.
 
 ## Configuration and optional AI
 
@@ -146,10 +167,13 @@ npm test
 
 - Domain tests check catalogs, canonical scoring, review behavior, streaks,
   entitlements, rubric labels, and course-completion invariants.
+- Content tests enforce exact inventory, instructional-depth floors, valid
+  source/resource links, difficulty/answer-position coverage, and the arithmetic
+  of every worked-design capacity calculation.
 - Provider-contract tests use a loopback fixture, check valid/malformed/outage
   responses and persisted sessions/state after an application restart. They
   require no real provider key and do not contact an external AI service.
-- Playwright checks 26 end-user workflows, including actual video playback,
+- Playwright checks 30 end-user workflows, including actual video playback,
   completion-record download, isolated-code execution/timeout, persistence,
   community actions, premium conversations/quizzes/plans/imported projects,
   mobile layout, credential denial, and user isolation.
@@ -162,7 +186,7 @@ With the app running:
 npm run screenshots
 ```
 
-This captures 40 original-application desktop/mobile screenshots under
+This captures 44 original-application desktop/mobile screenshots under
 `docs/screenshots/`. The [manifest](docs/screenshots/manifest.json) records routes
 and descriptions. Set `STUDIO_URL` to capture a different local instance.
 The script creates a local demo account, demo entitlement, and original sample

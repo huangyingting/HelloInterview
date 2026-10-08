@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-10-08T03:29:47.036Z",
+  "capturedAt": "2026-10-08T07:14:44.027Z",
   "application": "Interview Studio",
   "screenshots": [
     {
@@ -159,12 +159,12 @@
     },
     {
       "file": "32-adaptive-mock.png",
-      "route": "/premium/mock/915f4c0e-7b95-444c-86da-36cc98b6b4de",
+      "route": "/premium/mock/0a57d52d-b484-427d-af66-23d4be932ede",
       "description": "Follow-up selected from missing ownership concepts in the saved first response"
     },
     {
       "file": "33-mock-report.png",
-      "route": "/premium/mock/915f4c0e-7b95-444c-86da-36cc98b6b4de",
+      "route": "/premium/mock/0a57d52d-b484-427d-af66-23d4be932ede",
       "description": "Completed local-rubric mock interview report with saved transcript and export"
     },
     {
@@ -174,33 +174,53 @@
     },
     {
       "file": "35-custom-quiz-results.png",
-      "route": "/quiz/custom/57b187ed-7956-4bd1-9804-33e519a6bad5",
+      "route": "/quiz/custom/96e1b8d5-38a4-4073-95a8-aa1371436343",
       "description": "Canonical saved quiz score and question explanations"
     },
     {
       "file": "36-prep-plan.png",
-      "route": "/premium/plans/0b337623-70b5-4451-b41d-a15551a6a583",
+      "route": "/premium/plans/09dfcf0a-4ec8-4dc4-baaa-f77dbd38066f",
       "description": "Company-focused schedule with progress-linked steps and reflection forms"
     },
     {
       "file": "37-project-workbench.png",
-      "route": "/premium/projects/5287d13e-53e6-41e7-93f9-74066bb6d038",
+      "route": "/premium/projects/82c1cb86-7067-4738-b668-b8c521e3d5e6",
       "description": "Source editor with real isolated JavaScript example results and saved baseline"
     },
     {
       "file": "38-project-diff.png",
-      "route": "/premium/projects/5287d13e-53e6-41e7-93f9-74066bb6d038",
+      "route": "/premium/projects/82c1cb86-7067-4738-b668-b8c521e3d5e6",
       "description": "Git-applicable changes against the immutable imported baseline"
     },
     {
       "file": "40-project-review.png",
-      "route": "/premium/projects/5287d13e-53e6-41e7-93f9-74066bb6d038",
+      "route": "/premium/projects/82c1cb86-7067-4738-b668-b8c521e3d5e6",
       "description": "Saved project explanation, explicit verification limits and local rubric review"
     },
     {
       "file": "39-mobile-premium.png",
       "route": "/premium/studio",
       "description": "Responsive premium workflow hub on a mobile viewport"
+    },
+    {
+      "file": "41-worked-design-library.png",
+      "route": "/learn/system-design/cases",
+      "description": "Sixteen original worked designs with explicit teaching assumptions"
+    },
+    {
+      "file": "42-worked-design.png",
+      "route": "/practice/system-design/short-links/writeup",
+      "description": "Substantial sourced architecture with capacity calculations and follow-up questions"
+    },
+    {
+      "file": "43-complete-design-course.png",
+      "route": "/learn/courses/system-design-complete",
+      "description": "Fifty-two-step flagship text, quiz and design-practice path"
+    },
+    {
+      "file": "44-mobile-worked-design.png",
+      "route": "/practice/system-design/short-links/writeup",
+      "description": "Mobile worked design with bounded diagram scrolling and public references"
     }
   ]
 }

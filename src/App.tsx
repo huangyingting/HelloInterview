@@ -15,6 +15,7 @@ import { CourseIndex, CoursePage } from './pages/Courses';
 import { MockPage, PremiumStudio, StudyPlansPage } from './pages/Premium';
 import { ProjectsPage } from './pages/Projects';
 import { CustomQuizPage } from './pages/CustomQuiz';
+import { CaseLibrary, CaseReader } from './pages/Cases';
 
 export function App() {
   const {data,loading,error,refresh,act,toast}=useStudio(),location=useLocation(),navigate=useNavigate();
@@ -36,12 +37,14 @@ export function App() {
     if(!segments[1])content=<LearningIndex/>;
     else if(segments[1]==='courses')content=segments[2]?<CoursePage id={segments[2]} videoId={segments[3]==='video'?segments[4]:undefined} key={path}/>:<CourseIndex/>;
     else if(segments[1]==='changelog')content=<InfoPage id="changelog"/>;
+    else if(segments[1]==='system-design'&&segments[2]==='cases')content=<CaseLibrary/>;
     else if(segments[1]==='behavioral'&&['stories','story-builder'].includes(segments[2]))content=<StoryBank key={path}/>;
     else if(segments.length===2)content=<TrackOverview id={segments[1]}/>;
     else content=<LessonPage trackId={segments[1]} lessonId={segments.at(-1)!} key={path}/>;
   }else if(segments[0]==='practice'){
     if(!segments[1]||segments[1]==='overview')content=<PracticeIndex/>;
     else if(!segments[2])content=<PracticeList track={segments[1]} key={path}/>;
+    else if(segments[1]==='system-design'&&segments[3]==='writeup')content=<CaseReader problemId={segments[2]} key={path}/>;
     else content=<PracticeSession track={segments[1]} id={segments[2]} key={`${path}${location.search}`}/>;
   }else if(segments[0]==='quiz')content=segments[1]==='custom'?<CustomQuizPage id={segments[2]} key={path}/>:segments[1]?<QuizRunner topic={segments[1]} key={`${path}${location.search}`}/>:<QuizIndex/>;
   else if(segments[0]==='community'&&['questions','stories','submissions','discussion'].includes(segments[1])){

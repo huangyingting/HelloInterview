@@ -1,17 +1,41 @@
+import type { SourceId } from './content/sources';
+
 export type TrackId = 'system-design' | 'code' | 'low-level-design' | 'behavioral' | 'ai-coding' | 'ml-system-design' | 'salary-negotiation';
 export type Difficulty = 'Easy' | 'Medium' | 'Hard';
 export type Level = 'Junior' | 'Mid-level' | 'Senior' | 'Staff' | 'Manager';
 export type CommunityKind = 'questions' | 'stories' | 'submissions' | 'discussion';
 
+export interface ContentSection {
+  title: string;
+  body: string;
+  bullets?: string[];
+  code?: string;
+  diagram?: string;
+}
 export interface Lesson {
   id: string;
   title: string;
   group: string;
   minutes: number;
   summary: string;
-  sections: { title: string; body: string; bullets?: string[]; code?: string }[];
+  sections: ContentSection[];
   exercise: string;
   premium?: boolean;
+  objectives?: string[];
+  sourceIds?: SourceId[];
+  relatedProblemIds?: string[];
+  quizTopic?: string;
+}
+export interface WorkedCase {
+  problemId: string;
+  summary: string;
+  assumptions: string[];
+  diagram: string;
+  calculations: { label: string; factors: number[]; divisor: number; result: number; unit: string; assumption: string }[];
+  sections: ContentSection[];
+  followUps: { question: string; answer: string }[];
+  lessonIds: string[];
+  sourceIds: SourceId[];
 }
 export interface Track {
   id: TrackId;
@@ -32,6 +56,7 @@ export interface Problem {
   starter?: string;
   testCases?: { input: unknown; expected: unknown; label: string }[];
   premium?: boolean;
+  workedCase?: WorkedCase;
 }
 export interface QuizQuestion {
   id: string;
@@ -40,6 +65,8 @@ export interface QuizQuestion {
   options: string[];
   correct: number;
   explanation: string;
+  difficulty?: Difficulty;
+  sourceIds?: SourceId[];
 }
 export interface Feedback {
   score: number;

@@ -120,6 +120,12 @@ try {
   await shot('40-project-review',null,'Saved project explanation, explicit verification limits and local rubric review');
   await page.setViewportSize({width:390,height:844});
   await shot('39-mobile-premium','/premium/studio','Responsive premium workflow hub on a mobile viewport');
+  await page.setViewportSize({width:1440,height:1000});
+  await shot('41-worked-design-library','/learn/system-design/cases','Sixteen original worked designs with explicit teaching assumptions');
+  await shot('42-worked-design','/practice/system-design/short-links/writeup','Substantial sourced architecture with capacity calculations and follow-up questions');
+  await shot('43-complete-design-course','/learn/courses/system-design-complete','Fifty-two-step flagship text, quiz and design-practice path');
+  await page.setViewportSize({width:390,height:844});
+  await shot('44-mobile-worked-design','/practice/system-design/short-links/writeup','Mobile worked design with bounded diagram scrolling and public references');
   if(errors.length)throw new Error(`Screenshot navigation raised browser errors: ${errors.join('; ')}`);
   await fs.writeFile(`${directory}/manifest.json`,JSON.stringify({capturedAt:new Date().toISOString(),application:'Interview Studio',screenshots:entries},null,2));
   console.log(`Captured ${entries.length} original-application screenshots in ${directory}. No reference credentials or screenshots are included.`);

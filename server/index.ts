@@ -577,8 +577,9 @@ app.post('/api/quiz', (req, res) => {
   if (topic === 'review' && Object.keys(answers).some(id => !stateFor(user).review.includes(id))) throw new HttpError(400, 'Question is not in your review deck.');
   let result: ReturnType<typeof gradeQuiz>;
   try { result = gradeQuiz(topic, answers); } catch (error) { throw new HttpError(400, error instanceof Error ? error.message : 'Invalid quiz submission.'); }
+  const savedAnswers = Object.fromEntries(quizQuestions.filter(question => topic === 'review' ? Object.hasOwn(answers, question.id) : question.topic === topic).map(question => [question.id, answers[question.id] ?? -1]));
   res.json(mutate(user, state => {
-    state.quizzes.unshift({ id: randomUUID(), topic, answers, score: result.score, total: result.total, completedAt: new Date().toISOString() });
+    state.quizzes.unshift({ id: randomUUID(), topic, answers: savedAnswers, score: result.score, total: result.total, completedAt: new Date().toISOString() });
     state.quizzes = state.quizzes.slice(0, 500);
     const answered = new Set(Object.keys(answers));
     state.review = [...new Set([...state.review.filter(id => !answered.has(id)), ...result.missed])];

@@ -141,15 +141,16 @@ Status definitions:
 | --- | --- | --- |
 | Public homepage | `/` | Implemented; original name, copy, assets, and design |
 | Authenticated dashboard | `/dashboard` | Implemented; targets, progress, streak, recognition, enrolled course continuation |
-| Seven learning disciplines | `/learn`, `/learn/:track` | Implemented; 30 original lessons, not catalog/content parity |
+| Seven learning disciplines | `/learn`, `/learn/:track` | Implemented; 47 original lessons, including 24 substantial sourced System Design lessons; other tracks remain starter-depth |
 | Topic outline and lesson reader | `/learn/:track/:lesson` | Implemented; read state, bookmarks, comments, previous/next links |
 | Coding visualizations | `/learn/code` and coding lessons | Implemented; two pointers, sliding window, binary search, BFS, Fibonacci DP |
 | Premium learning locks | Premium-marked lessons/courses | Partial; local entitlement gates, not paid reference access |
-| Structured course catalog | `/learn/courses` | Implemented; four original courses, not reference catalog parity |
+| Structured course catalog | `/learn/courses` | Implemented; five original courses including a 52-step text-based flagship; not reference catalog parity |
 | Mixed-media curriculum | `/learn/courses/:id` | Implemented; enroll, combine step progress, resume next incomplete step |
 | Course video lessons | `/learn/courses/:id/video/:id` | Partial; actual playback/captions/speed/download, four ~9-second original animations, no equivalent long-form video catalog |
 | Course completion record | Course completion action | Implemented locally; downloadable original SVG only after all steps; no accreditation claim |
 | System design problem catalog | `/practice/system-design` | Implemented; original prompts, filters, difficulty, reading state, history |
+| Worked architecture references | `/learn/system-design/cases`, `/practice/system-design/:id/writeup` | Implemented original content; 16 sourced worked designs, hypothetical workloads, 48 checkable calculations and follow-ups |
 | Low-level design catalog | `/practice/low-level-design` | Implemented; original exercises and contracts/code/explanation workspace |
 | Guided practice setup | `/practice/:track/:problem` | Implemented; same-tab local workspace, unlike reference new-page entry |
 | Design editor | System-design session | Implemented locally; nodes, movement, directed edges, removal, undo connection, JSON export; reference full editor parity unverified |
@@ -160,7 +161,7 @@ Status definitions:
 | Behavioral session setup | `/practice/behavioral` | Implemented; micro/mini/full sessions, company/level context, browser speech synthesis |
 | Behavioral adaptive conversation | `/premium/mock`, `/premium/mock/:id` | Implemented original topic-gap follow-ups and saved reports, also across technical disciplines; reference private interviewing pipeline remains unverified |
 | Behavioral story bank | `/learn/behavioral/stories` | Implemented; private STAR create/edit/delete/export |
-| Quiz topic library | `/quiz` | Implemented; seven original topics, 21 questions, smaller than reference |
+| Quiz topic library | `/quiz` | Implemented; 15 topics and 189 questions, including 180 sourced System Design questions across 12 topics; no reference content parity claim |
 | Quiz session, grading, explanations | `/quiz/:topic` | Implemented; canonical server-side scoring, skips, explanations, results/history |
 | Personalized quiz review | `/quiz/review` | Implemented; missed questions retained until correctly reviewed |
 | Premium quiz customization | `/quiz/custom`, `/quiz/custom/:id` | Implemented original mixed-topic/missed-only builder, saved order/answers, canonical score, resume, results and export |
@@ -200,13 +201,16 @@ to recover the reference's private source:
 
 The supplied `.cred` is not an application dependency. Private reference
 artifacts are not deployment assets. Original content counts are seven tracks,
-30 lessons, 21 practice exercises, seven quizzes/21 questions, four courses,
+47 lessons, 31 practice exercises, 15 quizzes/189 questions, five courses,
 four captioned original animations, and three articles.
+The System Design flagship supplies 24 substantial lessons and 16 worked
+designs. See [the researched curriculum](CONTENT-CURRICULUM.md) for measured
+depth, sources, compatibility behavior, and editorial limitations.
 
 ## Verification and remaining blockers
 
 TypeScript checking and the Vite production build pass. Domain coverage includes
-14 tests. Playwright covers 26 end-user workflows. The seven provider/restart fixture tests check
+20 tests. Playwright covers 30 end-user workflows. The seven provider/restart fixture tests check
 configured tutoring/feedback, invalid upstream output, provider outage, and
 session/state persistence after a real application-process restart, premium
 mock/project grading, stale-response/access-ending protection, and persistence

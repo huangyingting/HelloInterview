@@ -2,7 +2,19 @@ import { ArrowRight, Bookmark, Check, ChevronRight, MessageSquare, Send, Sparkle
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { request, useStudio } from './store';
-import type { Comment, UserState } from '../shared/types';
+import type { Comment, ContentSection, UserState } from '../shared/types';
+import { contentResearchDate, contentSources, type SourceId } from '../shared/content/sources';
+
+export function SourceLinks({ ids }: { ids?: SourceId[] }) {
+  if (!ids?.length) return null;
+  return <div className="content-sources"><h4>Sources and further reading</h4><p className="fine-print">Original synthesis informed by public documentation. Research date: {contentResearchDate}; not expert-reviewed.</p><ul>{ids.map(id => <li key={id}><a href={contentSources[id].url} target="_blank" rel="noopener noreferrer">{contentSources[id].title}</a><span> · {contentSources[id].publisher}</span></li>)}</ul></div>;
+}
+export function ArchitectureFigure({ text, label = 'Original architecture sketch' }: { text: string; label?: string }) {
+  return <figure className="architecture-figure" aria-label={label}><figcaption>{label}</figcaption><pre><code>{text}</code></pre></figure>;
+}
+export function ContentSections({ sections }: { sections: ContentSection[] }) {
+  return <>{sections.map((section, i) => <section id={`section-${i}`} key={section.title}><h2>{section.title}</h2>{section.body.split(/\n\s*\n/).map((paragraph, j) => <p key={j}>{paragraph}</p>)}{section.bullets && <ul>{section.bullets.map(bullet => <li key={bullet}>{bullet}</li>)}</ul>}{section.code && <pre><code>{section.code}</code></pre>}{section.diagram && <ArchitectureFigure text={section.diagram} />}</section>)}</>;
+}
 
 export function IconTile({ icon: Icon, color = 'var(--accent)', small = false }: { icon: LucideIcon; color?: string; small?: boolean }) {
   return <span className={`icon-tile ${small ? 'small' : ''}`} style={{ color, background: `color-mix(in srgb, ${color} 11%, var(--surface))` }}><Icon size={small ? 18 : 23} strokeWidth={1.7} /></span>;
