@@ -8,7 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "start": "NODE_ENV=production tsx --env-file-if-exists=.env server/index.ts",
     "test": "playwright test",
-    "test:unit": "tsx --test tests/domain.test.ts tests/premium.test.ts tests/content.test.ts",
+    "test:unit": "tsx --test tests/domain.test.ts tests/premium.test.ts tests/content.test.ts tests/coding.test.ts",
     "test:ai": "tsx --test tests/ai.test.ts",
     "screenshots": "node scripts/capture-screenshots.mjs",
     "media": "node scripts/generate-media.mjs"

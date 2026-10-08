@@ -2,6 +2,9 @@ import type { Lesson, Problem, QuizQuestion, Track, TrackId } from './types';
 import { systemDesignLessons } from './content/system-design-lessons';
 import { additionalSystemDesignProblems, systemDesignCaseStudies } from './content/system-design-cases';
 import { systemDesignQuestions } from './content/system-design-questions';
+import { codingLessons } from './content/coding-lessons';
+import { codingProblems } from './content/coding-problems';
+import { codingQuestions } from './content/coding-questions';
 
 const lesson = (
   id: string, title: string, group: string, summary: string,
@@ -19,32 +22,7 @@ export const tracks: Track[] = [
     id: 'code', title: 'Coding & Algorithms', short: 'See the pattern, solve the problem',
     description: 'Understand algorithms with interactive visualizations and executable practice.',
     color: '#5971c4',
-    lessons: [
-      lesson('two-pointers', 'Two pointers', 'Array patterns', 'Replace repeated search with a coordinated pair of positions.', [
-        { title: 'A sorted array gives you direction', body: 'For a target sum in a sorted array, start at both ends. If the sum is too small, move the left pointer; if it is too large, move the right pointer.' },
-        { title: 'State the invariant', body: 'Each move eliminates pairs that cannot satisfy the target. This lets you inspect a linear number of pairs rather than every combination.', code: 'while (left < right) {\n  const sum = values[left] + values[right];\n  if (sum === target) return [left, right];\n  if (sum < target) left++;\n  else right--;\n}' },
-        { title: 'Account for complexity', body: 'The search is O(n) with O(1) extra space when input is already sorted. Sorting beforehand changes the overall time and may change original indices.' },
-      ], 'Use the visualization below to find a pair that adds to 17. Explain each pointer movement.'),
-      lesson('sliding-window', 'Sliding windows', 'Array patterns', 'Maintain a small summary as a range changes.', [
-        { title: 'Reuse adjacent work', body: 'For fixed-size window sums, subtract the element leaving the window and add the element entering it. Recomputing each sum wastes work.' },
-        { title: 'Variable-size windows', body: 'Extend the right edge, then move the left edge until the constraint holds. This works when shrinking the window predictably restores validity.' },
-        { title: 'Choose the summary', body: 'A sum, frequency map, or distinct count may be enough. The summary must support both adding and removing an element efficiently.' },
-      ], 'Find the longest substring without repeated characters, and explain what the frequency map stores.'),
-      lesson('binary-search', 'Binary search on an invariant', 'Search', 'Halve the space by proving which half cannot contain the answer.', [
-        { title: 'Define the boundary', body: 'Decide whether you are finding an exact value, the first true predicate, or the last feasible value. A clear contract prevents off-by-one errors.' },
-        { title: 'Shrink every iteration', body: 'Keep a half-open search interval. Every branch must make the interval smaller.', code: 'let left = 0, right = values.length;\nwhile (left < right) {\n  const mid = left + Math.floor((right - left) / 2);\n  if (values[mid] < target) left = mid + 1;\n  else right = mid;\n}\nreturn left;' },
-      ], 'Find the insertion position for 8 in [1, 3, 6, 9, 12].'),
-      lesson('graph-search', 'Graph traversal', 'Graphs', 'Track a frontier and avoid visiting the same state twice.', [
-        { title: 'Breadth-first search', body: 'A queue explores states by distance from the starting point. For equal-cost edges, the first discovered path is a shortest path.' },
-        { title: 'Depth-first search', body: 'A stack or recursion follows one path before returning. This is useful for reachability, connected components, and structural analysis.' },
-        { title: 'Represent the visited state', body: 'Mark a node when adding it to the frontier, not after removing it. Otherwise several parents may enqueue the same node.' },
-      ], 'Choose BFS or DFS for the shortest route through an unweighted maze.'),
-      lesson('dynamic-programming', 'Dynamic programming', 'Optimization', 'Cache overlapping subproblems instead of solving them again.', [
-        { title: 'Describe the state', body: 'A state must contain exactly the information needed to make the next decision. Start with a recurrence before choosing an implementation.' },
-        { title: 'Base cases and transitions', body: 'Base cases anchor the recurrence. Each transition compares valid choices and combines results from smaller states.' },
-        { title: 'Reduce space carefully', body: 'A rolling array works when only a small set of preceding states is needed. Keep the full table when reconstructing the solution.' },
-      ], 'Define the state and recurrence for minimum coins needed to make a target amount.', true),
-    ],
+    lessons: codingLessons,
   },
   {
     id: 'low-level-design', title: 'Low-Level Design', short: 'Make your code easy to change',
@@ -169,10 +147,11 @@ export const tracks: Track[] = [
 export const companies = ['Meta', 'Google', 'Amazon', 'Microsoft', 'Apple', 'OpenAI', 'Anthropic', 'Stripe', 'Airbnb', 'Netflix'];
 export const levels = ['Junior', 'Mid-level', 'Senior', 'Staff', 'Manager'] as const;
 export const regions = ['Global', 'North America', 'Europe', 'Asia Pacific'] as const;
-export const practiceTracks = ['system-design', 'low-level-design', 'ai-coding', 'behavioral', 'code-review'];
+export const practiceTracks = ['system-design', 'low-level-design', 'ai-coding', 'behavioral', 'code-review', 'code'];
 export const practiceLabels: Record<string, string> = {
   'system-design': 'System Design', 'low-level-design': 'Low-Level Design',
   'ai-coding': 'AI-Assisted Coding', behavioral: 'Behavioral', 'code-review': 'Code Review',
+  code: 'Coding & Algorithms',
 };
 
 const originalProblems: Problem[] = [
@@ -199,7 +178,7 @@ const originalProblems: Problem[] = [
   { id: 'upload-review', track: 'code-review', title: 'Review a file upload handler', difficulty: 'Hard', description: 'Inspect validation, storage boundaries, and failure handling in the upload handler.', requirements: ['Define acceptable input size.', 'Validate names and content.', 'Prevent overwriting unrelated files.', 'Report failure accurately.'], keywords: [['size', 'limit'], ['path', 'validate'], ['unique', 'overwrite'], ['error', 'failure'], ['test', 'content']], starter: 'async function upload(req) {\n  await storage.write(req.body.filename, req.body.data);\n  return { uploaded: true };\n}', premium: true },
 ];
 
-export const problems: Problem[] = [...originalProblems, ...additionalSystemDesignProblems].map(problem => ({
+export const problems: Problem[] = [...originalProblems, ...additionalSystemDesignProblems, ...codingProblems].map(problem => ({
   ...problem, workedCase: systemDesignCaseStudies.find(study => study.problemId === problem.id),
 }));
 
@@ -216,9 +195,9 @@ const originalQuizQuestions: QuizQuestion[] = [
   {id:'queue-1',topic:'queues',prompt:'Why should a worker tolerate duplicate messages?',options:['Queues never acknowledge messages','Failure can happen after a side effect but before acknowledgment','Every message is always delivered twice','Retries are forbidden'],correct:1,difficulty:'Easy',sourceIds:['rabbitmq-acks','outbox'],explanation:'A worker can complete a business effect and crash before acknowledging consumption. The broker may then redeliver the message because it cannot infer that the effect completed. Use durable deduplication or an idempotent effect at the correct boundary. A publisher confirmation is different from a consumer acknowledgement, and neither alone proves that an arbitrary external operation happened exactly once.'},
   {id:'queue-2',topic:'queues',prompt:'Which metric directly reveals a processing backlog that users will feel?',options:['Font size','Age of the oldest unprocessed job','Number of source files','A random sample identifier'],correct:1,difficulty:'Easy',sourceIds:['sre-monitoring','sre-overload'],explanation:'Oldest-job age reveals how long pending work has been waiting, directly connecting backlog to delayed completion. Queue depth alone is less interpretable when job costs or worker throughput vary. Observe arrival rate, completion rate, retries, and processing latency alongside age. Also define whether delayed scheduled jobs belong in the metric so an intentional future schedule is not mistaken for overdue work.'},
   {id:'queue-3',topic:'queues',prompt:'What should happen to a job that repeatedly fails after bounded retries?',options:['Silently discard it','Retry in a tight loop forever','Move it to a dead-letter path with visibility','Mark it as successful'],correct:2,difficulty:'Easy',sourceIds:['rabbitmq-acks','sre-overload'],explanation:'A visible dead-letter path preserves repeatedly failing work for diagnosis and controlled recovery after the retry budget is exhausted. Record the operation identity and failure reason, restrict access to sensitive payloads, and alert on meaningful accumulation. Redriving work needs the same duplicate-safety contract as ordinary delivery. Moving a job aside is not equivalent to successfully completing its business effect.'},
-  {id:'pointer-1',topic:'two-pointers',prompt:'In a sorted array, the two-pointer sum is below the target. Which move is appropriate?',options:['Move the right pointer left','Move the left pointer right','Move both pointers randomly','Stop immediately'],correct:1,explanation:'Moving the left pointer toward a larger value can increase the sum; reducing the right value cannot help.'},
-  {id:'pointer-2',topic:'two-pointers',prompt:'What is the search complexity for a sorted two-sum input?',options:['O(n²)','O(n) time and O(1) auxiliary space','O(2ⁿ)','O(1) time for every input'],correct:1,explanation:'Each pointer moves in one direction at most n times, and the algorithm stores only a few variables.'},
-  {id:'pointer-3',topic:'two-pointers',prompt:'What does an invariant help you explain?',options:['Why eliminated candidates cannot be answers','Which font looks best','Why tests are unnecessary','Why sorting has no cost'],correct:0,explanation:'An invariant justifies each move and the correctness of eliminating part of the candidate space.'},
+  {id:'pointer-1',topic:'two-pointers',prompt:'In a sorted array, the two-pointer sum is below the target. Which move is appropriate?',options:['Move the right pointer left','Move the left pointer right','Move both pointers randomly','Stop immediately'],correct:1,difficulty:'Easy',sourceIds:['mit-algorithms','nist-algorithms'],explanation:'Moving the left pointer right can increase the sum because the array is sorted in nondecreasing order. For the current left value, every available right position is no larger than the current one, so none can reach a target above the current sum. The move eliminates an impossible family of candidates; it is not merely a guess based on a favorable example.'},
+  {id:'pointer-2',topic:'two-pointers',prompt:'What is the search complexity for a sorted two-sum input?',options:['O(n²)','O(n) time and O(1) auxiliary space','O(2ⁿ)','O(1) time for every input'],correct:1,difficulty:'Easy',sourceIds:['mit-algorithms','nist-algorithms'],explanation:'The two pointers move inward without revisiting eliminated positions, so there are at most a linear number of advances. Searching an already-sorted array therefore uses O(n) time and constant auxiliary storage when returning one pair or its existence. This bound excludes any earlier sorting cost and does not apply to enumerating every pair, whose output can itself be quadratic.'},
+  {id:'pointer-3',topic:'two-pointers',prompt:'What does an invariant help you explain?',options:['Why eliminated candidates cannot be answers','Which font looks best','Why tests are unnecessary','Why sorting has no cost'],correct:0,difficulty:'Easy',sourceIds:['mit-algorithms','nist-algorithms'],explanation:'An invariant states what remains true before and after each iteration. Together with the movement rule, it explains why a discarded candidate cannot be a required answer and why the remaining search still contains any valid solution. You also need initialization, termination, and the result contract. Passing a few examples supports debugging but does not replace that correctness argument or the complexity analysis.'},
   {id:'object-1',topic:'design-principles',prompt:'What is a useful sign of high cohesion?',options:['A class owns unrelated concerns','Related responsibilities change together','Every method is static','There are no tests'],correct:1,explanation:'Cohesion groups behavior that belongs together and tends to evolve for the same reasons.'},
   {id:'object-2',topic:'design-principles',prompt:'Which dependency direction improves domain testability?',options:['Domain logic depends on a concrete remote service','Domain logic depends on a small contract implemented by adapters','All layers import each other','Tests always require production data'],correct:1,explanation:'A stable contract lets tests provide simple adapters and keeps infrastructure choices outside business rules.'},
   {id:'object-3',topic:'design-principles',prompt:'When is composition particularly helpful?',options:['When policies vary independently','When every class needs a deeper hierarchy','When all interfaces must be removed','When behavior should be hidden from tests'],correct:0,explanation:'Composed strategies allow independently varying policies without multiplying inheritance combinations.'},
@@ -227,7 +206,7 @@ const originalQuizQuestions: QuizQuestion[] = [
   {id:'ml-3',topic:'evaluation',prompt:'Which feature is valid at prediction time?',options:['A future cancellation event','An outcome only known next week','A prior activity count available at the decision timestamp','A later refund decision'],correct:2,explanation:'Valid features must exist when the prediction is made; future outcomes introduce leakage.'},
 ];
 
-export const quizQuestions: QuizQuestion[] = [...originalQuizQuestions, ...systemDesignQuestions];
+export const quizQuestions: QuizQuestion[] = [...originalQuizQuestions, ...systemDesignQuestions, ...codingQuestions];
 
 export const quizTopics = [...new Set(quizQuestions.map(q => q.topic))].map(id => {
   const track = tracks.find(t => t.lessons.some(l => l.id === id))!;

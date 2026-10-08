@@ -18,6 +18,12 @@ export const contentSources = {
   'jepsen': { title: 'Consistency Models', publisher: 'Jepsen', url: 'https://jepsen.io/consistency' },
   'websocket': { title: 'RFC 6455: The WebSocket Protocol', publisher: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc6455' },
   'flink-time': { title: 'Timely Stream Processing', publisher: 'Apache Flink', url: 'https://nightlies.apache.org/flink/flink-docs-stable/docs/concepts/time/' },
+  'mit-algorithms': { title: 'Introduction to Algorithms: Course and Materials', publisher: 'MIT OpenCourseWare', url: 'https://ocw.mit.edu/courses/6-006-introduction-to-algorithms-spring-2020/' },
+  'nist-algorithms': { title: 'Dictionary of Algorithms and Data Structures', publisher: 'NIST', url: 'https://xlinux.nist.gov/dads/' },
+  'js-sort': { title: 'Stable Array Sorting and Implementation Boundaries', publisher: 'V8', url: 'https://v8.dev/features/stable-sort' },
+  'js-map': { title: 'Map: Equality, Ordering, and Complexity', publisher: 'MDN', url: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Map' },
+  'js-number': { title: 'Number: Representation and Safe Integers', publisher: 'MDN', url: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Number' },
+  'js-bitwise': { title: 'Bitwise AND and Numeric Coercion', publisher: 'MDN', url: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Bitwise_AND' },
 } as const;
 
 export type SourceId = keyof typeof contentSources;

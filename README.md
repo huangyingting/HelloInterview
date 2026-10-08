@@ -12,8 +12,8 @@ See [the reference analysis and feature comparison](docs/REFERENCE-ANALYSIS.md)
 for inspected workflows, technical evidence, implementation coverage, and gaps.
 The [premium workflow design](docs/PREMIUM-WORKFLOWS.md) explains the original
 adaptive interviews, custom quizzes, study plans, and project workbench.
-The [System Design curriculum](docs/CONTENT-CURRICULUM.md) records the researched
-flagship content, primary sources, measured depth, and editorial limitations.
+The [researched curricula](docs/CONTENT-CURRICULUM.md) record the System Design
+and Coding flagships, primary sources, measured depth, and editorial limitations.
 
 ![Original Interview Studio landing page](docs/screenshots/01-landing.png)
 
@@ -57,13 +57,13 @@ with the current startup command.
 
 | Area | Local functionality |
 | --- | --- |
-| Learning | Seven tracks, 47 original lessons; 24 substantial sourced System Design lessons, objectives, exercises, outlines, read progress, bookmarks, comments, and five algorithm labs |
-| Courses | Five structured paths; the new 52-step System Design flagship combines written lessons, quizzes, and practice without pretending to add videos |
-| Practice | 31 original exercises; all 16 System Design problems have worked references with architecture sketches, 48 capacity calculations, and follow-ups |
+| Learning | Seven tracks, 66 original lessons; 24 substantial sourced lessons each for System Design and Coding, objectives, exercises, outlines, read progress, bookmarks, comments, and five algorithm labs |
+| Courses | Six structured paths, including the 52-step System Design and 60-step Coding text/quiz/practice flagships |
+| Practice | 55 original exercises; 16 worked System Design references and 24 executable Coding exercises with substantial original solutions |
 | Workspaces | Movable architecture nodes and directed connections, diagram export, saved drafts, history, explanation editor, timer, feedback |
-| Coding | Isolated JavaScript `solve(input)` execution with example cases and an execution deadline; code-review line references |
+| Coding | Dedicated algorithm practice, original reference implementations, complexity analysis, isolated JavaScript `solve(input)` example execution and deadline; code-review line references |
 | Behavioral | Micro/mini/full sessions, company and level context, browser speech synthesis, private STAR story CRUD and export |
-| Quizzes | 15 topics and 189 questions; System Design has 180 source-linked questions across 12 topics, canonical scoring, explanations, history, and review |
+| Quizzes | 26 topics and 366 questions; System Design and Coding each have 180 source-linked questions across 12 topics, canonical scoring, explanations, history, and review |
 | Premium mocks | Original topic-adaptive three/five-turn conversations, saved drafts/transcripts, optional AI grading, reports and export |
 | Custom quizzes | Mixed-topic or missed-only sessions, preserved question order, resume, canonical scores and review-deck updates |
 | Study plans | Company/level-focused two/four-week schedules, real progress integration, reflections and export |
@@ -94,9 +94,34 @@ question prompts, and answer choices. Workloads are hypothetical, not company
 benchmarks. Sources are linked in the readers and quiz explanations.
 
 This is an original, source-informed draft curriculum, **not expert-reviewed
-material or a verified set of current company interview questions**. The other
-six tracks remain starter-depth; the four approximately nine-second video
-clips, generic company guides, and illustrative community entries are unchanged.
+material or a verified set of current company interview questions**.
+
+## Researched Coding & Algorithms flagship
+
+Open **Learn -> Coding & Algorithms -> Explore the course**, or browse
+**[the worked solutions](http://127.0.0.1:3000/learn/code/solutions)** and
+**[dedicated algorithm practice](http://127.0.0.1:3000/practice/code)**.
+The 60-step path connects 24 substantial lessons, 12 quizzes containing 180
+questions, and 24 original runnable exercises. It covers array patterns,
+intervals, stacks, linked lists, binary search, heaps, trees, graph algorithms,
+backtracking, dynamic programming, greedy reasoning, tries, matrices, and bits.
+
+Each exercise includes an explicit bounded JSON contract, at least six example
+cases, substantial solution reasoning, public sources, and a revealable original
+JavaScript implementation. MIT OpenCourseWare, NIST, MDN, and V8 documentation
+informed the original material; authenticated reference inspection informed
+topic coverage, not copied lesson text. Example tests are **not an exhaustive
+online judge**. Reading a reference does not complete an attempt, and local
+rubric feedback does not establish algorithm correctness.
+
+The Coding corpus contains **33,748 counted instructional words**: 14,267 in
+lessons, 8,710 in solution reasoning, and 10,771 in question explanations, plus
+146 executable example fixtures. Code and metadata are excluded. Together with
+System Design, the two flagships contain **77,521 instructional words**.
+
+The remaining five tracks are still starter-depth; the four approximately
+nine-second video clips, generic company guides, and illustrative community
+entries are unchanged. Neither flagship has independent human expert review.
 
 ## Configuration and optional AI
 

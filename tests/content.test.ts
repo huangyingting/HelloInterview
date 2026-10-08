@@ -29,10 +29,10 @@ test('flagship inventory meets the exact promised scope without replacing other 
   assert.equal(topics.length, 12);
   assert.equal(systemDesignQuestions.length, 168);
   assert.equal(tracks.length, 7);
-  assert.equal(tracks.reduce((count, track) => count + track.lessons.length, 0), 47);
-  assert.equal(problems.length, 31);
-  assert.equal(quizQuestions.length, 189);
-  assert.equal(quizTopics.length, 15);
+  assert.equal(tracks.reduce((count, track) => count + track.lessons.length, 0), 66);
+  assert.equal(problems.length, 55);
+  assert.equal(quizQuestions.length, 366);
+  assert.equal(quizTopics.length, 26);
   assert.match(contentResearchDate, /^\d{4}-\d{2}-\d{2}$/);
 });
 

@@ -37,6 +37,14 @@ export interface WorkedCase {
   lessonIds: string[];
   sourceIds: SourceId[];
 }
+export interface CodingSolution {
+  sections: ContentSection[];
+  code: string;
+  timeComplexity: string;
+  spaceComplexity: string;
+  lessonIds: string[];
+  sourceIds: SourceId[];
+}
 export interface Track {
   id: TrackId;
   title: string;
@@ -57,6 +65,7 @@ export interface Problem {
   testCases?: { input: unknown; expected: unknown; label: string }[];
   premium?: boolean;
   workedCase?: WorkedCase;
+  solution?: CodingSolution;
 }
 export interface QuizQuestion {
   id: string;

@@ -344,6 +344,8 @@ button:hover,a:hover { color: var(--accent); }
 .case-followup { border-top: 1px solid var(--border); padding: 17px 0; }
 .case-followup summary { cursor: pointer; font-size: 14px; font-weight: 550; }
 .case-followup p { margin-top: 14px; }
+.coding-example { min-width: 0; }
+.coding-example pre code { white-space: pre; }
 .tiny-circle { width: 9px; height: 9px; border: 1px solid var(--border); border-radius: 50%; flex-shrink: 0; }
 .toc { padding: 0 17px; }
 .toc>a { display: block; font-size: 10px; color: var(--muted); margin: 11px 0; }

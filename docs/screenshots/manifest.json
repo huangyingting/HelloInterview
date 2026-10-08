@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-10-08T07:14:44.027Z",
+  "capturedAt": "2026-10-08T09:40:22.428Z",
   "application": "Interview Studio",
   "screenshots": [
     {
@@ -159,12 +159,12 @@
     },
     {
       "file": "32-adaptive-mock.png",
-      "route": "/premium/mock/0a57d52d-b484-427d-af66-23d4be932ede",
+      "route": "/premium/mock/20367256-8115-4773-a118-70e0c3fcb4b6",
       "description": "Follow-up selected from missing ownership concepts in the saved first response"
     },
     {
       "file": "33-mock-report.png",
-      "route": "/premium/mock/0a57d52d-b484-427d-af66-23d4be932ede",
+      "route": "/premium/mock/20367256-8115-4773-a118-70e0c3fcb4b6",
       "description": "Completed local-rubric mock interview report with saved transcript and export"
     },
     {
@@ -174,27 +174,27 @@
     },
     {
       "file": "35-custom-quiz-results.png",
-      "route": "/quiz/custom/96e1b8d5-38a4-4073-95a8-aa1371436343",
+      "route": "/quiz/custom/92b1fdb0-19ba-4b8d-91d3-77b8a0b978f6",
       "description": "Canonical saved quiz score and question explanations"
     },
     {
       "file": "36-prep-plan.png",
-      "route": "/premium/plans/09dfcf0a-4ec8-4dc4-baaa-f77dbd38066f",
+      "route": "/premium/plans/e661d7bf-9a5e-47d5-8265-e2469451db85",
       "description": "Company-focused schedule with progress-linked steps and reflection forms"
     },
     {
       "file": "37-project-workbench.png",
-      "route": "/premium/projects/82c1cb86-7067-4738-b668-b8c521e3d5e6",
+      "route": "/premium/projects/a1b09180-46a5-47e7-8a2e-f63fd6eea250",
       "description": "Source editor with real isolated JavaScript example results and saved baseline"
     },
     {
       "file": "38-project-diff.png",
-      "route": "/premium/projects/82c1cb86-7067-4738-b668-b8c521e3d5e6",
+      "route": "/premium/projects/a1b09180-46a5-47e7-8a2e-f63fd6eea250",
       "description": "Git-applicable changes against the immutable imported baseline"
     },
     {
       "file": "40-project-review.png",
-      "route": "/premium/projects/82c1cb86-7067-4738-b668-b8c521e3d5e6",
+      "route": "/premium/projects/a1b09180-46a5-47e7-8a2e-f63fd6eea250",
       "description": "Saved project explanation, explicit verification limits and local rubric review"
     },
     {
@@ -221,6 +221,36 @@
       "file": "44-mobile-worked-design.png",
       "route": "/practice/system-design/short-links/writeup",
       "description": "Mobile worked design with bounded diagram scrolling and public references"
+    },
+    {
+      "file": "45-complete-coding-course.png",
+      "route": "/learn/courses/coding-complete",
+      "description": "Sixty-step original coding lesson, quiz and executable-practice path"
+    },
+    {
+      "file": "46-coding-practice.png",
+      "route": "/practice/code",
+      "description": "Dedicated algorithm catalog with actual worked-solution links"
+    },
+    {
+      "file": "47-coding-solutions.png",
+      "route": "/learn/code/solutions",
+      "description": "Twenty-four original reference solutions with bounded input contracts"
+    },
+    {
+      "file": "48-coding-solution.png",
+      "route": "/practice/code/alg-pair-load/writeup",
+      "description": "Original two-pointer reference reasoning, explicit code reveal and independent examples"
+    },
+    {
+      "file": "49-coding-workspace.png",
+      "route": "/practice/code/alg-pair-load",
+      "description": "Saved algorithm draft with passing network-disabled browser example checks"
+    },
+    {
+      "file": "50-mobile-coding-solution.png",
+      "route": "/practice/code/alg-chain-reverse/writeup",
+      "description": "Responsive original coding solution with JSON examples and public sources"
     }
   ]
 }

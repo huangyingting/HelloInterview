@@ -1,5 +1,6 @@
 import type { Course, CourseStep } from './types';
 import { systemDesignLessons } from './content/system-design-lessons';
+import { codingLessons } from './content/coding-lessons';
 import { problems, quizTopics } from './catalog';
 
 const reading = (track: string, id: string, title: string): CourseStep => ({ id: `${track}-${id}`, type: 'lesson', title, resource: `${track}/${id}`, to: `/learn/${track}/${id}` });
@@ -8,6 +9,18 @@ const practice = (track: string, id: string, title: string): CourseStep => ({ id
 const video = (course: string, title: string): CourseStep => ({ id: `video-${course}`, type: 'video', title, resource: course, to: `/learn/courses/${course}/video/${course}` });
 
 export const courses: Course[] = [
+  { id: 'coding-complete', title: 'Coding: the complete Studio path', description: '24 substantial lessons, 12 knowledge checks, and 24 runnable algorithm exercises with original reference solutions. JavaScript example runner; includes the existing premium-demo DP lesson, not a full online judge or video course.', track: 'code', units: [
+    { title: 'Understand the contract and eliminate candidates', lessons: ['introduction', 'complexity', 'arrays-hashing', 'two-pointers'], quizzes: ['arrays-hashing', 'two-pointers'], exercises: ['alg-pair-load', 'alg-frequent-tags'] },
+    { title: 'Maintain a changing range', lessons: ['sliding-window', 'prefix-sum', 'intervals', 'stacks'], quizzes: ['sliding-window', 'prefix-sum', 'stacks'], exercises: ['alg-window-budget', 'alg-prefix-queries', 'alg-merge-slots', 'alg-balanced-signals', 'alg-next-higher'] },
+    { title: 'Navigate sequences, priorities, and trees', lessons: ['linked-lists', 'binary-search', 'heaps', 'trees'], quizzes: ['linked-lists', 'binary-search', 'heaps', 'trees'], exercises: ['alg-chain-reverse', 'alg-chain-cycle', 'alg-first-threshold', 'alg-peak-workload', 'alg-top-priorities', 'alg-tree-depth', 'alg-level-sums'] },
+    { title: 'Reachability and dependencies', lessons: ['graph-search', 'graphs', 'topological-sort', 'union-find'], quizzes: ['graphs'], exercises: ['alg-network-route', 'alg-release-order', 'alg-cluster-count'] },
+    { title: 'Explore and reuse smaller states', lessons: ['backtracking', 'dynamic-programming', 'dp-sequences', 'greedy'], quizzes: ['backtracking', 'dynamic-programming'], exercises: ['alg-subset-loads', 'alg-min-coins', 'alg-nondecreasing-route', 'alg-choose-slots'] },
+    { title: 'Specialized representations and evidence', lessons: ['tries', 'matrices', 'bit-manipulation', 'testing-solutions'], quizzes: [], exercises: ['alg-prefix-directory', 'alg-island-count', 'alg-bit-count'] },
+  ].map(unit => ({ title: unit.title, steps: [
+    ...unit.lessons.map(id => reading('code', id, codingLessons.find(lesson => lesson.id === id)!.title)),
+    ...unit.quizzes.map(id => quiz(id, `Check: ${quizTopics.find(topic => topic.id === id)!.title}`)),
+    ...unit.exercises.map(id => practice('code', id, problems.find(problem => problem.id === id)!.title)),
+  ] })) },
   { id: 'system-design-complete', title: 'System design: the complete Studio path', description: '24 substantial lessons, 12 knowledge checks, and 16 original design exercises with worked references. Source-informed text; includes premium-demo steps, not a new video library.', track: 'system-design', units: [
     { title: 'Frame a defensible contract', lessons: ['introduction', 'requirements', 'capacity-estimation', 'api-design'], quizzes: ['requirements', 'capacity-estimation', 'api-design'], cases: ['short-links'] },
     { title: 'Protect state and make reads efficient', lessons: ['data-modeling', 'transactions', 'caching', 'http-caching'], quizzes: ['data-modeling', 'caching'], cases: ['ticket-reservations', 'payment-ledger', 'document-sync'] },
