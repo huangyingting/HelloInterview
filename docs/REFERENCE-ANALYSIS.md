@@ -34,7 +34,7 @@ Evidence files:
 Account details, cookie values, authenticated reference screenshots, and
 proprietary text are intentionally not reproduced in this report.
 
-The application has **30 original desktop/mobile screenshots** with routes and
+The application has **40 original desktop/mobile screenshots** with routes and
 descriptions in [screenshots/manifest.json](screenshots/manifest.json).
 Representative views:
 
@@ -51,6 +51,11 @@ Representative views:
 | `20-pricing.png`, `21-gift.png` | Clearly labeled demo commerce/access workflows |
 | `26-mobile-dashboard.png`, `29-mobile-dark-theme.png` | Responsive and theme variants |
 | `30-enrolled-dashboard.png` | Course progress and next-step continuation |
+| `31-premium-studio.png`, `32-adaptive-mock.png`, `33-mock-report.png` | Original premium hub, coverage-adaptive follow-up, and completed report |
+| `34-custom-quiz-builder.png`, `35-custom-quiz-results.png` | Persistent custom quiz selection and canonical results |
+| `36-prep-plan.png` | Company-focused schedule tied to actual progress |
+| `37-project-workbench.png`, `38-project-diff.png`, `40-project-review.png` | Source snapshot, real example checks, exact patch, and saved review |
+| `39-mobile-premium.png` | Responsive premium workflows |
 
 ## Observable reference stack
 
@@ -150,19 +155,21 @@ Status definitions:
 | Design editor | System-design session | Implemented locally; nodes, movement, directed edges, removal, undo connection, JSON export; reference full editor parity unverified |
 | Saved sessions and feedback | `/history`, attempt query parameter | Implemented; drafts/history, stale-score invalidation, local rubric or optional provider |
 | AI-assisted coding | `/practice/ai-coding` | Partial; original JavaScript editor and example-case runner, no equivalent provider/IDE integration |
-| BYOE / repository / IDE bridge | No connected bridge | Unavailable; setup entry observed but external workflow not implemented |
+| BYOE / repository / IDE bridge | `/premium/projects` | Partial; original snapshot import/edit/browser examples/review/patch export implemented, but no live repository/IDE/terminal bridge |
 | Code review practice | `/practice/code-review` | Implemented; original code, line references, written review and feedback; reference dataset/assessment parity unverified |
 | Behavioral session setup | `/practice/behavioral` | Implemented; micro/mini/full sessions, company/level context, browser speech synthesis |
-| Behavioral adaptive conversation | Multi-question local sessions | Partial; deterministic question sequence, not the reference adaptive interviewing pipeline |
+| Behavioral adaptive conversation | `/premium/mock`, `/premium/mock/:id` | Implemented original topic-gap follow-ups and saved reports, also across technical disciplines; reference private interviewing pipeline remains unverified |
 | Behavioral story bank | `/learn/behavioral/stories` | Implemented; private STAR create/edit/delete/export |
 | Quiz topic library | `/quiz` | Implemented; seven original topics, 21 questions, smaller than reference |
 | Quiz session, grading, explanations | `/quiz/:topic` | Implemented; canonical server-side scoring, skips, explanations, results/history |
 | Personalized quiz review | `/quiz/review` | Implemented; missed questions retained until correctly reviewed |
+| Premium quiz customization | `/quiz/custom`, `/quiz/custom/:id` | Implemented original mixed-topic/missed-only builder, saved order/answers, canonical score, resume, results and export |
 | Question library | `/community/questions` | Partial; local publishing/browsing and illustrative entries, no production interview-report dataset |
 | Preparation stories | `/community/stories` | Partial; local contributions, labeled fictional examples, no copied testimonials |
 | Peer design libraries | `/community/submissions/:track` | Implemented locally; system/low-level design submissions, no reference content corpus |
 | Discussions and comments | `/community/discussion`, resource comments | Implemented; local posts, comments/replies, reversible votes/follows, pagination |
 | Company/level guides | `/guides/:company/:level` | Partial; original generic planning advice, not verified insider/current interview loops |
+| Company-focused preparation | `/premium/studio`, `/premium/plans`, `/premium/plans/:id` | Implemented original curated exercise packs and progress-aware schedules with reflections, not official company content |
 | Editorial/articles | `/blog`, `/blog/:id` | Implemented; three original articles, not reference editorial parity |
 | Global search | `/search`, Ctrl/Cmd+K | Implemented; searches original library, practice, courses, company choices and local posts |
 | Tutor | `/tutor` | Partial; labeled local retrieval by default; optional provider tested with fixture, not live/reference AI |
@@ -199,9 +206,11 @@ four captioned original animations, and three articles.
 ## Verification and remaining blockers
 
 TypeScript checking and the Vite production build pass. Domain coverage includes
-eight tests. Playwright covers 19 end-user workflows. The provider fixture checks
+14 tests. Playwright covers 26 end-user workflows. The seven provider/restart fixture tests check
 configured tutoring/feedback, invalid upstream output, provider outage, and
-session/state persistence after a real application-process restart. Live AI
+session/state persistence after a real application-process restart, premium
+mock/project grading, stale-response/access-ending protection, and persistence
+of every new premium record type. Live AI
 provider behavior remains unverified.
 
 Browser checks include actual video advancement/end state, premature certificate
@@ -209,7 +218,8 @@ rejection and final download, JavaScript results/infinite-loop termination,
 saved edits invalidating old feedback, course continuation, community
 pagination/vote reversal, mobile overflow, and credential/user-ownership
 boundaries. These checks validate the local implementation, not full reference
-parity or production security.
+parity or production security. See [the premium workflow design](PREMIUM-WORKFLOWS.md)
+for original algorithms, access rules, data limits, and integration boundaries.
 
 Full parity would require authorized access to the locked reference workflows,
 permission and source material for any desired proprietary content/datasets,

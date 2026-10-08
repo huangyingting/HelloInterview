@@ -6,6 +6,9 @@ const directory = 'docs/screenshots';
 await fs.mkdir(directory, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome' });
 try {
+  const bootstrap = await fetch(`${origin}/api/bootstrap`);
+  if (!bootstrap.ok) throw new Error('The screenshot application bootstrap could not be loaded.');
+  if ((await bootstrap.json()).capabilities.ai) throw new Error('Screenshot generation uses local feedback. Disable the configured AI key before running to avoid provider submissions or charges.');
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const page = await context.newPage();
   const errors = [];
@@ -13,6 +16,8 @@ try {
   const entries=[];
   async function shot(name, route, description, fullPage = true) {
     if(route)await page.goto(`${origin}${route}`,{waitUntil:'networkidle'});
+    await page.locator('.toast').waitFor({state:'hidden'});
+    await page.evaluate(()=>window.scrollTo(0,0));
     await page.screenshot({path:`${directory}/${name}.png`,fullPage});
     entries.push({file:`${name}.png`,route:route||new URL(page.url()).pathname,description});
   }
@@ -62,8 +67,61 @@ try {
   await shot('28-mobile-practice','/practice/system-design','Responsive mobile practice listing');
   await page.getByRole('button',{name:'Switch to dark theme'}).click();
   await shot('29-mobile-dark-theme',null,'Persistent dark theme on a mobile viewport');
-  await fs.writeFile(`${directory}/manifest.json`,JSON.stringify({capturedAt:new Date().toISOString(),application:'Interview Studio',screenshots:entries},null,2));
+  await page.setViewportSize({width:1440,height:1000});
+  await page.getByRole('button',{name:'Switch to light theme'}).click();
+  await page.goto(`${origin}/premium/checkout?duration=year`);
+  await page.getByLabel('I understand this is a local demo').check();
+  await page.getByRole('button',{name:'Activate 1-year access demo',exact:true}).click();
+  await page.getByText('Your local premium demo is active.',{exact:true}).waitFor();
+  await shot('31-premium-studio','/premium/studio','Original premium workflows and company-focused exercise curation');
+  await page.goto(`${origin}/premium/mock?problem=job-scheduler&company=Meta&level=Staff`);
+  await page.getByRole('button',{name:'Start mock interview',exact:true}).click();
+  await page.getByLabel('Mock answer').fill('A queue partition retries work with backoff. Metrics show the age of waiting work and processing failures.');
+  await page.getByRole('button',{name:'Submit and continue',exact:true}).click();
+  await page.locator('.mock-response h2').filter({hasText:'lease'}).waitFor();
+  await shot('32-adaptive-mock',null,'Follow-up selected from missing ownership concepts in the saved first response');
+  await page.getByLabel('Mock answer').fill('A lease assigns ownership and fencing tokens reject a stale worker. I would monitor expiry and test overlapping owners.');
+  await page.getByRole('button',{name:'Submit and continue',exact:true}).click();
+  await page.getByLabel('Mock answer').fill('An idempotent operation uses a durable deduplication key and a transaction so a retry cannot repeat the side effect.');
+  await page.getByRole('button',{name:'Finish interview',exact:true}).click();
+  await page.getByRole('heading',{name:'Your interview report.',exact:true}).waitFor();
+  await shot('33-mock-report',null,'Completed local-rubric mock interview report with saved transcript and export');
+  await shot('34-custom-quiz-builder','/quiz/custom','Mixed-topic custom quiz builder and missed-question pool');
+  await page.getByLabel('Custom quiz question count').fill('2');
+  await page.getByRole('button',{name:'Create custom quiz',exact:true}).click();
+  await page.waitForURL(/\/quiz\/custom\/[a-f0-9-]+$/);
+  for (let i=0;i<2;i++) {
+    const previous = await page.locator('main h1').textContent();
+    await page.getByRole('button',{name:'Skip question',exact:true}).click();
+    if(i===0)await page.waitForFunction(previous=>document.querySelector('main h1')?.textContent!==previous,previous);
+  }
+  await page.getByRole('heading',{name:'Your custom quiz results.',exact:true}).waitFor();
+  await shot('35-custom-quiz-results',null,'Canonical saved quiz score and question explanations');
+  await page.goto(`${origin}/premium/plans?company=Meta&level=Staff`);
+  await page.getByLabel('Plan sessions').selectOption('5');
+  await page.getByRole('button',{name:'Create study plan',exact:true}).click();
+  await page.getByRole('heading',{name:'Meta · Staff prep plan',exact:true}).waitFor();
+  await shot('36-prep-plan',null,'Company-focused schedule with progress-linked steps and reflection forms');
+  await page.goto(`${origin}/premium/projects`);
+  await page.getByRole('button',{name:'Create project workspace',exact:true}).click();
+  await page.getByLabel('Project source contents').fill('function solve(input) {\n  const seen = new Set();\n  return input.filter(event => {\n    if (seen.has(event.id)) return false;\n    seen.add(event.id);\n    return true;\n  });\n}\n');
+  await page.getByRole('button',{name:'Run example checks',exact:true}).click();
+  await page.getByText(/3\/3 example checks passed/).waitFor();
+  await page.getByRole('button',{name:'Save project',exact:true}).click();
+  await page.getByText('Project files and notes saved.',{exact:true}).waitFor();
+  await shot('37-project-workbench',null,'Source editor with real isolated JavaScript example results and saved baseline');
+  await page.getByRole('tab',{name:'Changes',exact:true}).click();
+  await shot('38-project-diff',null,'Git-applicable changes against the immutable imported baseline');
+  await page.getByRole('tab',{name:'Review and verification',exact:true}).click();
+  await page.getByLabel('Project explanation').fill('A Set keeps the first id while filter preserves order without modifying the original input. I would test duplicates, distinct ids, and empty input.');
+  await page.getByLabel('Project verification notes').fill('All three browser example checks passed. Integration with a real event pipeline remains unverified.');
+  await page.getByRole('button',{name:'Review saved changes',exact:true}).click();
+  await page.locator('.project-feedback').waitFor();
+  await shot('40-project-review',null,'Saved project explanation, explicit verification limits and local rubric review');
+  await page.setViewportSize({width:390,height:844});
+  await shot('39-mobile-premium','/premium/studio','Responsive premium workflow hub on a mobile viewport');
   if(errors.length)throw new Error(`Screenshot navigation raised browser errors: ${errors.join('; ')}`);
+  await fs.writeFile(`${directory}/manifest.json`,JSON.stringify({capturedAt:new Date().toISOString(),application:'Interview Studio',screenshots:entries},null,2));
   console.log(`Captured ${entries.length} original-application screenshots in ${directory}. No reference credentials or screenshots are included.`);
   await context.close();
 } finally {

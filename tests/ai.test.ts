@@ -4,9 +4,12 @@ import { createServer } from 'node:http';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import type { Attempt, Bootstrap, UserState } from '../shared/types';
+import { rm } from 'node:fs/promises';
+import type { Attempt, Bootstrap, MockSession, ProjectWorkspace, UserState } from '../shared/types';
 
-let mode: 'valid' | 'malformed' | 'unavailable' = 'valid';
+let mode: 'valid' | 'malformed' | 'unavailable' | 'delayed' = 'valid';
+let releaseProvider: (() => void) | undefined;
+let observeProvider: (() => void) | undefined;
 let child: ChildProcess;
 let origin = '';
 let cookie = '';
@@ -24,6 +27,7 @@ const provider = createServer(async (req, res) => {
     res.end(JSON.stringify({ error: 'Fixture provider unavailable.' }));
     return;
   }
+  if (mode === 'delayed') await new Promise<void>(resolve => { releaseProvider = resolve; observeProvider?.(); });
   const coaching = payload.messages[0].content.includes('engineering interview coach');
   const content = coaching ? JSON.stringify(mode === 'malformed' ? { score: 1000 } : { score: 82, strengths: ['Explicit datastore invariant.'], improvements: ['Explain the cache invalidation path.'], summary: 'Fixture AI coaching response.' }) : 'Fixture AI tutor: choose a freshness budget and measure backend load.';
   res.end(JSON.stringify({ choices: [{ message: { content } }] }));
@@ -73,6 +77,7 @@ before(async () => {
 after(async () => {
   await stopApplication();
   await new Promise<void>((resolve, reject) => provider.close(error => error ? reject(error) : resolve()));
+  await rm(dataDirectory, { recursive: true, force: true });
 });
 test('configured provider receives context and returns validated AI feedback and tutoring', async () => {
   const bootstrap = await api<Bootstrap>('/api/bootstrap');
@@ -116,6 +121,65 @@ test('SQLite sessions, drafts and tutoring history survive an application restar
   await startApplication();
   const after = await api<Bootstrap>('/api/bootstrap');
   assert.equal(after.response.status, 200);
+  assert.deepEqual(after.value.user, before.value.user);
+  assert.deepEqual(after.value.state, before.value.state);
+});
+test('premium mock and project grading use the configured provider without fabricating execution', async () => {
+  mode = 'valid';
+  assert.equal((await api('/api/plan', { plan: 'year' })).response.status, 200);
+  const created = await api<{ session: MockSession }>('/api/mocks', { problemId: 'job-scheduler', company: 'Meta', level: 'Staff', length: 3 });
+  const id = created.value.session.id;
+  const saved = await api<UserState>(`/api/mocks/${id}/draft`, { revision: 0, answer: 'A queue partition retries work with backoff, and metrics reveal processing lag.' });
+  const revision = saved.value.mocks.find(m => m.id === id)!.revision;
+  const evaluated = await api<UserState>(`/api/mocks/${id}/respond`, { revision });
+  assert.equal(evaluated.response.status, 200);
+  assert.equal(evaluated.value.mocks[0].turns[0].feedback.source, 'ai');
+  assert.match(evaluated.value.mocks[0].question, /lease/);
+  const project = await api<{ project: ProjectWorkspace }>('/api/projects', { title: 'Fixture project', problemId: 'event-dedup', files: [{ path: 'events.js', content: 'function solve(input) { return input; }\n' }] });
+  const projectId = project.value.project.id;
+  const projectSave = await api<UserState>(`/api/projects/${projectId}/save`, { revision: 0, files: [{ path: 'events.js', content: 'function solve(input) { const seen = new Set(); return input.filter(e => !seen.has(e.id) && seen.add(e.id)); }\n' }], explanation: 'A Set keeps first events in order without mutating the original input array.', verification: 'User-reported browser examples; integration behavior not verified.' });
+  const review = await api<UserState>(`/api/projects/${projectId}/review`, { revision: projectSave.value.projects[0].revision });
+  assert.equal(review.response.status, 200);
+  assert.equal(review.value.projects[0].feedback?.source, 'ai');
+  assert.match(requests.at(-1)!.messages[1].content, /User-reported verification/);
+  assert.match(requests.at(-1)!.messages[1].content, /do not claim you executed tests/);
+});
+test('late provider responses cannot overwrite a newer mock draft or revive ended access', { timeout: 15000 }, async () => {
+  for (const change of ['draft', 'access']) {
+    mode = 'valid';
+    await api('/api/plan', { plan: 'year' });
+    const created = await api<{ session: MockSession }>('/api/mocks', { problemId: 'short-links', company: 'Meta', level: 'Senior', length: 3 }), id = created.value.session.id;
+    await api(`/api/mocks/${id}/draft`, { revision: 0, answer: 'The original answer describes a database, an API endpoint, a cache and a unique identifier.' });
+    const observed = new Promise<void>(resolve => { observeProvider = resolve; });
+    mode = 'delayed';
+    const pending = api<{ error: string }>(`/api/mocks/${id}/respond`, { revision: 1 });
+    await observed;
+    try {
+      if (change === 'draft') {
+        const newer = await api(`/api/mocks/${id}/draft`, { revision: 1, answer: 'A newer answer must remain unchanged when the old provider response arrives.' });
+        assert.equal(newer.response.status, 200);
+      } else {
+        const reset = await fetch(`${origin}/api/plan`, { method: 'DELETE', headers: { Cookie: cookie } });
+        assert.equal(reset.status, 200);
+      }
+    } finally { mode = 'valid'; releaseProvider?.(); }
+    const response = await pending;
+    assert.equal(response.response.status, change === 'draft' ? 409 : 403);
+    const bootstrap = await api<Bootstrap>('/api/bootstrap'), saved = bootstrap.value.state.mocks.find(m => m.id === id)!;
+    assert.equal(saved.turns.length, 0);
+    assert.ok(saved.draft.length > 30);
+  }
+});
+test('premium mocks, project baselines, custom quiz sessions and plans survive a process restart', async () => {
+  mode = 'valid';
+  await api('/api/plan', { plan: 'year' });
+  await api('/api/custom-quizzes', { title: 'Persisted fixture quiz', topics: ['api-design'], mode: 'all', count: 2 });
+  await api('/api/study-plans', { company: 'Meta', level: 'Staff', weeks: 2, sessionsPerWeek: 5, startOn: '2026-10-08' });
+  const before = await api<Bootstrap>('/api/bootstrap');
+  assert.ok(before.value.state.mocks.length && before.value.state.projects.length && before.value.state.customQuizzes.length && before.value.state.studyPlans.length);
+  await stopApplication();
+  await startApplication();
+  const after = await api<Bootstrap>('/api/bootstrap');
   assert.deepEqual(after.value.user, before.value.user);
   assert.deepEqual(after.value.state, before.value.state);
 });

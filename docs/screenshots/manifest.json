@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-10-08T02:19:06.127Z",
+  "capturedAt": "2026-10-08T03:29:47.036Z",
   "application": "Interview Studio",
   "screenshots": [
     {
@@ -151,6 +151,56 @@
       "file": "29-mobile-dark-theme.png",
       "route": "/practice/system-design",
       "description": "Persistent dark theme on a mobile viewport"
+    },
+    {
+      "file": "31-premium-studio.png",
+      "route": "/premium/studio",
+      "description": "Original premium workflows and company-focused exercise curation"
+    },
+    {
+      "file": "32-adaptive-mock.png",
+      "route": "/premium/mock/915f4c0e-7b95-444c-86da-36cc98b6b4de",
+      "description": "Follow-up selected from missing ownership concepts in the saved first response"
+    },
+    {
+      "file": "33-mock-report.png",
+      "route": "/premium/mock/915f4c0e-7b95-444c-86da-36cc98b6b4de",
+      "description": "Completed local-rubric mock interview report with saved transcript and export"
+    },
+    {
+      "file": "34-custom-quiz-builder.png",
+      "route": "/quiz/custom",
+      "description": "Mixed-topic custom quiz builder and missed-question pool"
+    },
+    {
+      "file": "35-custom-quiz-results.png",
+      "route": "/quiz/custom/57b187ed-7956-4bd1-9804-33e519a6bad5",
+      "description": "Canonical saved quiz score and question explanations"
+    },
+    {
+      "file": "36-prep-plan.png",
+      "route": "/premium/plans/0b337623-70b5-4451-b41d-a15551a6a583",
+      "description": "Company-focused schedule with progress-linked steps and reflection forms"
+    },
+    {
+      "file": "37-project-workbench.png",
+      "route": "/premium/projects/5287d13e-53e6-41e7-93f9-74066bb6d038",
+      "description": "Source editor with real isolated JavaScript example results and saved baseline"
+    },
+    {
+      "file": "38-project-diff.png",
+      "route": "/premium/projects/5287d13e-53e6-41e7-93f9-74066bb6d038",
+      "description": "Git-applicable changes against the immutable imported baseline"
+    },
+    {
+      "file": "40-project-review.png",
+      "route": "/premium/projects/5287d13e-53e6-41e7-93f9-74066bb6d038",
+      "description": "Saved project explanation, explicit verification limits and local rubric review"
+    },
+    {
+      "file": "39-mobile-premium.png",
+      "route": "/premium/studio",
+      "description": "Responsive premium workflow hub on a mobile viewport"
     }
   ]
 }

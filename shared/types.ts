@@ -97,6 +97,73 @@ export interface QuizAttempt {
   total: number;
   completedAt: string;
 }
+export interface MockTurn {
+  question: string;
+  focus: number;
+  answer: string;
+  feedback: Feedback;
+}
+export interface MockSession {
+  id: string;
+  problemId: string;
+  company: string;
+  level: Level;
+  length: number;
+  question: string;
+  focus: number;
+  draft: string;
+  revision: number;
+  turns: MockTurn[];
+  createdAt: string;
+  completedAt?: string;
+}
+export interface CustomQuiz {
+  id: string;
+  title: string;
+  topics: string[];
+  mode: 'all' | 'missed';
+  questionIds: string[];
+  answers: Record<string, number>;
+  revision: number;
+  createdAt: string;
+  completedAt?: string;
+  score?: number;
+}
+export interface PlanTask {
+  id: string;
+  day: string;
+  title: string;
+  kind: 'lesson' | 'quiz' | 'practice' | 'mock' | 'reflection';
+  resource: string;
+  to: string;
+  note?: string;
+}
+export interface StudyPlan {
+  id: string;
+  company: string;
+  level: Level;
+  weeks: number;
+  sessionsPerWeek: number;
+  tasks: PlanTask[];
+  createdAt: string;
+}
+export interface ProjectFile {
+  path: string;
+  original: string | null;
+  content: string | null;
+}
+export interface ProjectWorkspace {
+  id: string;
+  title: string;
+  problemId: string;
+  files: ProjectFile[];
+  explanation: string;
+  verification: string;
+  revision: number;
+  createdAt: string;
+  feedback?: Feedback;
+  completedAt?: string;
+}
 export interface UserState {
   read: string[];
   bookmarks: string[];
@@ -113,6 +180,10 @@ export interface UserState {
   watched: string[];
   certificates: { id: string; courseId: string; issuedAt: string }[];
   chat: { id: string; role: 'user' | 'assistant'; text: string; createdAt: string; source?: 'rubric' | 'ai' }[];
+  mocks: MockSession[];
+  customQuizzes: CustomQuiz[];
+  studyPlans: StudyPlan[];
+  projects: ProjectWorkspace[];
 }
 export interface CourseStep {
   id: string;

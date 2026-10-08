@@ -10,6 +10,8 @@ services. Full feature and content parity has not been achieved.**
 
 See [the reference analysis and feature comparison](docs/REFERENCE-ANALYSIS.md)
 for inspected workflows, technical evidence, implementation coverage, and gaps.
+The [premium workflow design](docs/PREMIUM-WORKFLOWS.md) explains the original
+adaptive interviews, custom quizzes, study plans, and project workbench.
 
 ![Original Interview Studio landing page](docs/screenshots/01-landing.png)
 
@@ -33,6 +35,11 @@ or create a separate local account. Each demo entry creates a fresh account;
 its session and progress persist until you sign out or its cookie expires.
 Create an account if you want to sign back in after signing out.
 
+For the new premium tools, open **Plans**, activate a clearly labeled local demo
+plan, then choose **Open Premium Studio**. No payment or reference account is
+used. Saved completed reports and project snapshots remain accessible when
+the demo entitlement ends.
+
 For the production frontend build:
 
 ```bash
@@ -55,6 +62,10 @@ with the current startup command.
 | Coding | Isolated JavaScript `solve(input)` execution with example cases and an execution deadline; code-review line references |
 | Behavioral | Micro/mini/full sessions, company and level context, browser speech synthesis, private STAR story CRUD and export |
 | Quizzes | Seven topics and 21 questions, server-side scoring, explanations, history, and a personalized missed-question review deck |
+| Premium mocks | Original topic-adaptive three/five-turn conversations, saved drafts/transcripts, optional AI grading, reports and export |
+| Custom quizzes | Mixed-topic or missed-only sessions, preserved question order, resume, canonical scores and review-deck updates |
+| Study plans | Company/level-focused two/four-week schedules, real progress integration, reflections and export |
+| Project workbench | Imported source snapshots, immutable baselines, multi-file editing, isolated JS examples, reviews, exact patch and JSON export |
 | Community | Local publishing, search, filters, sorting, pagination, reversible votes, follows, anonymous question display, comments, and replies |
 | Discovery | Cross-library search, company/level planning guides, three original journal articles, retrieval-based study helper |
 | Accounts | Local signup/login/logout, profile/password changes, interview targets, progress, streaks, recognition, account export |
@@ -93,6 +104,8 @@ Configured tutoring sends your questions and selected lesson context to the
 provider. Configured grading sends the practice prompt, requirements, level,
 submitted explanation, and code. **Do not submit confidential information.**
 Provider charges and data-retention policies are your responsibility.
+Mock grading also sends prior answers and company/level context. Project review
+sends your explanation, user-reported verification notes, and file diff.
 
 Responses are validated, with explicit errors for provider failures rather
 than a silent switch to local grading. The integration is verified against an
@@ -136,9 +149,10 @@ npm test
 - Provider-contract tests use a loopback fixture, check valid/malformed/outage
   responses and persisted sessions/state after an application restart. They
   require no real provider key and do not contact an external AI service.
-- Playwright checks 19 end-user workflows, including actual video playback,
+- Playwright checks 26 end-user workflows, including actual video playback,
   completion-record download, isolated-code execution/timeout, persistence,
-  community actions, mobile layout, credential denial, and user isolation.
+  community actions, premium conversations/quizzes/plans/imported projects,
+  mobile layout, credential denial, and user isolation.
 - Browser tests use port 3100 and a fresh UUID-named database under `data/tests/`
   for each run. Reports/traces are local ignored artifacts.
 
@@ -148,10 +162,12 @@ With the app running:
 npm run screenshots
 ```
 
-This captures 30 original-application desktop/mobile screenshots under
+This captures 40 original-application desktop/mobile screenshots under
 `docs/screenshots/`. The [manifest](docs/screenshots/manifest.json) records routes
 and descriptions. Set `STUDIO_URL` to capture a different local instance.
-The script creates a local demo account and a saved practice draft.
+The script creates a local demo account, demo entitlement, and original sample
+practice/mock/quiz/plan/project records. It requires local feedback mode and
+refuses configured AI to avoid external provider submissions or charges.
 
 Regenerate the four original canvas-animated WebM clips and English VTT captions:
 
@@ -168,8 +184,10 @@ SQLite persistence. Development embeds Vite middleware. Production serves
 
 **Not connected or equivalent to the reference:** real payments/subscriptions,
 email delivery or password recovery, social OAuth, a production support team,
-the reference community or proprietary datasets, BYOE repository/IDE workflows,
-and the reference's adaptive AI pipeline. Plans, gifts, support, and community
+the reference community or proprietary datasets, live BYOE repository/IDE
+connectivity, and the reference's adaptive AI pipeline. Original local adaptive
+interviews and a snapshot workbench exist, but are not those private services.
+Demo billing plans, gifts, support, and community
 are explicitly local-only. The four generated videos and original catalogs are
 much smaller than the reference's content library.
 
