@@ -1,0 +1,255 @@
+# 07 - Delivery roadmap and launch gates
+
+**Status: proposed implementation plan, not a promise of dates.** The code
+baseline is `b9db1ea`. No implementation work below is marked complete by this
+documentation change.
+
+## Delivery strategy
+
+Build vertical slices that preserve the existing product. Do not expose real
+customers while identity, persistence and deletion are still experimental.
+Do not charge while billing, content authorization or support are incomplete.
+
+The smallest credible paid launch is Free/Pro, verified email plus Google/
+GitHub login, existing approved learning/premium workflows, hosted billing and
+portal, reliable saved work, bounded AI if enabled, staffed support and operated
+infrastructure. Community writing is conditional on moderation readiness.
+
+An intentional feature reduction is acceptable only if marketing, navigation,
+direct API behavior and customer entitlements all reflect it. A hidden button
+is not a disabled backend capability.
+
+## Phases and exit gates
+
+| Phase | Outcome | Exit gate |
+| --- | --- | --- |
+| 0 - Product and provider decisions | Approved launch scope, markets, operating owners, identity/billing/provider fit and risk assumptions | Decisions D01-D07 assigned and blockers resolved; no live charging |
+| 1 - Production foundations | Modular persistence, migration, deployable runtime, secure identity, privacy/support skeleton | Internal staging can handle complete owned-data lifecycle and recovery |
+| 2 - Safe account beta | Verified users learn/practice with server-authorized content and reliable saves | GATE-A: controlled real-user account beta |
+| 3 - Paid product | Verified subscriptions, entitlement matrix, AI quotas, billing support and reviewed content | GATE-B: limited paid cohort |
+| 4 - Operated launch | Recovery drills, load/accessibility/security evidence and sustained lifecycle correctness | GATE-C: broader public launch |
+| 5 - Expansion | Gifts, richer content, optional integrations and growth optimizations | Each feature has its own business case and acceptance gate |
+
+Community/moderation and content review can proceed in parallel with foundations.
+Billing may be developed in sandbox before account beta, but cannot be switched
+to live mode before its dependencies and legal approvals.
+
+## Work-package backlog
+
+Estimates are **engineering person-weeks**, including focused implementation
+and automated tests, not calendar weeks. They exclude vendor approval queues,
+legal review time and most human content authoring/review. The broad total is
+approximately **23-44 engineering person-weeks**; staffing and integration
+discoveries can change it substantially.
+
+Do not add estimates mechanically to infer a date: packages have shared code,
+dependencies and reviewer bottlenecks. For two experienced full-stack engineers,
+a part-time product/design owner and available operations/content/legal support,
+plan in terms of several months rather than a one-week provider integration.
+Re-estimate after Phase 1; this is not a delivery commitment.
+
+| ID | Deliverable and bounded scope | Dependencies | Owner | Estimate |
+| --- | --- | --- | --- | --- |
+| W00 | Confirm scope, providers, policies, price/quotas, acceptance harness and rollout plan; record decisions | None | Product + tech lead | 0.5-1 |
+| W01 | Extract app composition/config/domain seams; compiled production runtime; preserve current local behavior | W00 | Backend/platform | 1-2 |
+| W02 | PostgreSQL schema/migrations, scoped repositories, revisions, owner indexes, import/reconciliation rehearsal; remove whole-state write authority | W01, D05 | Backend | 3-5 |
+| W03 | CI, staging/prod IaC, secrets, TLS/proxy, readiness, telemetry, backup foundation and release artifacts | W01, D04, D06 | Platform | 1.5-3 |
+| W04 | Managed registration, Google/GitHub login, verification/recovery, sessions, linking, basic account UI and legacy transition | W02, W03, D01 | Identity/full-stack | 2-4 |
+| W05 | Server-only content/answer graph, versioned publication/import, safe DTOs, authorized quiz sessions and migration-safe history | W02 | Learning/full-stack | 2-4 |
+| W06 | Entitlement grants/policies, full route/worker matrix, replace demo authority, read-only archive policy | W02, W04, W05 | Backend/product | 1-2 |
+| W07 | Durable job/outbox/inbox foundation, resource idempotency, fenced worker claims, delivery/replay tooling | W02, W03 | Backend/platform | 1-2 |
+| W08 | Checkout/portal, billing tables, webhook verification, lifecycle/grace/refund/dispute reconciliation and customer account UI | W06, W07, D02, D04 | Billing/full-stack | 3-5 |
+| W09 | AI reservation/settlement, job UX, budgets, consent/provenance and quality gates; preserve local rubric behavior | W05, W06, W07, D03 | AI/full-stack | 1.5-3 |
+| W10 | Staff RBAC/MFA/audit, privacy exports/deletion, support queue/email, account restrictions and administrative commands | W04, W07, D06, D07 | Accounts/operations | 2-4 |
+| W11 | Community owner edit/delete, server pagination, anonymous DTO, reports/moderation/appeals, abuse controls | W04, W07, W10 | Community/trust | 1-2 |
+| W12 | Reviewed launch content/access manifest, correction/version policy, premium/account UX consistency, critical accessibility | W05, W06, D08, D10; W08-W10 for integrated UX | Content + frontend | 1-3 engineering, plus editorial work |
+| W13 | Integrated provider lifecycle matrix, load/security/accessibility assessment, restore/rollback/payment drills, limited cohort operation | W03-W10, W12; W11 if community writes enabled | Tech lead + QA/operations | 2-4 |
+
+W10 privacy deletion can be built against a billing-cancellation interface before
+W08 completes, but **paid** deletion acceptance requires the W08 integration.
+Similarly, administrative billing actions and full customer-support resolution
+are not complete until tested against real sandbox billing facts.
+
+Critical path: W00 -> W01 -> W02/W03 -> W04/W05 -> W06/W07 -> W08/W10 ->
+W12/W13. W09 is on the paid-launch critical path only if AI is included in the
+launch promise. Content review starts early; do not wait for checkout to discover
+that marketed curriculum is not approved.
+
+## Implementation slices and acceptance mapping
+
+| Slice | Required behavior and evidence | Acceptance IDs | Primary gaps |
+| --- | --- | --- | --- |
+| Account creation/recovery | Verified registration, both social providers, interrupted/replayed auth, linking collision, reset invalidation, legacy ownership proof | IAM-01 through IAM-06, IAM-10 | GAP-01, GAP-02 |
+| Owned data and migration | Scoped reads/writes, revision conflicts, deterministic import, zero unexplained data mismatches, private exports/deletion | IAM-08/09, FEAT-03/04/05, OPS-07/08 | GAP-07, GAP-08, GAP-10, GAP-14 |
+| Protected learning | Browser import boundary, safe public previews, authorized nested resources, version-stable scoring/archive policy | FEAT-01/02/03/09, BILL-09 | GAP-05, GAP-06, GAP-16 |
+| Checkout and subscription | Paid/unpaid/recovery/refund/dispute states, idempotency, raw signatures, reordering, repair, environment isolation | BILL-01 through BILL-12 | GAP-03, GAP-04, GAP-05 |
+| Premium/AI work | Every tool has save/resume/access/expiry behavior; job reservation/concurrency/failure and provenance | FEAT-04 through FEAT-08 | GAP-08, GAP-09, GAP-18 |
+| Staff/support/community | Staff limits, tickets/delivery, billing escalation, moderation/appeals, anonymous DTO, role audit | IAM-07, OPS-01/02/03/10 | GAP-02, GAP-11, GAP-12 |
+| Operated service | Runtime artifact, CI/deploy/rollback, load/SLO/alerts, privacy/processor policies, security and accessibility evidence | OPS-04 through OPS-10, FEAT-10 | GAP-13 through GAP-19 |
+
+Each future issue should contain: user outcome, owning module, exact data/API
+changes, prerequisite IDs, failure states, migration/rollback impact, acceptance
+IDs, telemetry, documentation changes and a named reviewer. Do not create
+"add Stripe" or "add OAuth" issues with no lifecycle boundary.
+
+## Test and validation strategy
+
+### Preserve the existing baseline
+
+Current commands, to run in implementation CI as appropriate:
+
+```bash
+npm ci
+npm run build
+npm run test:unit
+npm run test:ai
+npm test
+```
+
+The current build type-checks and emits frontend assets; it does not yet emit a
+standalone server build. Existing AI tests use a loopback fixture, not real
+provider verification. Browser tests use a Chrome executable and serialized
+local server; CI must provision that explicitly or intentionally migrate to
+managed Playwright browsers.
+
+Do not simply make existing tests green by replacing all expected behavior.
+Keep explicit checks for stable IDs, server scoring, saved reports after expiry,
+project byte/patch preservation, latest-draft protection and source attribution.
+
+### Add by work package
+
+| Layer | Required cases |
+| --- | --- |
+| Unit/policy | Account state and role matrix, grant union/revocation, paid/grace boundaries, quota calendar math, retention transitions, editorial compatibility |
+| Database integration | Migrations forward/compatible rollback, owner constraints, revisions, duplicate keys, concurrent last-unit reservation, grant/event dedupe, job fencing |
+| Provider contract | OIDC claims/state/nonce/signature/error cases, verified identity events, Stripe raw signature/schema, email delivery statuses, malformed AI results |
+| Provider sandbox | Both social-login callbacks, verification/reset deliverability, Stripe Checkout/Portal/action-required/renewal/refunds, authentic webhook delivery and replay |
+| Browser | Visitor/unverified/Free/Pro/grace/expired/suspended journeys, account/billing cancellation, preservation after failures, archive export, accessibility/mobile |
+| Content boundary | Build graph rejects private imports; distinctive protected fixture absent from JS/maps/HTML/previews/search; unauthorized endpoint and cache checks |
+| Fault injection | Worker/API kill after external success and before DB commit, DB outage at webhook ingestion, reordered events, stale lease, provider timeout, email bounce |
+| Migration/restore | Per-user data checksums/counts and rendered reports; encrypted restore, deletion replay, object integrity and post-restore billing reconciliation |
+| Load/performance | Realistic large histories and 2x planned peak; p95 API/queue targets, DB locks/pool pressure, browser response sizes |
+| Human review | Subject-matter content approval, screen-reader/keyboard flows, abuse/incident exercises, independent production security assessment |
+
+Run deterministic fixtures on every relevant pull request. Use synthetic
+provider sandbox tests before integration releases. Human social-provider
+verification and a carefully approved live-payment smoke/void/refund may be
+needed before opening paid access; no automated suite is authorized to make
+unapproved real charges.
+
+## GATE-A - Controlled real-user account beta
+
+All must be true:
+
+- Staging-to-production promotion is reproducible; secure identity, recovery,
+  account status, session revocation, ownership and CSRF/proxy settings work.
+- PostgreSQL migrations and an owner-approved data strategy are complete; no
+  unknown local data is copied into production.
+- Production demo signup/plan/gift routes are absent. Billing remains disabled
+  or strictly sandbox-only; premium beta grants are audited and expiring.
+- Export/deletion/support flows work and someone owns the queue.
+- Privacy/terms, processors, data region, age/market policy and retention are
+  approved for the beta's actual data use.
+- Shared abuse controls, logs/alerts, backups and a restore rehearsal exist.
+- Any enabled community writing has moderation; any enabled external AI has
+  consent, bounded cost and verified provider behavior.
+- No critical accessibility or independently identified security issue remains
+  in the exposed account/learning flows.
+
+Invite-only does not make a production data leak acceptable. Size the cohort to
+support capacity and revoke unsafe capabilities with server-side flags.
+
+## GATE-B - Limited paid cohort
+
+GATE-A plus:
+
+- Pricing, taxes, subscription terms, refund/cancellation and commercial entity
+  are approved; supported payment countries/methods are configured.
+- BILL-01 through BILL-12 pass in provider sandboxes, including reordered
+  webhooks, duplicate checkout, renewal failure, refund and cancellation.
+- No protected content or answer bank ships in public artifacts; the feature
+  entitlement matrix is exercised on direct API calls.
+- Customer can manage billing, retrieve invoices, cancel and reach support.
+- Reviewed content/access manifest matches every advertised paid benefit.
+- If AI is advertised: measured quality, exact quota windows, spend ceiling,
+  reservation reconciliation and outage behavior are accepted.
+- Restore and rollback preserve financial facts and newly saved work; missing
+  entitlements can be repaired without arbitrary database edits.
+- Live configuration is independently reviewed by engineering and billing
+  owners. Any live smoke charge is explicitly authorized.
+
+Use a capped cohort and monitor purchase-to-access delay, support volume,
+payment recovery, grant drift, AI costs and retention.
+
+## GATE-C - Broader public launch
+
+GATE-B plus:
+
+- At least two weeks of monitored limited-cohort operation with no unresolved
+  money/access inconsistency, privacy incident or critical product-data loss.
+- Monthly/annual renewal, cancellation and allowance boundaries are exercised
+  with provider test clocks/fixtures; do not wait a year to validate annual
+  behavior or claim two weeks alone proves it.
+- Load tests meet the agreed envelope/SLOs; alert delivery and escalation are
+  demonstrated, not merely dashboard screenshots.
+- Timed restore meets RPO/RTO, includes deletion/object/provider reconciliation,
+  and a compatible deployment rollback is rehearsed.
+- Independent production security and accessibility reviews are resolved to
+  the accepted risk policy, with explicit owners for nonblocking follow-ups.
+- Support/moderation staffing, incident communications and billing reconciliation
+  routines are in operation.
+
+Do not wait for gifts, enterprise seats, mobile apps, live IDE sync or a full
+CMS to pass GATE-C. Those do not compensate for a broken recovery/payment path.
+
+## Rollout and rollback controls
+
+Use server-evaluated environment/capability flags for live checkout, external
+AI dispatch, community writing and newly introduced premium workflows.
+Only authorized operators may change flags; record actor/reason/time.
+
+Turning checkout off prevents new purchases, not webhook ingestion, cancellation,
+refunds or existing-customer access. Turning AI off preserves saved work and
+explicitly reports the unavailable capability. Turning community writes off
+retains public reads, reports/appeals and customer-support routes where safe.
+
+Never use a frontend-only flag as a security boundary. Never deploy a rollback
+that reads an older SQLite snapshot after PostgreSQL has accepted customer
+writes. Keep application releases/schema changes backward-compatible, and use
+forward repair for financial or destructive migration changes.
+
+## Decision register
+
+| ID | Decision / recommended default | Accountable owner | Deadline and consequence |
+| --- | --- | --- | --- |
+| D01 | Managed identity: evaluate Auth0 against Google/GitHub/email, explicit app-owned linking, MFA, revocation, migration, regional and cost requirements | Tech lead + privacy | Before W04; substitute vendor if required capabilities are unavailable, not a homegrown OAuth shortcut |
+| D02 | Stripe versus merchant-of-record model; approved recurring prices, currency, refund/grace rules and payment methods | Product + finance/legal | Before W08/live configuration; no commercial claims without approval |
+| D03 | AI provider/model/retention, 100-unit draft allowance and operation weights, token/concurrency/spend ceilings, quality benchmark | Product + AI + privacy | Before W09/external AI beta; keep external AI disabled if unresolved |
+| D04 | Merchant/customer countries, operating entity, age policy, data region, tax responsibilities and legal terms | Business + legal | Before real accounts for privacy; before payment for commercial rules |
+| D05 | Whether any local accounts/data should migrate; ownership proof, sample/demo exclusion and courtesy-grant policy | Product + data owner | Before W02 import rehearsal; default is no unapproved production data import |
+| D06 | Hosting/provider accounts, budget, on-call/support/moderation staffing and actual published response targets | Engineering + operations | Before W03 production provisioning / GATE-A |
+| D07 | Retention/deletion/export scope, processor cleanup, audit duration, financial holds and recovery proof requirements | Privacy + support + finance | Before W10/GATE-A; no success claim while processor cleanup is unsupported |
+| D08 | Exact free/paid resource manifest, expert review, archive license, storage caps and marketing scope | Product + editorial | Before W12/GATE-B; retain current free access absent a separate approved change |
+| D09 | Community write launch versus read-only editorial scope | Product + trust | Before GATE-A; default read-only unless moderation is ready |
+| D10 | Accessibility support matrix and browser-runner acceptance; remote execution explicitly excluded | Frontend + security | Before exposed beta flows; disable unsupported execution rather than imply safety |
+| D11 | Future cadence changes, promotions/trials, gifts, enterprise and IDE/native scope | Product | After paid stability; require separate state/price/abuse design before provider features are enabled |
+
+For each resolved decision, record date, chosen option, rationale, rejected
+alternatives, approver and affected documents. Keep proposed values visibly
+proposed until approval; a developer should not mistake a planning default for
+a legally approved product promise.
+
+## Post-launch roadmap
+
+| Order | Candidate | Entry condition / reason to defer |
+| --- | --- | --- |
+| 1 | Better curriculum, independent reviews, richer examples, corrections and clearer learning recommendations | Core monetization stable; content quality is the closest product-value investment |
+| 2 | Monthly/annual cadence switching, approved promotions, paid gifts | Billing operations and refund/reconciliation behavior proven |
+| 3 | Better reminders, personalized review, learning analytics and public SEO | Measured retention/discovery need; consent and content-version boundaries intact |
+| 4 | Longer original video courses and accessible transcripts | Rights, production budget, editorial ownership and private media delivery ready |
+| 5 | Optional member MFA/passkeys, Apple login, additional languages/payment methods | Verified customer demand and supported provider lifecycle |
+| 6 | Teams/enterprise seats or human coaching | Separate tenancy/seat/RBAC/invoicing or marketplace payout/compliance architecture |
+| 7 | Live IDE integration, remote code judge, native apps | Independent security/platform investment and demonstrated business value |
+
+Avoid expanding into all seven directions simultaneously. The priority is a
+service customers can trust with their preparation work and money.

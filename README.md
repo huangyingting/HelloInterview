@@ -15,6 +15,11 @@ adaptive interviews, custom quizzes, study plans, and project workbench.
 The [researched curricula](docs/CONTENT-CURRICULUM.md) record the System Design,
 Coding, and Low-Level Design expansions, sources, depth, and editorial limitations.
 
+The [production application blueprint](docs/production/README.md) reviews the
+current gaps and specifies the proposed architecture, social identity and account
+lifecycle, billing and entitlements, premium features, operations, and phased
+delivery plan. These are future implementation documents, not shipped capabilities.
+
 ![Original Interview Studio landing page](docs/screenshots/01-landing.png)
 
 ## Run locally
