@@ -1,8 +1,23 @@
 # 07 - Delivery roadmap and launch gates
 
-**Status: proposed implementation plan, not a promise of dates.** The code
-baseline is `b9db1ea`. No implementation work below is marked complete by this
-documentation change.
+**Status: implementation in progress, not a promise of dates.** The original code
+baseline is `b9db1ea`. Completion is recorded below; remaining design/approval
+gates are not implicitly satisfied by a foundation change.
+
+## Implementation progress
+
+| Package | Status | Delivered boundary |
+| --- | --- | --- |
+| W00 | Business/provider approvals pending | Proceeding with reversible local engineering foundations; no provider purchase, data migration, or production-launch approval |
+| W01 | Implemented | Separate configuration/application/database/process lifecycle; compiled Node.js runtime; lazy development Vite; runtime-only release verification; startup and bounded shutdown checks |
+| W02-W13 | Pending | PostgreSQL, CI/infrastructure, managed identity, protected content, billing, jobs, AI budgets, account administration, support, moderation, and launch gates |
+
+W01 preserves existing local accounts, SQLite schema, demo entitlements, API
+contracts, curriculum, and UI. `NODE_ENV=production` means built asset serving,
+not authorization to operate the proposed public paid service. Commercial
+configuration and removal of production demo authority remain explicit later
+packages. The next engineering package is W02 persistence, subject to D05;
+no existing user data may be imported without owner approval.
 
 ## Delivery strategy
 
@@ -102,15 +117,19 @@ Current commands, to run in implementation CI as appropriate:
 npm ci
 npm run build
 npm run test:unit
+npm run test:server
+npm run test:runtime
 npm run test:ai
 npm test
 ```
 
-The current build type-checks and emits frontend assets; it does not yet emit a
-standalone server build. Existing AI tests use a loopback fixture, not real
-provider verification. Browser tests use a Chrome executable and serialized
-local server; CI must provision that explicitly or intentionally migrate to
-managed Playwright browsers.
+The build type-checks and emits frontend and standalone server artifacts.
+Server tests cover configuration/startup, static/API behavior, isolation,
+persistence and graceful/bounded shutdown. Runtime tests install an isolated
+release without development dependencies. AI tests now use the compiled server
+against a loopback fixture, not real-provider verification. Browser tests use
+a Chrome executable and serialized local development server; CI must provision
+that explicitly or intentionally migrate to managed Playwright browsers.
 
 Do not simply make existing tests green by replacing all expected behavior.
 Keep explicit checks for stable IDs, server scoring, saved reports after expiry,

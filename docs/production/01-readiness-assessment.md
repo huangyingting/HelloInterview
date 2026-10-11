@@ -43,23 +43,26 @@ One Express process: server/index.ts
 
 ### Evidence map
 
-Source links point to working-tree files; line references identify the review
-baseline and may move during future implementation.
+Server source links are pinned to the reviewed commit because W01 has since
+split the entry point into separate modules. Other file links lead to the
+working tree; the findings describe the review baseline, not completed work.
+See [implementation progress](07-delivery-roadmap.md#implementation-progress)
+for resolved foundations.
 
 | Ref | Observed evidence | What it establishes |
 | --- | --- | --- |
-| E01 | [package.json](../../package.json), [server/index.ts:1-11](../../server/index.ts#L1-L11), [App.tsx](../../src/App.tsx) | React/Vite SPA and a single Express entry point; no identity/payment SDK in the manifest |
-| E02 | [server/index.ts:50-90](../../server/index.ts#L50-L90), [148-160](../../server/index.ts#L148-L160) | SQLite schema created at startup; most personal data is one JSON state value per user |
-| E03 | [server/index.ts:130-240](../../server/index.ts#L130-L240) | Password signup/login, scrypt, hashed session tokens, 30-day cookies, process-local auth throttling, password change/session revocation |
+| E01 | [package.json](../../package.json), [server/index.ts:1-11](https://github.com/huangyingting/HelloInterview/blob/b9db1ea/server/index.ts#L1-L11), [App.tsx](../../src/App.tsx) | React/Vite SPA and a single Express entry point; no identity/payment SDK in the manifest |
+| E02 | [server/index.ts:50-90](https://github.com/huangyingting/HelloInterview/blob/b9db1ea/server/index.ts#L50-L90), [148-160](https://github.com/huangyingting/HelloInterview/blob/b9db1ea/server/index.ts#L148-L160) | SQLite schema created at startup; most personal data is one JSON state value per user |
+| E03 | [server/index.ts:130-240](https://github.com/huangyingting/HelloInterview/blob/b9db1ea/server/index.ts#L130-L240) | Password signup/login, scrypt, hashed session tokens, 30-day cookies, process-local auth throttling, password change/session revocation |
 | E04 | [Explore.tsx:12-17](../../src/pages/Explore.tsx#L12-L17), [88-93](../../src/pages/Explore.tsx#L88-L93) | Local auth/profile UI; recovery explicitly unavailable; no social-login or connected-account UI |
-| E05 | [server/index.ts:648-673](../../server/index.ts#L648-L673), [domain.ts:19-21](../../shared/domain.ts#L19-L21) | Authenticated users can activate/reset demo plans and create/redeem demo gifts; no payment confirmation |
+| E05 | [server/index.ts:648-673](https://github.com/huangyingting/HelloInterview/blob/b9db1ea/server/index.ts#L648-L673), [domain.ts:19-21](../../shared/domain.ts#L19-L21) | Authenticated users can activate/reset demo plans and create/redeem demo gifts; no payment confirmation |
 | E06 | [Explore.tsx:19-31](../../src/pages/Explore.tsx#L19-L31), [types.ts:213-234](../../shared/types.ts#L213-L234) | Illustrative monthly/year/lifetime offers; a plan field and expiry, not a subscription ledger |
 | E07 | [catalog.ts:1-10](../../shared/catalog.ts#L1-L10), [domain.ts:1-2](../../shared/domain.ts#L1-L2), [Learn.tsx:1-38](../../src/pages/Learn.tsx#L1-L38), [Quiz.tsx:1-41](../../src/pages/Quiz.tsx#L1-L41) | Full content and answer-bearing catalog is imported by browser code; visual premium gates do not make bundled content private |
-| E08 | [server/index.ts:246-284](../../server/index.ts#L246-L284), [398-570](../../server/index.ts#L398-L570) | Existing server-side progress/premium write gates; revision checks and async-access rechecks in mocks/projects; not yet a uniform authorization layer |
-| E09 | [server/index.ts:358-397](../../server/index.ts#L358-L397), [629-647](../../server/index.ts#L629-L647), [ai.test.ts](../../tests/ai.test.ts) | Optional provider, 45-second timeout, structured feedback validation, explicit failures, loopback provider fixtures; no usage ledger or provider-spend budget |
-| E10 | [server/index.ts:589-628](../../server/index.ts#L589-L628), [Community.tsx:14-24](../../src/pages/Community.tsx#L14-L24) | Community CRUD subset; up to 1,000 posts fetched, client-side filtering/pagination; anonymous display still carries author ID in post DTO |
-| E11 | [server/index.ts:241-245](../../server/index.ts#L241-L245), [674-681](../../server/index.ts#L674-L681) | Account export contains user plus JSON state, not all relational contributions/support records; tickets are stored but not routed |
-| E12 | [server/index.ts:114-128](../../server/index.ts#L114-L128), [177](../../server/index.ts#L177), [683-707](../../server/index.ts#L683-L707) | Basic headers/origin checks, process-health response, static serving, minimal logging/shutdown; no checked-in readiness, structured telemetry, or production proxy configuration |
+| E08 | [server/index.ts:246-284](https://github.com/huangyingting/HelloInterview/blob/b9db1ea/server/index.ts#L246-L284), [398-570](https://github.com/huangyingting/HelloInterview/blob/b9db1ea/server/index.ts#L398-L570) | Existing server-side progress/premium write gates; revision checks and async-access rechecks in mocks/projects; not yet a uniform authorization layer |
+| E09 | [server/index.ts:358-397](https://github.com/huangyingting/HelloInterview/blob/b9db1ea/server/index.ts#L358-L397), [629-647](https://github.com/huangyingting/HelloInterview/blob/b9db1ea/server/index.ts#L629-L647), [ai.test.ts](../../tests/ai.test.ts) | Optional provider, 45-second timeout, structured feedback validation, explicit failures, loopback provider fixtures; no usage ledger or provider-spend budget |
+| E10 | [server/index.ts:589-628](https://github.com/huangyingting/HelloInterview/blob/b9db1ea/server/index.ts#L589-L628), [Community.tsx:14-24](../../src/pages/Community.tsx#L14-L24) | Community CRUD subset; up to 1,000 posts fetched, client-side filtering/pagination; anonymous display still carries author ID in post DTO |
+| E11 | [server/index.ts:241-245](https://github.com/huangyingting/HelloInterview/blob/b9db1ea/server/index.ts#L241-L245), [674-681](https://github.com/huangyingting/HelloInterview/blob/b9db1ea/server/index.ts#L674-L681) | Account export contains user plus JSON state, not all relational contributions/support records; tickets are stored but not routed |
+| E12 | [server/index.ts:114-128](https://github.com/huangyingting/HelloInterview/blob/b9db1ea/server/index.ts#L114-L128), [177](https://github.com/huangyingting/HelloInterview/blob/b9db1ea/server/index.ts#L177), [683-707](https://github.com/huangyingting/HelloInterview/blob/b9db1ea/server/index.ts#L683-L707) | Basic headers/origin checks, process-health response, static serving, minimal logging/shutdown; no checked-in readiness, structured telemetry, or production proxy configuration |
 | E13 | [sandbox.ts](../../src/sandbox.ts), [PREMIUM-WORKFLOWS.md](../PREMIUM-WORKFLOWS.md) | Network-disabled browser execution with deadlines; project snapshots, not a remote execution or IDE service |
 | E14 | [playwright.config.ts](../../playwright.config.ts), [tests](../../tests), [package.json](../../package.json) | Unit/content/provider-fixture/browser coverage exists; Chromium configuration; no lint or documentation-test command |
 | E15 | [CONTENT-CURRICULUM.md](../CONTENT-CURRICULUM.md), [Explore.tsx:102-109](../../src/pages/Explore.tsx#L102-L109) | Draft curriculum limitations, short original videos, local-demo legal/privacy text |

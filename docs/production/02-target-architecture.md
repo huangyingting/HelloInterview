@@ -4,6 +4,14 @@
 The initial target is a reliable single-region service, not a distributed
 microservice platform.
 
+**Implemented foundation (W01):** application composition, SQLite opening,
+validated configuration, and HTTP process lifecycle now live in separate
+`server/app.ts`, `server/database.ts`, `server/config.ts`, `server/application.ts`,
+and `server/runtime.ts` modules. `server/index.ts` is the CLI entry point.
+The build emits a Node.js server bundle outside the public frontend directory;
+Vite is dynamically loaded only for development. PostgreSQL, domain repositories,
+managed identity, and durable jobs below remain proposed.
+
 ## Architecture decisions
 
 | ADR | Recommendation | Reason / alternative / revisit trigger |

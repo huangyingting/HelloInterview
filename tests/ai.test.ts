@@ -43,7 +43,7 @@ async function api<T>(route: string, body?: unknown) {
 async function startApplication() {
   const address = provider.address();
   assert.ok(address && typeof address === 'object');
-  child = spawn(process.execPath, ['--import', 'tsx', 'server/index.ts'], {
+  child = spawn(process.execPath, ['dist-server/index.js'], {
     env: { ...process.env, NODE_ENV: 'production', PORT: '0', HOST: '127.0.0.1', COOKIE_SECURE: 'false', DATA_DIR: dataDirectory, OPENAI_API_KEY: 'local-fixture-only', OPENAI_BASE_URL: `http://127.0.0.1:${address.port}/v1`, OPENAI_MODEL: 'fixture-model' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

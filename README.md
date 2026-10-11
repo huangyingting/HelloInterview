@@ -18,7 +18,9 @@ Coding, and Low-Level Design expansions, sources, depth, and editorial limitatio
 The [production application blueprint](docs/production/README.md) reviews the
 current gaps and specifies the proposed architecture, social identity and account
 lifecycle, billing and entitlements, premium features, operations, and phased
-delivery plan. These are future implementation documents, not shipped capabilities.
+delivery plan. The [implementation progress](docs/production/07-delivery-roadmap.md#implementation-progress)
+records shipped foundations; identity, commerce, and the remaining service
+capabilities are still future work.
 
 ![Original Interview Studio landing page](docs/screenshots/01-landing.png)
 
@@ -47,16 +49,27 @@ plan, then choose **Open Premium Studio**. No payment or reference account is
 used. Saved completed reports and project snapshots remain accessible when
 the demo entitlement ends.
 
-For the production frontend build:
+For the compiled frontend and server build:
 
 ```bash
 npm run build
 npm start
 ```
 
-`npm start` serves the built frontend and API from the same process. It needs the
-installed tooling dependencies, including `tsx`; do not omit dev dependencies
-with the current startup command.
+`npm run build` creates the browser assets in `dist/` and a standalone server
+bundle in `dist-server/`. `npm start` runs that bundle with Node.js and serves
+the frontend and API from the same process. Vite is loaded only by the development
+server; the compiled runtime does not require `tsx`, TypeScript, esbuild, or Vite.
+
+For a runtime-only installation, first build with all dependencies installed.
+Deploy `dist/`, `dist-server/`, `package.json`, and `package-lock.json` together,
+then run `npm ci --omit=dev` and `npm start` from the release directory. Keep
+`.env` and the data directory private and outside the frontend assets. Do not
+omit build dependencies before building.
+
+**This is a production-format runtime, not a production-ready paid service.**
+Local accounts, demo plans, SQLite storage, and the existing service limitations
+remain unchanged.
 
 ## What works
 
@@ -161,6 +174,16 @@ cp .env.example .env
 The defaults bind to loopback, use port 3000, and store data in `data/`.
 `HOST`, `PORT`, `DATA_DIR`, and `COOKIE_SECURE` can be changed in `.env`.
 Use `COOKIE_SECURE=true` only when serving over HTTPS.
+Configuration is validated before opening the database or listening. `PORT`
+must be an integer from 0 to 65535 (0 selects an ephemeral port); `HOST` must
+be an IP address or hostname; `COOKIE_SECURE` must be exactly `true` or `false`.
+`NODE_ENV` accepts `development`, `test`, or `production`; `npm start` selects
+production static serving and fails clearly if the frontend build is missing.
+It does not enable live payments or managed identity.
+
+AI base URLs must be absolute HTTP/HTTPS URLs without embedded credentials,
+queries, or fragments. A trailing slash is normalized. Configuration is a
+startup snapshot; changing `.env` requires a restart.
 
 By default, practice feedback uses a labeled **local topic rubric**, and the
 study helper retrieves passages from original lessons. They are not AI and are
@@ -215,12 +238,22 @@ a production sandbox security audit.
 ```bash
 npm run build
 npm run test:unit
+npm run test:server
+npm run test:runtime
 npm run test:ai
 npm test
 ```
 
 - Domain tests check catalogs, canonical scoring, review behavior, streaks,
   entitlements, rubric labels, and course-completion invariants.
+- Configuration tests reject invalid settings and verify immutable startup
+  snapshots. Server tests cover static serving, account isolation, restart
+  persistence, startup errors, and graceful/bounded shutdown.
+- `test:runtime` creates a disposable release with `npm ci --omit=dev`, verifies
+  that development tooling is absent, and exercises the compiled server, `.env`
+  loading, session persistence, and SIGTERM shutdown. It may require access to
+  the npm registry/cache. It never copies your `.env` or runtime database.
+- Server/runtime/provider test commands build their required artifacts first.
 - Content tests enforce exact inventory, instructional-depth floors, valid
   source/resource links, difficulty/answer-position coverage, and the arithmetic
   of every worked-design capacity calculation.

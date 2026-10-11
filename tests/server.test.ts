@@ -1,0 +1,225 @@
+import assert from 'node:assert/strict';
+import { test, type TestContext } from 'node:test';
+import { createServer, type Server } from 'node:http';
+import { once } from 'node:events';
+import { execFile } from 'node:child_process';
+import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import path from 'node:path';
+import { promisify } from 'node:util';
+import { createApplication } from '../server/application';
+import { loadConfig } from '../server/config';
+import { startServer } from '../server/runtime';
+import type { Bootstrap, UserState } from '../shared/types';
+
+const execute = promisify(execFile);
+
+async function temporaryDirectory(t: TestContext) {
+  const parent = path.resolve('data/server-tests');
+  await mkdir(parent, { recursive: true });
+  const directory = await mkdtemp(path.join(parent, 'server-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  return directory;
+}
+
+function config(dataDir: string, env: NodeJS.ProcessEnv = {}) {
+  return loadConfig({ NODE_ENV: 'production', HOST: '127.0.0.1', PORT: '0', DATA_DIR: dataDir, ...env });
+}
+
+async function api<T>(url: string, route: string, body?: unknown, cookie = '') {
+  const response = await fetch(`${url}${route}`, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: { ...(cookie ? { Cookie: cookie } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  return { response, value: await response.json() as T };
+}
+
+async function listen(server: Server) {
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  return `http://127.0.0.1:${address.port}`;
+}
+
+async function closeServer(server: Server) {
+  server.closeAllConnections();
+  await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+}
+
+test('production runtime serves built assets, SPA routes and unchanged API error boundaries', async t => {
+  const runtime = await startServer(config(await temporaryDirectory(t)));
+  t.after(() => runtime.close());
+  const health = await api(runtime.url, '/api/health');
+  assert.deepEqual(health.value, { status: 'ok' });
+  const expectedHtml = await readFile('dist/index.html', 'utf8');
+  for (const route of ['/', '/learn/system-design', '/premium/projects', '/dist-server/index.js']) {
+    const response = await fetch(`${runtime.url}${route}`);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type')!, /text\/html/);
+    assert.equal(await response.text(), expectedHtml);
+  }
+  const asset = expectedHtml.match(/src="([^"]+\.js)"/)?.[1];
+  assert.ok(asset);
+  const script = await fetch(`${runtime.url}${asset}`);
+  assert.equal(script.status, 200);
+  assert.match(script.headers.get('content-type')!, /javascript/);
+  const bootstrap = await api<Bootstrap>(runtime.url, '/api/bootstrap');
+  assert.equal(bootstrap.response.headers.get('cache-control'), 'no-store');
+  assert.equal(bootstrap.value.user, null);
+  assert.deepEqual(bootstrap.value.capabilities, { ai: false, commerce: 'demo', community: 'local', aiModel: null });
+  assert.equal((await api(runtime.url, '/api/not-an-endpoint')).response.status, 404);
+  for (const route of ['/.cred', '/.env', '/data/studio.sqlite', '/.git/config']) {
+    assert.equal((await fetch(`${runtime.url}${route}`)).status, 404);
+  }
+  const denied = await fetch(`${runtime.url}/api/auth/demo`, { method: 'POST', headers: { Origin: 'https://unrelated.example' } });
+  assert.equal(denied.status, 403);
+  const malformed = await fetch(`${runtime.url}/api/auth/demo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{' });
+  assert.equal(malformed.status, 400);
+  assert.deepEqual(await malformed.json(), { error: 'Invalid JSON request.' });
+});
+
+test('independent application instances isolate accounts and configuration while persisting saved state', async t => {
+  const firstConfig = config(await temporaryDirectory(t));
+  const secondConfig = config(await temporaryDirectory(t), { COOKIE_SECURE: 'true', OPENAI_API_KEY: 'fixture-only', OPENAI_MODEL: 'fixture-model' });
+  let first = await startServer(firstConfig);
+  const second = await startServer(secondConfig);
+  t.after(async () => { await first.close(); await second.close(); });
+  const login = await api(first.url, '/api/auth/signup', { name: 'Runtime Fixture', email: 'runtime-fixture@example.invalid', password: 'fixture-password-123' });
+  assert.equal(login.response.status, 200);
+  const cookieHeader = login.response.headers.get('set-cookie')!;
+  assert.match(cookieHeader, /HttpOnly/);
+  assert.match(cookieHeader, /SameSite=Strict/);
+  assert.ok(!cookieHeader.includes('Secure'));
+  const cookie = cookieHeader.split(';')[0];
+  const target = await api<UserState>(first.url, '/api/targets', { company: 'Meta', level: 'Senior', role: 'Engineer', date: '2026-11-01' }, cookie);
+  assert.equal(target.response.status, 200);
+  const before = await api<Bootstrap>(first.url, '/api/bootstrap', undefined, cookie);
+  const other = await api<Bootstrap>(second.url, '/api/bootstrap', undefined, cookie);
+  assert.equal(other.value.user, null);
+  assert.equal(other.value.state.targets.length, 0);
+  assert.equal(other.value.capabilities.aiModel, 'fixture-model');
+  assert.ok(!JSON.stringify(other.value).includes('fixture-only'));
+  const secondLogin = await api(second.url, '/api/auth/demo', {});
+  assert.match(secondLogin.response.headers.get('set-cookie')!, /;\s*Secure/);
+  await first.close();
+  first = await startServer(firstConfig);
+  const after = await api<Bootstrap>(first.url, '/api/bootstrap', undefined, cookie);
+  assert.deepEqual(after.value, before.value);
+});
+
+test('missing built frontend fails before opening or creating the database', async t => {
+  const root = await temporaryDirectory(t);
+  const settings = loadConfig({ NODE_ENV: 'production', DATA_DIR: 'untouched-data' }, root);
+  await assert.rejects(createApplication(settings), /production frontend is missing.*npm run build/);
+  await assert.rejects(stat(settings.dataDir), { code: 'ENOENT' });
+});
+
+test('invalid CLI configuration exits nonzero before touching data and does not expose secret values', async t => {
+  const dataDir = path.join(await temporaryDirectory(t), 'untouched-data');
+  await assert.rejects(execute(process.execPath, ['dist-server/index.js'], {
+    env: { ...process.env, NODE_ENV: 'production', PORT: 'invalid-port', DATA_DIR: dataDir, OPENAI_API_KEY: 'fixture-secret-not-for-logs' },
+  }), error => {
+    assert.ok(error instanceof Error && 'code' in error && error.code === 1 && 'stderr' in error);
+    const stderr = String(error.stderr);
+    assert.match(stderr, /Studio startup failed: PORT must be an integer/);
+    assert.ok(!stderr.includes('fixture-secret-not-for-logs'));
+    return true;
+  });
+  await assert.rejects(stat(dataDir), { code: 'ENOENT' });
+});
+
+test('a listen failure cleans up application resources and permits a subsequent start', async t => {
+  const occupying = createServer();
+  await listen(occupying);
+  t.after(() => closeServer(occupying));
+  const address = occupying.address();
+  assert.ok(address && typeof address === 'object');
+  const dataDir = await temporaryDirectory(t);
+  await assert.rejects(startServer(config(dataDir, { PORT: String(address.port) })), { code: 'EADDRINUSE' });
+  const runtime = await startServer(config(dataDir));
+  t.after(() => runtime.close());
+  assert.equal((await api(runtime.url, '/api/health')).response.status, 200);
+});
+
+test('graceful shutdown drains an in-flight AI request and repeated close calls share one operation', async t => {
+  let respond: (() => void) | undefined;
+  let observed: (() => void) | undefined;
+  const provider = createServer((req, res) => {
+    req.resume();
+    respond = () => res.end(JSON.stringify({ choices: [{ message: { content: 'Fixture tutor response after draining.' } }] }));
+    observed?.();
+  });
+  const providerUrl = await listen(provider);
+  t.after(() => closeServer(provider));
+  const runtime = await startServer(config(await temporaryDirectory(t), { OPENAI_API_KEY: 'fixture-only', OPENAI_BASE_URL: `${providerUrl}/v1` }));
+  t.after(() => runtime.close());
+  const login = await api(runtime.url, '/api/auth/demo', {});
+  const cookie = login.response.headers.get('set-cookie')!.split(';')[0];
+  const received = new Promise<void>(resolve => { observed = resolve; });
+  const pending = api<UserState>(runtime.url, '/api/tutor', { question: 'How should a graceful shutdown preserve this question?' }, cookie);
+  await received;
+  const closing = runtime.close();
+  assert.equal(runtime.close(), closing);
+  respond!();
+  const result = await pending;
+  assert.equal(result.response.status, 200);
+  assert.match(result.value.chat.at(-1)!.text, /after draining/);
+  await closing;
+  assert.equal(runtime.server.listening, false);
+});
+
+test('application disposal cancels in-flight provider calls without writing to a closed database', async t => {
+  let observed: (() => void) | undefined;
+  const provider = createServer(req => {
+    req.resume();
+    observed?.();
+  });
+  const providerUrl = await listen(provider);
+  t.after(() => closeServer(provider));
+  const settings = config(await temporaryDirectory(t), { OPENAI_API_KEY: 'fixture-only', OPENAI_BASE_URL: `${providerUrl}/v1` });
+  const application = await createApplication(settings);
+  const server = createServer(application.app);
+  const url = await listen(server);
+  t.after(async () => { await closeServer(server); await application.close(); });
+  const login = await api(url, '/api/auth/demo', {});
+  const cookie = login.response.headers.get('set-cookie')!.split(';')[0];
+  const before = await api<Bootstrap>(url, '/api/bootstrap', undefined, cookie);
+  const received = new Promise<void>(resolve => { observed = resolve; });
+  const pending = api<{ error: string }>(url, '/api/tutor', { question: 'The saved state must remain intact if the provider never answers.' }, cookie);
+  await received;
+  await application.close();
+  const result = await pending;
+  assert.equal(result.response.status, 503);
+  assert.match(result.value.error, /shutting down.*saved work is unchanged/);
+  const restarted = await startServer(settings);
+  t.after(() => restarted.close());
+  const after = await api<Bootstrap>(restarted.url, '/api/bootstrap', undefined, cookie);
+  assert.deepEqual(after.value, before.value);
+});
+
+test('shutdown enforces the grace deadline and aborts a provider that never answers', { timeout: 20000 }, async t => {
+  let observed: (() => void) | undefined;
+  const provider = createServer(req => {
+    req.resume();
+    observed?.();
+  });
+  const providerUrl = await listen(provider);
+  t.after(() => closeServer(provider));
+  const runtime = await startServer(config(await temporaryDirectory(t), { OPENAI_API_KEY: 'fixture-only', OPENAI_BASE_URL: `${providerUrl}/v1` }));
+  t.after(() => runtime.close());
+  const login = await api(runtime.url, '/api/auth/demo', {});
+  const cookie = login.response.headers.get('set-cookie')!.split(';')[0];
+  const received = new Promise<void>(resolve => { observed = resolve; });
+  const pending = api(runtime.url, '/api/tutor', { question: 'A stalled provider must not prevent the Studio from shutting down.' }, cookie);
+  const rejected = assert.rejects(pending, TypeError);
+  await received;
+  const logs: string[] = [];
+  t.mock.method(console, 'error', (...args: unknown[]) => { logs.push(args.map(String).join(' ')); });
+  const started = Date.now();
+  await runtime.close();
+  await rejected;
+  assert.ok(Date.now() - started < 15000);
+  assert.equal(runtime.server.listening, false);
+  assert.ok(logs.some(message => message.includes('10-second grace period')));
+});

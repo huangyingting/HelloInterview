@@ -1,7 +1,8 @@
 # Production application blueprint
 
-**Status: proposed design, not implemented.** Reviewed on 2026-10-11 against
-commit `b9db1ea`. These documents describe how to turn Interview Studio into an
+**Status: design with incremental implementation.** Reviewed on 2026-10-11 against
+commit `b9db1ea`. [Implementation progress](07-delivery-roadmap.md#implementation-progress)
+now records W01 runtime foundations. These documents describe how to turn Interview Studio into an
 operable, paid interview-preparation service. They do not certify the current
 application as production-ready.
 

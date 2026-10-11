@@ -216,11 +216,13 @@ identity tenants/connections, payment accounts/modes, webhook secrets, email
 sending controls and AI budgets. Staging contains synthetic data by default.
 Never use production customer credentials in browser fixtures.
 
-The current production command runs TypeScript through `tsx` and the server
-imports Vite at module scope. Replace this with a reproducible build that emits
-server JavaScript and frontend assets; keep Vite development middleware out of
-the production runtime import graph. Ensure a runtime-only install actually
-starts. Do not simply remove devDependencies under the current command.
+W01 now builds server JavaScript into `dist-server/` and frontend assets into
+`dist/`; `npm start` uses Node.js without development tooling. Vite is a
+development-only dynamic import. `npm run test:runtime` verifies an isolated
+`npm ci --omit=dev` release, including `.env` loading and restart persistence.
+Build before omitting development dependencies, and never put the server
+bundle in the public frontend directory. CI/IaC, immutable artifact promotion,
+readiness/SLO monitoring, and managed recovery remain W03 and later work.
 
 Pipeline:
 
