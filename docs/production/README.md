@@ -2,7 +2,7 @@
 
 **Status: design with incremental implementation.** Reviewed on 2026-10-11 against
 commit `b9db1ea`. [Implementation progress](07-delivery-roadmap.md#implementation-progress)
-now records W01 runtime foundations. These documents describe how to turn Interview Studio into an
+now records runtime and persistence foundations. These documents describe how to turn Interview Studio into an
 operable, paid interview-preparation service. They do not certify the current
 application as production-ready.
 
@@ -37,6 +37,7 @@ service with defined recovery and support commitments.
 | [05 - Premium and content](05-premium-and-content.md) | Feature matrix, learning workflows, content delivery, AI budgets, and acceptance criteria | Product, learning, AI |
 | [06 - Operations and trust](06-operations-and-trust.md) | Support, moderation, privacy, accessibility, deployment, observability, and runbooks | Operations and engineering |
 | [07 - Delivery roadmap](07-delivery-roadmap.md) | Dependency-ordered work packages, estimates, release gates, and unresolved decisions | Delivery owners |
+| [08 - Persistence implementation](08-persistence-implementation.md) | Shipped storage boundaries, schema, revisions, explicit importer, and cutover runbook | Backend and operations |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to

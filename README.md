@@ -2,7 +2,7 @@
 
 An original, locally runnable interview-preparation application inspired by the
 observable workflows of Hello Interview. Built with React, TypeScript, Vite,
-Express, and persistent SQLite.
+Express, and persistent SQLite or PostgreSQL.
 
 **This is not Hello Interview, is not affiliated with it, and does not reproduce
 its proprietary lessons, videos, branding, interview reports, or production
@@ -68,8 +68,35 @@ then run `npm ci --omit=dev` and `npm start` from the release directory. Keep
 omit build dependencies before building.
 
 **This is a production-format runtime, not a production-ready paid service.**
-Local accounts, demo plans, SQLite storage, and the existing service limitations
-remain unchanged.
+Local accounts, demo plans, and the existing service limitations remain.
+PostgreSQL is available for persistence preparation; selecting it does not enable
+managed identity, live billing, production entitlements, or operational launch.
+
+## PostgreSQL persistence
+
+SQLite remains the zero-configuration local default. To use PostgreSQL 16 or
+newer, build the release, configure `DATABASE_URL` in the private environment,
+and run the controlled migration command once before starting any replicas:
+
+```bash
+npm run build
+npm run db:migrate
+npm start
+```
+
+The runtime checks migration versions/checksums; it never applies PostgreSQL
+migrations or seeds sample accounts/content during startup. Owned learning
+collections are persisted as individual rows with transactional updates,
+foreign keys, and owner indexes. Draft/story/reflection edits carry revisions
+and return explicit conflicts instead of replacing newer work.
+
+No local data is copied automatically. A legacy importer defaults to a
+read-only dry run, requires an explicit approved account allowlist and matching
+snapshot fingerprint to write, preserves original state bytes for reconciliation,
+and excludes passwords, sessions, demo accounts, gifts, and paid-access authority.
+Imported accounts require later verified identity recovery before signing in.
+See [the persistence implementation and migration runbook](docs/production/08-persistence-implementation.md)
+for schema details, API revisions, rehearsal, and cutover safeguards.
 
 ## What works
 

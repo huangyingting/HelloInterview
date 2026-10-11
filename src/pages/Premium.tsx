@@ -124,7 +124,7 @@ export function StudyPlansPage({ id }: { id?: string }) {
       {!hasPremium(data.state) && <div className="local-notice">Your plan remains readable. Activate premium demo access to save new reflections or begin premium sessions.</div>}
       {Array.from({ length: plan.weeks }, (_, week) => <section className="plan-week" key={week}><h2>Week {week + 1}</h2>{plan.tasks.slice(week * plan.sessionsPerWeek, (week + 1) * plan.sessionsPerWeek).map(task => {
         const done = planTaskComplete(task, plan, data.state);
-        return <article className="panel plan-task" key={task.id}><span className={`plan-task-status ${done ? 'done' : ''}`} aria-label={done ? 'Task complete' : 'Task incomplete'}>{done ? <Check size={18} /> : <Target size={18} />}</span><div><span className="eyebrow">{task.day} · {task.kind}</span><h3>{task.title}</h3>{task.kind === 'reflection' ? <PlanReflection task={task} planId={plan.id} /> : <Link className="text-link" to={task.to}>{done ? 'Review this step' : 'Open this step'} <ArrowRight size={14} /></Link>}</div></article>;
+        return <article className="panel plan-task" key={task.id}><span className={`plan-task-status ${done ? 'done' : ''}`} aria-label={done ? 'Task complete' : 'Task incomplete'}>{done ? <Check size={18} /> : <Target size={18} />}</span><div><span className="eyebrow">{task.day} · {task.kind}</span><h3>{task.title}</h3>{task.kind === 'reflection' ? <PlanReflection task={task} planId={plan.id} revision={plan.revision??0} /> : <Link className="text-link" to={task.to}>{done ? 'Review this step' : 'Open this step'} <ArrowRight size={14} /></Link>}</div></article>;
       })}</section>)}
     </>;
   }
@@ -141,7 +141,9 @@ function PlanArchive() {
   const { data } = useStudio();
   return data.state.studyPlans.length ? <div className="premium-archive">{data.state.studyPlans.map(plan => <Link key={plan.id} to={`/premium/plans/${plan.id}`}><div><strong>{plan.company} · {plan.level}</strong><p>{plan.weeks} weeks · {plan.tasks.filter(t => planTaskComplete(t, plan, data.state)).length}/{plan.tasks.length} complete</p></div><ArrowRight size={16} /></Link>)}</div> : <Empty title="Room for a realistic schedule" description="A plan connects your preparation actions rather than adding a separate checkbox list." />;
 }
-function PlanReflection({ task, planId }: { task: PlanTask; planId: string }) {
+function PlanReflection({ task, planId, revision }: { task: PlanTask; planId: string; revision: number }) {
   const { act, data, setState, pending, notify } = useStudio(), [note, setNote] = useState(task.note || '');
-  return <form className="plan-reflection" onSubmit={e => { e.preventDefault(); void act(async () => { setState(await request<UserState>(`/api/study-plans/${planId}/reflection`, { taskId: task.id, note })); notify('Reflection saved to your plan.'); }); }}><label>What would you change next time?<textarea aria-label={`Reflection ${task.id}`} disabled={pending || !hasPremium(data.state)} required minLength={20} maxLength={3000} value={note} onChange={e => setNote(e.target.value)} rows={2} /></label><button className="button secondary small" disabled={pending || !hasPremium(data.state)}>Save reflection</button></form>;
+  const [editingRevision, setEditingRevision] = useState(revision), [dirty, setDirty] = useState(false);
+  useEffect(() => { if (!dirty) { setEditingRevision(revision); setNote(task.note || ''); } }, [dirty, revision, task.note]);
+  return <form className="plan-reflection" onSubmit={e => { e.preventDefault(); void act(async () => { setState(await request<UserState>(`/api/study-plans/${planId}/reflection`, { taskId: task.id, note, revision: editingRevision })); setDirty(false); notify('Reflection saved to your plan.'); }); }}><label>What would you change next time?<textarea aria-label={`Reflection ${task.id}`} disabled={pending || !hasPremium(data.state)} required minLength={20} maxLength={3000} value={note} onChange={e => { setDirty(true); setNote(e.target.value); }} rows={2} /></label><button className="button secondary small" disabled={pending || !hasPremium(data.state)}>Save reflection</button></form>;
 }

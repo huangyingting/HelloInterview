@@ -111,6 +111,7 @@ export interface Story {
   action: string;
   result: string;
   tags: string[];
+  revision?: number;
 }
 export interface DiagramNode {
   id: string;
@@ -130,6 +131,7 @@ export interface Attempt {
   completed: boolean;
   updatedAt: string;
   elapsed: number;
+  revision?: number;
 }
 export interface QuizAttempt {
   id: string;
@@ -188,6 +190,7 @@ export interface StudyPlan {
   sessionsPerWeek: number;
   tasks: PlanTask[];
   createdAt: string;
+  revision?: number;
 }
 export interface ProjectFile {
   path: string;

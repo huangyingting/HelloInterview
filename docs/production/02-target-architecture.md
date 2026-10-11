@@ -9,8 +9,17 @@ validated configuration, and HTTP process lifecycle now live in separate
 `server/app.ts`, `server/database.ts`, `server/config.ts`, `server/application.ts`,
 and `server/runtime.ts` modules. `server/index.ts` is the CLI entry point.
 The build emits a Node.js server bundle outside the public frontend directory;
-Vite is dynamically loaded only for development. PostgreSQL, domain repositories,
-managed identity, and durable jobs below remain proposed.
+Vite is dynamically loaded only for development.
+
+**Implemented persistence checkpoint (W02):** `server/db/` provides asynchronous
+SQLite/PostgreSQL connections, controlled checksum-verified migrations,
+owner-scoped learning records, atomic mutations, draft/story/reflection
+revisions, and a dry-run-first legacy importer. The existing full-state response
+DTO is retained as a transitional read projection, not a PostgreSQL account
+blob or browser-authoritative write. See the
+[implementation and cutover runbook](08-persistence-implementation.md).
+Managed identity, scoped/paginated response APIs, private artifact storage,
+financial facts, and durable jobs below remain later packages.
 
 ## Architecture decisions
 

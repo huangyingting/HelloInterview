@@ -4,7 +4,8 @@ import path from 'node:path';
 import type { ViteDevServer } from 'vite';
 import { createApp, handleError } from './app';
 import type { ServerConfig } from './config';
-import { openDatabase } from './database';
+import { localConnection, postgresConnection } from './db/connection';
+import { assertDatabaseVersion } from './db/migrations';
 
 export interface Application {
   readonly app: express.Express;
@@ -23,7 +24,7 @@ export async function createApplication(config: ServerConfig): Promise<Applicati
       throw error;
     }
   }
-  const db = openDatabase(config.dataDir);
+  const db = config.databaseUrl ? postgresConnection(config.databaseUrl) : localConnection(config.dataDir);
   const shutdown = new AbortController();
   let vite: ViteDevServer | undefined;
   let closing: Promise<void> | undefined;
@@ -33,11 +34,12 @@ export async function createApplication(config: ServerConfig): Promise<Applicati
       try {
         await vite?.close();
       } finally {
-        db.close();
+        await db.close();
       }
     })();
   }
   try {
+    await assertDatabaseVersion(db);
     const app = createApp(config, db, shutdown.signal);
     if (config.environment === 'production') {
       app.use(express.static(config.frontendDir));

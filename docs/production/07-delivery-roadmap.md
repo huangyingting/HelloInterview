@@ -10,14 +10,18 @@ gates are not implicitly satisfied by a foundation change.
 | --- | --- | --- |
 | W00 | Business/provider approvals pending | Proceeding with reversible local engineering foundations; no provider purchase, data migration, or production-launch approval |
 | W01 | Implemented | Separate configuration/application/database/process lifecycle; compiled Node.js runtime; lazy development Vite; runtime-only release verification; startup and bounded shutdown checks |
-| W02-W13 | Pending | PostgreSQL, CI/infrastructure, managed identity, protected content, billing, jobs, AI budgets, account administration, support, moderation, and launch gates |
+| W02 | Persistence checkpoint implemented; real-data cutover pending D05 | Async SQLite/PostgreSQL boundary; controlled migrations; owned record tables; atomic writes and revision conflicts; explicit dry-run/reconciled import without demo or password authority; two-replica PostgreSQL tests |
+| W03-W13 | Pending | CI/infrastructure, managed identity, protected content, billing, jobs, AI budgets, account administration, support, moderation, and launch gates |
 
 W01 preserves existing local accounts, SQLite schema, demo entitlements, API
 contracts, curriculum, and UI. `NODE_ENV=production` means built asset serving,
 not authorization to operate the proposed public paid service. Commercial
 configuration and removal of production demo authority remain explicit later
-packages. The next engineering package is W02 persistence, subject to D05;
-no existing user data may be imported without owner approval.
+packages. W02 retains the full-state read DTO while writing individual owned
+PostgreSQL records; scoped content/history response APIs remain later work.
+The [W02 implementation runbook](08-persistence-implementation.md) records
+schema and revision contracts. The next engineering package is W03 platform;
+no existing user data may be imported without D05 owner approval.
 
 ## Delivery strategy
 

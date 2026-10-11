@@ -339,8 +339,12 @@ test('saved edits invalidate stale feedback rather than retaining an old grade',
   await demo(page);
   const first=await page.request.post('/api/attempts',{data:{problemId:'short-links',level:'Senior',answer:'I would validate an API endpoint and store unique identifiers in a database with collision handling and cache redirects.',code:'',nodes:[],edges:[],elapsed:0}});
   const attempt=(await first.json()).attempt;
-  expect((await page.request.post(`/api/attempts/${attempt.id}/evaluate`,{data:{}})).status()).toBe(200);
-  const edited=await page.request.post('/api/attempts',{data:{...attempt,answer:'A substantially different saved explanation that has not yet been evaluated.'}});
+  const graded=await page.request.post(`/api/attempts/${attempt.id}/evaluate`,{data:{}});
+  expect(graded.status()).toBe(200);
+  const saved=(await graded.json()).attempts.find((value:{id:string})=>value.id===attempt.id);
+  expect((await page.request.post('/api/attempts',{data:{...attempt,answer:'A stale browser draft must not replace graded work.'}})).status()).toBe(409);
+  const edited=await page.request.post('/api/attempts',{data:{...saved,answer:'A substantially different saved explanation that has not yet been evaluated.'}});
+  expect(edited.status()).toBe(200);
   const updated=(await edited.json()).attempt;
   expect(updated.completed).toBe(false);
   expect(updated.feedback).toBeUndefined();

@@ -6,6 +6,7 @@ export interface ServerConfig {
   readonly rootDir: string;
   readonly frontendDir: string;
   readonly dataDir: string;
+  readonly databaseUrl: string | null;
   readonly host: string;
   readonly port: number;
   readonly cookieSecure: boolean;
@@ -37,6 +38,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
   }
   const dataDir = env.DATA_DIR ?? 'data';
   if (!dataDir.trim() || dataDir.includes('\0')) throw new ConfigurationError('DATA_DIR', 'must be a nonempty filesystem path.');
+  const databaseUrl = env.DATABASE_URL ?? null;
+  if (databaseUrl !== null) {
+    try {
+      if (/[\x00-\x20\x7f]/.test(databaseUrl)) throw new Error('Invalid URL characters.');
+      const url = new URL(databaseUrl);
+      if (!['postgres:', 'postgresql:'].includes(url.protocol) || !url.hostname || url.pathname.length < 2 || url.hash) throw new Error('Invalid PostgreSQL URL.');
+    } catch {
+      throw new ConfigurationError('DATABASE_URL', 'must be a PostgreSQL connection URL with a hostname and database name.');
+    }
+  }
   const apiKey = env.OPENAI_API_KEY?.trim() || null;
   if (apiKey && /[\x00-\x20\x7f]/.test(apiKey)) throw new ConfigurationError('OPENAI_API_KEY', 'must not contain whitespace or control characters.');
   const baseUrlText = env.OPENAI_BASE_URL?.trim() || 'https://api.openai.com/v1';
@@ -58,6 +69,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
     rootDir: root,
     frontendDir: path.join(root, 'dist'),
     dataDir: path.resolve(root, dataDir),
+    databaseUrl,
     host,
     port: Number(portText),
     cookieSecure: cookieSecure === 'true',

@@ -43,8 +43,10 @@ async function api<T>(route: string, body?: unknown) {
 async function startApplication() {
   const address = provider.address();
   assert.ok(address && typeof address === 'object');
+  const env: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: 'production', PORT: '0', HOST: '127.0.0.1', COOKIE_SECURE: 'false', DATA_DIR: dataDirectory, OPENAI_API_KEY: 'local-fixture-only', OPENAI_BASE_URL: `http://127.0.0.1:${address.port}/v1`, OPENAI_MODEL: 'fixture-model' };
+  delete env.DATABASE_URL;
   child = spawn(process.execPath, ['dist-server/index.js'], {
-    env: { ...process.env, NODE_ENV: 'production', PORT: '0', HOST: '127.0.0.1', COOKIE_SECURE: 'false', DATA_DIR: dataDirectory, OPENAI_API_KEY: 'local-fixture-only', OPENAI_BASE_URL: `http://127.0.0.1:${address.port}/v1`, OPENAI_MODEL: 'fixture-model' },
+    env,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   await new Promise<void>((resolve, reject) => {
@@ -87,6 +89,7 @@ test('configured provider receives context and returns validated AI feedback and
   assert.equal(evaluation.response.status, 200);
   assert.equal(evaluation.value.attempts[0].feedback?.source, 'ai');
   assert.equal(evaluation.value.attempts[0].feedback?.score, 82);
+  attempt = evaluation.value.attempts.find(saved => saved.id === attempt.id)!;
   const chat = await api<UserState>('/api/tutor', { question: 'How should I choose cache freshness?', context: 'Caching lesson' });
   assert.equal(chat.response.status, 200);
   assert.equal(chat.value.chat.at(-1)?.source, 'ai');
