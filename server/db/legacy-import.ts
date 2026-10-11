@@ -7,6 +7,8 @@ import type { Database, DatabaseRow } from './connection';
 import { assertDatabaseVersion } from './migrations';
 import { StateRepository } from './state-repository';
 import { userStateSchema } from './state-schema';
+import { readQuestionSnapshot } from '../content/schema';
+import { gradeQuestions } from '../content/grading';
 
 const legacyUser = z.strictObject({ id: z.string().min(1), name: z.string().min(1), email: z.string().min(1), demo: z.literal(0) });
 const relationalColumns = {
@@ -15,6 +17,8 @@ const relationalColumns = {
   follows: ['post_id', 'user_id'],
   comments: ['id', 'resource', 'user_id', 'author', 'body', 'created_at', 'parent_id'],
   support: ['id', 'user_id', 'email', 'body', 'created_at'],
+  assessment_sessions:['id','user_id','topic','content_version','answers','revision','completed_at'],
+  content_versions:['id','value'],
 } as const;
 
 export interface ImportReport {
@@ -73,17 +77,52 @@ export function inspectLegacyImport(source: string, selectedUserIds: readonly st
     }
     const sourceRecords = Object.fromEntries(Object.entries(relationalColumns).map(([table, columns]) => {
       const actual = db.prepare(`PRAGMA table_info(${table})`).all().map(row => row.name);
+      if(!actual.length&&['assessment_sessions','content_versions'].includes(table))return [table,[]];
       if (canonical([...actual].sort()) !== canonical([...columns].sort())) throw new Error('The legacy relational schema is unsupported. Resolve schema drift before importing.');
       return [table, db.prepare(`SELECT * FROM ${table} ORDER BY ${columns.join(',')}`).all()];
     })) as Record<keyof typeof relationalColumns, DatabaseRow[]>;
     const posts = sourceRecords.posts.filter(row => chosen.has(String(row.author_id)) && row.sample === 0);
     const postIds = new Set(posts.map(row => row.id));
+    const assessment_sessions=sourceRecords.assessment_sessions.filter(row=>chosen.has(String(row.user_id)));
+    const versions=new Set([
+      ...users.flatMap(item=>[...item.state.quizzes,...item.state.customQuizzes].flatMap(quiz=>quiz.contentVersion?[quiz.contentVersion]:[])),
+      ...assessment_sessions.map(row=>String(row.content_version)),
+    ]);
+    const content_versions=sourceRecords.content_versions.filter(row=>versions.has(String(row.id)));
+    if(content_versions.length!==versions.size)throw new Error('The legacy backup is missing referenced quiz content versions.');
+    const snapshots=new Map(content_versions.map(row=>{
+      if(typeof row.id!=='string'||typeof row.value!=='string')throw new Error('The legacy quiz content version is invalid.');
+      return [row.id,readQuestionSnapshot(row.value,row.id)];
+    }));
+    for(const item of users)for(const quiz of [...item.state.quizzes,...item.state.customQuizzes]) {
+      if(!quiz.contentVersion)continue;
+      const questions=snapshots.get(quiz.contentVersion)!;
+      const ids=quiz.questionIds??Object.keys(quiz.answers);
+      if(ids.length!==questions.length||new Set(ids).size!==ids.length||questions.some(question=>!ids.includes(question.id)))throw new Error('A legacy report does not match its recorded content version.');
+      const result=gradeQuestions(questions,quiz.answers);
+      if(quiz.completedAt&&(Object.keys(quiz.answers).length!==questions.length||quiz.score!==result.score))throw new Error('A legacy report score does not match its recorded content version.');
+    }
+    for(const row of assessment_sessions) {
+      const session=z.strictObject({
+        id:z.string().min(1),user_id:z.string().min(1),topic:z.string().min(1),content_version:z.string().min(1),
+        answers:z.string(),revision:z.number().int().nonnegative(),completed_at:z.string().nullable(),
+      }).parse(row);
+      const questions=snapshots.get(session.content_version)!;
+      const answers=z.record(z.string(),z.number().int()).parse(JSON.parse(session.answers));
+      gradeQuestions(questions,answers);
+      const answered=Object.keys(answers).length;
+      if(session.revision!==answered+(session.completed_at?1:0)
+        ||questions.slice(0,answered).some(question=>!Object.hasOwn(answers,question.id))
+        ||session.completed_at&&answered!==questions.length)throw new Error('A legacy assessment session has inconsistent progress.');
+    }
     const records = {
       posts,
       votes: sourceRecords.votes.filter(row => chosen.has(String(row.user_id)) && postIds.has(row.post_id)),
       follows: sourceRecords.follows.filter(row => chosen.has(String(row.user_id)) && postIds.has(row.post_id)),
       comments: sourceRecords.comments.filter(row => chosen.has(String(row.user_id))),
       support: sourceRecords.support.filter(row => chosen.has(String(row.user_id))),
+      content_versions,
+      assessment_sessions,
     };
     const commentIds = new Set(records.comments.map(row => row.id));
     if (records.comments.some(row => row.parent_id !== null && !commentIds.has(row.parent_id))) throw new Error('Selected replies refer to unselected comments. Expand the approved allowlist or resolve the relationship explicitly.');
@@ -122,7 +161,8 @@ export async function applyLegacyImport(db: Database, input: LegacyImport, appro
       if (canonical(restored) !== canonical(item.state)) throw new Error('An imported account failed state reconciliation. The entire import will roll back.');
       await db.prepare('INSERT INTO legacy_state_snapshots (user_id,version,value,checksum,import_fingerprint) VALUES (?,?,?,?,?)').run(item.user.id, 'legacy-v1', item.raw, item.checksum, input.report.fingerprint);
     }
-    for (const [name, columns] of Object.entries(relationalColumns)) {
+    const ordered=[...Object.entries(relationalColumns).filter(([name])=>name!=='assessment_sessions'),['assessment_sessions',relationalColumns.assessment_sessions] as const];
+    for (const [name, columns] of ordered) {
       const table = name as keyof typeof relationalColumns;
       for (const row of input.records[table]) {
         const values = columns.map(column => {
@@ -130,7 +170,11 @@ export async function applyLegacyImport(db: Database, input: LegacyImport, appro
           if (value !== null && typeof value !== 'string' && typeof value !== 'number') throw new Error('Unsupported legacy relational value. The entire import will roll back.');
           return value as SQLInputValue;
         });
-        await db.prepare(`INSERT INTO ${table} (${columns.join(',')}) VALUES (${columns.map(() => '?').join(',')})`).run(...values);
+        await db.prepare(`INSERT INTO ${table} (${columns.join(',')}) VALUES (${columns.map(() => '?').join(',')})${table==='content_versions'?' ON CONFLICT (id) DO NOTHING':''}`).run(...values);
+        if(table==='content_versions') {
+          const restored=await db.prepare('SELECT value FROM content_versions WHERE id=?').get(row.id as SQLInputValue);
+          if(restored?.value!==row.value)throw new Error('A content version failed byte-preserving reconciliation.');
+        }
       }
     }
   });

@@ -5,7 +5,7 @@ import { problems, quizQuestions, quizTopics, tracks } from '../shared/catalog';
 import { lowLevelDesignQuestions } from '../shared/content/low-level-design-questions';
 import { contentSources } from '../shared/content/sources';
 import { courses } from '../shared/courses';
-import { gradeQuiz } from '../shared/domain';
+import { gradeQuiz } from '../server/content/grading';
 import type { ContentSection } from '../shared/types';
 
 const lessons = tracks.find(track => track.id === 'low-level-design')!.lessons;

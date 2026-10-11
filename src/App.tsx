@@ -1,7 +1,7 @@
 import { ArrowRight, BookOpen, ChevronDown, ChevronRight, ClipboardCheck, Code2, Command, GraduationCap, Home, Layers3, LifeBuoy, LogOut, Menu, MessageSquare, Moon, Network, Search, Settings2, Sparkles, Sun, Trophy, Users, X } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { practiceLabels, practiceTracks, tracks } from '../shared/catalog';
+import { practiceLabels, practiceTracks, tracks } from "../shared/public-catalog";
 import type { CommunityKind } from '../shared/types';
 import { AuthPrompt, Footer } from './components';
 import { request, useStudio } from './store';

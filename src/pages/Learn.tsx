@@ -1,11 +1,13 @@
 import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronRight, Clock3, Code2, GraduationCap, LockKeyhole, Pause, Play, RotateCcw, SkipForward } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getTrack, problems, tracks } from '../../shared/catalog';
+import { getTrack, problems, tracks } from "../../shared/public-catalog";
 import { hasPremium } from '../../shared/domain';
 import { AuthPrompt, Badge, BookmarkButton, CardLink, Comments, ContentSections, IconTile, PageHeading, Progress, ReadButton, SourceLinks } from '../components';
 import { useStudio } from '../store';
 import { trackIcons } from './Home';
+import type { Lesson } from '../../shared/types';
+import { ContentStatus, useContent } from '../content';
 
 export function LearningIndex() {
   return <><PageHeading eyebrow="THE LEARNING LIBRARY" title="Build a stronger foundation." description="Clear explanations. Useful examples. A path you can make your own." action={<Link className="button secondary" to="/learn/courses"><GraduationCap size={17}/> Structured courses</Link>}/><div className="learning-index">{tracks.map(t=><Link className="track-card" to={`/learn/${t.id}`} key={t.id}><div className="track-card-top"><IconTile icon={trackIcons[t.id]} color={t.color}/><span>{t.lessons.length} lessons</span></div><h2>{t.title}</h2><p>{t.description}</p><div className="track-card-bottom"><span>{t.lessons.reduce((s,l)=>s+l.minutes,0)} min of reading</span><ArrowRight size={18}/></div></Link>)}</div></>;
@@ -28,13 +30,17 @@ export function TrackOverview({ id }: { id: string }) {
 }
 export function LessonPage({ trackId, lessonId }: { trackId: string; lessonId: string }) {
   const { data } = useStudio();
-  const track=getTrack(trackId), lesson=track?.lessons.find(l=>l.id===lessonId);
+  const track=getTrack(trackId), metadata=track?.lessons.find(l=>l.id===lessonId);
+  const access = !!metadata && (!metadata.premium || hasPremium(data.state));
+  const resource = useContent<Lesson>(access ? `/api/content/lessons/${encodeURIComponent(trackId)}/${encodeURIComponent(lessonId)}` : null);
+  const lesson = resource.value;
   const [reading, setReading] = useState(0);
   useEffect(()=>{const onScroll=()=>{const range=document.documentElement.scrollHeight-window.innerHeight;setReading(range>0?window.scrollY/range*100:100);};window.addEventListener('scroll',onScroll);onScroll();return()=>window.removeEventListener('scroll',onScroll);},[lessonId]);
-  if (!track||!lesson) return <NotFound/>;
+  if (!track||!metadata) return <NotFound/>;
   const CoverIcon = trackIcons[track.id];
-  const index=track.lessons.indexOf(lesson), next=track.lessons[index+1], previous=track.lessons[index-1];
-  if (lesson.premium&&!hasPremium(data.state)) return <><PageHeading eyebrow={track.title.toUpperCase()} title={lesson.title} description={lesson.summary}/><PremiumGate/></>;
+  const index=track.lessons.indexOf(metadata), next=track.lessons[index+1], previous=track.lessons[index-1];
+  if (!access) return <><PageHeading eyebrow={track.title.toUpperCase()} title={metadata.title} description={metadata.summary}/><PremiumGate/></>;
+  if (!lesson) return <ContentStatus {...resource}/>;
   const related=lesson.relatedProblemIds?.length?problems.filter(p=>lesson.relatedProblemIds!.includes(p.id)):[problems.find(p=>p.track===trackId)||problems[0]];
   return <><Link className="back-link" to={`/learn/${trackId}`}><ArrowLeft size={15}/>{track.title}</Link><div className="article-layout"><article className="lesson-article"><div className="lesson-cover" style={{'--track-color':track.color} as React.CSSProperties}><span>{lesson.group}</span><CoverIcon size={100} strokeWidth={.7}/><div className="cover-lines" aria-hidden="true"><i/><i/><i/></div></div><div className="article-heading"><div><span className="eyebrow">{lesson.group}</span><h1>{lesson.title}</h1></div><BookmarkButton resource={`${trackId}/${lessonId}`}/></div><p className="article-summary">{lesson.summary}</p><div className="article-meta"><Clock3 size={14}/>{lesson.minutes} min read<span>·</span>Original Studio lesson</div>
       {lesson.objectives&&<section className="lesson-objectives"><h2>What you will learn</h2><ul>{lesson.objectives.map(objective=><li key={objective}>{objective}</li>)}</ul></section>}

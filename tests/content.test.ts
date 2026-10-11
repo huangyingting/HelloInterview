@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { problems, quizQuestions, quizTopics, tracks } from '../shared/catalog';
 import { courses } from '../shared/courses';
-import { contentResearchDate, contentSources, type SourceId } from '../shared/content/sources';
+import { contentResearchDate, contentSources } from '../shared/content/sources';
 import { systemDesignQuestions } from '../shared/content/system-design-questions';
-import { gradeQuiz } from '../shared/domain';
+import { gradeQuiz } from '../server/content/grading';
 
 const lessons = tracks.find(track => track.id === 'system-design')!.lessons;
 const cases = problems.filter(problem => problem.track === 'system-design');
@@ -12,13 +12,15 @@ const topics = quizTopics.filter(topic => topic.track === 'system-design');
 const questions = quizQuestions.filter(question => topics.some(topic => topic.id === question.topic));
 const words = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
 const normalized = (text: string) => text.trim().replace(/\s+/g, ' ').toLowerCase();
-function citations(ids: SourceId[] | undefined, minimum = 1) {
+function citations(ids: string[] | undefined, minimum = 1) {
   assert.ok(ids && ids.length >= minimum, 'Content needs public sources');
   assert.equal(new Set(ids).size, ids.length);
   for (const id of ids) {
     assert.ok(Object.hasOwn(contentSources, id), `Unknown source: ${id}`);
-    assert.equal(new URL(contentSources[id].url).protocol, 'https:');
-    assert.ok(contentSources[id].title && contentSources[id].publisher);
+    const source=Object.entries(contentSources).find(([key])=>key===id)?.[1];
+    assert.ok(source);
+    assert.equal(new URL(source.url).protocol, 'https:');
+    assert.ok(source.title && source.publisher);
   }
 }
 

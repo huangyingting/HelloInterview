@@ -19,7 +19,7 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command: `PORT=3100 DATA_DIR=${testDataDir} npm run dev`,
+    command: `PORT=3100 DATA_DIR=${testDataDir} TRUST_PROXY=127.0.0.1/32 npm run dev`,
     url: 'http://127.0.0.1:3100/api/health',
     reuseExistingServer: false,
     timeout: 60000,

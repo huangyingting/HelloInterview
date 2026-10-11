@@ -55,14 +55,21 @@ either the whole selected pool or only missed questions. The server selects
 distinct questions and stores their order. Requests exceeding the matching
 pool are rejected rather than silently changing the requested length.
 
-Advancing or skipping commits one answer. Reload resumes the next unanswered
+Checking or skipping commits one answer before returning its explanation.
+Advancing moves the screen to the next question without changing the saved answer.
+Reload resumes the next unanswered
 question. Every question must be answered or explicitly skipped before the
 server computes the score; the browser cannot supply a trusted score.
 Misses enter the existing review deck, correct answers remove those questions,
 and repeated finalization does not award duplicate recognition.
 
-Completed sessions show answers/explanations, appear in the quiz library, and
-can be exported. The original question bank is still much smaller than the
+New sessions pin their question order, options, keys, explanations, and sources
+in an immutable server snapshot; scoring and completed reports do not silently
+switch to the current catalog. The browser receives only the next unanswered
+prompt/options until it commits an answer. Completed sessions show
+answers/explanations, appear in the quiz library, and can be exported with their
+question snapshots even after access expires. Unversioned legacy reports are
+labeled separately. The original question bank is still much smaller than the
 reference catalog. The custom archive holds up to 100 sessions.
 
 ## Company-focused preparation plans

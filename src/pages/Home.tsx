@@ -1,9 +1,9 @@
 import { ArrowRight, BookOpen, CalendarDays, Check, ChevronRight, CircleCheck, Code2, Flame, GraduationCap, Layers3, Lightbulb, MessageSquare, Network, Plus, Rocket, Sparkles, Target, Trash2, Trophy } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { companies, levels, tracks } from '../../shared/catalog';
+import { companies, levels, tracks } from "../../shared/public-catalog";
 import { courseCompletion, courseStepComplete, currentStreak, hasPremium } from '../../shared/domain';
-import { courses } from '../../shared/courses';
+import { courses } from "../../shared/public-catalog";
 import type { UserState } from '../../shared/types';
 import { CardLink, Footer, IconTile, PageHeading, Progress, ReadButton } from '../components';
 import { request, useStudio } from '../store';

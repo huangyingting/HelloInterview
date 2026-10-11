@@ -2,12 +2,16 @@ import { ArrowRight, Bookmark, Check, ChevronRight, MessageSquare, Send, Sparkle
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { request, useStudio } from './store';
-import type { Comment, ContentSection, UserState } from '../shared/types';
-import { contentResearchDate, contentSources, type SourceId } from '../shared/content/sources';
+import type { Comment, ContentSection, SourceReference, UserState } from '../shared/types';
+import { contentResearchDate, contentSources } from '../shared/content/sources';
 
-export function SourceLinks({ ids }: { ids?: SourceId[] }) {
+export function SourceLinks({ ids, sources }: { ids?: string[]; sources?: SourceReference[] }) {
   if (!ids?.length) return null;
-  return <div className="content-sources"><h4>Sources and further reading</h4><p className="fine-print">Original synthesis informed by public documentation. Research date: {contentResearchDate}; not expert-reviewed.</p><ul>{ids.map(id => <li key={id}><a href={contentSources[id].url} target="_blank" rel="noopener noreferrer">{contentSources[id].title}</a><span> · {contentSources[id].publisher}</span></li>)}</ul></div>;
+  const date=sources?.length?[...new Set(sources.map(source=>source.researchDate))].join(', '):contentResearchDate;
+  return <div className="content-sources"><h4>Sources and further reading</h4><p className="fine-print">Original synthesis informed by public documentation. Research date: {date}; not expert-reviewed.</p><ul>{ids.map(id => {
+    const source=sources?sources.find(source=>source.id===id):Object.entries(contentSources).find(([key])=>key===id)?.[1];
+    return source?<li key={id}><a href={source.url} target="_blank" rel="noopener noreferrer">{source.title}</a><span> · {source.publisher}</span></li>:<li key={id}>Source reference unavailable: {id}</li>;
+  })}</ul></div>;
 }
 export function ArchitectureFigure({ text, label = 'Original architecture sketch' }: { text: string; label?: string }) {
   return <figure className="architecture-figure" aria-label={label}><figcaption>{label}</figcaption><pre><code>{text}</code></pre></figure>;

@@ -2,11 +2,12 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import type { Bootstrap, UserState } from '../shared/types';
 import { emptyState } from '../shared/domain';
 
-export async function request<T>(url: string, data?: unknown, method?: string): Promise<T> {
+export async function request<T>(url: string, data?: unknown, method?: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(url, {
     method: method || (data === undefined ? 'GET' : 'POST'),
     headers: data === undefined ? undefined : { 'Content-Type': 'application/json' },
     body: data === undefined ? undefined : JSON.stringify(data),
+    signal,
   });
   const payload: unknown = await response.json();
   if (!response.ok) {

@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './browser-fixtures';
 import { quizQuestions } from '../shared/catalog';
 
 async function premium(page: Page) {

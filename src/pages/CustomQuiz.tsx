@@ -1,15 +1,15 @@
-import { ArrowLeft, ArrowRight, Check, ClipboardCheck, Download } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ArrowLeft, ArrowRight, Check, ClipboardCheck } from 'lucide-react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { quizQuestions, quizTopics } from '../../shared/catalog';
+import { quizTopics } from "../../shared/public-catalog";
 import { customQuestionPool } from '../../shared/premium';
-import type { CustomQuiz, UserState } from '../../shared/types';
-import { AuthPrompt, Badge, Empty, PageHeading, Progress, SourceLinks } from '../components';
+import type { CustomQuiz, QuestionPrompt, QuizQuestion, UserState } from '../../shared/types';
+import { AuthPrompt, Empty, PageHeading, Progress } from '../components';
 import { request, useStudio } from '../store';
 import { NotFound } from './Learn';
 import { PremiumAccess } from './Premium';
-import { download } from './Practice';
-import { QuizAnswerChoices } from './Quiz';
+import { QuizAnswerChoices, SavedQuizReport } from './Quiz';
+import { ContentStatus, useContent } from '../content';
 
 export function CustomQuizPage({ id }: { id?: string }) {
   return id ? <CustomQuizSession id={id} /> : <CustomQuizBuilder />;
@@ -34,29 +34,29 @@ function CustomQuizBuilder() {
 }
 function CustomQuizSession({ id }: { id: string }) {
   const { data, setState, act, pending } = useStudio(), quiz = data.state.customQuizzes.find(q => q.id === id);
-  const [selected, setSelected] = useState<number | null>(null), [checked, setChecked] = useState(false);
+  const [selected, setSelected] = useState<number | null>(null), [feedback, setFeedback] = useState<QuizQuestion | null>(null);
   const nextId = quiz?.questionIds.find(q => !Object.hasOwn(quiz.answers, q));
-  useEffect(() => { setSelected(null); setChecked(false); }, [id, nextId]);
+  const resource=useContent<QuestionPrompt|null>(quiz && !quiz.completedAt ? `/api/custom-quizzes/${encodeURIComponent(id)}/question?revision=${quiz.revision}` : null);
   if (!data.user) return <AuthPrompt />;
   if (!quiz) return <NotFound />;
   const finish = async (saved: CustomQuiz) => setState(await request<UserState>(`/api/custom-quizzes/${id}/finish`, { revision: saved.revision }));
   if (quiz.completedAt) return <>
     <Link className="back-link" to="/quiz"><ArrowLeft size={15} /> Quiz library</Link>
-    <PageHeading eyebrow="YOUR SAVED CUSTOM SESSION" title="Your custom quiz results." description={`${quiz.title} · ${new Date(quiz.completedAt).toLocaleString()}`} action={<button className="button secondary small" onClick={() => download('custom-quiz-result.json', JSON.stringify(quiz, null, 2))}><Download size={15} /> Export quiz result</button>} />
+    <PageHeading eyebrow="YOUR SAVED CUSTOM SESSION" title="Your custom quiz results." description={`${quiz.title} · ${new Date(quiz.completedAt).toLocaleString()}`} />
     <div className="quiz-result-hero"><ClipboardCheck size={32} /><div className="result-score">{quiz.score}<span>/ {quiz.questionIds.length}</span></div><p>Missed and skipped questions join your review deck. Correct answers remove these questions from it.</p></div>
-    <div className="quiz-explanations">{quiz.questionIds.map(id => { const question = quizQuestions.find(q => q.id === id)!; return <article className="panel" key={id}><div className="section-heading"><h3>{question.prompt}</h3><Badge tone={quiz.answers[id] === question.correct ? 'green' : 'amber'}>{quiz.answers[id] === question.correct ? 'Correct' : 'Review'}</Badge></div><p>Your answer: {quiz.answers[id] === -1 ? 'Skipped' : question.options[quiz.answers[id]]}</p><p>Correct answer: {question.options[question.correct]}</p><p>{question.explanation}</p><SourceLinks ids={question.sourceIds}/></article>; })}</div>
+    <SavedQuizReport id={id}/>
   </>;
-  const question = quizQuestions.find(q => q.id === nextId);
-  const advance = (answer: number) => act(async () => {
-    const state = await request<UserState>(`/api/custom-quizzes/${id}/answer`, { revision: quiz.revision, questionId: nextId, answer });
-    setState(state); const saved = state.customQuizzes.find(q => q.id === id)!;
-    if (Object.keys(saved.answers).length === saved.questionIds.length) await finish(saved);
+  const question = feedback ?? resource.value;
+  const check = (answer: number) => act(async () => {
+    const result = await request<{state:UserState;feedback:QuizQuestion}>(`/api/custom-quizzes/${id}/answer?feedback=true`, { revision: quiz.revision, questionId: nextId, answer });
+    setState(result.state); setSelected(answer); setFeedback(result.feedback);
   });
+  const number=Object.keys(quiz.answers).length+(feedback?0:1);
   return <PremiumAccess>{question ? <div className="quiz-runner">
-    <div className="quiz-runner-top"><Link className="text-link" to="/quiz"><ArrowLeft size={15} /> {quiz.title}</Link><span>{Object.keys(quiz.answers).length + 1} of {quiz.questionIds.length}</span></div>
+    <div className="quiz-runner-top"><Link className="text-link" to="/quiz"><ArrowLeft size={15} /> {quiz.title}</Link><span>{number} of {quiz.questionIds.length}</span></div>
     <Progress value={Object.keys(quiz.answers).length / quiz.questionIds.length * 100} /><span className="eyebrow question-eyebrow">SAVED CUSTOM QUIZ</span><h1>{question.prompt}</h1>
-    <QuizAnswerChoices question={question} selected={selected} checked={checked} pending={pending} onSelect={setSelected} />
-    <div className="quiz-question-bottom"><button className="text-button" disabled={pending || checked} onClick={() => advance(-1)}>Skip question</button>{checked ? <button className="button" disabled={pending} onClick={() => advance(selected!)}>{Object.keys(quiz.answers).length + 1 === quiz.questionIds.length ? 'Finish quiz' : 'Next question'} <ArrowRight size={16} /></button> : <button className="button" disabled={pending || selected === null} onClick={() => setChecked(true)}>Check answer <Check size={16} /></button>}</div>
-    <p className="fine-print">Each advanced/skipped answer is saved. Leaving before advancing does not commit a selection.</p>
-  </div> : <Empty title="Every question is answered" description="Finalize the saved session to calculate its canonical score and update your review deck."><button className="button" disabled={pending} onClick={() => act(() => finish(quiz))}>Finish quiz</button></Empty>}</PremiumAccess>;
+    <QuizAnswerChoices question={question} selected={selected} feedback={feedback} pending={pending} onSelect={setSelected} />
+    <div className="quiz-question-bottom"><button className="text-button" disabled={pending || !!feedback} onClick={() => check(-1)}>Skip question</button>{feedback ? <button className="button" disabled={pending} onClick={() => {if(!nextId)void act(()=>finish(quiz));else{setFeedback(null);setSelected(null);}}}>{!nextId ? 'Finish quiz' : 'Next question'} <ArrowRight size={16} /></button> : <button className="button" disabled={pending || selected === null} onClick={() => check(selected!)}>Check answer <Check size={16} /></button>}</div>
+    <p className="fine-print">Checking or skipping commits your answer. Reloading resumes at the next unanswered question.</p>
+  </div> : nextId ? <ContentStatus {...resource}/> : <Empty title="Every question is answered" description="Finalize the saved session to calculate its canonical score and update your review deck."><button className="button" disabled={pending} onClick={() => act(() => finish(quiz))}>Finish quiz</button></Empty>}</PremiumAccess>;
 }

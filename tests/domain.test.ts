@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { problems, quizQuestions, quizTopics, tracks } from '../shared/catalog';
-import { assessAnswer, courseCompletion, courseStepComplete, currentStreak, emptyState, gradeQuiz, hasPremium } from '../shared/domain';
+import { assessAnswer, courseCompletion, courseStepComplete, currentStreak, emptyState, hasPremium } from '../shared/domain';
+import { gradeQuiz } from '../server/content/grading';
 import { courses } from '../shared/courses';
 
 test('catalog has unique IDs, original lesson bodies and valid quizzes', () => {

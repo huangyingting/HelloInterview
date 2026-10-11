@@ -92,6 +92,12 @@ not attempted. Explicit intentional deletion retains its existing API.
 
 ## Controlled migrations
 
+The [W05 content checkpoint](10-content-implementation.md) adds migration 2
+for immutable assessment snapshots and owned topic-session progress. The explicit
+importer now validates and copies selected-owner quiz versions/progress as well;
+referenced content must be byte-identical, and no authentication sessions or
+demo entitlements are imported. Migration 1 remains unchanged.
+
 Use a separately authorized migration credential, not a broadly privileged API
 credential. Run migrations once in the release/maintenance workflow, before
 replicas start. PostgreSQL 16 is the tested baseline.

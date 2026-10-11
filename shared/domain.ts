@@ -1,5 +1,4 @@
 import type { Course, CourseStep, Feedback, Problem, UserState } from './types';
-import { quizQuestions } from './catalog';
 
 export function emptyState(): UserState {
   return { read: [], bookmarks: [], targets: [], stories: [], attempts: [], quizzes: [], review: [], activity: [], plan: 'free', planExpiresAt: null, recognition: 0, enrollments: [], watched: [], certificates: [], chat: [], mocks: [], customQuizzes: [], studyPlans: [], projects: [] };
@@ -33,25 +32,6 @@ export function assessAnswer(problem: Problem, answer: string): Feedback {
     summary: 'Local rubric feedback checks topic coverage and response depth. It is not an AI interview grade or a prediction of hiring performance.',
     source: 'rubric',
   };
-}
-
-export function gradeQuiz(topic: string, answers: Record<string, number>) {
-  const questions = quizQuestions.filter(q => topic === 'review' ? Object.hasOwn(answers, q.id) : q.topic === topic);
-  return gradeQuestionSet(questions.map(q => q.id), answers);
-}
-
-export function gradeQuestionSet(ids: string[], answers: Record<string, number>) {
-  const questions = ids.map(id => quizQuestions.find(q => q.id === id));
-  if (new Set(ids).size !== ids.length || questions.some(q => !q)) throw new Error('Invalid quiz question set.');
-  if (!questions.length) throw new Error('Unknown or empty quiz topic.');
-  if (Object.keys(answers).some(id => !ids.includes(id))) throw new Error('Answer does not belong to this quiz.');
-  for (const q of questions) {
-    if (!q) throw new Error('Unknown quiz question.');
-    const answer = answers[q.id];
-    if (answer !== undefined && (!Number.isInteger(answer) || answer < -1 || answer >= q.options.length)) throw new Error('Invalid answer choice.');
-  }
-  const correct = questions.filter(q => q && answers[q.id] === q.correct).length;
-  return { score: correct, total: questions.length, missed: questions.flatMap(q => q && answers[q.id] !== q.correct ? [q.id] : []) };
 }
 
 export function currentStreak(activity: string[], now = new Date()): number {

@@ -26,7 +26,7 @@ export const userStateSchema: z.ZodType<UserState> = z.strictObject({
   })).max(500),
   quizzes: z.array(z.strictObject({
     id, topic: id, answers: z.record(id, z.number().int()), score: z.number().int().nonnegative(),
-    total: z.number().int().positive(), completedAt: text,
+    total: z.number().int().positive(), completedAt: text, contentVersion: id.optional(), questionIds: z.array(id).optional(),
   })).max(500),
   certificates: z.array(z.strictObject({ id, courseId: id, issuedAt: text })),
   chat: z.array(z.strictObject({ id, role: z.enum(['user', 'assistant']), text, createdAt: text, source: z.enum(['rubric', 'ai']).optional() })).max(100),
@@ -40,7 +40,7 @@ export const userStateSchema: z.ZodType<UserState> = z.strictObject({
     id, title: text, topics: z.array(id), mode: z.enum(['all', 'missed']),
     questionIds: z.array(id), answers: z.record(id, z.number().int()),
     revision: z.number().int().nonnegative(), createdAt: text, completedAt: text.optional(),
-    score: z.number().int().nonnegative().optional(),
+    score: z.number().int().nonnegative().optional(), contentVersion: id.optional(),
   })).max(100),
   studyPlans: z.array(z.strictObject({
     id, company: text, level, weeks: z.number().int().positive(), sessionsPerWeek: z.number().int().positive(),

@@ -5,7 +5,7 @@ import { practiceLabels, practiceTracks, problems, quizQuestions, quizTopics, tr
 import { codingQuestions } from '../shared/content/coding-questions';
 import { contentSources } from '../shared/content/sources';
 import { courses } from '../shared/courses';
-import { gradeQuiz } from '../shared/domain';
+import { gradeQuiz } from '../server/content/grading';
 import type { ContentSection, Problem } from '../shared/types';
 
 const lessons = tracks.find(track => track.id === 'code')!.lessons;

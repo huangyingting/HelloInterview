@@ -64,6 +64,14 @@ test('the compiled release runs with runtime-only dependencies, loads .env, pers
   const login = await fetch(`${url}/api/auth/demo`, { method: 'POST' });
   assert.equal(login.status, 200);
   const cookie = login.headers.get('set-cookie')!.split(';')[0];
+  const plan=await fetch(`${url}/api/plan`,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({plan:'month'})});
+  assert.equal(plan.status,200);
+  const paidMedia=await fetch(`${url}/api/content/media/concurrency/concurrency.webm`,{headers:{Cookie:cookie,Range:'bytes=0-127'}});
+  assert.equal(paidMedia.status,206);
+  assert.equal((await paidMedia.arrayBuffer()).byteLength,128);
+  const freeMedia=await fetch(`${url}/api/content/media/system-design/system-design.webm`);
+  assert.equal(freeMedia.status,200);
+  assert.match(freeMedia.headers.get('content-type')!,/video\/webm/);
   const before = await (await fetch(`${url}/api/bootstrap`, { headers: { Cookie: cookie } })).json() as Bootstrap;
   assert.ok(before.user);
   assert.equal(before.capabilities.ai, false);

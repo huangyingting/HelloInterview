@@ -46,6 +46,16 @@ export function openDatabase(dataDir: string): DatabaseSync {
       CREATE TABLE IF NOT EXISTS gifts (
         hash TEXT PRIMARY KEY, plan TEXT NOT NULL, creator TEXT NOT NULL, redeemed_by TEXT, created_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS content_versions (
+        id TEXT PRIMARY KEY, value TEXT NOT NULL CHECK (length(value) <= 2097152)
+      );
+      CREATE TABLE IF NOT EXISTS assessment_sessions (
+        id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        topic TEXT NOT NULL, content_version TEXT NOT NULL REFERENCES content_versions(id),
+        answers TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0),
+        completed_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS assessment_sessions_owner ON assessment_sessions(user_id,completed_at);
     `);
     if (!db.prepare('SELECT id FROM posts LIMIT 1').get()) {
       const samples: [CommunityKind, string, string, string, string][] = [

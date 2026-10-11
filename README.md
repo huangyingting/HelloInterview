@@ -120,6 +120,29 @@ for schema details, API revisions, rehearsal, and cutover safeguards.
 | Access and support | Explicit local-only plan activation/expiry, one-use gift codes, plan reset, locally saved support tickets |
 | Interface | Responsive desktop/mobile navigation, persisted light/dark theme, keyboard shortcuts, focus styles, visible errors |
 
+## Content delivery and saved quiz versions
+
+The browser imports a generated discovery catalog, not lesson bodies, worked
+solutions, rubric keywords, or quiz keys. `npm run content:metadata` regenerates
+the allowlisted titles/summaries/navigation metadata; development and builds run
+it automatically. A Vite import boundary rejects private content dependencies.
+Readers and runnable example briefs use authorized, private/no-store APIs.
+The premium concurrency clip/captions live in the server release, not `dist/`,
+and their endpoint authorizes every request, including byte ranges.
+
+Topic quizzes now issue server-owned, resumable sessions. **Checking or skipping
+commits an answer** before its explanation is returned; reload resumes at the
+next unanswered question. Topic and custom sessions pin an immutable question
+snapshot and use it for grading, report order, citations, and JSON exports even
+after a curriculum update. Completed owned reports remain available after demo
+premium expiry. Legacy reports without recorded versions are explicitly labeled;
+their original answers/scores remain exportable rather than being rewritten.
+
+See [the protected-content implementation runbook](docs/production/10-content-implementation.md)
+for the public/private contract, endpoints, migration 2, version/legacy behavior,
+and validation. This boundary still uses local demo authorization: W04/W06 must
+replace that authority before service mode or payments can be enabled.
+
 A course completion record requires every course step to be complete. It is a
 local practice-completion record, not accreditation, hiring evidence, or proof
 of mastery. Videos are short original animated walkthroughs, not a substitute

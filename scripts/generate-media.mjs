@@ -28,6 +28,7 @@ const scenes = [
   ] },
 ];
 await fs.mkdir('public/media', { recursive: true });
+await fs.mkdir('server/media', { recursive: true });
 const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome' });
 try {
 for (const scene of scenes) {
@@ -75,9 +76,10 @@ for (const scene of scenes) {
     let binary='';for(let i=0;i<bytes.length;i+=16384)binary+=String.fromCharCode(...bytes.slice(i,i+16384));
     return btoa(binary);
   }, scene);
-  await fs.writeFile(`public/media/${scene.id}.webm`, Buffer.from(base64, 'base64'));
+  const folder=scene.id==='concurrency'?'server/media':'public/media';
+  await fs.writeFile(`${folder}/${scene.id}.webm`, Buffer.from(base64, 'base64'));
   const vtt='WEBVTT\n\n'+scene.steps.map(([title,body],i)=>`${i+1}\n00:0${Math.floor(i*2.2)}.${String(Math.round(i*2.2%1*1000)).padStart(3,'0')} --> 00:0${Math.floor((i+1)*2.2)}.${String(Math.round((i+1)*2.2%1*1000)).padStart(3,'0')}\n${title}. ${body}\n`).join('\n');
-  await fs.writeFile(`public/media/${scene.id}.vtt`,vtt);
+  await fs.writeFile(`${folder}/${scene.id}.vtt`,vtt);
   console.log(`Generated original ${scene.id} video (${Math.round(Buffer.from(base64,'base64').length/1024)} KB) and captions.`);
   await page.close();
 }

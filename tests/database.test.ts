@@ -7,15 +7,18 @@ import { DatabaseSync } from 'node:sqlite';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { emptyState } from '../shared/domain';
-import { problems } from '../shared/catalog';
-import type { Attempt, Bootstrap, Story, UserState } from '../shared/types';
+import { problems, quizQuestions } from '../shared/catalog';
+import type { Attempt, Bootstrap, QuizReport, Story, UserState } from '../shared/types';
 import { loadConfig } from '../server/config';
 import { openDatabase } from '../server/database';
 import { postgresConnection, postgresParameters, sqliteConnection, type Database } from '../server/db/connection';
 import { applyLegacyImport, inspectLegacyImport } from '../server/db/legacy-import';
-import { assertDatabaseVersion, migrateDatabase, recordTables } from '../server/db/migrations';
+import { assertDatabaseVersion, migrateDatabase, migrations, recordTables } from '../server/db/migrations';
 import { StateRepository } from '../server/db/state-repository';
 import { startServer } from '../server/runtime';
+import { ContentRepository } from '../server/content/repository';
+import { HttpError } from '../server/http-error';
+import { publishedQuestion } from '../server/content/schema';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl) throw new Error('TEST_DATABASE_URL must point to a dedicated PostgreSQL test database. Each test owns and removes a unique schema.');
@@ -81,11 +84,44 @@ test('controlled migrations are repeatable, serialize runners, and runtime rejec
   await Promise.all([migrateDatabase(db), migrateDatabase(another)]);
   await assertDatabaseVersion(db);
   const rows = await db.prepare('SELECT version,checksum FROM schema_migrations').all();
-  assert.equal(rows.length, 1);
+  assert.equal(rows.length, migrations.length);
   await db.prepare('UPDATE schema_migrations SET checksum=? WHERE version=1').run('corrupted-fixture');
   await assert.rejects(assertDatabaseVersion(db), /incompatible/);
   await assert.rejects(migrateDatabase(db), /history does not match/);
   await assert.rejects(runtime(t, url), /incompatible/);
+});
+test('versioned assessment answers are single-owner and revision-fenced across PostgreSQL pools',async t=>{
+  const {db,url}=await fixture(t),owner=await account(db),anotherOwner=await account(db);
+  const replica=postgresConnection(url);
+  t.after(()=>replica.close());
+  const first=new ContentRepository(db),second=new ContentRepository(replica);
+  const questions=quizQuestions.filter(question=>question.topic==='api-design').slice(0,2);
+  const session=await db.transaction(()=>first.createSession(owner,'api-design',questions));
+  await assert.rejects(second.sessionView(anotherOwner,session.id),error=>error instanceof HttpError&&error.status===404);
+  const outcomes=await Promise.allSettled([
+    first.answerSession(owner,session.id,questions[0].id,questions[0].correct,0),
+    second.answerSession(owner,session.id,questions[0].id,questions[0].correct,0),
+  ]);
+  assert.equal(outcomes.filter(outcome=>outcome.status==='fulfilled').length,1);
+  const failure=outcomes.find(outcome=>outcome.status==='rejected');
+  assert.ok(failure?.status==='rejected'&&failure.reason instanceof HttpError&&failure.reason.status===409);
+  assert.equal((await second.sessionView(owner,session.id)).revision,1);
+  await second.answerSession(owner,session.id,questions[1].id,-1,1);
+  assert.equal((await first.sessionView(owner,session.id)).answered,2);
+  await db.prepare('DELETE FROM users WHERE id=?').run(owner);
+  assert.equal((await db.prepare('SELECT id FROM assessment_sessions WHERE user_id=?').all(owner)).length,0);
+});
+test('PostgreSQL JSONB answer ordering cannot change version-pinned report order or original explanations',async t=>{
+  const {db,url}=await fixture(t),server=await runtime(t,url),owner=await signup(server.url);
+  const result=await api<UserState>(server.url,'/api/quiz',{topic:'api-design',answers:{'api-1':1}},owner.cookie);
+  assert.equal(result.response.status,200);
+  const quiz=result.value.quizzes[0],questions=quizQuestions.filter(question=>question.topic==='api-design');
+  const saved=await new StateRepository(db).read(owner.id);
+  assert.deepEqual(saved.quizzes[0].questionIds,questions.map(question=>question.id));
+  const report=await api<QuizReport>(server.url,`/api/quiz-reports/${quiz.id}`,undefined,owner.cookie);
+  assert.equal(report.response.status,200);
+  assert.deepEqual(report.value.questions,questions.map(publishedQuestion));
+  assert.equal(report.value.provenance,'versioned');
 });
 
 test('SQLite async transactions serialize concurrent work, support nesting and roll back exactly', async t => {
@@ -296,6 +332,31 @@ test('explicit import dry run preserves bytes, excludes demo authority, reconcil
   assert.equal((await db.prepare('SELECT COUNT(*)::int AS count FROM gifts').get())!.count, 0);
   await assert.rejects(applyLegacyImport(db, input, input.report.fingerprint), /already imported/);
   assert.throws(() => inspectLegacyImport(legacy.source, ['legacy-demo']), /must not be a demo/);
+});
+test('explicit imports preserve owned assessment progress and immutable content bytes without importing auth or demo authority',async t=>{
+  const {db}=await fixture(t),legacy=await legacyFixture(t);
+  const source=sqliteConnection(new DatabaseSync(legacy.source));
+  const content=new ContentRepository(source),states=new StateRepository(source);
+  const questions=quizQuestions.filter(question=>question.topic==='api-design').slice(0,2);
+  const session=await source.transaction(()=>content.createSession('legacy-owner','api-design',questions));
+  await content.answerSession('legacy-owner',session.id,questions[0].id,questions[0].correct,0);
+  const version=await content.pin(questions);
+  await states.mutate('legacy-owner',state=>{
+    state.customQuizzes.push({id:'versioned-import-report',title:'Pinned historical fixture',topics:['api-design'],mode:'all',questionIds:questions.map(question=>question.id),answers:Object.fromEntries(questions.map(question=>[question.id,question.correct])),score:2,revision:3,createdAt:'2026-10-01',completedAt:'2026-10-02',contentVersion:version});
+  });
+  const snapshot=(await source.prepare('SELECT value FROM content_versions WHERE id=?').get(version))!.value;
+  await source.close();
+  const inspected=inspectLegacyImport(legacy.source,['legacy-owner']);
+  assert.equal(inspected.report.records.content_versions.imported,1);
+  assert.equal(inspected.report.records.assessment_sessions.imported,1);
+  await new ContentRepository(db).pin(questions);
+  await applyLegacyImport(db,inspected,inspected.report.fingerprint);
+  assert.equal((await db.prepare('SELECT value FROM content_versions WHERE id=?').get(version))!.value,snapshot);
+  assert.equal((await new ContentRepository(db).sessionView('legacy-owner',session.id)).answered,1);
+  const restored=await new StateRepository(db).read('legacy-owner'),quiz=restored.customQuizzes[0];
+  assert.equal(restored.plan,'free');
+  const report=await new ContentRepository(db).report(quiz.id,quiz.answers,quiz.contentVersion,quiz.questionIds,quiz.score!);
+  assert.deepEqual(report.questions,questions.map(publishedQuestion));
 });
 
 test('import validation fails on unknown fields and duplicate resource IDs rather than silently dropping values', async t => {

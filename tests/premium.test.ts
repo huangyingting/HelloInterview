@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { companies, levels, problems, quizTopics } from '../shared/catalog';
-import { emptyState, gradeQuestionSet } from '../shared/domain';
+import { emptyState } from '../shared/domain';
+import { gradeQuestionSet } from '../server/content/grading';
 import { chooseQuestions, companyProblems, companyTracks, customQuestionPool, makePlanTasks, mockReport, mockTurnProblem, nextMockQuestion, planTaskComplete, projectPatch, sourcePathIssue } from '../shared/premium';
 import type { MockSession, ProjectFile, StudyPlan } from '../shared/types';
 

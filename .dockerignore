@@ -10,6 +10,9 @@
 !shared/**
 !src/
 !src/**
+!scripts/
+!scripts/generate-public-content.ts
+!scripts/copy-private-media.ts
 !public/
 !public/**
 **/.env

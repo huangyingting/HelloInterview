@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './browser-fixtures';
 import { problems } from '../shared/catalog';
 import { contentSources } from '../shared/content/sources';
 

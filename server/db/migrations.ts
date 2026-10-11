@@ -99,6 +99,21 @@ export const migrations = [{
       checksum TEXT NOT NULL, import_fingerprint TEXT NOT NULL REFERENCES legacy_imports(fingerprint)
     );
   `,
+}, {
+  version: 2,
+  name: 'versioned-assessments',
+  sql: `
+    CREATE TABLE content_versions (
+      id TEXT PRIMARY KEY, value TEXT NOT NULL CHECK (octet_length(value) <= 2097152)
+    );
+    CREATE TABLE assessment_sessions (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      topic TEXT NOT NULL, content_version TEXT NOT NULL REFERENCES content_versions(id),
+      answers TEXT NOT NULL CHECK (octet_length(answers) <= 65536),
+      revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0), completed_at TEXT
+    );
+    CREATE INDEX assessment_sessions_owner ON assessment_sessions(user_id,completed_at);
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

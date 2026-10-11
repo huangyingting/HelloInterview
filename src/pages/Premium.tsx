@@ -1,12 +1,14 @@
 import { ArrowLeft, ArrowRight, CalendarDays, Check, ClipboardCheck, Code2, Download, MessageSquare, Target, Volume2 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { companies, levels, practiceLabels, problems } from '../../shared/catalog';
+import { companies, levels, practiceLabels, problems } from "../../shared/public-catalog";
 import { hasPremium } from '../../shared/domain';
 import { companyProblems, mockReport, planTaskComplete } from '../../shared/premium';
 import type { MockSession, PlanTask, StudyPlan, UserState } from '../../shared/types';
 import { AuthPrompt, Badge, CardLink, Empty, PageHeading, Progress } from '../components';
 import { request, useStudio } from '../store';
+import { ContentStatus, useContent } from '../content';
+import type { PracticeProblem } from '../../shared/types';
 import { NotFound, PremiumGate } from './Learn';
 import { download } from './Practice';
 
@@ -70,7 +72,9 @@ function MockArchive() {
 }
 function MockSessionPage({ id }: { id: string }) {
   const { data, act, pending, setState, notify } = useStudio();
-  const session = data.state.mocks.find(m => m.id === id), [answer, setAnswer] = useState(session?.draft || '');
+  const session = data.state.mocks.find(m => m.id === id);
+  const resource = useContent<PracticeProblem>(session && !session.completedAt && hasPremium(data.state) ? `/api/content/problems/${encodeURIComponent(session.problemId)}` : null);
+  const [answer, setAnswer] = useState(session?.draft || '');
   useEffect(() => setAnswer(session?.draft || ''), [session?.revision, id]);
   if (!data.user) return <AuthPrompt />;
   if (!session) return <NotFound />;
@@ -89,11 +93,12 @@ function MockSessionPage({ id }: { id: string }) {
       <MockTranscript session={session} />
     </>;
   }
+  if (hasPremium(data.state) && !resource.value) return <ContentStatus {...resource}/>;
   return <>
     <Link className="back-link" to="/premium/mock"><ArrowLeft size={15} /> Return to the archive</Link>
     <PageHeading eyebrow={`${session.company} · ${session.level}`} title={problem.title} description="Take one question at a time. Save a draft whenever you need to pause." action={<Badge>{session.turns.length + 1} of {session.length} turns</Badge>} />
     <PremiumAccess><Progress value={session.turns.length / session.length * 100} label="Interview progress" />
-      <div className="mock-workspace"><aside className="panel"><h2>The brief</h2><p>{problem.description}</p><ul>{problem.requirements.map(r => <li key={r}>{r}</li>)}</ul><p className="fine-print">Follow-ups prioritize topics not covered in earlier answers. {data.capabilities.ai ? 'Grading uses your configured AI provider.' : 'Grading uses a local rubric, not AI.'}</p></aside>
+      <div className="mock-workspace"><aside className="panel"><h2>The brief</h2><p>{resource.value?.description}</p><ul>{resource.value?.requirements.map(r => <li key={r}>{r}</li>)}</ul><p className="fine-print">Follow-ups prioritize topics not covered in earlier answers. {data.capabilities.ai ? 'Grading uses your configured AI provider.' : 'Grading uses a local rubric, not AI.'}</p></aside>
         <form className="panel mock-response" onSubmit={e => { e.preventDefault(); void act(async () => { const saved = await save(); setState(await request<UserState>(`/api/mocks/${id}/respond`, { revision: saved.revision })); }); }}>
           <div className="section-heading"><span className="eyebrow">INTERVIEWER · TURN {session.turns.length + 1}</span><button type="button" className="icon-button" aria-label="Read mock question aloud" onClick={() => { if (!('speechSynthesis' in window)) { notify('Speech synthesis is unavailable in this browser.', true); return; } speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(session.question)); }}><Volume2 size={18} /></button></div>
           <h2>{session.question}</h2>

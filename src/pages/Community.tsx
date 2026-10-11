@@ -1,7 +1,7 @@
 import { ArrowLeft, ArrowRight, Bookmark, ChevronLeft, ChevronRight, MessageSquare, Plus, Search, Send, SlidersHorizontal, ThumbsUp, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { companies, levels, practiceLabels, tracks } from '../../shared/catalog';
+import { companies, levels, practiceLabels, tracks } from "../../shared/public-catalog";
 import type { CommunityKind, CommunityPost } from '../../shared/types';
 import { AuthPrompt, Badge, Comments, Empty, PageHeading } from '../components';
 import { request, useStudio } from '../store';

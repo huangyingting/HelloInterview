@@ -81,7 +81,53 @@ export interface QuizQuestion {
   correct: number;
   explanation: string;
   difficulty?: Difficulty;
-  sourceIds?: SourceId[];
+  sourceIds?: string[];
+  sources?: SourceReference[];
+}
+export interface SourceReference {
+  id:string;
+  title:string;
+  publisher:string;
+  url:string;
+  researchDate:string;
+}
+export type LessonMetadata = Omit<Lesson, 'sections' | 'exercise'>;
+export type TrackMetadata = Omit<Track, 'lessons'> & { lessons: LessonMetadata[] };
+export interface ProblemMetadata {
+  id: string;
+  track: string;
+  title: string;
+  difficulty: Difficulty;
+  description: string;
+  premium?: boolean;
+  hasWorkedCase: boolean;
+  hasSolution: boolean;
+  exampleCount: number;
+  runnable: boolean;
+  caseSummary: string;
+  calculationCount: number;
+}
+export type PracticeProblem = Omit<Problem, 'keywords' | 'workedCase' | 'solution'>;
+export type QuestionPrompt = Omit<QuizQuestion, 'correct' | 'explanation'>;
+export interface QuizSessionView {
+  id: string;
+  topic: string;
+  customId: string | null;
+  revision: number;
+  total: number;
+  answered: number;
+  question: QuestionPrompt | null;
+  completedAt: string | null;
+  contentVersion: string;
+}
+export interface QuizReport {
+  id: string;
+  questions: QuizQuestion[];
+  answers: Record<string, number>;
+  score: number;
+  total: number;
+  contentVersion: string;
+  provenance: 'versioned' | 'legacy-unversioned';
 }
 export interface Feedback {
   score: number;
@@ -140,6 +186,8 @@ export interface QuizAttempt {
   score: number;
   total: number;
   completedAt: string;
+  contentVersion?: string;
+  questionIds?: string[];
 }
 export interface MockTurn {
   question: string;
@@ -172,6 +220,7 @@ export interface CustomQuiz {
   createdAt: string;
   completedAt?: string;
   score?: number;
+  contentVersion?: string;
 }
 export interface PlanTask {
   id: string;

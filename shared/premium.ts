@@ -1,4 +1,4 @@
-import { companies, problems, quizQuestions, quizTopics, tracks } from './catalog';
+import { companies, problems, questionIndex, quizTopics, tracks } from './public-catalog';
 import type { Level, MockSession, PlanTask, Problem, ProjectFile, StudyPlan, UserState } from './types';
 
 export const companyTracks: Record<string, string[]> = {
@@ -43,7 +43,7 @@ export function mockReport(session: MockSession) {
   };
 }
 export function customQuestionPool(topics: string[], mode: 'all' | 'missed', state: UserState) {
-  return quizQuestions.filter(q => topics.includes(q.topic) && (mode === 'all' || state.review.includes(q.id)));
+  return questionIndex.filter(q => topics.includes(q.topic) && (mode === 'all' || state.review.includes(q.id)));
 }
 export function chooseQuestions(ids: string[], count: number, random: () => number = Math.random) {
   if (!Number.isInteger(count) || count < 1 || count > 20 || count > ids.length) throw new Error(`Choose 1 to ${Math.min(20, ids.length)} matching questions.`);
@@ -61,7 +61,7 @@ export function makePlanTasks(company: string, level: Level, weeks: number, sess
   const ordered = companyTracks[company], companyPool = companyProblems(company);
   const pool = companyPool.filter(p => level === 'Junior' ? p.difficulty === 'Easy' : p.difficulty !== 'Easy');
   const exercises = pool.length ? pool : companyPool;
-  const weakTopics = quizTopics.filter(topic => quizQuestions.some(q => q.topic === topic.id && state.review.includes(q.id)));
+  const weakTopics = quizTopics.filter(topic => questionIndex.some(q => q.topic === topic.id && state.review.includes(q.id)));
   const scheduledLessons = new Set<string>(), scheduledTopics = new Set<string>();
   const tasks: PlanTask[] = [];
   for (let week = 0; week < weeks; week++) {

@@ -103,6 +103,17 @@ test('staging migration gate and encrypted PostgreSQL backup restore preserve ow
   const cookie = login.headers.get('set-cookie')!.split(';')[0];
   const saved = await fetch(`${url}/api/targets`, { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ company: 'Meta', level: 'Senior', role: 'Recovered Engineer', date: '' }) });
   assert.equal(saved.status, 200);
+  const quizResponse=await fetch(`${url}/api/quiz`,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({topic:'api-design',answers:{'api-1':1}})});
+  assert.equal(quizResponse.status,200);
+  const quiz=(await quizResponse.json()).quizzes[0];
+  const beforeReport=await(await fetch(`${url}/api/quiz-reports/${quiz.id}`,{headers:{Cookie:cookie}})).json();
+  assert.equal(beforeReport.provenance,'versioned');
+  const sessionResponse=await fetch(`${url}/api/quiz-sessions`,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({topic:'api-design'})});
+  assert.equal(sessionResponse.status,201);
+  const session=await sessionResponse.json();
+  const answerResponse=await fetch(`${url}/api/quiz-sessions/${session.id}/answer`,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({revision:session.revision,questionId:session.question.id,answer:1})});
+  assert.equal(answerResponse.status,200);
+  const beforeSession=(await answerResponse.json()).session;
   const before = await (await fetch(`${url}/api/bootstrap`, { headers: { Cookie: cookie } })).json() as Bootstrap;
   const backup = (await compose('exec', '-T', 'database', 'pg_dump', '-U', 'studio', '-d', 'studio', '-Fc')).stdout;
   assert.ok(backup.length > 1000);
@@ -147,4 +158,8 @@ test('staging migration gate and encrypted PostgreSQL backup restore preserve ow
   assert.ok(responsive, 'The restored runtime must pass readiness against restored migration history.');
   const after = await (await fetch(`${recoveryUrl}/api/bootstrap`, { headers: { Cookie: cookie } })).json() as Bootstrap;
   assert.deepEqual(after, before);
+  const afterReport=await(await fetch(`${recoveryUrl}/api/quiz-reports/${quiz.id}`,{headers:{Cookie:cookie}})).json();
+  assert.deepEqual(afterReport,beforeReport);
+  const afterSession=await(await fetch(`${recoveryUrl}/api/quiz-sessions/${session.id}`,{headers:{Cookie:cookie}})).json();
+  assert.deepEqual(afterSession,beforeSession);
 });

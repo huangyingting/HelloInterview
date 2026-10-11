@@ -1,14 +1,15 @@
 import { ArrowLeft, ArrowRight, Code2, Download, FileCode2, Plus, Save, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { problems } from '../../shared/catalog';
+import { problems } from "../../shared/public-catalog";
 import { hasPremium } from '../../shared/domain';
 import { projectPatch, sourcePathIssue } from '../../shared/premium';
-import type { ProjectFile, ProjectWorkspace, UserState } from '../../shared/types';
+import type { PracticeProblem, ProjectFile, ProjectWorkspace, UserState } from '../../shared/types';
 import { AuthPrompt, Badge, Empty, PageHeading } from '../components';
 import { runCode, type TestResult } from '../sandbox';
 import { request, useStudio } from '../store';
 import { NotFound } from './Learn';
+import { ContentStatus, useContent } from '../content';
 import { download } from './Practice';
 import { PremiumAccess } from './Premium';
 
@@ -19,8 +20,10 @@ function ProjectArchive() {
   const { data } = useStudio();
   return data.state.projects.length ? <div className="premium-archive">{data.state.projects.map(p => <Link key={p.id} to={`/premium/projects/${p.id}`}><div><strong>{p.title}</strong><p>{p.files.length} tracked files · {problems.find(t => t.id === p.problemId)?.title}</p></div><Badge>{p.feedback ? `${p.feedback.score}/100` : 'Draft'}</Badge><ArrowRight size={16} /></Link>)}</div> : <Empty title="Start with a small change" description="Original starter projects and imported text snapshots use the same saved workbench." />;
 }
-function starterFiles(problemId: string) {
-  return [{ path: `${problemId}.js`, content: problems.find(p => p.id === problemId)!.starter || '' }];
+async function starterFiles(problemId: string) {
+  const problem = await request<PracticeProblem>(`/api/content/problems/${encodeURIComponent(problemId)}`);
+  if (problem.starter === undefined) throw new Error('This task has no starter files.');
+  return [{ path: `${problemId}.js`, content: problem.starter }];
 }
 async function readSourceFile(file: File): Promise<string> {
   let content: string;
@@ -31,14 +34,16 @@ async function readSourceFile(file: File): Promise<string> {
 }
 function ProjectSetup() {
   const { data, act, pending, setState, notify } = useStudio(), navigate = useNavigate();
-  const [problemId, setProblemId] = useState('event-dedup'), [title, setTitle] = useState('My event processing project'), [files, setFiles] = useState(starterFiles('event-dedup'));
+  const [problemId, setProblemId] = useState('event-dedup'), [title, setTitle] = useState('My event processing project'), [files, setFiles] = useState<{ path: string; content: string }[]>([]);
+  const starter = useContent<PracticeProblem>(hasPremium(data.state) ? '/api/content/problems/event-dedup' : null);
+  useEffect(() => { const content=starter.value?.starter; if(content!==undefined)setFiles(current=>current.length?current:[{path:'event-dedup.js',content}]); }, [starter.value]);
   return <>
     <PageHeading eyebrow="BRING A SOURCE SNAPSHOT" title="Work with the code, not just the prompt." description="Make a bounded change, inspect the diff, record your verification, and take a patch back to your editor." />
     <PremiumAccess><div className="two-column"><form className="panel premium-form" onSubmit={e => { e.preventDefault(); void act(async () => {
       const result = await request<{ state: UserState; project: ProjectWorkspace }>('/api/projects', { title, problemId, files });
       setState(result.state); navigate(`/premium/projects/${result.project.id}`);
     }); }}><h2>A bounded project task</h2><label>Project title<input aria-label="Project title" value={title} onChange={e => setTitle(e.target.value)} minLength={3} maxLength={100} required /></label><label>Acceptance task<select aria-label="Project task" value={problemId} onChange={e => setProblemId(e.target.value)}>{problems.filter(p => p.track === 'ai-coding').map(p => <option value={p.id} key={p.id}>{p.title}</option>)}</select></label>
-      <button type="button" className="button secondary small" onClick={() => setFiles(starterFiles(problemId))}>Use starter files <Code2 size={16} /></button>
+      <button type="button" className="button secondary small" onClick={() => act(async () => setFiles(await starterFiles(problemId)))}>Use starter files <Code2 size={16} /></button>
       <label>Or import your text source files<input aria-label="Import source files" type="file" multiple disabled={pending} accept=".js,.jsx,.ts,.tsx,.json,.md,.css,.html,.py,.go,.java" onChange={e => {
         const input = e.currentTarget, selected = [...(input.files || [])];
         void act(async () => {
@@ -54,21 +59,24 @@ function ProjectSetup() {
           setFiles(imported); input.value = ''; notify(`${imported.length} source files imported into this page.`);
         });
       }} /></label><div className="project-import-list">{files.map(f => <span key={f.path}><FileCode2 size={15} />{f.path}<small>{f.content.length} characters</small></span>)}</div>
-      <p className="fine-print">Credential/generated paths are rejected before reading. This is not a secret scanner: do not import keys, confidential code, or private data. Only text snapshots are stored; no repository is cloned and no backend code is executed.</p>
-      <button className="button" disabled={pending}>Create project workspace <ArrowRight size={16} /></button>
+      {!starter.value && <ContentStatus {...starter}/>}<p className="fine-print">Credential/generated paths are rejected before reading. This is not a secret scanner: do not import keys, confidential code, or private data. Only text snapshots are stored; no repository is cloned and no backend code is executed.</p>
+      <button className="button" disabled={pending || !files.length}>Create project workspace <ArrowRight size={16} /></button>
     </form><section className="panel"><h2>Your saved workspaces</h2><ProjectArchive /></section></div></PremiumAccess>
     {!hasPremium(data.state) && data.state.projects.length > 0 && <section className="panel premium-library"><ProjectArchive /></section>}
   </>;
 }
 function ProjectEditor({ id }: { id: string }) {
   const { data, act, pending, setState, notify } = useStudio(), project = data.state.projects.find(p => p.id === id);
+  const resource = useContent<PracticeProblem>(project ? `/api/content/problems/${encodeURIComponent(project.problemId)}?project=${encodeURIComponent(id)}` : null);
   const [files, setFiles] = useState<ProjectFile[]>(project?.files || []), [active, setActive] = useState(project?.files[0]?.path || '');
   const [explanation, setExplanation] = useState(project?.explanation || ''), [verification, setVerification] = useState(project?.verification || '');
   const [tab, setTab] = useState('editor'), [newFile, setNewFile] = useState(''), [running, setRunning] = useState(false), [results, setResults] = useState<{ path: string; cases: TestResult[] } | null>(null);
   useEffect(() => { setFiles(project?.files || []); setExplanation(project?.explanation || ''); setVerification(project?.verification || ''); }, [id, project?.revision]);
   if (!data.user) return <AuthPrompt />;
   if (!project) return <NotFound />;
-  const task = problems.find(p => p.id === project.problemId)!, file = files.find(f => f.path === active), patch = projectPatch(files);
+  const task = resource.value;
+  if (!task) return <ContentStatus {...resource}/>;
+  const file = files.find(f => f.path === active), patch = projectPatch(files);
   const editable = hasPremium(data.state), dirty = JSON.stringify(files) !== JSON.stringify(project.files) || explanation !== project.explanation || verification !== project.verification;
   const save = async () => {
     const state = await request<UserState>(`/api/projects/${id}/save`, { revision: project.revision, files: files.map(f => ({ path: f.path, content: f.content })), explanation, verification });

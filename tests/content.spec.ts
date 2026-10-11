@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './browser-fixtures';
 import { problems, quizQuestions } from '../shared/catalog';
 import { contentSources } from '../shared/content/sources';
 import type { Bootstrap, UserState } from '../shared/types';
@@ -91,6 +91,13 @@ test('practice write-ups lead to real worked designs with capacity, sources and 
 
 test('historical topic and custom quiz reports preserve their selected questions and cited explanations', async ({ page }) => {
   await demo(page);
+  await page.route('**/api/quiz-reports/legacy-*', async route => {
+    const id=new URL(route.request().url()).pathname.split('/').at(-1)!;
+    const ids=id==='legacy-custom-report'?['api-1','cache-1']:id==='legacy-pointer-report'?['pointer-1','pointer-2','pointer-3']:id==='legacy-object-report'?['object-1','object-2','object-3']:['api-1','api-2','api-3'];
+    const questions=ids.map(id=>quizQuestions.find(question=>question.id===id)!);
+    const answers=Object.fromEntries(questions.map(question=>[question.id,id==='legacy-api-report'?(question.id==='api-2'?0:question.id==='api-3'?-1:1):question.correct]));
+    await route.fulfill({json:{id,questions,answers,score:id==='legacy-api-report'?1:questions.length,total:questions.length,contentVersion:'legacy-unversioned',provenance:'legacy-unversioned'}});
+  });
   await page.route('**/api/bootstrap', async route => {
     const response = await route.fetch(), payload: Bootstrap = await response.json();
     payload.state.quizzes.unshift({ id: 'legacy-api-report', topic: 'api-design', answers: { 'api-1': 1, 'api-2': 0, 'api-3': -1 }, score: 1, total: 3, completedAt: '2026-10-01T12:00:00Z' });

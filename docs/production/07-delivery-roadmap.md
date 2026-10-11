@@ -12,7 +12,8 @@ gates are not implicitly satisfied by a foundation change.
 | W01 | Implemented | Separate configuration/application/database/process lifecycle; compiled Node.js runtime; lazy development Vite; runtime-only release verification; startup and bounded shutdown checks |
 | W02 | Persistence checkpoint implemented; real-data cutover pending D05 | Async SQLite/PostgreSQL boundary; controlled migrations; owned record tables; atomic writes and revision conflicts; explicit dry-run/reconciled import without demo or password authority; two-replica PostgreSQL tests |
 | W03 | Provider-neutral checkpoint implemented; managed deployment pending D04/D06 | Pinned CI and release artifacts; non-root/read-only container; migration-gated private staging; proxy/origin validation; fail-closed service mode; readiness/draining; private request telemetry; encrypted fixture dump/restore |
-| W04-W13 | Pending | Managed identity, protected content, billing, jobs, AI budgets, account administration, support, moderation, and launch gates |
+| W05 | Content-delivery checkpoint implemented; editorial/service authority pending W06/W12 | Allowlisted browser discovery graph; private readers/briefs/media; version-pinned server quiz sessions/checks/reports; readable/exportable owned history; migration 2 and replica/bundle checks |
+| W04, W06-W13 | Pending | Managed identity, production entitlements, billing, jobs, AI budgets, account administration, support, moderation, and launch gates |
 
 W01 preserves existing local accounts, SQLite schema, demo entitlements, API
 contracts, curriculum, and UI. `NODE_ENV=production` means built asset serving,
@@ -27,6 +28,10 @@ recovery boundaries. Managed hosting, region, TLS/edge, durable secrets/backups,
 and operating approvals remain unresolved; no live infrastructure was provisioned.
 W04 identity requires D01 provider approval; W05 content work can proceed
 independently. No existing user data may be imported without D05 owner approval.
+The [W05 content runbook](10-content-implementation.md) records the shipped
+public/private DTOs, immutable quiz snapshots, legacy limitations, and media
+delivery. Content flags/free access are unchanged; this is not editorial approval
+or production entitlement authority.
 
 ## Delivery strategy
 
@@ -130,6 +135,7 @@ npm run test:server
 npm run test:runtime
 npm run test:ai
 npm run test:db
+npm run test:content
 npm run test:container
 npm test
 ```
