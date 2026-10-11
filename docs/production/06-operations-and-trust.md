@@ -4,6 +4,13 @@
 through GAP-19. Requirements are conditional on the feature being public;
 unsupported features must be disabled, not merely omitted from navigation.
 
+**Implemented platform checkpoint (W03):** pinned CI/release artifacts, a
+non-root runtime image, private migration-gated staging, canonical origin/proxy
+validation, readiness/draining, and private request telemetry are available.
+An isolated fixture rehearses authenticated encryption and PostgreSQL restore.
+See [the platform runbook](09-platform-implementation.md). This is not managed
+hosting, durable backups/PITR, on-call coverage, or satisfaction of the launch SLOs.
+
 ## Operating model
 
 Name accountable people before launch, even if one person initially fills

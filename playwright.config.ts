@@ -15,7 +15,7 @@ export default defineConfig({
     baseURL: 'http://127.0.0.1:3100',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
-    launchOptions: { executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome', args: ['--disable-dev-shm-usage'] },
+    launchOptions: { executablePath: process.env.CHROME_PATH || (process.env.CI ? undefined : '/usr/bin/google-chrome'), args: ['--disable-dev-shm-usage'] },
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {

@@ -11,7 +11,8 @@ gates are not implicitly satisfied by a foundation change.
 | W00 | Business/provider approvals pending | Proceeding with reversible local engineering foundations; no provider purchase, data migration, or production-launch approval |
 | W01 | Implemented | Separate configuration/application/database/process lifecycle; compiled Node.js runtime; lazy development Vite; runtime-only release verification; startup and bounded shutdown checks |
 | W02 | Persistence checkpoint implemented; real-data cutover pending D05 | Async SQLite/PostgreSQL boundary; controlled migrations; owned record tables; atomic writes and revision conflicts; explicit dry-run/reconciled import without demo or password authority; two-replica PostgreSQL tests |
-| W03-W13 | Pending | CI/infrastructure, managed identity, protected content, billing, jobs, AI budgets, account administration, support, moderation, and launch gates |
+| W03 | Provider-neutral checkpoint implemented; managed deployment pending D04/D06 | Pinned CI and release artifacts; non-root/read-only container; migration-gated private staging; proxy/origin validation; fail-closed service mode; readiness/draining; private request telemetry; encrypted fixture dump/restore |
+| W04-W13 | Pending | Managed identity, protected content, billing, jobs, AI budgets, account administration, support, moderation, and launch gates |
 
 W01 preserves existing local accounts, SQLite schema, demo entitlements, API
 contracts, curriculum, and UI. `NODE_ENV=production` means built asset serving,
@@ -20,8 +21,12 @@ configuration and removal of production demo authority remain explicit later
 packages. W02 retains the full-state read DTO while writing individual owned
 PostgreSQL records; scoped content/history response APIs remain later work.
 The [W02 implementation runbook](08-persistence-implementation.md) records
-schema and revision contracts. The next engineering package is W03 platform;
-no existing user data may be imported without D05 owner approval.
+schema and revision contracts. The
+[W03 platform runbook](09-platform-implementation.md) records deployment and
+recovery boundaries. Managed hosting, region, TLS/edge, durable secrets/backups,
+and operating approvals remain unresolved; no live infrastructure was provisioned.
+W04 identity requires D01 provider approval; W05 content work can proceed
+independently. No existing user data may be imported without D05 owner approval.
 
 ## Delivery strategy
 
@@ -124,16 +129,21 @@ npm run test:unit
 npm run test:server
 npm run test:runtime
 npm run test:ai
+npm run test:db
+npm run test:container
 npm test
 ```
 
 The build type-checks and emits frontend and standalone server artifacts.
 Server tests cover configuration/startup, static/API behavior, isolation,
-persistence and graceful/bounded shutdown. Runtime tests install an isolated
+persistence, readiness, proxy/telemetry boundaries, and graceful/bounded shutdown.
+Database tests require an explicitly dedicated `TEST_DATABASE_URL`.
+Container tests require Docker and own isolated images, projects/volumes, and
+fixture data for read-only execution and encrypted dump/restore. Runtime tests install an isolated
 release without development dependencies. AI tests now use the compiled server
 against a loopback fixture, not real-provider verification. Browser tests use
-a Chrome executable and serialized local development server; CI must provision
-that explicitly or intentionally migrate to managed Playwright browsers.
+a Chrome executable and serialized local development server; CI now installs
+Playwright-managed Chromium. `CHROME_PATH` still overrides the browser locally.
 
 Do not simply make existing tests green by replacing all expected behavior.
 Keep explicit checks for stable IDs, server scoring, saved reports after expiry,

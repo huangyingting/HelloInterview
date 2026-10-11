@@ -7,10 +7,14 @@ test('configuration defaults preserve loopback, local data, cookies and optional
   const config = loadConfig({}, '/tmp/studio-config-fixture');
   assert.deepEqual(config, {
     environment: 'development',
+    appMode: 'local',
     rootDir: '/tmp/studio-config-fixture',
     frontendDir: '/tmp/studio-config-fixture/dist',
     dataDir: '/tmp/studio-config-fixture/data',
     databaseUrl: null,
+    publicOrigin: null,
+    trustedProxies: [],
+    logRequests: false,
     host: '127.0.0.1',
     port: 3000,
     cookieSecure: false,
@@ -51,12 +55,31 @@ test('configuration is an immutable snapshot, not a live reference to process en
   assert.ok(Object.isFrozen(config.ai));
 });
 
+test('service mode fails closed and proxy/public-origin configuration is explicit and immutable', () => {
+  assert.throws(() => loadConfig({ NODE_ENV: 'production', APP_MODE: 'service' }), /service mode is not enabled/);
+  const env = { PUBLIC_ORIGIN: 'https://Studio.Example:443/', COOKIE_SECURE: 'true', TRUST_PROXY: '127.0.0.1, 10.10.0.0/16, ::1/128', LOG_REQUESTS: 'true' };
+  const config = loadConfig(env);
+  assert.equal(config.publicOrigin, 'https://studio.example');
+  assert.deepEqual(config.trustedProxies, ['127.0.0.1', '10.10.0.0/16', '::1/128']);
+  assert.equal(config.logRequests, true);
+  assert.ok(Object.isFrozen(config.trustedProxies));
+  env.TRUST_PROXY = '192.0.2.1';
+  assert.equal(config.trustedProxies[0], '127.0.0.1');
+  assert.throws(() => loadConfig({ PUBLIC_ORIGIN: 'https://studio.example' }), /COOKIE_SECURE must be true/);
+  assert.throws(() => loadConfig({ PUBLIC_ORIGIN: 'http://studio.example', COOKIE_SECURE: 'true' }), /PUBLIC_ORIGIN must use HTTPS/);
+  assert.throws(() => loadConfig({ TRUST_PROXY: '0.0.0.0/0' }), /TRUST_PROXY/);
+});
+
 test('invalid settings fail explicitly without putting their values in the error message', () => {
   const invalid: [string, string[]][] = [
     ['NODE_ENV', ['', 'prod', 'staging']],
+    ['APP_MODE', ['', 'prod', 'public']],
     ['PORT', ['', '-1', '65536', '1.5', '1e3', 'NaN', 'Infinity', '3000oops', ' 3000', '9007199254740993']],
     ['HOST', ['', 'https://example.com', 'localhost:3000', '[::1]', '127.0.0.999', '-bad-host', 'bad host', 'host/path']],
     ['COOKIE_SECURE', ['', '1', 'yes', 'TRUE', 'false ']],
+    ['LOG_REQUESTS', ['', '1', 'yes', 'TRUE']],
+    ['PUBLIC_ORIGIN', ['', 'ftp://example.com', 'https://example.com/path', 'https://example.com/?', 'https://example.com/#', 'https://user:fixture@example.com']],
+    ['TRUST_PROXY', ['', 'true', 'false', '1', 'loopback', '127.0.0.1/33', '::1/129', '127.0.0.1/-1', '127.0.0.1/24/1']],
     ['DATA_DIR', ['', '   ', 'data\0invalid']],
     ['DATABASE_URL', ['', 'sqlite:///tmp/studio.sqlite', 'postgres://localhost', 'postgres://localhost/', 'postgres://localhost/studio#fragment', 'postgres://bad host/studio']],
     ['OPENAI_BASE_URL', ['not-a-url', 'file:///tmp/provider', 'https://user:fixture-password@example.com/v1', 'https://example.com/v1?key=fixture-key', 'https://example.com/v1#fragment', 'https://example.com/v1?', 'https://example.com/v1#', 'https://exam\nple.com/v1']],

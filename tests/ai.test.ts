@@ -45,6 +45,10 @@ async function startApplication() {
   assert.ok(address && typeof address === 'object');
   const env: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: 'production', PORT: '0', HOST: '127.0.0.1', COOKIE_SECURE: 'false', DATA_DIR: dataDirectory, OPENAI_API_KEY: 'local-fixture-only', OPENAI_BASE_URL: `http://127.0.0.1:${address.port}/v1`, OPENAI_MODEL: 'fixture-model' };
   delete env.DATABASE_URL;
+  env.LOG_REQUESTS = 'false';
+  env.APP_MODE = 'local';
+  delete env.PUBLIC_ORIGIN;
+  delete env.TRUST_PROXY;
   child = spawn(process.execPath, ['dist-server/index.js'], {
     env,
     stdio: ['ignore', 'pipe', 'pipe'],

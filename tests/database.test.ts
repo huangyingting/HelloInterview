@@ -58,7 +58,7 @@ async function api<T>(url: string, route: string, body?: unknown, cookie = '', m
   return { response, value: await response.json() as T };
 }
 async function runtime(t: TestContext, url: string) {
-  const settings = loadConfig({ NODE_ENV: 'production', DATABASE_URL: url, DATA_DIR: path.join(await temporaryDirectory(t), 'untouched'), PORT: '0' });
+  const settings = loadConfig({ NODE_ENV: 'production', DATABASE_URL: url, DATA_DIR: path.join(await temporaryDirectory(t), 'untouched'), PORT: '0', LOG_REQUESTS: 'false' });
   const server = await startServer(settings);
   t.after(() => server.close());
   return server;

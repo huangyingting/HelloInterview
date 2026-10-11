@@ -31,6 +31,7 @@ Requirements:
 - Node.js 24 and npm.
 - Google Chrome for browser tests and media/screenshot generation. The default
   executable is `/usr/bin/google-chrome`; set `CHROME_PATH` for another location.
+  CI uses Playwright-managed Chromium, installed with `npx playwright install chromium`.
 - No reference-site credentials, external service keys, or payment account are
   needed for local use.
 
@@ -199,6 +200,9 @@ cp .env.example .env
 ```
 
 The defaults bind to loopback, use port 3000, and store data in `data/`.
+`APP_MODE=local` preserves local workflows. `APP_MODE=service` deliberately
+fails startup until managed identity and production authorization are implemented;
+compiled serving does not grant permission to launch a public paid service.
 `HOST`, `PORT`, `DATA_DIR`, and `COOKIE_SECURE` can be changed in `.env`.
 Use `COOKIE_SECURE=true` only when serving over HTTPS.
 Configuration is validated before opening the database or listening. `PORT`
@@ -207,6 +211,37 @@ be an IP address or hostname; `COOKIE_SECURE` must be exactly `true` or `false`.
 `NODE_ENV` accepts `development`, `test`, or `production`; `npm start` selects
 production static serving and fails clearly if the frontend build is missing.
 It does not enable live payments or managed identity.
+
+For private HTTPS staging, `PUBLIC_ORIGIN` fixes the expected canonical origin
+and requires `COOKIE_SECURE=true`. `TRUST_PROXY` accepts only explicit proxy
+IP/CIDR allowlists; forwarded protocol from untrusted peers is ignored.
+`LOG_REQUESTS` controls JSON request completion records (on by default for
+production-format serving). Records contain server-generated request IDs,
+route templates, status and duration, not bodies, cookies, emails or query strings.
+`GET /api/health` checks process liveness; `GET /api/ready` also checks database
+connectivity and fails during draining.
+
+## CI and private container staging
+
+Application CI builds the release, runs unit/database/runtime/provider/browser
+coverage against synthetic fixtures, verifies the non-root container, rehearses
+an encrypted PostgreSQL dump/restore, and uploads compiled release artifacts.
+Actions and container base images are pinned; no live provider keys are required.
+
+```bash
+docker build -t interview-studio:staging .
+# Inject private POSTGRES_PASSWORD and DATABASE_URL through the environment.
+# The URL must address database:5432/studio; encode special password characters.
+docker compose -f compose.staging.yml up -d --wait
+```
+
+The staging compose file exposes the API only on loopback, persists PostgreSQL,
+and requires successful controlled migrations before starting the API. It is
+**private staging, not managed production infrastructure**. Do not expose local
+demo authority to customers. The runtime image uses Node's non-root user and
+can run with a read-only root filesystem when its local data directory is mounted.
+See [the deployment and recovery runbook](docs/production/09-platform-implementation.md)
+for release promotion, proxy boundaries, secrets, recovery and remaining gates.
 
 AI base URLs must be absolute HTTP/HTTPS URLs without embedded credentials,
 queries, or fragments. A trailing slash is normalized. Configuration is a

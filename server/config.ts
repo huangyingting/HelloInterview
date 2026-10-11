@@ -3,10 +3,14 @@ import path from 'node:path';
 
 export interface ServerConfig {
   readonly environment: 'development' | 'test' | 'production';
+  readonly appMode: 'local' | 'service';
   readonly rootDir: string;
   readonly frontendDir: string;
   readonly dataDir: string;
   readonly databaseUrl: string | null;
+  readonly publicOrigin: string | null;
+  readonly trustedProxies: readonly string[];
+  readonly logRequests: boolean;
   readonly host: string;
   readonly port: number;
   readonly cookieSecure: boolean;
@@ -25,6 +29,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
   if (environment !== 'development' && environment !== 'test' && environment !== 'production') {
     throw new ConfigurationError('NODE_ENV', 'must be development, test, or production.');
   }
+  const appMode = env.APP_MODE ?? 'local';
+  if (appMode !== 'local' && appMode !== 'service') throw new ConfigurationError('APP_MODE', 'must be local or service.');
+  if (appMode === 'service') throw new ConfigurationError('APP_MODE', 'service mode is not enabled in this release; managed identity and production authorization are still pending.');
   const portText = env.PORT ?? '3000';
   if (!/^\d+$/.test(portText) || !Number.isSafeInteger(Number(portText)) || Number(portText) > 65535) {
     throw new ConfigurationError('PORT', 'must be an integer between 0 and 65535.');
@@ -35,6 +42,26 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
   const cookieSecure = env.COOKIE_SECURE ?? 'false';
   if (cookieSecure !== 'true' && cookieSecure !== 'false') {
     throw new ConfigurationError('COOKIE_SECURE', 'must be true or false.');
+  }
+  const logRequests = env.LOG_REQUESTS ?? (environment === 'production' ? 'true' : 'false');
+  if (!['true', 'false'].includes(logRequests)) throw new ConfigurationError('LOG_REQUESTS', 'must be true or false.');
+  let publicOrigin: string | null = null;
+  if (env.PUBLIC_ORIGIN !== undefined) {
+    try {
+      const url = new URL(env.PUBLIC_ORIGIN);
+      if (/[\x00-\x20\x7f]/.test(env.PUBLIC_ORIGIN) || !['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.pathname !== '/' || env.PUBLIC_ORIGIN.includes('?') || env.PUBLIC_ORIGIN.includes('#')) throw new Error('Invalid public origin.');
+      publicOrigin = url.origin;
+    } catch {
+      throw new ConfigurationError('PUBLIC_ORIGIN', 'must be an HTTP or HTTPS origin without credentials, a path, query, or fragment.');
+    }
+    if (cookieSecure === 'true' && !publicOrigin.startsWith('https://')) throw new ConfigurationError('PUBLIC_ORIGIN', 'must use HTTPS when COOKIE_SECURE is true.');
+    if (publicOrigin.startsWith('https://') && cookieSecure !== 'true') throw new ConfigurationError('COOKIE_SECURE', 'must be true when PUBLIC_ORIGIN uses HTTPS.');
+  }
+  const trustedProxies = env.TRUST_PROXY === undefined ? [] : env.TRUST_PROXY.split(',').map(value => value.trim());
+  for (const proxy of trustedProxies) {
+    const [address, prefix, extra] = proxy.split('/');
+    const family = isIP(address);
+    if (!family || extra !== undefined || prefix !== undefined && (!/^\d+$/.test(prefix) || Number(prefix) < 1 || Number(prefix) > (family === 4 ? 32 : 128))) throw new ConfigurationError('TRUST_PROXY', 'must be a comma-separated allowlist of proxy IP addresses or non-global CIDR networks, not a boolean or hop count.');
   }
   const dataDir = env.DATA_DIR ?? 'data';
   if (!dataDir.trim() || dataDir.includes('\0')) throw new ConfigurationError('DATA_DIR', 'must be a nonempty filesystem path.');
@@ -66,10 +93,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
   const root = path.resolve(rootDir);
   return Object.freeze({
     environment,
+    appMode,
     rootDir: root,
     frontendDir: path.join(root, 'dist'),
     dataDir: path.resolve(root, dataDir),
     databaseUrl,
+    publicOrigin,
+    trustedProxies: Object.freeze(trustedProxies),
+    logRequests: logRequests === 'true',
     host,
     port: Number(portText),
     cookieSecure: cookieSecure === 'true',

@@ -1,0 +1,61 @@
+name: Application CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: application-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: studio_fixture
+          POSTGRES_PASSWORD: ci-fixture-only
+          POSTGRES_DB: studio_fixture
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U studio_fixture -d studio_fixture"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://studio_fixture:ci-fixture-only@127.0.0.1:5432/studio_fixture
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - run: npm run test:unit
+      - run: npx tsx --test tests/server.test.ts tests/runtime.test.ts tests/ai.test.ts tests/database.test.ts
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
+      - run: npm run test:container
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: compiled-release-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            dist/
+            dist-server/
+            package.json
+            package-lock.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: browser-failures-${{ github.sha }}
+          retention-days: 3
+          path: |
+            test-results/
+            playwright-report/

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
-import { createServer, type Server } from 'node:http';
+import { createServer, request as httpRequest, type Server } from 'node:http';
 import { once } from 'node:events';
 import { execFile } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
@@ -9,6 +9,8 @@ import { promisify } from 'node:util';
 import { createApplication } from '../server/application';
 import { loadConfig } from '../server/config';
 import { startServer } from '../server/runtime';
+import { createApp, handleError } from '../server/app';
+import { localConnection } from '../server/db/connection';
 import type { Bootstrap, UserState } from '../shared/types';
 
 const execute = promisify(execFile);
@@ -22,7 +24,7 @@ async function temporaryDirectory(t: TestContext) {
 }
 
 function config(dataDir: string, env: NodeJS.ProcessEnv = {}) {
-  return loadConfig({ NODE_ENV: 'production', HOST: '127.0.0.1', PORT: '0', DATA_DIR: dataDir, ...env });
+  return loadConfig({ NODE_ENV: 'production', HOST: '127.0.0.1', PORT: '0', DATA_DIR: dataDir, LOG_REQUESTS: 'false', ...env });
 }
 
 async function api<T>(url: string, route: string, body?: unknown, cookie = '') {
@@ -222,4 +224,78 @@ test('shutdown enforces the grace deadline and aborts a provider that never answ
   assert.ok(Date.now() - started < 15000);
   assert.equal(runtime.server.listening, false);
   assert.ok(logs.some(message => message.includes('10-second grace period')));
+});
+
+test('readiness requires a live database while liveness remains independent of database outages', async t => {
+  const db = localConnection(await temporaryDirectory(t));
+  t.after(() => db.close());
+  const settings = config(await temporaryDirectory(t));
+  const app = createApp(settings, db, new AbortController().signal);
+  app.use(handleError);
+  const server = createServer(app), url = await listen(server);
+  t.after(() => closeServer(server));
+  assert.deepEqual((await api(url, '/api/ready')).value, { status: 'ready', mode: 'local' });
+  await db.close();
+  t.mock.method(console, 'error', () => undefined);
+  assert.equal((await api(url, '/api/ready')).response.status, 503);
+  assert.equal((await api(url, '/api/health')).response.status, 200);
+});
+
+test('application draining rejects new work without aborting the in-flight request grace period', async t => {
+  const application = await createApplication(config(await temporaryDirectory(t)));
+  const server = createServer(application.app), url = await listen(server);
+  t.after(async () => { await closeServer(server); await application.close(); });
+  assert.equal((await api(url, '/api/ready')).response.status, 200);
+  application.drain();
+  assert.equal((await api(url, '/api/ready')).response.status, 503);
+  assert.equal((await api(url, '/api/auth/demo', {})).response.status, 503);
+});
+
+test('trusted HTTPS proxy origin is canonical and forwarded protocol is ignored from untrusted peers', async t => {
+  const trusted = await startServer(config(await temporaryDirectory(t), { PUBLIC_ORIGIN: 'https://studio.example', COOKIE_SECURE: 'true', TRUST_PROXY: '127.0.0.1' }));
+  const untrusted = await startServer(config(await temporaryDirectory(t), { PUBLIC_ORIGIN: 'https://studio.example', COOKIE_SECURE: 'true' }));
+  t.after(async () => { await trusted.close(); await untrusted.close(); });
+  function proxyPost(url: string, headers: Record<string, string>) {
+    return new Promise<{ status: number | undefined; cookies: string[] }>((resolve, reject) => {
+      const req = httpRequest(`${url}/api/auth/demo`, { method: 'POST', headers }, res => {
+        res.resume();
+        res.once('end', () => resolve({ status: res.statusCode, cookies: res.headers['set-cookie'] ?? [] }));
+      });
+      req.once('error', reject);
+      req.end();
+    });
+  }
+  const headers = { Host: 'studio.example:443', 'X-Forwarded-Proto': 'https', Origin: 'https://studio.example' };
+  const allowed = await proxyPost(trusted.url, headers);
+  assert.equal(allowed.status, 200);
+  assert.match(allowed.cookies[0], /;\s*Secure/);
+  assert.equal((await proxyPost(untrusted.url, headers)).status, 421);
+  assert.equal((await proxyPost(trusted.url, { ...headers, Origin: 'https://untrusted.example' })).status, 403);
+  assert.equal((await proxyPost(trusted.url, { ...headers, Host: 'wrong.example' })).status, 421);
+  assert.equal((await api(untrusted.url, '/api/ready')).response.status, 200);
+});
+
+test('request telemetry uses server IDs and route templates, never bodies, cookies, emails or query strings', async t => {
+  const logs: string[] = [];
+  t.mock.method(console, 'log', (...args: unknown[]) => { logs.push(args.map(String).join(' ')); });
+  const runtime = await startServer(config(await temporaryDirectory(t), { LOG_REQUESTS: 'true' }));
+  t.after(() => runtime.close());
+  const response = await fetch(`${runtime.url}/api/auth/signup?token=fixture-query-secret`, {
+    method: 'POST',
+    headers: { 'X-Request-ID': 'untrusted-id', Cookie: 'fixture-cookie-secret', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Telemetry Fixture', email: 'fixture-private-email@example.invalid', password: 'fixture-private-password-123' }),
+  });
+  assert.equal(response.status, 200);
+  const requestId = response.headers.get('x-request-id')!;
+  assert.match(requestId, /^[a-f0-9-]{36}$/);
+  assert.equal(response.headers.get('cache-control'), 'private, no-store');
+  const entries = logs.map(line => JSON.parse(line) as Record<string, unknown>);
+  const completed = entries.find(entry => entry.requestId === requestId)!;
+  assert.equal(completed.event, 'request.completed');
+  assert.equal(completed.route, '/api/auth/:action');
+  assert.equal(completed.status, 200);
+  assert.equal(typeof completed.durationMs, 'number');
+  for (const privateValue of ['fixture-query-secret', 'fixture-cookie-secret', 'fixture-private-email', 'fixture-private-password', 'untrusted-id']) {
+    assert.ok(!logs.join('').includes(privateValue));
+  }
 });

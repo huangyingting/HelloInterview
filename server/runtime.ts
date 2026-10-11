@@ -37,6 +37,7 @@ export async function startServer(config: ServerConfig): Promise<RunningServer> 
   let closing: Promise<void> | undefined;
   function close(): Promise<void> {
     return closing ??= (async () => {
+      application.drain();
       try {
         await new Promise<void>((resolve, reject) => {
           const deadline = setTimeout(() => {

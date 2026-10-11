@@ -9,6 +9,7 @@ import { assertDatabaseVersion } from './db/migrations';
 
 export interface Application {
   readonly app: express.Express;
+  drain(): void;
   close(): Promise<void>;
 }
 
@@ -26,11 +27,13 @@ export async function createApplication(config: ServerConfig): Promise<Applicati
   }
   const db = config.databaseUrl ? postgresConnection(config.databaseUrl) : localConnection(config.dataDir);
   const shutdown = new AbortController();
+  const draining = new AbortController();
   let vite: ViteDevServer | undefined;
   let closing: Promise<void> | undefined;
   function close(): Promise<void> {
     return closing ??= (async () => {
       shutdown.abort();
+      draining.abort();
       try {
         await vite?.close();
       } finally {
@@ -40,7 +43,7 @@ export async function createApplication(config: ServerConfig): Promise<Applicati
   }
   try {
     await assertDatabaseVersion(db);
-    const app = createApp(config, db, shutdown.signal);
+    const app = createApp(config, db, shutdown.signal, draining.signal);
     if (config.environment === 'production') {
       app.use(express.static(config.frontendDir));
       app.get('/{*path}', (_req, res) => res.sendFile(path.join(config.frontendDir, 'index.html')));
@@ -50,7 +53,7 @@ export async function createApplication(config: ServerConfig): Promise<Applicati
       app.use(vite.middlewares);
     }
     app.use(handleError);
-    return { app, close };
+    return { app, close, drain: () => { draining.abort(); } };
   } catch (error) {
     try {
       await close();

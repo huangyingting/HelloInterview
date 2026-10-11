@@ -8,6 +8,7 @@ import type { Attempt, Feedback, Level, MockSession, Problem, ProjectFile, Proje
 import type { ServerConfig } from './config';
 import type { Database } from './db/connection';
 import { StateRepository } from './db/state-repository';
+import { requestTelemetry } from './telemetry';
 
 class HttpError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -46,19 +47,36 @@ function sourceText(value: unknown): string {
   if (value.includes('\0')) throw new HttpError(400, 'Import text source files, not binary content.');
   return value;
 }
-export function createApp(config: ServerConfig, db: Database, shutdown: AbortSignal): express.Express {
+export function createApp(config: ServerConfig, db: Database, shutdown: AbortSignal, draining: AbortSignal = shutdown): express.Express {
   const states = new StateRepository(db);
   const app = express();
   app.disable('x-powered-by');
+  app.set('trust proxy', [...config.trustedProxies]);
+  app.use(requestTelemetry(config.logRequests));
   app.use((req, res, next) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
     res.setHeader('X-Frame-Options', 'DENY');
+    if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'private, no-store');
+    const healthProbe = req.method === 'GET' && ['/api/health', '/api/ready'].includes(req.path);
+    if (config.publicOrigin && !healthProbe) {
+      let origin: string | undefined;
+      try {
+        const url = new URL(`${req.protocol}://${req.get('host')}`);
+        if (!url.username && !url.password && url.pathname === '/' && !url.search && !url.hash) origin = url.origin;
+      } catch {
+        origin = undefined;
+      }
+      if (origin !== config.publicOrigin) {
+        res.status(421).json({ error: 'Use the configured application origin and trusted HTTPS proxy.' });
+        return;
+      }
+    }
     if (/\.cred|\.env|\/data\/|\/\.git\//i.test(decodeURIComponent(req.path))) {
       res.status(404).json({ error: 'Not found.' });
       return;
     }
-    if (req.method !== 'GET' && req.method !== 'HEAD' && req.headers.origin && req.headers.origin !== `${req.protocol}://${req.get('host')}`) {
+    if (req.method !== 'GET' && req.method !== 'HEAD' && req.headers.origin && req.headers.origin !== (config.publicOrigin ?? `${req.protocol}://${req.get('host')}`)) {
       res.status(403).json({ error: 'Cross-origin requests are not allowed.' });
       return;
     }
@@ -66,7 +84,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   });
   app.use(express.json({ limit: '512kb' }));
   app.use((_req, _res, next) => {
-    if (shutdown.aborted) next(new HttpError(503, 'The Studio is shutting down. Your saved work is unchanged.'));
+    if (shutdown.aborted || draining.aborted) next(new HttpError(503, 'The Studio is shutting down. Your saved work is unchanged.'));
     else next();
   });
 
@@ -126,6 +144,15 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     next();
   }
   app.get('/api/health', async (_req, res) => res.json({ status: 'ok' }));
+  app.get('/api/ready', async (_req, res) => {
+    try {
+      await db.prepare('SELECT 1 AS healthy').get();
+    } catch (error) {
+      console.error(JSON.stringify({ event: 'readiness.failed', requestId: res.locals.requestId, error: error instanceof Error ? error.name : 'Unknown error' }));
+      throw new HttpError(503, 'The Studio is not ready. Try again later.');
+    }
+    res.json({ status: 'ready', mode: config.appMode });
+  });
   app.get('/api/bootstrap', async (req, res) => {
     const user = (await currentUser(req));
     res.setHeader('Cache-Control', 'no-store');
@@ -686,7 +713,7 @@ export const handleError: express.ErrorRequestHandler = (error: unknown, _req, r
   } else if (error instanceof SyntaxError) {
     res.status(400).json({ error: 'Invalid JSON request.' });
   } else {
-    console.error('Request failed:', error instanceof Error ? error.name : 'Unknown error');
+    console.error(JSON.stringify({ event: 'request.failed', requestId: res.locals.requestId, error: error instanceof Error ? error.name : 'Unknown error' }));
     res.status(500).json({ error: 'Something went wrong. Your previous saved work is unchanged.' });
   }
 };
