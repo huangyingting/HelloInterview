@@ -5,16 +5,32 @@ import { cp, mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { setTimeout as delay } from 'node:timers/promises';
 import { test } from 'node:test';
 import { openIdentityFixture } from './fixtures/identity';
 
-test('runtime-only compiled release authenticates through HTTPS OIDC and retains owned identity/session state after restart', { timeout: 120000 }, async t => {
-  const f = await openIdentityFixture({}, { brokerHostname: '127.0.0.1' });
+test('runtime-only release retains identity after restart and operates canonical reconciliation, backlog failure and the compiled worker', { timeout: 120000 }, async t => {
+  const f = await openIdentityFixture({}, { brokerHostname: '127.0.0.1', lifecycle: true });
   const release = await mkdtemp(join(tmpdir(), 'studio-identity-release-'));
-  let stop: (() => Promise<void>) | undefined;
+  const settings = f.config.identity?.lifecycle;
+  assert.ok(settings); assert.ok(f.lifecycle);
+  const databaseUrl = f.config.databaseUrl;
+  assert.ok(databaseUrl);
+  const env: NodeJS.ProcessEnv = {
+    PATH: process.env.PATH, NODE_ENV: 'production', HOST: '127.0.0.1', PORT: '0',
+    DATABASE_URL: databaseUrl, PUBLIC_ORIGIN: f.origin, COOKIE_SECURE: 'true',
+    TRUST_PROXY: '127.0.0.1/32', LOG_REQUESTS: 'false',
+    OIDC_ISSUER: f.issuer, OIDC_CLIENT_ID: 'synthetic-client', OIDC_CLIENT_SECRET: 'synthetic-client-secret',
+    OIDC_MANAGEMENT_ORIGIN: settings.origin, OIDC_MANAGEMENT_CLIENT_ID: settings.clientId,
+    OIDC_MANAGEMENT_CLIENT_SECRET: settings.clientSecret, OIDC_PASSWORD_HOOK_SECRET: settings.hookSecret,
+    NODE_EXTRA_CA_CERTS: f.certificatePath,
+  };
+  let stop: (() => Promise<void>) | undefined, stopWorker: (() => Promise<void>) | undefined;
   t.after(async () => {
-    try { await stop?.(); } finally {
-      try { await f.close(); } finally { await rm(release, { recursive: true, force: true }); }
+    try { await stopWorker?.(); } finally {
+      try { await stop?.(); } finally {
+        try { await f.close(); } finally { await rm(release, { recursive: true, force: true }); }
+      }
     }
   });
   await Promise.all([
@@ -28,13 +44,7 @@ test('runtime-only compiled release authenticates through HTTPS OIDC and retains
   async function start() {
     const child = spawn(process.execPath, ['dist-server/index.js'], {
       cwd: release, stdio: ['ignore', 'pipe', 'pipe'],
-      env: {
-        PATH: process.env.PATH, NODE_ENV: 'production', HOST: '127.0.0.1', PORT: '0',
-        DATABASE_URL: f.config.databaseUrl!, PUBLIC_ORIGIN: f.origin, COOKIE_SECURE: 'true',
-        TRUST_PROXY: '127.0.0.1/32', LOG_REQUESTS: 'false',
-        OIDC_ISSUER: f.issuer, OIDC_CLIENT_ID: 'synthetic-client', OIDC_CLIENT_SECRET: 'synthetic-client-secret',
-        NODE_EXTRA_CA_CERTS: f.certificatePath,
-      },
+      env,
     });
     const exited = once(child, 'exit');
     stop = async () => {
@@ -75,6 +85,51 @@ test('runtime-only compiled release authenticates through HTTPS OIDC and retains
   await f.begin(browser);
   assert.equal((await f.db.prepare("SELECT attempts FROM identity_abuse_buckets WHERE scope='network'").get())?.attempts, 3);
   assert.equal((await browser.request('/api/auth/demo', {})).status, 404);
+
+  const subject = await f.db.prepare('SELECT subject FROM managed_identities').get();
+  assert.equal(typeof subject?.subject, 'string');
+  f.setProfile(String(subject?.subject), { last_password_reset: new Date(Date.now() - 1500).toISOString() });
+  const reconciled = await promisify(execFile)(process.execPath, ['dist-server/identity/cli.js', 'reconcile'], { cwd: release, env, timeout: 15000 });
+  assert.deepEqual(JSON.parse(reconciled.stdout), { event: 'identity.reconciliation.completed', completed: 1 });
+  assert.equal((await browser.bootstrap()).user, null);
+
+  const second = f.browser(), secondSubject = 'auth0|compiled-worker-reset';
+  assert.equal((await f.complete(second, await f.begin(second, 'email'), { sub: secondSubject })).headers.get('location'), '/account');
+  assert.ok((await second.bootstrap()).user);
+  f.setProfile(secondSubject, { last_password_reset: new Date(Date.now() - 1500).toISOString() });
+  await f.lifecycle.enqueueSweep();
+  const held = await f.lifecycle.jobs.claim('identity.reconcile');
+  assert.ok(held);
+  await assert.rejects(promisify(execFile)(process.execPath, ['dist-server/identity/cli.js', 'reconcile'], { cwd: release, env, timeout: 15000 }), error => {
+    assert.ok(error && typeof error === 'object' && 'code' in error && 'stdout' in error);
+    assert.equal(error.code, 1);
+    assert.ok(!String(error.stdout).includes('identity.reconciliation.completed'));
+    return true;
+  });
+  assert.equal(await f.lifecycle.jobs.fail(held), true);
+  const worker = spawn(process.execPath, ['dist-server/identity/cli.js', 'worker'], { cwd: release, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const workerExited = once(worker, 'exit');
+  let diagnostics = '';
+  worker.stderr.on('data', value => { diagnostics += String(value); });
+  stopWorker = async () => {
+    if (worker.exitCode === null && worker.signalCode === null) worker.kill('SIGTERM');
+    const [code, signal] = await workerExited;
+    assert.equal(code, 0, diagnostics); assert.equal(signal, null);
+  };
+  const deadline = Date.now() + 15000;
+  while ((await second.bootstrap()).user) {
+    assert.equal(worker.exitCode, null, diagnostics);
+    assert.ok(Date.now() < deadline, `The compiled worker did not reconcile: ${diagnostics}`);
+    await delay(200);
+  }
+  assert.ok((await f.lifecycle.jobs.operation(held.data.operationId)).completedAt);
+  await stopWorker();
+  await assert.rejects(promisify(execFile)(process.execPath, ['dist-server/index.js'], {
+    cwd: release, timeout: 15000, env: { ...env,
+      OIDC_MANAGEMENT_ORIGIN: undefined, OIDC_MANAGEMENT_CLIENT_ID: undefined,
+      OIDC_MANAGEMENT_CLIENT_SECRET: undefined, OIDC_PASSWORD_HOOK_SECRET: undefined,
+    },
+  }), { code: 1 });
   assert.equal((await browser.request('/api/logout', {})).status, 200);
   assert.equal((await browser.bootstrap()).user, null);
 });

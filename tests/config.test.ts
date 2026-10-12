@@ -108,6 +108,7 @@ test('managed identity requires an explicit HTTPS PostgreSQL deployment and immu
   assert.equal(config.identity?.issuer, 'https://broker.fixture/');
   assert.equal(config.identity?.connections.github, 'github');
   assert.equal(config.identity?.legacyLinkUntil, null);
+  assert.equal(config.identity?.lifecycle, null);
   assert.ok(Object.isFrozen(config.identity));
   assert.ok(Object.isFrozen(config.identity?.connections));
   for (const override of [
@@ -122,4 +123,20 @@ test('managed identity requires an explicit HTTPS PostgreSQL deployment and immu
   env.OIDC_CLIENT_SECRET = 'changed-secret';
   assert.equal(config.identity?.clientSecret, 'synthetic-secret');
   assert.ok(loadConfig({ ...env, OIDC_LEGACY_LINK_UNTIL: new Date(Date.now() + 86400000).toISOString() }).identity?.legacyLinkUntil);
+});
+
+test('identity lifecycle requires separate read-only machine credentials and a private signing key', () => {
+  const env = {
+    DATABASE_URL: 'postgres://localhost/synthetic_fixture', PUBLIC_ORIGIN: 'https://studio.fixture', COOKIE_SECURE: 'true',
+    OIDC_ISSUER: 'https://broker.fixture/', OIDC_CLIENT_ID: 'synthetic-client', OIDC_CLIENT_SECRET: 'synthetic-secret',
+    OIDC_MANAGEMENT_ORIGIN: 'https://broker.fixture', OIDC_MANAGEMENT_CLIENT_ID: 'synthetic-manager',
+    OIDC_MANAGEMENT_CLIENT_SECRET: 'synthetic-manager-secret', OIDC_PASSWORD_HOOK_SECRET: '1'.repeat(64),
+  };
+  const config = loadConfig(env);
+  assert.ok(Object.isFrozen(config.identity?.lifecycle));
+  for (const override of [
+    { OIDC_MANAGEMENT_ORIGIN: undefined }, { OIDC_MANAGEMENT_ORIGIN: 'http://broker.fixture' },
+    { OIDC_MANAGEMENT_ORIGIN: 'https://broker.fixture/path' }, { OIDC_MANAGEMENT_CLIENT_ID: 'synthetic-client' },
+    { OIDC_MANAGEMENT_CLIENT_SECRET: undefined }, { OIDC_PASSWORD_HOOK_SECRET: 'short' },
+  ]) assert.throws(() => loadConfig({ ...env, ...override }), ConfigurationError);
 });

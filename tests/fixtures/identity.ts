@@ -14,6 +14,9 @@ import { createApp, handleError } from '../../server/app';
 import { loadConfig } from '../../server/config';
 import type { Provider } from '../../server/identity/broker';
 import type { Bootstrap, IdentitySecurity } from '../../shared/types';
+import { IdentityLifecycle } from '../../server/identity/lifecycle';
+import { migrateJobs } from '../../server/jobs';
+import type { IdentityTransport } from '../../server/identity/broker';
 
 const clientId = 'synthetic-client', clientSecret = 'synthetic-client-secret';
 let browserNumber = 0;
@@ -72,7 +75,7 @@ export class IdentityBrowser {
   }
 }
 
-export async function openIdentityFixture(env: NodeJS.ProcessEnv = {}, options: { brokerHostname?: string } = {}) {
+export async function openIdentityFixture(env: NodeJS.ProcessEnv = {}, options: { brokerHostname?: string; lifecycle?: boolean } = {}) {
   const databaseUrl = process.env.TEST_DATABASE_URL;
   if (!databaseUrl) throw new Error('TEST_DATABASE_URL must identify a dedicated PostgreSQL identity fixture.');
   const tlsDir = await mkdtemp(join(tmpdir(), 'studio-identity-tls-'));
@@ -106,6 +109,9 @@ export async function openIdentityFixture(env: NodeJS.ProcessEnv = {}, options: 
     let issuer = 'https://broker.fixture/', origin = 'https://studio.fixture';
     let currentKey = key(), nextKey = key(), jwksKeys = [currentKey, nextKey], defaultSubject = 'google-oauth2|synthetic-owner';
     let defaultClaims: Record<string, unknown> = {};
+    const profiles = new Map<string, Record<string, unknown>>(), deleted = new Set<string>();
+    const managementRequests: string[] = [];
+    let managementScope = 'read:users';
     const codes = new Map<string, { params: URLSearchParams; overrides: Record<string, unknown>; badSignature: boolean; algorithm: string }>();
     const observed: { path: string; parameters: URLSearchParams }[] = [];
     let unavailable = false;
@@ -136,6 +142,11 @@ export async function openIdentityFixture(env: NodeJS.ProcessEnv = {}, options: 
     });
     brokerApp.post('/oauth/token', (req, res) => {
       if (unavailable) return res.status(503).json({ error: 'synthetic-unavailable' });
+      if (req.body.grant_type === 'client_credentials') {
+        if (req.body.client_id !== 'synthetic-manager' || req.body.client_secret !== 'synthetic-management-secret' ||
+          req.body.audience !== `${new URL(issuer).origin}/api/v2/` || req.body.scope !== 'read:users') return res.status(401).json({ error: 'invalid_client' });
+        return res.json({ token_type: 'Bearer', access_token: 'synthetic-management-token', expires_in: 3600, scope: managementScope });
+      }
       const params = new URLSearchParams(req.body), code = params.get('code') ?? '', saved = codes.get(code);
       codes.delete(code);
       observed.push({ path: '/oauth/token', parameters: params });
@@ -145,10 +156,21 @@ export async function openIdentityFixture(env: NodeJS.ProcessEnv = {}, options: 
       const now = Math.floor(Date.now() / 1000);
       const claims = { iss: issuer, aud: clientId, sub: defaultSubject, iat: now, exp: now + 120, auth_time: now,
         nonce: saved.params.get('nonce'), name: 'Synthetic member', email: 'owner@example.invalid', email_verified: true, ...saved.overrides };
+      if (typeof claims.sub === 'string' && !profiles.has(claims.sub) && !deleted.has(claims.sub)) {
+        profiles.set(claims.sub, { user_id: claims.sub, updated_at: new Date(Date.now() - 10000).toISOString(), blocked: false, email: claims.email, email_verified: claims.email_verified });
+      }
       const header = Buffer.from(JSON.stringify({ alg: saved.algorithm, kid: currentKey.kid })).toString('base64url');
       const body = `${header}.${Buffer.from(JSON.stringify(claims)).toString('base64url')}`;
       const signature = saved.algorithm === 'none' ? '' : sign('RSA-SHA256', Buffer.from(body), saved.badSignature ? key().privateKey : currentKey.privateKey).toString('base64url');
       res.json({ token_type: 'Bearer', access_token: 'synthetic-access-token', expires_in: 120, id_token: `${body}.${signature}` });
+    });
+    brokerApp.get('/api/v2/users/:subject', (req, res) => {
+      if (unavailable) return res.status(503).json({ error: 'synthetic-unavailable' });
+      if (req.get('Authorization') !== 'Bearer synthetic-management-token') return res.status(401).json({ error: 'invalid_token' });
+      managementRequests.push(req.originalUrl);
+      const profile = profiles.get(req.params.subject);
+      if (!profile) return res.status(404).json({ error: 'not_found' });
+      res.json(profile);
     });
     const broker = createServer(tls, brokerApp);
     servers.push(broker); broker.listen(0, '127.0.0.1'); await once(broker, 'listening');
@@ -164,17 +186,23 @@ export async function openIdentityFixture(env: NodeJS.ProcessEnv = {}, options: 
     const config = loadConfig({
       NODE_ENV: 'test', DATABASE_URL: url.href, PUBLIC_ORIGIN: origin, COOKIE_SECURE: 'true', TRUST_PROXY: '127.0.0.1/32',
       OIDC_ISSUER: issuer, OIDC_CLIENT_ID: clientId, OIDC_CLIENT_SECRET: clientSecret, ...env,
+      ...(options.lifecycle ? { OIDC_MANAGEMENT_ORIGIN: new URL(issuer).origin, OIDC_MANAGEMENT_CLIENT_ID: 'synthetic-manager',
+        OIDC_MANAGEMENT_CLIENT_SECRET: 'synthetic-management-secret', OIDC_PASSWORD_HOOK_SECRET: '1'.repeat(64) } : {}),
     });
+    if (config.identity?.lifecycle) await migrateJobs(db);
     async function replica(server = createServer(tls)) {
       const connection = postgresConnection(url.href), shutdown = new AbortController();
       databases.push(connection); shutdowns.push(shutdown);
-      const app = createApp(config, connection, shutdown.signal, shutdown.signal, async (url, options) => {
+      const transport: IdentityTransport = async (url, options) => {
         const requested = new URL(url);
         if (requested.origin !== new URL(issuer).origin) throw new Error('Fixture transport refused an unexpected issuer.');
         const body = options.body;
         if (body !== undefined && body !== null && typeof body !== 'string' && !(body instanceof URLSearchParams)) throw new Error('The synthetic OIDC fixture received an unsupported request body.');
         return fixtureFetch(`${brokerUrl}${requested.pathname}${requested.search}`, { method: options.method, headers: options.headers, body, signal: options.signal, ca: certificate });
-      });
+      };
+      const lifecycle = config.identity?.lifecycle ? await IdentityLifecycle.open(connection, config.identity, shutdown.signal, transport) : undefined;
+      if (lifecycle) cleanup.push(() => lifecycle.close());
+      const app = createApp(config, connection, shutdown.signal, shutdown.signal, transport, lifecycle);
       app.use(express.static(config.frontendDir));
       app.get('/{*path}', (_req, res) => res.sendFile(`${config.frontendDir}/index.html`));
       app.use(handleError);
@@ -182,11 +210,18 @@ export async function openIdentityFixture(env: NodeJS.ProcessEnv = {}, options: 
       if (!servers.includes(server)) { servers.push(server); server.listen(0, '127.0.0.1'); await once(server, 'listening'); }
       const address = server.address();
       if (!address || typeof address === 'string') throw new Error('Synthetic app did not listen.');
-      return { db: connection, address: `https://127.0.0.1:${address.port}`, browser: () => new IdentityBrowser(`https://127.0.0.1:${address.port}`, new URL(origin).host, certificate) };
+      return { db: connection, lifecycle, address: `https://127.0.0.1:${address.port}`, browser: () => new IdentityBrowser(`https://127.0.0.1:${address.port}`, new URL(origin).host, certificate) };
     }
     const application = await replica(initialServer);
     return {
       ...application, schema, config, close, replica, cleanup, brokerUrl, origin, issuer, authorize, observed, certificatePath: join(tlsDir, 'cert.pem'),
+      managementRequests,
+      setProfile(subject: string, values: Record<string, unknown>) {
+        deleted.delete(subject);
+        profiles.set(subject, { user_id: subject, email: 'owner@example.invalid', email_verified: true, blocked: false, ...profiles.get(subject), updated_at: new Date().toISOString(), ...values });
+      },
+      deleteProfile(subject: string) { profiles.delete(subject); deleted.add(subject); },
+      managementScope(value: string) { managementScope = value; },
       proxyTo(target: string) {
         const url = new URL(target);
         if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw new Error('The synthetic gateway only proxies its loopback child.');

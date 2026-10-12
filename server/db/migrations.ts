@@ -209,6 +209,23 @@ export const migrations = [{
     );
     CREATE INDEX identity_abuse_expiry ON identity_abuse_buckets(expires);
   `,
+}, {
+  version: 6,
+  name: 'managed-credential-lifecycle',
+  sql: `
+    ALTER TABLE managed_accounts ADD COLUMN security_cutoff BIGINT NOT NULL DEFAULT 0 CHECK (security_cutoff >= 0);
+    ALTER TABLE managed_identities ADD COLUMN available INTEGER NOT NULL DEFAULT 1 CHECK (available IN (0,1));
+    ALTER TABLE auth_transactions ADD COLUMN requires_fresh INTEGER NOT NULL DEFAULT 0 CHECK (requires_fresh IN (0,1));
+    UPDATE auth_transactions SET requires_fresh=1 WHERE purpose<>'login';
+    ALTER TABLE auth_transactions ADD CONSTRAINT auth_transaction_fresh_proof CHECK (purpose='login' OR requires_fresh=1);
+    CREATE TABLE identity_subject_security (
+      issuer TEXT NOT NULL, subject TEXT NOT NULL,
+      auth_cutoff BIGINT NOT NULL DEFAULT 0 CHECK (auth_cutoff >= 0),
+      canonical_version BIGINT NOT NULL DEFAULT 0 CHECK (canonical_version >= 0),
+      disabled INTEGER NOT NULL DEFAULT 0 CHECK (disabled IN (0,1,2)),
+      PRIMARY KEY (issuer,subject)
+    );
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

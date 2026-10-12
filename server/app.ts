@@ -15,6 +15,7 @@ import { HttpError } from './http-error';
 import { ContentRepository } from './content/repository';
 import { ManagedIdentity } from './identity';
 import { providers, type IdentityTransport } from './identity/broker';
+import type { IdentityLifecycle } from './identity/lifecycle';
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new HttpError(400, 'Expected an object.');
   return value as Record<string, unknown>;
@@ -49,11 +50,12 @@ function sourceText(value: unknown): string {
   if (value.includes('\0')) throw new HttpError(400, 'Import text source files, not binary content.');
   return value;
 }
-export function createApp(config: ServerConfig, db: Database, shutdown: AbortSignal, draining: AbortSignal = shutdown, identityTransport?: IdentityTransport): express.Express {
+export function createApp(config: ServerConfig, db: Database, shutdown: AbortSignal, draining: AbortSignal = shutdown, identityTransport?: IdentityTransport, lifecycle?: IdentityLifecycle): express.Express {
   const states = new StateRepository(db);
   const content = new ContentRepository(db);
   if (config.identity && !config.publicOrigin) throw new Error('Managed identity requires a canonical application origin.');
-  const identity = config.identity && config.publicOrigin ? new ManagedIdentity(db, config.identity, config.publicOrigin, shutdown, identityTransport) : null;
+  if (config.identity?.lifecycle && !lifecycle) throw new Error('Configured identity lifecycle must be opened before serving requests.');
+  const identity = config.identity && config.publicOrigin ? new ManagedIdentity(db, config.identity, config.publicOrigin, shutdown, identityTransport, lifecycle) : null;
   const connectedAi = identity ? null : config.ai;
   const app = express();
   app.disable('x-powered-by');
@@ -63,7 +65,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
     res.setHeader('X-Frame-Options', 'DENY');
-    if (req.path.startsWith('/api/') || req.path.startsWith('/auth/')) res.setHeader('Cache-Control', 'private, no-store');
+    if (req.path.startsWith('/api/') || req.path.startsWith('/auth/') || req.path.startsWith('/webhooks/')) res.setHeader('Cache-Control', 'private, no-store');
     if (req.path.startsWith('/auth/')) res.setHeader('Referrer-Policy', 'no-referrer');
     const healthProbe = req.method === 'GET' && ['/api/health', '/api/ready'].includes(req.path);
     if (config.publicOrigin && !healthProbe) {
@@ -89,11 +91,12 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     }
     next();
   });
-  app.use(express.json({ limit: '512kb' }));
   app.use((_req, _res, next) => {
     if (shutdown.aborted || draining.aborted) next(new HttpError(503, 'The Studio is shutting down. Your saved work is unchanged.'));
     else next();
   });
+  lifecycle?.register(app);
+  app.use(express.json({ limit: '512kb' }));
 
   async function currentUser(req: express.Request): Promise<User | null> {
     if (identity) return identity.user(req);
@@ -185,7 +188,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     res.json({
       user, state: user && (!user.identity || user.identity.status === 'active') ? (await stateFor(user)) : emptyState(),
       capabilities: { ai: !!connectedAi, commerce: identity ? 'disabled' : 'demo', community: identity ? 'read-only' : 'local', aiModel: connectedAi?.model ?? null,
-        ...(identity ? { auth: { mode: 'managed', providers, legacyLink: !!config.identity?.legacyLinkUntil && config.identity.legacyLinkUntil > Date.now() } } : {}) },
+        ...(identity ? { auth: { mode: 'managed', providers, legacyLink: !!config.identity?.legacyLinkUntil && config.identity.legacyLinkUntil > Date.now(), securityLifecycle: !!lifecycle } } : {}) },
       ...(identity ? { csrf: await identity.csrf(req, res) } : {}),
     });
   });

@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
+import { createHmac, randomUUID } from 'node:crypto';
 import { test, type TestContext } from 'node:test';
 import { chromium, expect } from '@playwright/test';
 import { openIdentityFixture } from './fixtures/identity';
 
-async function fixture(t: TestContext) {
-  const f = await openIdentityFixture();
+async function fixture(t: TestContext, lifecycle = false) {
+  const f = await openIdentityFixture({}, { lifecycle });
   let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
   t.after(async () => { try { await browser?.close(); } finally { await f.close(); } });
   browser = await chromium.launch({ executablePath: process.env.CHROME_PATH, headless: true, args: ['--no-proxy-server', '--host-resolver-rules=MAP studio.fixture 127.0.0.1,MAP broker.fixture 127.0.0.1'] });
@@ -86,4 +87,35 @@ test('a private GitHub email has a recoverable pending screen and can activate o
   assert.equal(rows.length, 2);
   assert.ok(rows.every(row => row.user_id === owner?.user_id));
   await expect(page.getByRole('button', { name: 'Export preparation data' })).toBeEnabled();
+});
+
+test('password reset revokes an actual browser session and stale SSO recovers with fresh hosted authentication without losing work', async t => {
+  const f = await fixture(t, true), { page } = f, subject = 'auth0|browser-password-reset';
+  const settings = f.config.identity?.lifecycle;
+  assert.ok(settings);
+  f.setSubject(subject);
+  const authorizations: URL[] = [];
+  f.context.on('request', request => { const url = new URL(request.url()); if (url.origin === new URL(f.issuer).origin && url.pathname === '/authorize') authorizations.push(url); });
+  await page.goto(`${f.origin}/auth`);
+  await page.getByRole('link', { name: 'Continue with Email' }).click();
+  await expect(page.getByRole('heading', { name: 'Sign-in and security.' })).toBeVisible();
+  await page.getByLabel('Display name').fill('Retained after reset');
+  await page.getByRole('button', { name: 'Save profile' }).click();
+  await expect(page.getByText('Profile updated.', { exact: true })).toBeVisible();
+  const owner = await f.db.prepare('SELECT user_id FROM managed_identities WHERE subject=?').get(subject);
+  const payload = { version: 1, eventId: randomUUID(), issuer: f.issuer, subject, kind: 'password-changed', occurredAt: Date.now() - 1500 };
+  const timestamp = String(Date.now()), signature = createHmac('sha256', Buffer.from(settings.hookSecret, 'hex')).update(`${timestamp}.${JSON.stringify(payload)}`).digest('hex');
+  assert.equal((await f.browser().request('/webhooks/identity/password-change', payload, 'POST', { 'X-Studio-Timestamp': timestamp, 'X-Studio-Signature': signature })).status, 200);
+  f.setClaims({ auth_time: Math.floor(Date.now() / 1000) - 300 });
+  await page.goto(`${f.origin}/auth`);
+  await page.getByRole('link', { name: 'Continue with Email' }).click();
+  await expect(page.getByRole('alert')).toContainText('account security changed');
+  await expect(page.getByRole('link', { name: 'Continue with Email' })).toHaveAttribute('href', '/auth/login?provider=email&fresh=true');
+  f.setClaims({});
+  await page.getByRole('link', { name: 'Continue with Email' }).click();
+  await expect(page.getByRole('heading', { name: 'Sign-in and security.' })).toBeVisible();
+  await expect(page.getByLabel('Display name')).toHaveValue('Retained after reset');
+  assert.equal(authorizations.at(-1)?.searchParams.get('prompt'), 'login');
+  assert.equal(authorizations.at(-1)?.searchParams.get('max_age'), '0');
+  assert.equal((await f.db.prepare('SELECT user_id FROM managed_identities WHERE subject=?').get(subject))?.user_id, owner?.user_id);
 });

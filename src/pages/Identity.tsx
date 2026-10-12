@@ -20,6 +20,7 @@ export function ManagedAuthPage() {
   const { data, act, pending } = useStudio(), [params] = useSearchParams();
   const [legacy, setLegacy] = useState(false), [email, setEmail] = useState(''), [password, setPassword] = useState(''), [provider, setProvider] = useState<Provider>('email');
   const error = flowErrors[params.get('error') ?? ''];
+  const fresh = ['security_changed', 'restart'].includes(params.get('error') ?? '');
   return <section className="auth-card">
     <ShieldCheck size={28}/><h1>{data.user ? 'Your account security.' : 'Welcome to the Studio.'}</h1>
     {error && <p role="alert">{error}</p>}
@@ -28,7 +29,7 @@ export function ManagedAuthPage() {
       <Link className="button" to="/account">Open Account</Link>
     </> : <>
       <p>Sign in or register through our hosted identity service. Passwords stay with that service, not the Studio.</p>
-      {providers.map(value => <p key={value}><a className="button secondary" href={`/auth/login?provider=${value}`}>Continue with {labels[value]}</a></p>)}
+      {providers.map(value => <p key={value}><a className="button secondary" href={`/auth/login?provider=${value}${fresh ? '&fresh=true' : ''}`}>Continue with {labels[value]}</a></p>)}
       <p><a className="text-link" href="/auth/login?provider=email&signup=true">Create an email account</a></p>
       <p className="fine-print">Email sign-in also opens hosted password recovery. Google and GitHub request identity, profile and email only, never repository access.</p>
       {data.capabilities.auth?.legacyLink && <>
@@ -91,7 +92,7 @@ export function ManagedAccountPage() {
           <label>Display name<input required minLength={2} maxLength={60} autoComplete="name" value={name} onChange={event => setName(event.target.value)}/></label>
           <button className="button small" disabled={pending}>Save profile</button>
         </form>
-        <h3>Passwords and recovery</h3><p>Use hosted email sign-in for password recovery. Studio sign-out does not sign you out of Google or GitHub. Password-reset session invalidation is not enabled yet; this integration is for private staging only.</p>
+        <h3>Passwords and recovery</h3><p>Use hosted email sign-in for password recovery. Studio sign-out does not sign you out of Google or GitHub. {data.capabilities.auth?.securityLifecycle ? 'Authenticated broker password events revoke Studio sessions. Missed events require the operated identity reconciler; upstream social password changes are not covered. This remains private staging.' : 'Password-reset session invalidation is not enabled yet; this integration is for private staging only.'}</p>
         {security?.identities.some(identity => identity.provider === 'email') ? <a className="text-link" href="/auth/login?provider=email">Open email sign-in and recovery</a> : <p>Recover a social account with its provider, or connect a verified email sign-in method below.</p>}
       </section>
       <section className="panel"><h2>Preparation data</h2><p>Payments and production premium grants are not enabled yet. Demo purchases and gifts cannot upgrade a managed account.</p>
@@ -110,9 +111,9 @@ export function ManagedAccountPage() {
       {security && <>
         {!security.fresh && <p>Confirm an existing sign-in method before linking, unlinking, revoking sessions or exporting.</p>}
         {security.identities.map(identity => <div className="panel" key={identity.id}>
-          <h3>{labels[identity.provider]} {identity.current && <Badge>Current method</Badge>}</h3><p>{identity.email || 'No contact address shared'} - {identity.verified ? 'Verified' : 'Unverified'}</p>
-          <button className="button secondary small" disabled={pending} onClick={() => act(() => redirect('/api/identity/reauth', identity.provider))}>Confirm with {labels[identity.provider]}</button>{' '}
-          <button className="text-button" disabled={pending || !security.fresh || identity.current || !security.identities.some(other => other.id !== identity.id && other.verified)} onClick={() => act(async () => { await request(`/api/identity/methods/${identity.id}`, undefined, 'DELETE'); await loadSecurity(); notify('Sign-in method removed; its Studio sessions were revoked.'); })}>Remove method</button>
+          <h3>{labels[identity.provider]} {identity.current && <Badge>Current method</Badge>}</h3><p>{identity.email || 'No contact address shared'} - {identity.verified ? 'Verified' : 'Unverified'}{!identity.available && ' - Unavailable with provider'}</p>
+          <button className="button secondary small" disabled={pending || !identity.available} onClick={() => act(() => redirect('/api/identity/reauth', identity.provider))}>Confirm with {labels[identity.provider]}</button>{' '}
+          <button className="text-button" disabled={pending || !security.fresh || identity.current || !security.identities.some(other => other.id !== identity.id && other.verified && other.available)} onClick={() => act(async () => { await request(`/api/identity/methods/${identity.id}`, undefined, 'DELETE'); await loadSecurity(); notify('Sign-in method removed; its Studio sessions were revoked.'); })}>Remove method</button>
         </div>)}
         <p>Connect another verified sign-in method. Each account is proved separately; email matching does not merge accounts.</p>
         {providers.map(provider => <button className="button secondary small" key={provider} disabled={pending || !security.fresh} onClick={() => act(() => redirect('/api/identity/link', provider))}>Connect {labels[provider]}</button>)}

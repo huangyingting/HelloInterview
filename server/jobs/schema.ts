@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
-export const jobKinds = ['billing.reconcile', 'notification.deliver', 'ai.evaluate', 'privacy.process'] as const;
+export const jobKinds = ['billing.reconcile', 'notification.deliver', 'ai.evaluate', 'privacy.process', 'identity.reconcile'] as const;
 export const queueNames = {
   'billing.reconcile': 'billing-reconcile',
   'notification.deliver': 'notification-deliver',
   'ai.evaluate': 'ai-evaluate',
   'privacy.process': 'privacy-process',
+  'identity.reconcile': 'identity-reconcile',
 } as const;
 export const deadLetterQueue = 'dead-letter';
 export const identifier = z.string().regex(/^[A-Za-z0-9._:-]{1,200}$/);

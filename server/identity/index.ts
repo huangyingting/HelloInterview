@@ -8,6 +8,8 @@ import { StateRepository } from '../db/state-repository';
 import { HttpError } from '../http-error';
 import { IdentityBroker, providers, type IdentityProof, type IdentityTransport, type Provider } from './broker';
 import { IdentityLimits, networkAddress } from './limits';
+import { lockSubject, type IdentityLifecycle } from './lifecycle';
+import type { SecurityFacts } from './management';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const random = () => randomBytes(32).toString('hex');
@@ -25,6 +27,7 @@ type Session = z.infer<typeof sessionSchema>;
 const transactionSchema = z.object({
   provider: z.enum(['email', 'google', 'github']), purpose: z.enum(['login', 'reauth', 'link', 'legacy-link']),
   verifier: z.string(), nonce: z.string(), user_id: z.string().nullable(), session_hash: z.string().nullable(), legacy_credential_hash: z.string().nullable(), return_to: z.string(),
+  requires_fresh: z.number().int().min(0).max(1),
 });
 function cookie(req: express.Request, name: string) {
   const values = req.headers.cookie?.split(';').map(value => value.trim()).filter(value => value.startsWith(`${name}=`)) ?? [];
@@ -50,7 +53,7 @@ export class ManagedIdentity {
   private readonly broker: IdentityBroker;
   private readonly limits: IdentityLimits;
   private readonly contexts = new WeakMap<User, Session>();
-  constructor(private readonly db: Database, private readonly settings: IdentityConfig, private readonly origin: string, shutdown: AbortSignal, transport?: IdentityTransport) {
+  constructor(private readonly db: Database, private readonly settings: IdentityConfig, private readonly origin: string, shutdown: AbortSignal, transport?: IdentityTransport, private readonly lifecycle?: IdentityLifecycle) {
     if (db.dialect !== 'postgres') throw new Error('Managed identity requires migrated PostgreSQL.');
     this.broker = new IdentityBroker(settings, origin, shutdown, transport);
     this.limits = new IdentityLimits(db, settings.clientSecret);
@@ -65,7 +68,7 @@ export class ManagedIdentity {
       FROM sessions s JOIN managed_sessions m ON m.token=s.token JOIN users u ON u.id=s.user_id
         JOIN managed_accounts a ON a.user_id=u.id JOIN managed_identities i ON i.id=m.identity_id AND i.user_id=u.id
       WHERE s.token=? AND s.expires>${clockSql} AND m.last_used>${clockSql}-?
-        AND m.epoch=a.session_epoch
+        AND m.epoch=a.session_epoch AND i.available=1 AND m.authenticated_at>a.security_cutoff
     `).get(hash(raw), idle);
     if (!row) return null;
     const session = sessionSchema.parse(row);
@@ -140,20 +143,21 @@ export class ManagedIdentity {
       sessionHash = session.token;
     }
     const state = random(), nonce = random(), verifier = random(), binding = cookie(req, cookieNames.binding) ?? random(), now = await this.now();
-    const url = await this.broker.authorization(selected, state, nonce, verifier, purpose !== 'login', body?.signup === 'true');
+    const fresh = purpose !== 'login' || body?.fresh === 'true';
+    const url = await this.broker.authorization(selected, state, nonce, verifier, fresh, body?.signup === 'true');
     await this.db.transaction(async () => {
       await this.db.prepare('DELETE FROM auth_transactions WHERE expires<=?').run(now);
       await this.db.prepare('SELECT pg_advisory_xact_lock(hashtextextended(?,0))').get(`auth-flow:${hash(binding)}`);
       const count = await this.db.prepare('SELECT count(*)::integer AS count FROM auth_transactions WHERE binding_hash=?').get(hash(binding));
       if (Number(count?.count) >= 8) throw new HttpError(429, 'Finish an existing sign-in attempt or wait ten minutes before starting another.');
-      await this.db.prepare('INSERT INTO auth_transactions (state_hash,binding_hash,verifier,nonce,provider,purpose,user_id,session_hash,legacy_credential_hash,return_to,expires,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(hash(state), hash(binding), verifier, nonce, selected, purpose, userId, sessionHash, legacyCredentialHash, returnTo, now + freshness, now);
+      await this.db.prepare('INSERT INTO auth_transactions (state_hash,binding_hash,verifier,nonce,provider,purpose,user_id,session_hash,legacy_credential_hash,return_to,expires,created_at,requires_fresh) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)').run(hash(state), hash(binding), verifier, nonce, selected, purpose, userId, sessionHash, legacyCredentialHash, returnTo, now + freshness, now, Number(fresh));
     });
     res.cookie(cookieNames.binding, binding, { ...cookieOptions, maxAge: freshness });
     return url;
   }
-  private async bind(proof: IdentityProof, selected: Provider, purpose: string, target: string | null, legacyCredentialHash: string | null, initiating?: { req: express.Request; token: string }, preceding?: Session | null) {
+  private async bind(proof: IdentityProof, selected: Provider, purpose: string, target: string | null, legacyCredentialHash: string | null, initiating?: { req: express.Request; token: string }, preceding?: Session | null, facts?: SecurityFacts) {
     // Serialize subject creation across replicas before taking an account lock.
-    await this.db.prepare('SELECT pg_advisory_xact_lock(hashtextextended(?,0))').get(`${proof.issuer}:${proof.subject}`);
+    await lockSubject(this.db, proof.issuer, proof.subject);
     const existing = await this.db.prepare('SELECT id,user_id FROM managed_identities WHERE issuer=? AND subject=?').get(proof.issuer, proof.subject);
     if (target && existing && existing.user_id !== target) throw new HttpError(409, 'This sign-in method already belongs to another Studio account. No accounts were merged.');
     if (purpose === 'reauth' && (!existing || existing.user_id !== target)) throw new HttpError(403, 'Confirm with a sign-in method already connected to this account.');
@@ -164,6 +168,7 @@ export class ManagedIdentity {
       await new StateRepository(this.db).initialize(userId);
     }
     await this.db.prepare('SELECT id FROM users WHERE id IN (?,?) ORDER BY id FOR UPDATE').all(userId, preceding?.id ?? null);
+    if (this.lifecycle && facts) await this.lifecycle.assertProof(proof, facts, userId);
     if (initiating) {
       const current = await this.requireSession(initiating.req, purpose === 'link');
       if (current.token !== initiating.token || current.id !== userId) throw new HttpError(403, 'Your account session changed while you were confirming it. Start again.');
@@ -184,7 +189,7 @@ export class ManagedIdentity {
       if (Number(count?.count) >= 10) throw new HttpError(409, 'This account has reached its sign-in method limit. Remove an unused method first.');
     }
     if (!existing) await this.db.prepare('INSERT INTO managed_identities (id,user_id,issuer,subject,provider,email,verified) VALUES (?,?,?,?,?,?,?)').run(identityId, userId, proof.issuer, proof.subject, selected, proof.email, Number(proof.verified));
-    else await this.db.prepare('UPDATE managed_identities SET email=?,verified=? WHERE id=?').run(proof.email, Number(proof.verified), identityId);
+    else await this.db.prepare('UPDATE managed_identities SET email=?,verified=?,available=1 WHERE id=?').run(proof.email, Number(proof.verified), identityId);
     const status = proof.verified ? 'active' : 'pending-verification';
     if (!account) await this.db.prepare('INSERT INTO managed_accounts (user_id,status,contact_email,contact_verified,contact_identity_id) VALUES (?,?,?,?,?)').run(userId, status, proof.email, Number(proof.verified), identityId);
     else if (account.contact_identity_id === identityId || account.contact_verified !== 1 && proof.verified) {
@@ -225,10 +230,15 @@ export class ManagedIdentity {
       }
       const callback = new URL('/auth/callback', this.origin);
       callback.search = new URL(req.originalUrl, this.origin).search;
-      const proof = await this.broker.exchange(callback, transaction.provider, state, transaction.nonce, transaction.verifier, transaction.purpose !== 'login');
+      const proof = await this.broker.exchange(callback, transaction.provider, state, transaction.nonce, transaction.verifier, transaction.requires_fresh === 1);
+      const facts = this.lifecycle ? await this.lifecycle.management.facts(proof.subject) : undefined;
+      if (this.lifecycle && facts) {
+        await this.lifecycle.observe(facts);
+        await this.lifecycle.assertProof(proof, facts);
+      }
       const preceding = await this.session(req);
       const issued = await this.db.transaction(async () => {
-        const result = await this.bind(proof, transaction.provider, transaction.purpose, transaction.user_id, transaction.legacy_credential_hash, transaction.session_hash ? { req, token: transaction.session_hash } : undefined, preceding);
+        const result = await this.bind(proof, transaction.provider, transaction.purpose, transaction.user_id, transaction.legacy_credential_hash, transaction.session_hash ? { req, token: transaction.session_hash } : undefined, preceding, facts);
         if (preceding) await this.db.prepare('DELETE FROM sessions WHERE token=? AND user_id=?').run(preceding.token, preceding.id);
         return this.issue(result.userId, result.identityId, proof.authenticatedAt);
       });
@@ -252,10 +262,10 @@ export class ManagedIdentity {
     });
     app.get('/api/identity/security', async (req, res) => {
       const session = await this.requireSession(req), now = await this.now();
-      const identitySchema = z.object({ id: z.string(), provider: z.enum(['email', 'google', 'github']), email: z.string().nullable(), verified: z.number(), created_at: z.date() });
-      const identities = (await this.db.prepare('SELECT id,provider,email,verified,created_at FROM managed_identities WHERE user_id=? ORDER BY created_at,id LIMIT 20').all(session.id)).map(value => {
+      const identitySchema = z.object({ id: z.string(), provider: z.enum(['email', 'google', 'github']), email: z.string().nullable(), verified: z.number(), available: z.number(), created_at: z.date() });
+      const identities = (await this.db.prepare('SELECT id,provider,email,verified,available,created_at FROM managed_identities WHERE user_id=? ORDER BY created_at,id LIMIT 20').all(session.id)).map(value => {
         const row = identitySchema.parse(value);
-        return { id: row.id, provider: row.provider, email: row.email, verified: row.verified === 1, createdAt: row.created_at.toISOString(), current: row.id === session.identity_id };
+        return { id: row.id, provider: row.provider, email: row.email, verified: row.verified === 1, available: row.available === 1, createdAt: row.created_at.toISOString(), current: row.id === session.identity_id };
       });
       const sessions = await this.db.prepare('SELECT m.id,m.created_at,m.last_used,m.authenticated_at FROM managed_sessions m JOIN sessions s ON s.token=m.token WHERE s.user_id=? AND s.expires>? AND m.last_used>? AND m.epoch=? ORDER BY m.created_at DESC LIMIT 50').all(session.id, now, now - idle, session.epoch);
       const events = (await this.db.prepare('SELECT id,action,created_at FROM identity_security_events WHERE user_id=? ORDER BY created_at DESC,id LIMIT 20').all(session.id)).map(value => {
@@ -297,11 +307,14 @@ export class ManagedIdentity {
       if (typeof id !== 'string') throw new HttpError(400, 'Choose one sign-in method to remove.');
       const session = await this.requireSession(req, true);
       await this.db.transaction(async () => {
+        const method = await this.db.prepare('SELECT issuer,subject FROM managed_identities WHERE id=? AND user_id=?').get(id, session.id);
+        if (!method) throw new HttpError(404, 'Sign-in method not found.');
+        await lockSubject(this.db, z.string().parse(method.issuer), z.string().parse(method.subject));
         await this.db.prepare('SELECT id FROM users WHERE id=? FOR UPDATE').get(session.id);
         await this.requireSession(req, true);
-        const identities = await this.db.prepare('SELECT id,verified,email FROM managed_identities WHERE user_id=?').all(session.id);
+        const identities = await this.db.prepare('SELECT id,verified,email,available FROM managed_identities WHERE user_id=?').all(session.id);
         if (!identities.some(identity => identity.id === id)) throw new HttpError(404, 'Sign-in method not found.');
-        if (id === session.identity_id || !identities.some(identity => identity.id !== id && identity.verified === 1)) throw new HttpError(409, 'Keep another verified sign-in method and confirm with it before removing this one.');
+        if (id === session.identity_id || !identities.some(identity => identity.id !== id && identity.verified === 1 && identity.available === 1)) throw new HttpError(409, 'Keep another available verified sign-in method and confirm with it before removing this one.');
         const account = await this.db.prepare('SELECT contact_identity_id FROM managed_accounts WHERE user_id=?').get(session.id);
         if (account?.contact_identity_id === id) {
           const current = identities.find(identity => identity.id === session.identity_id);

@@ -10,8 +10,9 @@ export const identityFetch: IdentityTransport = (url, options) => fetch(url, {
 });
 export const providers: readonly Provider[] = ['email', 'google', 'github'];
 const prefixes = { email: 'auth0|', google: 'google-oauth2|', github: 'github|' } as const;
+export const subjectSchema = z.string().max(512).regex(/^(?:auth0|google-oauth2|github)\|[\x21-\x7e]+$/);
 const claimsSchema = z.looseObject({
-  sub: z.string().min(1).max(512),
+  sub: subjectSchema,
   auth_time: z.number().int().nonnegative(),
   name: z.string().min(1).max(200).optional(),
   email: z.string().max(254).optional(),

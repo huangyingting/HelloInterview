@@ -7,6 +7,7 @@ export interface IdentityConfig {
   readonly clientSecret: string;
   readonly connections: Readonly<{ email: string; google: string; github: string }>;
   readonly legacyLinkUntil: number | null;
+  readonly lifecycle: Readonly<{ origin: string; clientId: string; clientSecret: string; hookSecret: string }> | null;
 }
 export interface ServerConfig {
   readonly environment: 'development' | 'test' | 'production';
@@ -99,7 +100,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
   const model = env.OPENAI_MODEL?.trim() || 'gpt-4.1-mini';
   if (model.length > 200 || /[\x00-\x20\x7f]/.test(model)) throw new ConfigurationError('OPENAI_MODEL', 'must be a model identifier of at most 200 characters.');
   let identity: Readonly<IdentityConfig> | null = null;
-  const identitySettings = ['OIDC_ISSUER', 'OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET', 'OIDC_EMAIL_CONNECTION', 'OIDC_GOOGLE_CONNECTION', 'OIDC_GITHUB_CONNECTION', 'OIDC_LEGACY_LINK_UNTIL'];
+  const identitySettings = ['OIDC_ISSUER', 'OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET', 'OIDC_EMAIL_CONNECTION', 'OIDC_GOOGLE_CONNECTION', 'OIDC_GITHUB_CONNECTION', 'OIDC_LEGACY_LINK_UNTIL',
+    'OIDC_MANAGEMENT_ORIGIN', 'OIDC_MANAGEMENT_CLIENT_ID', 'OIDC_MANAGEMENT_CLIENT_SECRET', 'OIDC_PASSWORD_HOOK_SECRET'];
   const providedIdentitySettings = Object.keys(env).filter(key => key.startsWith('OIDC_') && env[key] !== undefined);
   if (providedIdentitySettings.length) {
     if (providedIdentitySettings.some(key => !identitySettings.includes(key))) throw new ConfigurationError('OIDC configuration', 'contains an unsupported setting.');
@@ -131,7 +133,23 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
         throw new ConfigurationError('OIDC_LEGACY_LINK_UNTIL', 'must be an explicit future UTC deadline within 30 days.');
       }
     }
-    identity = Object.freeze({ issuer: `${issuer.origin}/`, clientId, clientSecret, connections: Object.freeze(connections), legacyLinkUntil });
+    let lifecycle: IdentityConfig['lifecycle'] = null;
+    if (['OIDC_MANAGEMENT_ORIGIN', 'OIDC_MANAGEMENT_CLIENT_ID', 'OIDC_MANAGEMENT_CLIENT_SECRET', 'OIDC_PASSWORD_HOOK_SECRET'].some(key => env[key] !== undefined)) {
+      let managementOrigin: URL;
+      try {
+        const value = env.OIDC_MANAGEMENT_ORIGIN;
+        if (!value || /[\x00-\x20\x7f]/.test(value)) throw new Error('Invalid origin.');
+        managementOrigin = new URL(value);
+        if (managementOrigin.protocol !== 'https:' || managementOrigin.username || managementOrigin.password || managementOrigin.pathname !== '/' ||
+          managementOrigin.search || managementOrigin.hash || value.includes('?') || value.includes('#')) throw new Error('Invalid origin.');
+      } catch { throw new ConfigurationError('OIDC_MANAGEMENT_ORIGIN', 'must be the explicit HTTPS tenant Management API origin.'); }
+      const managementId = env.OIDC_MANAGEMENT_CLIENT_ID, managementSecret = env.OIDC_MANAGEMENT_CLIENT_SECRET, hookSecret = env.OIDC_PASSWORD_HOOK_SECRET;
+      if (!managementId || !/^[A-Za-z0-9_-]{1,200}$/.test(managementId) || managementId === clientId) throw new ConfigurationError('OIDC_MANAGEMENT_CLIENT_ID', 'must identify a separate read-only machine client.');
+      if (!managementSecret || managementSecret.length < 8 || managementSecret.length > 4096 || /[\x00-\x20\x7f]/.test(managementSecret)) throw new ConfigurationError('OIDC_MANAGEMENT_CLIENT_SECRET', 'must be a confidential machine-client secret.');
+      if (!hookSecret || !/^[a-f0-9]{64}$/.test(hookSecret)) throw new ConfigurationError('OIDC_PASSWORD_HOOK_SECRET', 'must be a private 32-byte hexadecimal signing key.');
+      lifecycle = Object.freeze({ origin: managementOrigin.origin, clientId: managementId, clientSecret: managementSecret, hookSecret });
+    }
+    identity = Object.freeze({ issuer: `${issuer.origin}/`, clientId, clientSecret, connections: Object.freeze(connections), legacyLinkUntil, lifecycle });
   }
   const root = path.resolve(rootDir);
   return Object.freeze({

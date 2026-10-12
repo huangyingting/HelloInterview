@@ -20,7 +20,7 @@ current gaps and specifies the proposed architecture, social identity and accoun
 lifecycle, billing and entitlements, premium features, operations, and phased
 delivery plan. The [implementation progress](docs/production/07-delivery-roadmap.md#implementation-progress)
 records shipped foundations; optional managed-identity engineering is in
-progress, while identity lifecycle, commerce and remaining service capabilities
+progress, while live identity delivery/operations, commerce and remaining service capabilities
 are still launch blockers.
 
 ![Original Interview Studio landing page](docs/screenshots/01-landing.png)
@@ -104,9 +104,11 @@ for schema details, API revisions, rehearsal, and cutover safeguards.
 
 Managed identity has an opt-in **private-staging checkpoint** with hosted
 email/Google/GitHub sign-in, verified contact gates, explicit account linking,
-CSRF-protected opaque sessions, shared authentication budgets and owner-scoped security settings. Local
-authentication remains the default. Password-reset invalidation/reconciliation,
-approved tenants/delivery and service authorization are not complete. Managed
+CSRF-protected opaque sessions, shared authentication budgets and owner-scoped security settings.
+An optional lifecycle slice adds authenticated password-change revocation,
+read-only canonical security facts and a compiled durable reconciliation worker.
+Local authentication remains the default. Approved tenants/delivery, operated
+reconciliation/alerts and service authorization are not complete. Managed
 mode disables demo purchases, gifts, external AI and community writing. See
 [the identity runbook](docs/production/12-identity-implementation.md) before any
 configuration; this does not authorize public accounts.
@@ -167,8 +169,10 @@ claims, safe retry modes, fenced result commits and audited maintenance replay.
 auto-migrate. `npm run jobs:status` shows private operational metadata without
 request bodies. The compiled release includes a reusable worker module.
 
-This is not enabled billing, email, privacy or AI delivery: those handlers and
-the operated worker composition belong to their feature packages. Local SQLite
+Managed identity now supplies an optional compiled `identity:reconcile` /
+`identity:worker` composition for security facts; the web process does not start
+it automatically. This is not enabled billing, email, privacy or AI delivery:
+those handlers and their operated composition belong to their feature packages. Local SQLite
 workflows are unchanged. See [the durable-job runbook](docs/production/11-jobs-implementation.md)
 for contracts, replay safeguards, retention and actual worker-death/restore
 coverage.
