@@ -530,6 +530,72 @@ export const migrations = [{
     CREATE UNIQUE INDEX stripe_one_unresolved_checkout ON stripe_checkout_attempts(customer_ref)
       WHERE state IN ('waiting-customer','queued','open');
   `,
+}, {
+  version: 17,
+  name: 'owned-sandbox-ai-usage-ledger',
+  sql: `
+    CREATE TABLE ai_usage_policies (
+      id TEXT PRIMARY KEY, payload TEXT NOT NULL CHECK(octet_length(payload)<=16384),
+      request_hash TEXT NOT NULL CHECK(request_hash ~ '^[a-f0-9]{64}$'),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+    );
+    CREATE TABLE ai_usage_lineages (
+      id TEXT PRIMARY KEY, owner_ref TEXT NOT NULL, user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      anchor BIGINT NOT NULL CHECK(anchor>=0), service_start BIGINT NOT NULL CHECK(service_start>=0),
+      service_end BIGINT NOT NULL CHECK(service_end>service_start),
+      UNIQUE(id,owner_ref), CHECK(user_id IS NULL OR user_id=owner_ref)
+    );
+    CREATE INDEX ai_usage_lineage_owner ON ai_usage_lineages(owner_ref);
+    CREATE TABLE ai_usage_windows (
+      id TEXT PRIMARY KEY, owner_ref TEXT NOT NULL, lineage_id TEXT NOT NULL, policy_id TEXT NOT NULL REFERENCES ai_usage_policies(id),
+      starts_at BIGINT NOT NULL CHECK(starts_at>=0), ends_at BIGINT NOT NULL CHECK(ends_at>starts_at),
+      unit_limit INTEGER NOT NULL CHECK(unit_limit>0), reserved INTEGER NOT NULL DEFAULT 0 CHECK(reserved>=0),
+      consumed INTEGER NOT NULL DEFAULT 0 CHECK(consumed>=0),
+      FOREIGN KEY(lineage_id,owner_ref) REFERENCES ai_usage_lineages(id,owner_ref),
+      UNIQUE(lineage_id,starts_at), UNIQUE(id,owner_ref), CHECK(reserved::bigint+consumed<=unit_limit)
+    );
+    CREATE TABLE ai_usage_cost_budgets (
+      kind TEXT NOT NULL CHECK(kind IN ('day','month')), starts_at BIGINT NOT NULL CHECK(starts_at>=0),
+      ends_at BIGINT NOT NULL CHECK(ends_at>starts_at), policy_id TEXT NOT NULL REFERENCES ai_usage_policies(id),
+      cost_limit BIGINT NOT NULL CHECK(cost_limit>0 AND cost_limit<=1000000000000),
+      reserved BIGINT NOT NULL DEFAULT 0 CHECK(reserved>=0), consumed BIGINT NOT NULL DEFAULT 0 CHECK(consumed>=0),
+      PRIMARY KEY(kind,starts_at), CHECK(reserved+consumed<=cost_limit)
+    );
+    CREATE TABLE ai_usage_reservations (
+      id TEXT PRIMARY KEY, owner_ref TEXT NOT NULL, user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      request_key TEXT NOT NULL, window_id TEXT NOT NULL, policy_id TEXT NOT NULL REFERENCES ai_usage_policies(id),
+      request_payload TEXT NOT NULL CHECK(octet_length(request_payload)<=16384),
+      request_hash TEXT NOT NULL CHECK(request_hash ~ '^[a-f0-9]{64}$'),
+      units INTEGER NOT NULL CHECK(units>0), cost_ceiling BIGINT NOT NULL CHECK(cost_ceiling>0 AND cost_ceiling<=1000000000000),
+      state TEXT NOT NULL DEFAULT 'reserved' CHECK(state IN ('reserved','dispatched','unknown','consumed','released')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(), dispatched_at TIMESTAMPTZ, finished_at TIMESTAMPTZ,
+      result_hash TEXT CHECK(result_hash ~ '^[a-f0-9]{64}$'), actual_cost BIGINT CHECK(actual_cost>=0 AND actual_cost<=cost_ceiling),
+      settlement_hash TEXT CHECK(settlement_hash ~ '^[a-f0-9]{64}$'),
+      FOREIGN KEY(window_id,owner_ref) REFERENCES ai_usage_windows(id,owner_ref),
+      UNIQUE(owner_ref,request_key), UNIQUE(id,owner_ref), CHECK(user_id IS NULL OR user_id=owner_ref),
+      CHECK((state IN ('consumed','released'))=(finished_at IS NOT NULL)),
+      CHECK((state IN ('consumed','released'))=(actual_cost IS NOT NULL)),
+      CHECK((state IN ('consumed','released'))=(settlement_hash IS NOT NULL)),
+      CHECK((state='consumed')=(result_hash IS NOT NULL)),
+      CHECK(state<>'reserved' OR dispatched_at IS NULL),
+      CHECK(state NOT IN ('dispatched','unknown','consumed') OR dispatched_at IS NOT NULL),
+      CHECK(dispatched_at IS NULL OR dispatched_at>=created_at),
+      CHECK(finished_at IS NULL OR finished_at>=coalesce(dispatched_at,created_at))
+    );
+    CREATE INDEX ai_usage_inflight ON ai_usage_reservations(state,owner_ref);
+    CREATE TABLE ai_usage_budget_links (
+      reservation_id TEXT NOT NULL REFERENCES ai_usage_reservations(id),
+      kind TEXT NOT NULL CHECK(kind IN ('day','month')), starts_at BIGINT NOT NULL,
+      PRIMARY KEY(reservation_id,kind), FOREIGN KEY(kind,starts_at) REFERENCES ai_usage_cost_budgets(kind,starts_at)
+    );
+    CREATE TABLE ai_usage_events (
+      id TEXT PRIMARY KEY, reservation_id TEXT NOT NULL REFERENCES ai_usage_reservations(id), owner_ref TEXT NOT NULL,
+      action TEXT NOT NULL CHECK(action IN ('reserved','dispatched','unknown','consumed','released')),
+      actor TEXT NOT NULL CHECK(length(actor) BETWEEN 1 AND 200), reason TEXT NOT NULL CHECK(length(reason) BETWEEN 10 AND 500),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(), UNIQUE(reservation_id,action),
+      FOREIGN KEY(reservation_id,owner_ref) REFERENCES ai_usage_reservations(id,owner_ref)
+    );
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

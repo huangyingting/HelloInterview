@@ -3,6 +3,10 @@
 **Status: proposed product specification.** Addresses GAP-05 through GAP-09,
 GAP-16 through GAP-18. [04](04-billing-and-entitlements.md) owns commercial
 entitlements; this document owns the product experience and consumption rules.
+The [first W09 engineering checkpoint](23-sandbox-ai-usage-ledger.md) supplies an
+internal owned allowance/cost ledger with overlap-safe calendar windows and
+atomic settlement. It does not enable managed AI, approve the proposed values
+below, bind native provider jobs or supply real-provider consent.
 
 ## Product promise and success criteria
 

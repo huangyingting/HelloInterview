@@ -163,7 +163,10 @@ adds exact-parent acknowledged new hosted test purchases on the same customer,
 with a scoped current-attempt cursor and retained historical paid sources.
 Only independently eligible new invoice evidence can issue a new test interval.
 Paid deletion, authentic provider recovery and live commerce remain unavailable.
-Controlled PostgreSQL deployments must apply **migration 16 and maintained queue
+The [AI usage-ledger foundation](docs/production/23-sandbox-ai-usage-ledger.md)
+adds internal atomic allowance/cost accounting and overlap-safe calendar windows,
+without enabling managed AI or changing local grading/tutoring.
+Controlled PostgreSQL deployments must apply **migration 17 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 

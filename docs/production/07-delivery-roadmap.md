@@ -17,7 +17,8 @@ gates are not implicitly satisfied by a foundation change.
 | W04 | In progress; private identity, shared admission and credential-lifecycle checkpoints implemented | Maintained OIDC verification, email/Google/GitHub reference connections, secure sessions/CSRF, fresh linking, paired PostgreSQL legacy proof, shared admission, signed reset revocation, read-only canonical security facts and compiled maintained-queue reconciliation; live delivery, operated alerts, notifications, broker-native abuse controls and imported-account recovery remain |
 | W06 | Entitlement engineering checkpoint implemented; issuing adapters and commercial authority pending W08/W10/W12 | Immutable owned source grants, terminal revocation, database-clock capability policy, API/worker admission and publication checks, separate content-only access, licensed project snapshots, expiry-aware UI and retained archives |
 | W08 | In progress; sandbox notifications, owned Checkout/recheckout, canonical funding/ledger, gated service authority, owned stop/resume cycles and restricted Portal checkpoints implemented | Pinned official Stripe SDK/API, signed durable evidence, stable owned financial keys, complete funding/adjustment traces, default-off calendar grants/scoped revocations, acknowledged exact-target renewal/recheckout with retained paid history and fresh restricted card-method/invoice sessions with URL-free audit; authentic provider evidence, commercial/grace policy, history partitioning/paid deletion and operated lifecycle remain |
-| W09-W13 | Pending | AI budgets, account administration, support, moderation, and launch gates |
+| W09 | In progress; internal usage-ledger foundation implemented | Explicit immutable sandbox manifests, atomic replica unit/cost reservations, overlap-safe original-calendar windows, unknown holds and fenced SQL settlement; managed provider jobs, consent/UX, model/token/cost policy, operating reconciliation and approval remain |
+| W10-W13 | Pending | Account administration, support, moderation, and launch gates |
 
 W01 preserves existing local accounts, SQLite schema, demo entitlements, API
 contracts, curriculum, and UI. `NODE_ENV=production` means built asset serving,
@@ -81,6 +82,10 @@ Checkout cursor, same-customer stable SDK creation/recovery and retained paid
 history with independently eligible new invoice intervals. None establishes
 eligible commercial service periods, live subscription entitlements, an operated
 lifecycle or live-mode approval.
+The [W09 usage-ledger runbook](23-sandbox-ai-usage-ledger.md) records migration 17,
+internal accounting authority, source continuity, captured user/cost windows,
+unknown-outcome holds and atomic publication/settlement. It is not managed AI
+dispatch permission; provider/job/consent/budget-policy composition remains.
 
 ## Delivery strategy
 

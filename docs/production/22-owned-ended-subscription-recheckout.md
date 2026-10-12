@@ -169,7 +169,10 @@ An externally canceled subscription can retain an unexpired paid interval.
 Recheckout does not erase that interval. Multiple invoice-source intervals can
 therefore overlap; no AI allowance refill or quota reset is implemented by this
 command. Shared allowance-window/budget enforcement is still W09 work and a
-launch requirement, not a promise of unlimited new quotas.
+launch requirement, not a promise of unlimited new quotas. The later
+[usage-ledger foundation](23-sandbox-ai-usage-ledger.md) supplies internal
+overlap-safe accounting, but does not enable provider dispatch or a customer
+allowance offer.
 
 The owned UI shows a new inline preparation form only for the current ended
 predecessor, with fresh acknowledgment separate from the original purchase or
