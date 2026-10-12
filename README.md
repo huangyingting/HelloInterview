@@ -208,7 +208,12 @@ adds author-only local text editing, private version snapshots and server-derive
 ownership without account IDs. Its shared in-page editor preserves drafts
 through conflicts, lost responses, closing and filtering. Comment deletion and
 managed discussion writing remain disabled.
-Controlled PostgreSQL deployments must apply **migration 23 and maintained queue
+The [bounded-discussion checkpoint](docs/production/33-bounded-discussion-pages.md)
+replaces the shared UI's 500-comment ceiling with indexed, viewer/resource-bound
+pages and explicit load-more/retry controls. Open drafts survive paging and
+concurrent edits/creation; new comments appear immediately without duplication.
+Search explicitly filters loaded rows, not the complete history.
+Controlled PostgreSQL deployments must apply **migration 24 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 

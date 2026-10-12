@@ -348,6 +348,7 @@ export interface Comment {
   isMine: boolean;
 }
 export interface OwnedCommunityComment { comment: Comment; revision: number }
+export interface CommunityCommentPage { comments: Comment[]; limit: number; nextCursor: string | null }
 export interface Bootstrap {
   csrf?: string;
   user: User | null;

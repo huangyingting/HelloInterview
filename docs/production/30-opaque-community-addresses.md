@@ -184,6 +184,9 @@ protocol in [runbook 31](31-owned-community-contributions.md), requiring migrati
 22, and local author comment text edits follow
 [runbook 32](32-owned-comment-editing.md), requiring migration 23; immutable
 examples and managed-writing denial remain.
+The shared discussion UI now follows indexed, draft-safe live pages in
+[runbook 33](33-bounded-discussion-pages.md), requiring current-release migration
+24 rather than relying on the 500-row compatibility reader.
 Comment deletion/reply-retention policy, durable/ordered write intents, abuse controls,
 moderation/reports/appeals, operated publication, historic comment repair,
 full accessibility/device/IME assessment and deployment/recovery evidence

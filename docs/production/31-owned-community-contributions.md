@@ -8,9 +8,10 @@ read-only, including the new owner APIs. Illustrative examples are immutable.
 ## Deployment and storage
 
 Migration 22 introduced this checkpoint; the current release requires
-**migration 23 and maintained queue migration**, including
-[owned comment editing](32-owned-comment-editing.md), before starting.
-Migrations 1-22 retain their published names, SQL and checksums.
+**migration 24 and maintained queue migration**, including
+[owned comment editing](32-owned-comment-editing.md) and
+[bounded discussion pages](33-bounded-discussion-pages.md), before starting.
+Migrations 1-23 retain their published names, SQL and checksums.
 PostgreSQL startup still checks the exact release history; it does not migrate
 on request or silently accept an older schema. Quiesce incompatible application
 versions before migration and promote the matching compiled release. An older

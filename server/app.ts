@@ -26,7 +26,7 @@ import { resumptionRequestSchema } from './billing/resumption-schema';
 import { TerminalJobFailure } from './jobs';
 import { z } from 'zod';
 import { SupportRequests, supportContactSchema } from './support';
-import { CommunityReads, communityActionSchema, communityIdentifier } from './community';
+import { CommunityReads, communityActionSchema, communityIdentifier, communityDiscussionResource as commentResource } from './community';
 import { communityKinds } from '../shared/community-routes';
 import { CommunityContributions } from './community-contributions';
 function localSessionHash(req: express.Request) {
@@ -67,14 +67,6 @@ function sourceText(value: unknown): string {
   if (typeof value !== 'string' || value.length > 20000) throw new HttpError(400, 'Each source file must contain at most 20,000 characters.');
   if (value.includes('\0')) throw new HttpError(400, 'Import text source files, not binary content.');
   return value;
-}
-function commentResource(value: unknown) {
-  if (typeof value === 'string' && !value.startsWith('post/') && value.trimStart().startsWith('post/')) throw new HttpError(400, 'Post discussions require an exact resource identifier.');
-  if (typeof value === 'string' && value.startsWith('post/')) {
-    communityIdentifier(value.slice(5));
-    return value;
-  }
-  return text(value, 'Comment resource', 1, 150);
 }
 export function createApp(config: ServerConfig, db: Database, shutdown: AbortSignal, draining: AbortSignal = shutdown, identityTransport?: IdentityTransport, lifecycle?: IdentityLifecycle, billing?: BillingNotifications): express.Express {
   const states = new StateRepository(db);
@@ -954,6 +946,10 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     const user = await currentUser(req);
     res.json(await contributions.comments(resource,user?.id ?? null));
   });
+  app.get('/api/comments/page', async (req, res) => {
+    const user = await currentUser(req);
+    res.json(await contributions.commentPage(req.query,user?.id ?? null));
+  });
   app.get('/api/comments/owned', async (req, res) => {
     const user = await requireLocalContributor(req);
     res.json(await contributions.readComment(req.query,user.id,() => assertLocalCommunitySession(req,user)));
@@ -965,10 +961,10 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   app.post('/api/comments', async (req, res) => {
     const user = (await requireUser(req)), body = record(req.body);
     const resource = commentResource(body.resource);
-    const parentId = body.parentId ? text(body.parentId, 'Parent comment', 1, 80) : null;
+    const parentId = body.parentId === undefined || body.parentId === null || body.parentId === '' ? null : communityIdentifier(body.parentId);
     const id = randomUUID();
     const comment = text(body.body, 'Comment', 2, 3000);
-    await db.transaction(async () => {
+    const saved = await db.transaction(async () => {
       if (resource.startsWith('post/')) {
         if (!await db.prepare(`SELECT id FROM users WHERE id=?${db.dialect === 'postgres' ? ' FOR UPDATE' : ''}`).get(user.id)) throw new HttpError(401, 'Sign in to join this discussion.');
         await assertLocalCommunitySession(req, user);
@@ -976,8 +972,9 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
       }
       if (parentId && !(await db.prepare('SELECT id FROM comments WHERE id=? AND resource=?').get(parentId, resource))) throw new HttpError(400, 'Reply must belong to this discussion.');
       await db.prepare('INSERT INTO comments VALUES (?,?,?,?,?,?,?)').run(id, resource, user.id, user.name, comment, new Date().toISOString(), parentId);
+      return contributions.createdComment(id,user.id);
     });
-    res.status(201).json({ id });
+    res.status(201).json({ id, comment:saved });
   });
   app.post('/api/tutor', async (req, res) => {
     const user = (await requireUser(req)), body = record(req.body);

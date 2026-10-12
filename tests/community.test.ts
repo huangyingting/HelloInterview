@@ -69,7 +69,7 @@ test('community URL helpers preserve exact bounded data and reject malformed or 
   assert.deepEqual(parseStudioAddress('/community/questions/literal%252F','').segments,['community','questions','literal%2F']);
 });
 
-test('migrations 21/22/23 preserve actual legacy posts, memberships, comments and immutable history while adding indexes and revisions',async t=>{
+test('migrations 21/22/23/24 preserve actual legacy posts, memberships, comments and immutable history while adding indexes and revisions',async t=>{
   const f=await fixture(t,'postgres'),post=await f.add();
   await f.db.prepare('INSERT INTO votes(post_id,user_id) VALUES(?,?)').run(post.id,f.owners[0]);
   await f.db.prepare('INSERT INTO follows(post_id,user_id) VALUES(?,?)').run(post.id,f.owners[1]);
@@ -97,12 +97,17 @@ test('migrations 21/22/23 preserve actual legacy posts, memberships, comments an
   await legacy.exec(postRevisions.sql);
   await legacy.prepare('INSERT INTO schema_migrations(version,name,checksum) VALUES(?,?,?)').run(postRevisions.version,postRevisions.name,createHash('sha256').update(postRevisions.sql).digest('hex'));
   const history22=await legacy.prepare('SELECT version,name,checksum FROM schema_migrations ORDER BY version').all();
+  const commentRevisions=migrations.find(migration=>migration.version===23);assert.ok(commentRevisions);
+  await legacy.exec(commentRevisions.sql);
+  await legacy.prepare('INSERT INTO schema_migrations(version,name,checksum) VALUES(?,?,?)').run(commentRevisions.version,commentRevisions.name,createHash('sha256').update(commentRevisions.sql).digest('hex'));
+  const history23=await legacy.prepare('SELECT version,name,checksum FROM schema_migrations ORDER BY version').all();
   await assert.rejects(assertDatabaseVersion(legacy),/incompatible/);
   await migrateDatabase(legacy);await migrateDatabase(legacy);await assertDatabaseVersion(legacy);
   assert.deepEqual(await Promise.all(['posts','votes','follows','comments'].map(table=>legacy.prepare(`SELECT * FROM ${table} ORDER BY 1,2`).all())),before);
   assert.deepEqual(await legacy.prepare('SELECT version,name,checksum FROM schema_migrations WHERE version<=20 ORDER BY version').all(),history);
   assert.deepEqual(await legacy.prepare('SELECT version,name,checksum FROM schema_migrations WHERE version<=21 ORDER BY version').all(),history21);
   assert.deepEqual(await legacy.prepare('SELECT version,name,checksum FROM schema_migrations WHERE version<=22 ORDER BY version').all(),history22);
+  assert.deepEqual(await legacy.prepare('SELECT version,name,checksum FROM schema_migrations WHERE version<=23 ORDER BY version').all(),history23);
   assert.equal((await legacy.prepare('SELECT revision FROM community_comment_revisions WHERE comment_id=?').get(commentId))?.revision,0);
   await legacy.prepare('UPDATE comments SET body=body WHERE id=?').run(commentId);
   assert.equal((await legacy.prepare('SELECT revision FROM community_comment_revisions WHERE comment_id=?').get(commentId))?.revision,1);
@@ -110,7 +115,7 @@ test('migrations 21/22/23 preserve actual legacy posts, memberships, comments an
   await legacy.prepare('UPDATE posts SET title=? WHERE id=?').run('A controlled original title update',post.id);
   assert.equal((await legacy.prepare('SELECT revision FROM community_post_revisions WHERE post_id=?').get(post.id))?.revision,1);
   const indexes=await legacy.prepare('SELECT indexname FROM pg_indexes WHERE schemaname=?').all(schema);
-  for(const name of ['posts_owner_order','posts_created_order','follows_owner'])assert.ok(indexes.some(row=>row.indexname===name));
+  for(const name of ['posts_owner_order','posts_created_order','follows_owner','comments_resource_cursor'])assert.ok(indexes.some(row=>row.indexname===name));
   assert.equal((await new CommunityReads(legacy).detail(post.id,{kind:'questions'},f.owners[0])).isMine,true);
 });
 
@@ -271,6 +276,68 @@ test('a PostgreSQL comment edit waiting on a privileged row update reads the new
 });
 
 for(const dialect of ['sqlite','postgres'] as const){
+  test(`${dialect}: discussion pages cross the legacy ceiling with exact scoped cursors, bounded queries and minimized ownership`,async t=>{
+    const f=await fixture(t,dialect),server=await startServer(loadConfig({NODE_ENV:'production',DATA_DIR:f.directory,...(f.url?{DATABASE_URL:f.url}:{}),PORT:'0',LOG_REQUESTS:'false'}));t.after(()=>server.close());
+    const api=async(route:string,body?:unknown,cookie='')=>fetch(`${server.url}${route}`,{method:body===undefined?'GET':'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+    const login=await api('/api/auth/demo',{}),owner=(await login.json()).user.id,cookie=login.headers.getSetCookie().map(value=>value.split(';')[0]).join('; ');
+    const post=await f.add({id:' page-parent/?%# ',owner}),resource=`post/${post.id}`;
+    const insert=f.db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)');
+    await f.db.transaction(async()=>{
+      for(let i=0;i<551;i++)await insert.run(i===49?'page-0049/'+ '界'.repeat(189)+' ':`page-${String(i).padStart(4,'0')}`,resource,i%2?f.owners[1]:owner,'Synthetic page author',`Original page comment ${i}.`,'2026-01-01T00:00:00.000Z',i?'page-0000':null);
+      await insert.run('unrelated-page','lesson/other',owner,'Synthetic page author','A different discussion.','2026-01-01T00:00:00.000Z',null);
+    });
+    const path=(extra:Record<string,string>={})=>`/api/comments/page?${new URLSearchParams({resource,...extra})}`;
+    const first=await api(path(),undefined,cookie);assert.equal(first.status,200);
+    const page=await first.json();assert.deepEqual(Object.keys(page).sort(),['comments','limit','nextCursor'].sort());
+    assert.equal(page.limit,50);assert.equal(page.comments.length,50);assert.equal(page.comments[0].id,'page-0000');
+    for(const [i,row] of page.comments.entries()){
+      assert.deepEqual(Object.keys(row).sort(),['author','body','createdAt','id','isMine','parentId','resource'].sort());
+      assert.equal(row.resource,resource);assert.equal(row.isMine,i%2===0);
+      assert.ok(!JSON.stringify(row).includes(owner));assert.ok(!JSON.stringify(row).includes(f.owners[1]));
+    }
+    assert.ok(page.nextCursor);assert.ok(!Buffer.from(page.nextCursor,'base64url').toString('utf8').includes(owner));
+    assert.equal((await api(path({cursor:page.nextCursor}))).status,400);
+    const mismatches:Record<string,string>[]=[{resource:'lesson/other'},{limit:'25'}];
+    for(const extra of mismatches)assert.equal((await api(path({...extra,cursor:page.nextCursor}),undefined,cookie)).status,400);
+    for(const suffix of ['&limit=51','&limit=500','&limit=0','&resource=duplicate','&cursor=','&cursor=%','&cursor=eyJ9','&cursor='+ 'a'.repeat(4097),'&viewer=forged'])
+      assert.equal((await api(path()+suffix,undefined,cookie)).status,400,suffix.slice(0,80));
+    const boundary=JSON.parse(Buffer.from(page.nextCursor,'base64url').toString('utf8'));
+    for(const changed of [{...boundary,version:'community-feed-v1'},{...boundary,hash:'0'.repeat(64)},{...boundary,account:owner},{...boundary,id:'x'.repeat(201)}])
+      assert.equal((await api(path({cursor:Buffer.from(JSON.stringify(changed)).toString('base64url')}),undefined,cookie)).status,400);
+    const invalidUtf8=Buffer.concat([Buffer.from(JSON.stringify({...boundary,id:'UTF8_BOUNDARY'}).split('UTF8_BOUNDARY')[0]),Buffer.from([0xff]),Buffer.from(JSON.stringify({...boundary,id:'UTF8_BOUNDARY'}).split('UTF8_BOUNDARY')[1])]).toString('base64url');
+    assert.equal((await api(path({cursor:invalidUtf8}),undefined,cookie)).status,400);
+    for(const resource of ['post/',' post/ambiguous','lesson/'+ 'x'.repeat(150),'post/'+ 'x'.repeat(201),'lesson/\0bad'])
+      assert.equal((await api(`/api/comments/page?${new URLSearchParams({resource})}`)).status,400,resource);
+    const anonymous=await(await api(path({limit:'25'}))).json();assert.equal(anonymous.comments.length,25);assert.ok(anonymous.comments.every((row:{isMine:boolean})=>!row.isMine));
+    const ids:string[]=page.comments.map((row:{id:string})=>row.id);let cursor=page.nextCursor,pages=1;
+    while(cursor){assert.ok(pages++<20);const response=await api(path({cursor}),undefined,cookie);assert.equal(response.status,200);const next=await response.json();assert.ok(next.comments.length<=50);ids.push(...next.comments.map((row:{id:string})=>row.id));cursor=next.nextCursor;}
+    assert.equal(ids.length,551);assert.equal(new Set(ids).size,551);assert.equal(ids.at(-1),'page-0550');
+    const legacy=await api(`/api/comments?${new URLSearchParams({resource})}`,undefined,cookie);assert.equal((await legacy.json()).length,500);
+    const empty=await(await api('/api/comments/page?resource=lesson%2Fempty')).json();assert.deepEqual(empty,{comments:[],limit:50,nextCursor:null});
+    const created=await api('/api/comments',{resource,body:'A newly created comment is visible without replaying 551 earlier comments.'},cookie);assert.equal(created.status,201);
+    const saved=await created.json();assert.equal(saved.id,saved.comment.id);assert.equal(saved.comment.resource,resource);assert.equal(saved.comment.isMine,true);assert.ok(!JSON.stringify(saved).includes(owner));assert.ok(!Object.hasOwn(saved.comment,'revision'));
+    const exactParent=' '+ '界'.repeat(198)+' ';
+    await insert.run(exactParent,resource,f.owners[1],'Synthetic page author','An exact 200-unit opaque parent.','2026-01-01T00:00:00.000Z',null);
+    const reply=await api('/api/comments',{resource,parentId:exactParent,body:'A reply keeps the exact bounded parent without trimming.'},cookie);
+    assert.equal(reply.status,201);assert.equal((await reply.json()).comment.parentId,exactParent);
+    for(const parentId of [false,0,[],{},'x'.repeat(201),'bad\0parent',exactParent.trim()])
+      assert.equal((await api('/api/comments',{resource,parentId,body:'Invalid or normalized parent must not be used.'},cookie)).status,400);
+    const liveResource='lesson/live-pages';
+    await f.db.transaction(async()=>{for(let i=0;i<51;i++)await insert.run(`live-${String(i).padStart(4,'0')}`,liveResource,owner,'Synthetic page author',`Live original ${i}.`,'2026-01-01T00:00:00.000Z',null);});
+    const livePath=(cursor?:string)=>`/api/comments/page?${new URLSearchParams({resource:liveResource,limit:'25',...(cursor?{cursor}:{})})}`;
+    const liveFirst=await(await api(livePath(),undefined,cookie)).json();assert.equal(liveFirst.comments.length,25);
+    await f.db.prepare('DELETE FROM comments WHERE id IN (?,?)').run('live-0024','live-0025');
+    await f.db.prepare('UPDATE comments SET body=? WHERE id=?').run('Updated between public pages.','live-0026');
+    await insert.run('live-before',liveResource,owner,'Synthetic page author','Backdated insertion before the cursor.','2025-01-01T00:00:00.000Z',null);
+    await insert.run('live-after',liveResource,owner,'Synthetic page author','New insertion after the cursor.','2027-01-01T00:00:00.000Z',null);
+    const liveNext=await(await api(livePath(liveFirst.nextCursor),undefined,cookie)).json();
+    assert.equal(liveNext.comments.length,25);assert.equal(liveNext.comments[0].id,'live-0026');assert.equal(liveNext.comments[0].body,'Updated between public pages.');
+    const liveLast=await(await api(livePath(liveNext.nextCursor),undefined,cookie)).json();assert.deepEqual(liveLast.comments.map((row:{id:string})=>row.id),['live-after']);assert.equal(liveLast.nextCursor,null);
+    for(const route of ['/api/comments','/api/comments/page'])assert.equal((await api(`${route}?${new URLSearchParams({resource:'lesson/\0bad'})}`)).status,400);
+    assert.equal((await api('/api/comments',{resource:'lesson/\0bad',body:'NUL resources must not reach either database adapter.'},cookie)).status,400);
+    const indexes=await f.db.prepare(dialect==='sqlite'?"SELECT name FROM sqlite_schema WHERE type='index' AND name='comments_resource_cursor'":"SELECT indexname AS name FROM pg_indexes WHERE schemaname=current_schema() AND indexname='comments_resource_cursor'").all();
+    assert.equal(indexes.length,1);
+  });
   test(`${dialect}: missing comment revisions abort writes and reopening never resets an existing version`,async t=>{
     const f=await fixture(t,dialect),id=randomUUID();
     await f.db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run(id,'lesson/version-integrity',f.owners[0],'Synthetic author','Original version-integrity comment.','2026-01-01T00:00:00.000Z',null);

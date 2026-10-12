@@ -8,9 +8,10 @@ moderation is enabled by a separate reviewed implementation.
 ## Deployment and compatibility
 
 Migration 21 introduced this read checkpoint; the current release requires
-**migration 23 and maintained queue migration**, including the
+**migration 24 and maintained queue migration**, including the
 [local owner-contribution protocol](31-owned-community-contributions.md) and
-[owned comment editing](32-owned-comment-editing.md), before
+[owned comment editing](32-owned-comment-editing.md) and
+[bounded discussion pages](33-bounded-discussion-pages.md), before
 starting this release:
 
 ```sh

@@ -126,6 +126,9 @@ test('runtime-only release retains identity after restart and operates canonical
   assert.equal((await browser.request('/api/posts/owned',{id:communityPost,revision:0},'DELETE')).status,503);
   assert.equal((await browser.request(`/api/comments/owned?${new URLSearchParams({id:communityPost})}`)).status,503);
   assert.equal((await browser.request('/api/comments/owned',{id:communityPost,revision:0,body:'Compiled managed comment editing remains disabled.'},'PUT')).status,503);
+  const discussionPage=await browser.request(`/api/comments/page?${new URLSearchParams({resource:`post/${communityPost}`})}`);
+  assert.equal(discussionPage.status,200);assert.deepEqual(await discussionPage.json(),{comments:[],limit:50,nextCursor:null});
+  assert.equal((await browser.request('/api/comments/page',{resource:`post/${communityPost}`})).status,503);
   await entitlements.revoke(grant.owner, grant.source, grant.evidence);
   assert.equal((await browser.request('/api/content/lessons/system-design/replication')).status, 403);
   assert.equal((await f.db.prepare("SELECT attempts FROM identity_abuse_buckets WHERE scope='network'").get())?.attempts, 2);

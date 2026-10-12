@@ -71,6 +71,13 @@ parent-before-comment lock ordering, conflict/lost-response and close/filter
 draft preservation. Comment deletion/reply retention, managed writing,
 moderation operation and comprehensive privacy workflows remain separate gates.
 
+**Implemented bounded discussion checkpoint (W11):** the shared UI uses indexed
+25/50-row live pages with explicit load/retry beyond the compatibility cap.
+The [discussion runbook](33-bounded-discussion-pages.md) records migration 24,
+minimized query/viewer-bound cursors and draft-safe concurrent creation/editing.
+Loaded-row search, not full-history search or frozen export, is described
+explicitly. Managed writing and the publication/privacy operating gates remain.
+
 ## Operating model
 
 Name accountable people before launch, even if one person initially fills
@@ -156,6 +163,8 @@ Local author comment text edits now follow
 [runbook 32](32-owned-comment-editing.md). Public/managed writes and comment
 deletion/reply-retention policy remain separate work; local
 deletion is not the comprehensive privacy-erasure coordinator.
+The shared paged reader and its loaded-only search now follow
+[runbook 33](33-bounded-discussion-pages.md); live cursors are not privacy exports.
 
 Launch requirements:
 

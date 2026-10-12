@@ -1,7 +1,7 @@
 import { Bookmark, Check, MessageSquare, Send, X } from 'lucide-react';
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { request, useStudio } from './store';
-import type { Comment, ContentSection, SourceReference, UserState } from '../shared/types';
+import type { Comment, CommunityCommentPage, ContentSection, SourceReference, UserState } from '../shared/types';
 import { contentResearchDate, contentSources } from '../shared/content/sources';
 import { getTrack, problems } from '../shared/public-catalog';
 import { AuthPrompt } from './components/access';
@@ -40,25 +40,63 @@ function CommentTools({ comment, onSaved }: { comment: Comment; onSaved: (commen
   return editing ? <Suspense fallback={<p role="status">Loading your comment editor...</p>}><CommentOwner comment={comment} onSaved={onSaved} /></Suspense>
     : <button className="text-button" onClick={() => setEditing(true)}>Edit my comment</button>;
 }
+function appendComments(current: Comment[], incoming: Comment[]) {
+  const seen = new Set(current.map(comment => comment.id));
+  return [...current,...incoming.filter(comment => {
+    if (seen.has(comment.id)) return false;
+    seen.add(comment.id);
+    return true;
+  })];
+}
 export function Comments({ resource }: { resource: string }) {
   const { data, act, notify, pending } = useStudio();
   const scope = JSON.stringify([data.user?.id ?? null,resource]);
-  const [loaded, setLoaded] = useState<{ scope: string; comments?: Comment[]; error?: string }>(), [body, setBody] = useState(''), [filter, setFilter] = useState(''), [reply, setReply] = useState<Comment | null>(null);
+  const [loaded, setLoaded] = useState<{ scope: string; comments?: Comment[]; nextCursor?: string | null; error?: string; loadingMore?: boolean; moreError?: string }>(), [body, setBody] = useState(''), [filter, setFilter] = useState(''), [reply, setReply] = useState<Comment | null>(null);
+  const reader = useRef<{ controller: AbortController; pending: boolean } | null>(null);
   const comments = loaded?.scope === scope ? loaded.comments ?? [] : [];
   const error = loaded?.scope === scope ? loaded.error ?? '' : '';
+  const pageState = loaded?.scope === scope ? loaded : undefined;
   const reading = loaded?.scope !== scope || !loaded?.comments && !error;
-  const setComments = (value: Comment[]) => setLoaded(current => current?.scope === scope ? { scope, comments: value } : current);
+  const pagePath = (cursor?: string) => `/api/comments/page?${new URLSearchParams({resource,...(cursor ? {cursor} : {})})}`;
+  async function readFirst(controller: AbortController) {
+    const read = reader.current;
+    if (!read || read.controller !== controller || controller.signal.aborted || read.pending) return;
+    read.pending = true;
+    setLoaded({scope});
+    try {
+      const value = await request<CommunityCommentPage>(pagePath(),undefined,'GET',controller.signal);
+      if (!controller.signal.aborted) setLoaded(current => current?.scope === scope ? {scope,comments:value.comments,nextCursor:value.nextCursor} : current);
+    } catch(err) {
+      if (!controller.signal.aborted) setLoaded(current => current?.scope === scope ? {scope,error:err instanceof Error ? err.message : 'The discussion could not be loaded.'} : current);
+    } finally { read.pending = false; }
+  }
   useEffect(() => {
     const controller = new AbortController();
-    setLoaded({scope}); setBody(''); setReply(null); setFilter('');
-    request<Comment[]>(`/api/comments?resource=${encodeURIComponent(resource)}`,undefined,'GET',controller.signal).then(value => { if (!controller.signal.aborted) setComments(value); }).catch(err => { if (!controller.signal.aborted) setLoaded(current => current?.scope === scope ? {scope,error:err.message} : current); });
+    reader.current = {controller,pending:false};
+    setBody(''); setReply(null); setFilter('');
+    void readFirst(controller);
     return () => controller.abort();
   }, [scope]);
-  return <section className="comments" id="comments"><div className="section-heading"><h2><MessageSquare size={20} /> Discussion <span className="muted">{comments.length}</span></h2>{comments.length > 3 && <input aria-label="Search comments" placeholder="Search comments" value={filter} onChange={e => setFilter(e.target.value)} />}</div>
-    {error && <p role="alert" className="error-text">{error}</p>}
+  async function loadMore() {
+    const cursor = pageState?.nextCursor, read = reader.current;
+    if (!cursor || !read || read.controller.signal.aborted || read.pending) return;
+    read.pending = true;
+    setLoaded(current => current?.scope === scope ? {...current,loadingMore:true,moreError:undefined} : current);
+    try {
+      const next = await request<CommunityCommentPage>(pagePath(cursor),undefined,'GET',read.controller.signal);
+      if (!read.controller.signal.aborted) setLoaded(current => current?.scope === scope && current.comments ? {...current,comments:appendComments(current.comments,next.comments),nextCursor:next.nextCursor,loadingMore:false} : current);
+    } catch(err) {
+      if (!read.controller.signal.aborted) setLoaded(current => current?.scope === scope ? {...current,loadingMore:false,moreError:err instanceof Error ? err.message : 'Additional discussion comments could not be loaded.'} : current);
+    } finally { read.pending = false; }
+  }
+  return <section className="comments" id="comments"><div className="section-heading"><h2><MessageSquare size={20} /> Discussion <span className="muted">{comments.length} loaded</span></h2>{comments.length > 3 && <input aria-label="Search comments" placeholder="Search loaded comments" value={filter} onChange={e => setFilter(e.target.value)} />}</div>
+    {error && <><p role="alert" className="error-text">{error}</p><button className="button secondary small" onClick={()=>{const read=reader.current;if(read&&!read.controller.signal.aborted)void readFirst(read.controller);}}>Retry discussion</button></>}
     {reading && <p role="status">Loading the discussion...</p>}
-    {data.capabilities.community==='read-only' ? <p className="local-notice">Discussion is read-only until production moderation is enabled.</p> : data.user ? <form onSubmit={e => { e.preventDefault(); void act(async () => { await request('/api/comments', { resource, body, parentId: reply?.id }); setComments(await request<Comment[]>(`/api/comments?resource=${encodeURIComponent(resource)}`)); setBody(''); setReply(null); notify('Comment added to the local discussion.'); }); }}>{reply && <div className="reply-label">Replying to {reply.author}<button type="button" className="icon-button" aria-label="Cancel reply" onClick={() => setReply(null)}><X size={14} /></button></div>}<textarea aria-label="Add a comment" placeholder="Share a question or an insight…" minLength={2} maxLength={3000} required value={body} onChange={e => setBody(e.target.value)} /><button className="button small" disabled={pending||reading}><Send size={15} /> Post comment</button></form> : <AuthPrompt message="Sign in to join this local discussion." />}
-    {comments.map(comment => <article className={`comment ${comment.parentId ? 'reply' : ''}`} hidden={!`${comment.author} ${comment.body}`.toLowerCase().includes(filter.toLowerCase())} key={`${scope}:${comment.id}`}><span className="avatar small">{comment.author[0]}</span><div><strong>{comment.author}</strong><time>{new Date(comment.createdAt).toLocaleDateString()}</time><p>{comment.body}</p>{data.capabilities.community!=='read-only'&&<button className="text-button" onClick={() => setReply(comment)}>Reply</button>}{data.user&&comment.isMine&&data.capabilities.community!=='read-only'&&<CommentTools comment={comment} onSaved={saved=>setLoaded(current=>current?.scope===scope&&current.comments?{scope,comments:current.comments.map(row=>row.id===saved.id?saved:row)}:current)}/>}</div></article>)}
+    {data.capabilities.community==='read-only' ? <p className="local-notice">Discussion is read-only until production moderation is enabled.</p> : data.user ? <form onSubmit={e => { e.preventDefault(); const read=reader.current; void act(async () => { const saved=await request<{id:string;comment:Comment}>('/api/comments', { resource, body, parentId: reply?.id }); if (!read || read.controller.signal.aborted) return; setLoaded(current=>current?.scope===scope&&current.comments?{...current,comments:appendComments(current.comments,[saved.comment])}:current); setBody(current=>current===body?'':current); setReply(current=>current?.id===reply?.id?null:current); notify('Comment added to the local discussion.'); }); }}>{reply && <div className="reply-label">Replying to {reply.author}<button type="button" className="icon-button" aria-label="Cancel reply" onClick={() => setReply(null)}><X size={14} /></button></div>}<textarea aria-label="Add a comment" placeholder="Share a question or an insight…" minLength={2} maxLength={3000} required value={body} onChange={e => setBody(e.target.value)} /><button className="button small" disabled={pending||reading||!!error}><Send size={15} /> Post comment</button></form> : <AuthPrompt message="Sign in to join this local discussion." />}
+    {comments.map(comment => <article className={`comment ${comment.parentId ? 'reply' : ''}`} hidden={!`${comment.author} ${comment.body}`.toLowerCase().includes(filter.toLowerCase())} key={`${scope}:${comment.id}`}><span className="avatar small">{comment.author[0]}</span><div><strong>{comment.author}</strong><time>{new Date(comment.createdAt).toLocaleDateString()}</time><p>{comment.body}</p>{data.capabilities.community!=='read-only'&&<button className="text-button" onClick={() => setReply(comment)}>Reply</button>}{data.user&&comment.isMine&&data.capabilities.community!=='read-only'&&<CommentTools comment={comment} onSaved={saved=>setLoaded(current=>current?.scope===scope&&current.comments?{...current,comments:current.comments.map(row=>row.id===saved.id?saved:row)}:current)}/>}</div></article>)}
+    {filter && !comments.some(comment=>`${comment.author} ${comment.body}`.toLowerCase().includes(filter.toLowerCase())) && <p className="muted">No loaded comments match this search.</p>}
+    {pageState?.moreError && <p role="alert" className="error-text">Additional comments were not loaded: {pageState.moreError} Your loaded discussion and drafts are unchanged.</p>}
+    {pageState?.nextCursor && <><p className="fine-print">More comments remain. Search filters loaded comments only. New comments you add are shown immediately while older pages load.</p><button className="button secondary small" disabled={pageState.loadingMore} onClick={()=>void loadMore()}>{pageState.loadingMore?'Loading more comments...':'Load more comments'}</button></>}
     {!reading && !comments.length && !error && <p className="muted">Start a thoughtful conversation. No comments yet.</p>}
   </section>;
 }

@@ -71,10 +71,14 @@ test('opaque community detail stays a private-safe public read for inactive view
   const pending=f.browser();await f.complete(pending,await f.begin(pending,'github'),{sub:'github|opaque-pending',email:undefined,email_verified:undefined});
   assert.equal((await pending.bootstrap()).user?.identity?.status,'pending-verification');
   const anonymous=f.browser();
+  await f.db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run('managed-discussion-page',`post/${id}`,owner,'Synthetic managed author','An original private-safe managed discussion comment.',new Date().toISOString(),null);
   for(const [browser,isMine] of [[active.browser,true],[pending,false],[anonymous,false]] as const){
     const response=await browser.request(`/api/community/post?${query}`);assert.equal(response.status,200);
     const post=await response.json();assert.equal(post.id,id);assert.equal(post.isMine,isMine);assert.equal(post.author,'Anonymous');
     assert.ok(!JSON.stringify(post).includes(owner));assert.ok(!Object.hasOwn(post,'authorId'));
+    const page=await browser.request(`/api/comments/page?${new URLSearchParams({resource:`post/${id}`})}`);assert.equal(page.status,200);
+    const saved=await page.json();assert.equal(saved.comments.length,1);assert.equal(saved.comments[0].isMine,isMine);assert.ok(!JSON.stringify(saved).includes(owner));
+    assert.equal((await browser.request('/api/comments/page',{resource:`post/${id}`})).status,browser===active.browser?503:403);
   }
   for(const route of ['/api/posts/actions',`/api/community/post?${query}`,`/api/posts/${encodeURIComponent(id)}/vote`]){
     assert.equal((await active.browser.request(route,{id,action:'vote',enabled:true})).status,503);
@@ -93,6 +97,7 @@ test('opaque community detail stays a private-safe public read for inactive view
   }
   await f.db.prepare("UPDATE managed_accounts SET status='suspended' WHERE user_id=?").run(owner);
   assert.equal((await active.browser.request(`/api/community/post?${query}`)).status,200);
+  assert.equal((await active.browser.request(`/api/comments/page?${new URLSearchParams({resource:`post/${id}`})}`)).status,200);
   assert.equal((await active.browser.request('/api/posts/actions',{id,action:'follow',enabled:true})).status,403);
   for(const table of ['votes','follows'])assert.deepEqual(await f.db.prepare(`SELECT * FROM ${table}`).all(),[]);
 });

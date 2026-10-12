@@ -7,8 +7,10 @@ Managed discussions remain read-only.
 
 ## Deployment and data preservation
 
-Apply controlled **migration 23 and maintained queue migration** before starting
-this release. Migrations 1-22 retain their published SQL, names and checksums.
+Migration 23 introduced this checkpoint; the current release requires
+**migration 24 and maintained queue migration**, including
+[bounded discussion pages](33-bounded-discussion-pages.md), before starting.
+Migrations 1-23 retain their published SQL, names and checksums.
 The exact-version startup check still rejects incompatible PostgreSQL history;
 it never migrates on a request. Follow the quiesced promotion/forward-fix/verified
 restore boundary in [runbook 31](31-owned-community-contributions.md), not a
@@ -54,8 +56,9 @@ receive false. Author display labels remain unchanged; this does not make
 comments anonymous or extend the anonymous-question-post promise.
 
 The compatibility reader retains its 500-row ceiling and existing date order.
-It is not a frozen export, a fully paginated thread or a complete large-history
-interface. Those broader read/operating gates remain.
+It is not a frozen export. The shared UI now uses the indexed live pages in
+[runbook 33](33-bounded-discussion-pages.md) instead of this compatibility array;
+full-history search and large-history/export operating gates remain.
 
 ```http
 GET /api/comments/owned?id=...
@@ -153,7 +156,8 @@ managed denial, no dialogs and a 390-pixel viewport with a maximum-length
 unbroken 3,000-character saved comment. Full accessibility/device/
 IME assessment is not implied.
 
-Measured transitive entry, cold Landing and cold Auth graphs remain below the
+At the migration-23 checkpoint, measured transitive entry, cold Landing and cold
+Auth graphs remained below the
 unchanged 350 KiB raw / 100 KiB gzip-estimate ceilings: 296,544 / 94,468 bytes;
 303,149 / 97,620; and 312,778 / 100,622 respectively. These are build estimates,
 not deployed transfer or performance SLAs. Verify the actual downloadable

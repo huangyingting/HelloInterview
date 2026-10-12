@@ -40,6 +40,7 @@ none is served as a browser asset.
 | `posts`, `votes`, `follows`, `comments`, `support`, `gifts` | Existing local workflows moved to PostgreSQL, with owner/relationship constraints and resource indexes |
 | `community_post_revisions` | Migration 22 current post versions; every post update advances them, original twelve-column post/import shape is unchanged; not immutable content history or mutation receipts |
 | `community_comment_revisions` | Migration 23 current comment versions, including parent detachment; original seven-column comment/import shape is unchanged; user/session/parent-post/comment locking and separate revision reads fence owner text edits |
+| `comments_resource_cursor` index | Migration 24 resource/creation-text/ID keyset access for bounded live discussion pages; fetches at most 51 rows without offset or per-page full-thread COUNT; no comment/revision rewrite |
 | `schema_migrations` | Release version, immutable migration name/checksum, application time |
 | `durable_operations`, `verified_event_inbox`, `job_operator_events` | W07 immutable operation input/idempotency, atomic verified-event delivery and replay accountability; separate maintained queue schema owns transport |
 | `legacy_imports`, `legacy_state_snapshots` | Import fingerprint/count report and original `legacy-v1` JSON bytes/checksum; historical snapshots are never entitlement authority |

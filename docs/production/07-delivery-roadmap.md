@@ -132,6 +132,12 @@ user/session/post/comment lock order and shared on-demand author controls.
 Conflict/lost-response, close/filter and superseded-read recovery preserve
 drafts without replay. Comment deletion/retention and managed writing remain
 separate unapproved boundaries.
+The [bounded-discussion runbook](33-bounded-discussion-pages.md) records migration
+24, indexed query/viewer-bound live comment pages and a shared UI without the
+500-row stop. Explicit loading/retry and scoped functional merges preserve
+drafts and show new comments immediately without duplication. Loaded-row search
+is labeled honestly; frozen export, full-history search and publication gates
+remain.
 
 ## Delivery strategy
 

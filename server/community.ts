@@ -18,8 +18,32 @@ const identifier = communityIdentifierSchema;
 export const communityActionSchema = z.strictObject({ id: identifier, action: z.enum(['vote','follow']), enabled: z.boolean() });
 export function communityIdentifier(value: unknown) {
   const parsed = identifier.safeParse(value);
-  if (!parsed.success) throw new HttpError(400, 'Choose a valid community post identifier.');
+  if (!parsed.success) throw new HttpError(400, 'Choose a valid exact community identifier.');
   return parsed.data;
+}
+export function communityDiscussionResource(value: unknown) {
+  if (typeof value === 'string' && !value.startsWith('post/') && value.trimStart().startsWith('post/')) throw new HttpError(400, 'Post discussions require an exact resource identifier.');
+  if (typeof value === 'string' && value.startsWith('post/')) {
+    communityIdentifier(value.slice(5));
+    return value;
+  }
+  const parsed = z.string().trim().min(1).max(150).refine(value => !value.includes('\0')).safeParse(value);
+  if (!parsed.success) throw new HttpError(400, 'Invalid Comment resource.');
+  return parsed.data;
+}
+export function communityPageCursor<T extends { hash: string }>(encoded: string | undefined, schema: z.ZodType<T>, hash: string): T | undefined {
+  if (encoded === undefined) return;
+  if (!/^[A-Za-z0-9_-]+$/.test(encoded)) throw new HttpError(400, 'Invalid community cursor.');
+  const bytes = Buffer.from(encoded,'base64url');
+  if (bytes.toString('base64url') !== encoded) throw new HttpError(400, 'Invalid community cursor.');
+  const json = bytes.toString('utf8');
+  if (!Buffer.from(json,'utf8').equals(bytes)) throw new HttpError(400, 'Invalid community cursor.');
+  let value: unknown;
+  try { value = JSON.parse(json); }
+  catch(error) { if (!(error instanceof SyntaxError)) throw error; throw new HttpError(400,'Invalid community cursor.'); }
+  const saved = schema.safeParse(value);
+  if (!saved.success || saved.data.hash !== hash) throw new HttpError(400, 'This cursor belongs to another query or viewer; reload the feed.');
+  return saved.data;
 }
 const flag = z.union([z.boolean(),z.literal(0),z.literal(1)]).transform(Boolean);
 const rowSchema = z.object({
@@ -73,18 +97,7 @@ export class CommunityReads {
     const { cursor: encoded, ...query } = parsed.data;
     if (query.scope !== 'all' && !viewer) throw new HttpError(401, 'Sign in to read your own or followed contributions.');
     const hash = digest(encodePayload({ query, viewer }));
-    let cursor: z.infer<typeof cursorSchema> | undefined;
-    if (encoded !== undefined) {
-      if (!/^[A-Za-z0-9_-]+$/.test(encoded)) throw new HttpError(400, 'Invalid community cursor.');
-      const bytes = Buffer.from(encoded,'base64url');
-      if (bytes.toString('base64url') !== encoded) throw new HttpError(400, 'Invalid community cursor.');
-      let value: unknown;
-      try { value = JSON.parse(bytes.toString('utf8')); }
-      catch(error) { if (!(error instanceof SyntaxError)) throw error; throw new HttpError(400,'Invalid community cursor.'); }
-      const saved = cursorSchema.safeParse(value);
-      if (!saved.success || saved.data.hash !== hash) throw new HttpError(400, 'This cursor belongs to another query or viewer; reload the feed.');
-      cursor = saved.data;
-    }
+    const cursor = communityPageCursor(encoded,cursorSchema,hash);
     const clauses: string[] = [], values: string[] = [];
     for (const [field,value] of Object.entries({ kind: query.kind, company: query.company, level: query.level, region: query.region, track: query.track })) {
       if (value) { clauses.push(`p.${field}=?`); values.push(value); }

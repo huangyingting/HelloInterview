@@ -172,6 +172,122 @@ test('local owner editing preserves conflicting drafts and deletion is an explic
   assert.equal(f.documents.length,1);
 });
 
+test('discussion pages expose older authors beyond 500 without losing drafts, duplicating new comments or hiding load failures',async t=>{
+  const f=await fixture(t),{page}=f,db=localConnection(f.directory);t.after(()=>db.close());
+  const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);
+  const owner=(await login.json()).user.id,post=' paging/?%# ',resource=`post/${post}`,reads:string[]=[];
+  const olderParent='界'.repeat(193)+'/?%# \t ';
+  page.on('request',request=>{if(request.method()==='GET'&&new URL(request.url()).pathname.startsWith('/api/comments'))reads.push(request.url());});
+  await db.prepare('INSERT INTO posts VALUES(?,?,?,?,?,?,?,?,?,?,?,0)').run(post,'questions','A paginated discussion fixture','A complete original question for bounded discussion pages.','Fixture Company','system-design','Senior','Global','Anonymous',owner,'2000-01-01T00:00:00.000Z');
+  const insert=db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)');
+  await db.transaction(async()=>{for(let i=0;i<551;i++)await insert.run(i===550?olderParent:`page-${String(i).padStart(4,'0')}`,resource,i===0||i===550?owner:'another-local-author','Synthetic page author',`Original paginated comment ${i}.`,'2000-01-01T00:00:00.000Z',null);});
+  await page.route('**/api/comments/page?*',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'Synthetic initial discussion failure.'})}),{times:1});
+  await page.goto(`${f.url}${communityPostPath({kind:'questions',id:post})}`);
+  await expect(page.getByRole('alert')).toContainText('Synthetic initial discussion failure.');
+  const composer=page.getByLabel('Add a comment');
+  await composer.fill('Composer survives a failed initial discussion read.');
+  await expect(page.getByRole('button',{name:'Post comment',exact:true})).toBeDisabled();
+  await page.getByRole('button',{name:'Retry discussion',exact:true}).click();
+  await expect(page.locator('.comment')).toHaveCount(50);await expect(composer).toHaveValue('Composer survives a failed initial discussion read.');
+  const first=page.locator('.comment').first();await expect(first.locator(':scope > div > p')).toHaveText('Original paginated comment 0.');
+  await first.getByRole('button',{name:'Edit my comment',exact:true}).click();
+  const text=first.getByLabel('Edit comment text');await expect(text).toHaveValue('Original paginated comment 0.');
+  await text.fill('An editor draft preserved through bounded pagination.');
+  await page.getByLabel('Search comments').fill('No loaded matches');
+  await expect(first).toBeHidden();await expect(page.getByText('No loaded comments match this search.',{exact:true})).toBeVisible();
+  await page.route('**/api/comments/page?*',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'Synthetic retained-page failure.'})}),{times:1});
+  await page.getByRole('button',{name:'Load more comments',exact:true}).click();
+  await expect(page.getByRole('alert')).toContainText('Synthetic retained-page failure.');await expect(page.locator('.comment')).toHaveCount(50);
+  await page.getByLabel('Search comments').fill('');await expect(text).toHaveValue('An editor draft preserved through bounded pagination.');
+  let releasePage!:()=>void,readyPage!:()=>void,releaseCreation!:()=>void,readyCreation!:()=>void;
+  const heldPage=new Promise<void>(resolve=>{releasePage=resolve;}),pageReady=new Promise<void>(resolve=>{readyPage=resolve;});
+  const heldCreation=new Promise<void>(resolve=>{releaseCreation=resolve;}),creationReady=new Promise<void>(resolve=>{readyCreation=resolve;});
+  let pageHeld=false;
+  // Keep both interception patterns installed while their responses are held.
+  await page.route('**/api/comments/page?*',async route=>{if(pageHeld){await route.continue();return;}pageHeld=true;const response=await route.fetch();assert.equal(response.status(),200);assert.equal((await response.json()).comments.length,50);readyPage();await heldPage;await route.fulfill({response});});
+  await page.route('**/api/comments',async route=>{assert.equal(route.request().method(),'POST');const response=await route.fetch();assert.equal(response.status(),201);readyCreation();await heldCreation;await route.fulfill({response});});
+  try{
+    await page.getByRole('button',{name:'Load more comments',exact:true}).click();await pageReady;
+    await expect(page.getByRole('button',{name:'Loading more comments...',exact:true})).toBeDisabled();
+    await first.getByRole('button',{name:'Save comment changes',exact:true}).click();
+    await expect(first.locator(':scope > div > p')).toHaveText('An editor draft preserved through bounded pagination.');
+    await text.fill('A second private draft survives the pending page.');
+    await expect(page.getByRole('button',{name:'Loading more comments...',exact:true})).toBeDisabled();
+    await composer.fill('A new comment appears immediately beyond the initial 50 rows.');
+    await page.getByRole('button',{name:'Post comment',exact:true}).click();await creationReady;
+    await composer.fill('An independent new draft typed during the pending creation.');
+    await expect(page.getByRole('button',{name:'Loading more comments...',exact:true})).toBeDisabled();
+    releaseCreation();
+    await expect(page.locator('.comment')).toHaveCount(51);
+    await expect(page.getByText('A new comment appears immediately beyond the initial 50 rows.',{exact:true})).toBeVisible();
+    await expect(composer).toHaveValue('An independent new draft typed during the pending creation.');
+    await expect(page.getByRole('button',{name:'Loading more comments...',exact:true})).toBeDisabled();
+    releasePage();await expect(page.locator('.comment')).toHaveCount(101);
+    await expect(text).toHaveValue('A second private draft survives the pending page.');
+  }finally{releaseCreation();releasePage();}
+  let pages=2;
+  while(await page.getByRole('button',{name:'Load more comments',exact:true}).count()){
+    assert.ok(pages++<14);const before=await page.locator('.comment').count();
+    await page.getByRole('button',{name:'Load more comments',exact:true}).click();
+    await expect(page.locator('.comment')).toHaveCount(Math.min(before+50,552));
+  }
+  assert.equal(await page.locator('.comment').count(),552);
+  await expect(page.getByText('A new comment appears immediately beyond the initial 50 rows.',{exact:true})).toHaveCount(1);
+  await expect(text).toHaveValue('A second private draft survives the pending page.');
+  await expect(composer).toHaveValue('An independent new draft typed during the pending creation.');
+  const oldestHiddenOwner=page.locator('.comment').last();await expect(oldestHiddenOwner.locator(':scope > div > p')).toHaveText('Original paginated comment 550.');
+  await oldestHiddenOwner.getByRole('button',{name:'Edit my comment',exact:true}).click();
+  await expect(oldestHiddenOwner.getByLabel('Edit comment text')).toHaveValue('Original paginated comment 550.');
+  await oldestHiddenOwner.getByLabel('Edit comment text').fill('An author can now edit a comment beyond the old 500-row ceiling.');
+  await oldestHiddenOwner.getByRole('button',{name:'Save comment changes',exact:true}).click();
+  await expect(oldestHiddenOwner.locator(':scope > div > p')).toHaveText('An author can now edit a comment beyond the old 500-row ceiling.');
+  await oldestHiddenOwner.getByRole('button',{name:'Reply',exact:true}).click();
+  await composer.fill('A browser reply preserves this older opaque parent.');
+  await page.getByRole('button',{name:'Post comment',exact:true}).click();
+  await expect(page.getByText('A browser reply preserves this older opaque parent.',{exact:true})).toBeVisible();
+  assert.equal((await db.prepare('SELECT parent_id FROM comments WHERE resource=? AND body=?').get(resource,'A browser reply preserves this older opaque parent.'))?.parent_id,olderParent);
+  assert.ok(reads.every(url=>new URL(url).pathname==='/api/comments/page'||new URL(url).pathname==='/api/comments/owned'));
+  assert.ok(reads.filter(url=>new URL(url).pathname==='/api/comments/page').length<=15);
+  await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
+  await expect(page.getByRole('dialog')).toHaveCount(0);assert.equal(f.documents.length,1);
+});
+
+test('superseded discussion pages and admitted creation responses cannot overwrite another resource or its new draft',async t=>{
+  const f=await fixture(t),{page}=f,db=localConnection(f.directory);t.after(()=>db.close());
+  const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);
+  const owner=(await login.json()).user.id;
+  for(const id of ['old-paged-discussion','new-paged-discussion']){
+    await db.prepare('INSERT INTO posts VALUES(?,?,?,?,?,?,?,?,?,?,?,0)').run(id,'questions',`Original ${id}`,'A complete original local question with separate discussion scope.','Fixture Company','system-design','Senior','Global','Anonymous',owner,'2026-01-01T00:00:00.000Z');
+    for(let i=0;i<(id==='old-paged-discussion'?51:1);i++)await db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run(`${id}-${String(i).padStart(4,'0')}`,`post/${id}`,owner,'Synthetic scoped author',`Scoped comment ${id} ${i}.`,'2026-01-01T00:00:00.000Z',null);
+  }
+  await page.goto(`${f.url}${communityPostPath({kind:'questions',id:'old-paged-discussion'})}`);
+  await expect(page.locator('.comment')).toHaveCount(50);
+  let releasePage!:()=>void,readyPage!:()=>void,releaseCreation!:()=>void,readyCreation!:()=>void,finishedCreation!:()=>void;
+  const heldPage=new Promise<void>(resolve=>{releasePage=resolve;}),pageReady=new Promise<void>(resolve=>{readyPage=resolve;});
+  const heldCreation=new Promise<void>(resolve=>{releaseCreation=resolve;}),creationReady=new Promise<void>(resolve=>{readyCreation=resolve;}),creationFinished=new Promise<void>(resolve=>{finishedCreation=resolve;});
+  await page.route('**/api/comments/page?*',async route=>{
+    if(new URL(route.request().url()).searchParams.get('resource')!=='post/old-paged-discussion'){await route.continue();return;}
+    const response=await route.fetch();assert.equal(response.status(),200);readyPage();await heldPage;await route.fulfill({response});
+  });
+  await page.route('**/api/comments',async route=>{const response=await route.fetch();assert.equal(response.status(),201);readyCreation();await heldCreation;await route.fulfill({response});finishedCreation();},{times:1});
+  try{
+    await page.getByRole('button',{name:'Load more comments',exact:true}).click();await pageReady;
+    await page.getByLabel('Add a comment').fill('Creation belongs only to the old discussion.');
+    await page.getByRole('button',{name:'Post comment',exact:true}).click();await creationReady;
+    await page.evaluate(route=>{history.pushState(null,'',route);window.dispatchEvent(new PopStateEvent('popstate'));},communityPostPath({kind:'questions',id:'new-paged-discussion'}));
+    await expect(page.locator('.community-detail h1')).toHaveText('Original new-paged-discussion');
+    await expect(page.locator('.comment')).toHaveCount(1);
+    await page.getByLabel('Add a comment').fill('The new discussion draft must not be cleared.');
+    releasePage();releaseCreation();await creationFinished;
+    await expect(page.getByRole('button',{name:'Post comment',exact:true})).toBeEnabled();
+    await expect(page.locator('.comment')).toHaveCount(1);
+    await expect(page.getByText('Scoped comment new-paged-discussion 0.',{exact:true})).toBeVisible();
+    await expect(page.getByText('Creation belongs only to the old discussion.',{exact:true})).toHaveCount(0);
+    await expect(page.getByLabel('Add a comment')).toHaveValue('The new discussion draft must not be cleared.');
+    assert.equal((await db.prepare('SELECT COUNT(*) AS count FROM comments WHERE resource=?').get('post/old-paged-discussion'))?.count,52);
+  }finally{releasePage();releaseCreation();}
+});
+
 test('local comment editing preserves conflict and lost-response drafts through closing, filtering and explicit saved-version adoption',async t=>{
   const f=await fixture(t),{page}=f,db=localConnection(f.directory);t.after(()=>db.close());
   const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);
@@ -181,8 +297,7 @@ test('local comment editing preserves conflict and lost-response drafts through 
   for(let index=0;index<3;index++)await db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run(`other-comment-${index}`,resource,'another-local-author','Other retained commenter',`Other original reply ${index}.`,'2026-01-01T00:00:00.000Z',null);
   let releaseRead!:()=>void;
   const reading=new Promise<void>(resolve=>{releaseRead=resolve;});
-  await page.route('**/api/comments?*',async route=>{
-    if(new URL(route.request().url()).pathname!=='/api/comments'){await route.continue();return;}
+  await page.route('**/api/comments/page?*',async route=>{
     const response=await route.fetch();assert.equal(response.status(),200);await reading;await route.fulfill({response});
   },{times:1});
   try{

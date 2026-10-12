@@ -732,6 +732,10 @@ export const migrations = [{
     CREATE TRIGGER maintain_community_comment_revision AFTER INSERT OR UPDATE ON comments
       FOR EACH ROW EXECUTE FUNCTION maintain_community_comment_revision();
   `,
+}, {
+  version: 24,
+  name: 'bounded-community-discussion-pages',
+  sql: `CREATE INDEX comments_resource_cursor ON comments(resource,created_at,id);`,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

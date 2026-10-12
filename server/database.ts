@@ -86,6 +86,7 @@ export function openDatabase(dataDir: string): DatabaseSync {
       CREATE INDEX IF NOT EXISTS posts_owner_order ON posts(author_id,created_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS posts_created_order ON posts(created_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS follows_owner ON follows(user_id,post_id);
+      CREATE INDEX IF NOT EXISTS comments_resource_cursor ON comments(resource,created_at,id);
     `);
     if (!hasCommunityRevisions) db.exec('INSERT OR IGNORE INTO community_post_revisions(post_id) SELECT id FROM posts');
     if (db.prepare('SELECT p.id FROM posts p LEFT JOIN community_post_revisions r ON r.post_id=p.id WHERE r.post_id IS NULL LIMIT 1').get())

@@ -1,8 +1,9 @@
 import { z } from 'zod';
-import type { Comment, OwnedCommunityComment, OwnedCommunityPost } from '../shared/types';
+import type { Comment, CommunityCommentPage, OwnedCommunityComment, OwnedCommunityPost } from '../shared/types';
 import type { Database } from './db/connection';
-import { CommunityReads, communityIdentifier, communityIdentifierSchema } from './community';
+import { CommunityReads, communityDiscussionResource, communityIdentifier, communityIdentifierSchema, communityPageCursor } from './community';
 import { HttpError } from './http-error';
+import { digest, encodePayload } from './jobs/schema';
 
 const revision = z.number().int().min(0).max(2147483647);
 const identity = z.strictObject({ id: communityIdentifierSchema, revision });
@@ -15,6 +16,14 @@ const commentProjection = 'id,resource,author,body,created_at AS "createdAt",par
 const commentDto = z.strictObject({
   id: z.string(), resource: z.string(), author: z.string(), body: z.string(),
   createdAt: z.string(), parentId: z.string().nullable(), isMine: z.union([z.literal(0),z.literal(1)]).transform(value => value === 1),
+});
+const commentPageQuery = z.strictObject({
+  resource: z.string().max(205), limit: z.enum(['25','50']).transform(Number).default(50),
+  cursor: z.string().max(4096).optional(),
+});
+const commentCursor = z.strictObject({
+  version: z.literal('community-comments-v1'), hash: z.string().regex(/^[a-f0-9]{64}$/),
+  id: communityIdentifierSchema, createdAt: z.string().min(1).max(200).refine(value => !value.includes('\0')),
 });
 
 export class CommunityContributions {
@@ -45,6 +54,25 @@ export class CommunityContributions {
     const rows = await this.db.prepare(`SELECT ${commentProjection},CASE WHEN user_id=? THEN 1 ELSE 0 END AS "isMine"
       FROM comments WHERE resource=? ORDER BY created_at ASC LIMIT 500`).all(owner,resource);
     return rows.map(row => commentDto.parse(row));
+  }
+  async commentPage(input: unknown, owner: string | null): Promise<CommunityCommentPage> {
+    const parsed = commentPageQuery.safeParse(input);
+    if (!parsed.success) throw new HttpError(400, 'Provide one discussion resource, supported page size and cursor.');
+    const { cursor: encoded, ...raw } = parsed.data, query = { ...raw, resource: communityDiscussionResource(raw.resource) };
+    const hash = digest(encodePayload({ query, viewer: owner })), cursor = communityPageCursor(encoded,commentCursor,hash);
+    const rows = await this.db.prepare(`SELECT ${commentProjection},CASE WHEN user_id=? THEN 1 ELSE 0 END AS "isMine"
+      FROM comments WHERE resource=? ${cursor ? 'AND (created_at,id)>(?,?)' : ''} ORDER BY created_at ASC,id ASC LIMIT ?`)
+      .all(owner,query.resource,...(cursor ? [cursor.createdAt,cursor.id] : []),query.limit+1);
+    const comments = rows.slice(0,query.limit).map(row => commentDto.parse(row)), last = comments.at(-1);
+    const nextCursor = rows.length > query.limit && last ? Buffer.from(JSON.stringify(commentCursor.parse({
+      version:'community-comments-v1',hash,id:last.id,createdAt:last.createdAt,
+    }))).toString('base64url') : null;
+    return { comments, limit:query.limit, nextCursor };
+  }
+  async createdComment(id: string, owner: string): Promise<Comment> {
+    const row = await this.db.prepare(`SELECT ${commentProjection},1 AS "isMine" FROM comments WHERE id=? AND user_id=?`).get(id,owner);
+    if (!row) throw new Error('The admitted comment was not found after insertion.');
+    return commentDto.parse(row);
   }
   private async commentSnapshot(id: string, owner: string): Promise<OwnedCommunityComment> {
     const location = await this.db.prepare('SELECT resource FROM comments WHERE id=? AND user_id=?').get(id,owner);
