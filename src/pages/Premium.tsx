@@ -2,9 +2,9 @@ import { ArrowLeft, ArrowRight, CalendarDays, Check, ClipboardCheck, Code2, Down
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { companies, levels, practiceLabels, problems } from "../../shared/public-catalog";
-import { hasPremium } from '../../shared/domain';
 import { companyProblems, mockReport, planTaskComplete } from '../../shared/premium';
 import type { MockSession, PlanTask, StudyPlan, UserState } from '../../shared/types';
+import type { Capability } from '../../shared/access';
 import { AuthPrompt, Badge, CardLink, Empty, PageHeading, Progress } from '../components';
 import { request, useStudio } from '../store';
 import { ContentStatus, useContent } from '../content';
@@ -12,23 +12,23 @@ import type { PracticeProblem } from '../../shared/types';
 import { NotFound, PremiumGate } from './Learn';
 import { download } from './Practice';
 
-export function PremiumAccess({ children }: { children: ReactNode }) {
-  const { data } = useStudio();
+export function PremiumAccess({ children, feature = 'mock.create' }: { children: ReactNode; feature?: Capability }) {
+  const { can, data } = useStudio();
   if (!data.user) return <AuthPrompt message="Sign in to explore the original premium preparation workflows." />;
-  return hasPremium(data.state) ? <>{children}</> : <PremiumGate />;
+  return can(feature) ? <>{children}</> : <PremiumGate />;
 }
 export function PremiumStudio() {
-  const { data } = useStudio(), [company, setCompany] = useState('Meta'), [difficulty, setDifficulty] = useState('All');
+  const { can, data } = useStudio(), [company, setCompany] = useState('Meta'), [difficulty, setDifficulty] = useState('All');
   const list = companyProblems(company).filter(p => difficulty === 'All' || p.difficulty === difficulty);
   return <>
-    <PageHeading eyebrow="ORIGINAL PREMIUM WORKFLOWS" title="Make the practice more deliberate." description="A focused conversation, a tailored quiz, a plan you can follow, and a project you can inspect." action={<Badge tone={hasPremium(data.state) ? 'green' : 'amber'}>{hasPremium(data.state) ? 'Premium demo active' : 'Explore with a local demo plan'}</Badge>} />
+    <PageHeading eyebrow="ORIGINAL PREMIUM WORKFLOWS" title="Make the practice more deliberate." description="A focused conversation, a tailored quiz, a plan you can follow, and a project you can inspect." action={<Badge tone={can('mock.create') ? 'green' : 'amber'}>{data.capabilities.auth?.mode === 'managed' ? can('mock.create') ? 'Pro access active' : 'Check access on Account' : can('mock.create') ? 'Premium demo active' : 'Explore with a local demo plan'}</Badge>} />
     <div className="premium-cards">
       <CardLink to="/premium/mock" title="Adaptive mock interviews" description="Follow-up questions respond to gaps in your answers. Keep a transcript and actionable report." icon={MessageSquare} />
       <CardLink to="/quiz/custom" title="Custom quiz builder" description="Combine topics, choose a session length, or focus exclusively on missed questions." icon={ClipboardCheck} />
       <CardLink to="/premium/plans" title="Company-focused study plans" description="Two- or four-week plans connect your actual progress to clear next steps." icon={CalendarDays} />
       <CardLink to="/premium/projects" title="Project workbench" description="Bring source snapshots, edit files, run JavaScript examples, and export a patch." icon={Code2} />
     </div>
-    {!hasPremium(data.state) && <PremiumAccess><span /></PremiumAccess>}
+    {!can('mock.create') && <PremiumAccess><span /></PremiumAccess>}
     <section className="panel premium-library">
       <div className="section-heading"><div><span className="eyebrow">CURATED PRACTICE PACKS</span><h2>A focus for your next company.</h2></div></div>
       <p>These are original study suggestions, not insider interview questions or claims about a company’s current hiring process.</p>
@@ -43,7 +43,7 @@ export function MockPage({ id }: { id?: string }) {
   return id ? <MockSessionPage id={id} /> : <MockSetup />;
 }
 function MockSetup() {
-  const { data, act, setState, pending } = useStudio(), navigate = useNavigate(), [params] = useSearchParams();
+  const { can, data, act, setState, pending } = useStudio(), navigate = useNavigate(), [params] = useSearchParams();
   const [problemId, setProblemId] = useState(params.get('problem') || 'job-scheduler'), [company, setCompany] = useState(params.get('company') || 'Meta');
   const [level, setLevel] = useState(params.get('level') || 'Senior'), [length, setLength] = useState('3'), [track, setTrack] = useState('all');
   const list = problems.filter(p => track === 'all' || p.track === track);
@@ -63,7 +63,7 @@ function MockSetup() {
       <p className="fine-print">Each response is saved before grading. {data.capabilities.ai ? 'Answers and conversation context are sent to your configured AI provider.' : 'Feedback checks topic coverage and depth locally. It is not AI.'} Company context is a preparation preference, not an official interview simulation.</p>
       <button className="button" disabled={pending}>Start mock interview <ArrowRight size={16} /></button>
     </form><section className="panel"><h2>Return to your conversations</h2><MockArchive /></section></div></PremiumAccess>
-    {!hasPremium(data.state) && data.state.mocks.length > 0 && <section className="panel premium-library"><h2>Your saved archive</h2><MockArchive /></section>}
+    {!can('mock.create') && data.state.mocks.length > 0 && <section className="panel premium-library"><h2>Your saved archive</h2><MockArchive /></section>}
   </>;
 }
 function MockArchive() {
@@ -71,9 +71,9 @@ function MockArchive() {
   return data.state.mocks.length ? <div className="premium-archive">{data.state.mocks.map(m => <Link key={m.id} to={`/premium/mock/${m.id}`}><div><strong>{problems.find(p => p.id === m.problemId)?.title}</strong><p>{m.company} · {m.level} · {m.turns.length}/{m.length} turns</p></div><Badge>{m.completedAt ? `${mockReport(m).score}/100` : 'Resume draft'}</Badge><ArrowRight size={16} /></Link>)}</div> : <Empty title="Your next conversation starts here" description="Saved drafts and completed reports appear in this archive." />;
 }
 function MockSessionPage({ id }: { id: string }) {
-  const { data, act, pending, setState, notify } = useStudio();
+  const { can, data, act, pending, setState, notify } = useStudio();
   const session = data.state.mocks.find(m => m.id === id);
-  const resource = useContent<PracticeProblem>(session && !session.completedAt && hasPremium(data.state) ? `/api/content/problems/${encodeURIComponent(session.problemId)}` : null);
+  const resource = useContent<PracticeProblem>(session && !session.completedAt && can('mock.create') ? `/api/content/problems/${encodeURIComponent(session.problemId)}` : null);
   const [answer, setAnswer] = useState(session?.draft || '');
   useEffect(() => setAnswer(session?.draft || ''), [session?.revision, id]);
   if (!data.user) return <AuthPrompt />;
@@ -93,7 +93,7 @@ function MockSessionPage({ id }: { id: string }) {
       <MockTranscript session={session} />
     </>;
   }
-  if (hasPremium(data.state) && !resource.value) return <ContentStatus {...resource}/>;
+  if (can('mock.create') && !resource.value) return <ContentStatus {...resource}/>;
   return <>
     <Link className="back-link" to="/premium/mock"><ArrowLeft size={15} /> Return to the archive</Link>
     <PageHeading eyebrow={`${session.company} · ${session.level}`} title={problem.title} description="Take one question at a time. Save a draft whenever you need to pause." action={<Badge>{session.turns.length + 1} of {session.length} turns</Badge>} />
@@ -106,7 +106,7 @@ function MockSessionPage({ id }: { id: string }) {
           <div className="hero-actions"><button type="button" className="button secondary" disabled={pending} onClick={() => act(async () => { await save(); notify('Interview draft saved.'); })}>Save interview draft</button><button className="button" disabled={pending}>{pending ? 'Saving and grading…' : session.turns.length + 1 === session.length ? 'Finish interview' : 'Submit and continue'} <ArrowRight size={16} /></button></div>
           <p className="fine-print">Answers are saved before provider requests. An error leaves your draft available for retry.</p>
         </form></div>
-    </PremiumAccess><MockTranscript session={session} />
+    </PremiumAccess>{!can('mock.create') && <section className="panel"><h2>{answer === session.draft ? 'Your saved interview draft' : 'Your unsaved interview draft'}</h2><p>{session.question}</p><pre>{answer || 'No answer was saved for this turn.'}</pre>{answer !== session.draft && <p>These editor changes have not been saved to the server. Export them before leaving this page.</p>}<button className="button secondary small" onClick={() => download('mock-interview-draft.json', JSON.stringify({ ...session, draft: answer }, null, 2))}><Download size={15}/> {answer === session.draft ? 'Export saved draft' : 'Export current draft'}</button></section>}<MockTranscript session={session} />
   </>;
 }
 function MockTranscript({ session }: { session: MockSession }) {
@@ -114,7 +114,7 @@ function MockTranscript({ session }: { session: MockSession }) {
   return <section className="mock-transcript"><div className="section-heading"><h2>Your conversation</h2><span>{session.turns.length} saved responses</span></div>{session.turns.map((turn, i) => <details className="panel" key={i} open={i === session.turns.length - 1}><summary><span>Turn {i + 1} · {turn.question}</span><Badge>{turn.feedback.score}/100</Badge></summary><p className="post-body">{turn.answer}</p><div className="local-notice">{turn.feedback.source === 'ai' ? 'Configured AI feedback' : 'Local rubric · not AI'}</div><p>{turn.feedback.summary}</p><ul>{turn.feedback.improvements.map(s => <li key={s}>{s}</li>)}</ul></details>)}</section>;
 }
 export function StudyPlansPage({ id }: { id?: string }) {
-  const { data, act, setState, pending } = useStudio(), navigate = useNavigate(), [params] = useSearchParams();
+  const { can, data, act, setState, pending } = useStudio(), navigate = useNavigate(), [params] = useSearchParams();
   const [company, setCompany] = useState(params.get('company') || 'Meta'), [level, setLevel] = useState(params.get('level') || 'Senior');
   const [weeks, setWeeks] = useState('2'), [pace, setPace] = useState('3'), [startOn, setStartOn] = useState(new Date().toISOString().slice(0, 10));
   const plan = data.state.studyPlans.find(p => p.id === id);
@@ -126,7 +126,7 @@ export function StudyPlansPage({ id }: { id?: string }) {
       <Link className="back-link" to="/premium/plans"><ArrowLeft size={15} /> Your study plans</Link>
       <PageHeading eyebrow={`${plan.weeks} WEEKS · ${plan.sessionsPerWeek} SESSIONS PER WEEK`} title={`${plan.company} · ${plan.level} prep plan`} description="Progress follows saved lesson, quiz, practice, and mock-interview actions. Reflections are yours to write." action={<button className="button secondary small" onClick={() => download('study-plan.json', JSON.stringify(plan, null, 2))}><Download size={15} /> Export plan</button>} />
       <section className="panel plan-progress"><h2>{complete} of {plan.tasks.length} steps complete</h2><Progress value={complete / plan.tasks.length * 100} label="Plan progress" /></section>
-      {!hasPremium(data.state) && <div className="local-notice">Your plan remains readable. Activate premium demo access to save new reflections or begin premium sessions.</div>}
+      {!can('plan.create') && <div className="local-notice">Your plan remains readable and exportable. Current premium permission is required to save new reflections or begin premium sessions.</div>}
       {Array.from({ length: plan.weeks }, (_, week) => <section className="plan-week" key={week}><h2>Week {week + 1}</h2>{plan.tasks.slice(week * plan.sessionsPerWeek, (week + 1) * plan.sessionsPerWeek).map(task => {
         const done = planTaskComplete(task, plan, data.state);
         return <article className="panel plan-task" key={task.id}><span className={`plan-task-status ${done ? 'done' : ''}`} aria-label={done ? 'Task complete' : 'Task incomplete'}>{done ? <Check size={18} /> : <Target size={18} />}</span><div><span className="eyebrow">{task.day} · {task.kind}</span><h3>{task.title}</h3>{task.kind === 'reflection' ? <PlanReflection task={task} planId={plan.id} revision={plan.revision??0} /> : <Link className="text-link" to={task.to}>{done ? 'Review this step' : 'Open this step'} <ArrowRight size={14} /></Link>}</div></article>;
@@ -135,11 +135,11 @@ export function StudyPlansPage({ id }: { id?: string }) {
   }
   return <>
     <PageHeading eyebrow="A PLAN THAT CONNECTS TO PROGRESS" title="Make the next weeks count." description="Create an original company-focused schedule. Missed quiz topics influence the suggested checks; completed work remains recognized." />
-    <PremiumAccess><div className="two-column"><form className="panel premium-form" onSubmit={e => { e.preventDefault(); void act(async () => {
+    <PremiumAccess feature="plan.create"><div className="two-column"><form className="panel premium-form" onSubmit={e => { e.preventDefault(); void act(async () => {
       const result = await request<{ state: UserState; plan: StudyPlan }>('/api/study-plans', { company, level, weeks: Number(weeks), sessionsPerWeek: Number(pace), startOn });
       setState(result.state); navigate(`/premium/plans/${result.plan.id}`);
     }); }}><h2>Choose a sustainable pace</h2><div className="form-grid"><label>Company<select aria-label="Plan company" value={company} onChange={e => setCompany(e.target.value)}>{companies.map(c => <option key={c}>{c}</option>)}</select></label><label>Level<select aria-label="Plan level" value={level} onChange={e => setLevel(e.target.value)}>{levels.map(l => <option key={l}>{l}</option>)}</select></label><label>Duration<select aria-label="Plan weeks" value={weeks} onChange={e => setWeeks(e.target.value)}><option value="2">Two weeks</option><option value="4">Four weeks</option></select></label><label>Sessions per week<select aria-label="Plan sessions" value={pace} onChange={e => setPace(e.target.value)}><option value="3">Three focused sessions</option><option value="5">Five shorter sessions</option></select></label></div><label>Start date<input aria-label="Plan start date" type="date" required value={startOn} onChange={e => setStartOn(e.target.value)} /></label><p className="fine-print">This is original study curation, not a verified company interview loop. Confirm your actual format with the recruiter.</p><button className="button" disabled={pending}>Create study plan <CalendarDays size={16} /></button></form><section className="panel"><h2>Your saved plans</h2><PlanArchive /></section></div></PremiumAccess>
-    {!hasPremium(data.state) && data.state.studyPlans.length > 0 && <section className="panel premium-library"><PlanArchive /></section>}
+    {!can('plan.create') && data.state.studyPlans.length > 0 && <section className="panel premium-library"><PlanArchive /></section>}
   </>;
 }
 function PlanArchive() {
@@ -147,8 +147,8 @@ function PlanArchive() {
   return data.state.studyPlans.length ? <div className="premium-archive">{data.state.studyPlans.map(plan => <Link key={plan.id} to={`/premium/plans/${plan.id}`}><div><strong>{plan.company} · {plan.level}</strong><p>{plan.weeks} weeks · {plan.tasks.filter(t => planTaskComplete(t, plan, data.state)).length}/{plan.tasks.length} complete</p></div><ArrowRight size={16} /></Link>)}</div> : <Empty title="Room for a realistic schedule" description="A plan connects your preparation actions rather than adding a separate checkbox list." />;
 }
 function PlanReflection({ task, planId, revision }: { task: PlanTask; planId: string; revision: number }) {
-  const { act, data, setState, pending, notify } = useStudio(), [note, setNote] = useState(task.note || '');
+  const { can, act, data, setState, pending, notify } = useStudio(), [note, setNote] = useState(task.note || '');
   const [editingRevision, setEditingRevision] = useState(revision), [dirty, setDirty] = useState(false);
   useEffect(() => { if (!dirty) { setEditingRevision(revision); setNote(task.note || ''); } }, [dirty, revision, task.note]);
-  return <form className="plan-reflection" onSubmit={e => { e.preventDefault(); void act(async () => { setState(await request<UserState>(`/api/study-plans/${planId}/reflection`, { taskId: task.id, note, revision: editingRevision })); setDirty(false); notify('Reflection saved to your plan.'); }); }}><label>What would you change next time?<textarea aria-label={`Reflection ${task.id}`} disabled={pending || !hasPremium(data.state)} required minLength={20} maxLength={3000} value={note} onChange={e => { setDirty(true); setNote(e.target.value); }} rows={2} /></label><button className="button secondary small" disabled={pending || !hasPremium(data.state)}>Save reflection</button></form>;
+  return <form className="plan-reflection" onSubmit={e => { e.preventDefault(); void act(async () => { setState(await request<UserState>(`/api/study-plans/${planId}/reflection`, { taskId: task.id, note, revision: editingRevision })); setDirty(false); notify('Reflection saved to your plan.'); }); }}><label>What would you change next time?<textarea aria-label={`Reflection ${task.id}`} disabled={pending || !can('plan.create')} required minLength={20} maxLength={3000} value={note} onChange={e => { setDirty(true); setNote(e.target.value); }} rows={2} /></label><button className="button secondary small" disabled={pending || !can('plan.create')}>Save reflection</button></form>;
 }

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { UserState } from '../../shared/types';
+import type { PracticeProblem, UserState } from '../../shared/types';
 
 const text = z.string().max(40000);
 const id = z.string().min(1).max(200);
@@ -10,6 +10,11 @@ const feedback = z.strictObject({
   summary: text, source: z.enum(['rubric', 'ai']),
 });
 const file = z.strictObject({ path: id, original: text.max(20000).nullable(), content: text.max(20000).nullable() });
+const projectBrief: z.ZodType<PracticeProblem> = z.strictObject({
+  id, track: id, title: text, difficulty: z.enum(['Easy', 'Medium', 'Hard']), description: text,
+  requirements: z.array(text).max(100), starter: text.optional(), premium: z.boolean().optional(),
+  testCases: z.array(z.strictObject({ input: z.unknown(), expected: z.unknown(), label: text })).max(100).optional(),
+});
 
 export const userStateSchema: z.ZodType<UserState> = z.strictObject({
   read: z.array(id), bookmarks: z.array(id), review: z.array(id), activity: z.array(id),
@@ -51,6 +56,7 @@ export const userStateSchema: z.ZodType<UserState> = z.strictObject({
   })).max(20),
   projects: z.array(z.strictObject({
     id, title: text, problemId: id, files: z.array(file), explanation: text, verification: text,
+    brief: projectBrief.optional(), briefVersion: z.string().regex(/^[a-f0-9]{64}$/).optional(),
     revision: z.number().int().nonnegative(), createdAt: text,
     feedback: feedback.optional(), completedAt: text.optional(),
   })).max(20),
@@ -61,6 +67,9 @@ export const userStateSchema: z.ZodType<UserState> = z.strictObject({
     if (new Set(keys).size !== keys.length) context.addIssue({ code: 'custom', path: [field], message: 'Duplicate resource identifiers cannot be persisted.' });
   }
   for (const [index, project] of state.projects.entries()) {
+    if (!!project.brief !== !!project.briefVersion || project.brief && project.brief.id !== project.problemId) {
+      context.addIssue({ code: 'custom', path: ['projects', index, 'brief'], message: 'A project task snapshot requires its matching content version.' });
+    }
     if (project.files.length < 1 || project.files.length > 16 || new Set(project.files.map(file => file.path)).size !== project.files.length
       || project.files.reduce((sum, file) => sum + (file.content?.length ?? 0), 0) > 120000) {
       context.addIssue({ code: 'custom', path: ['projects', index, 'files'], message: 'Project snapshot exceeds its file limits or contains duplicate paths.' });

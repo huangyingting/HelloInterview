@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { request, useStudio } from './store';
 import type { Comment, ContentSection, SourceReference, UserState } from '../shared/types';
 import { contentResearchDate, contentSources } from '../shared/content/sources';
+import { getTrack, problems } from '../shared/public-catalog';
 
 export function SourceLinks({ ids, sources }: { ids?: string[]; sources?: SourceReference[] }) {
   if (!ids?.length) return null;
@@ -39,9 +40,10 @@ export function AuthPrompt({ message = 'Sign in to save your progress and contin
   return <div className="callout"><Sparkles size={20} /><div><strong>Make this progress yours</strong><p>{message}</p></div><Link className="button small" to="/login">Sign in <ArrowRight size={15} /></Link></div>;
 }
 export function ReadButton({ track, lesson, compact = false }: { track: string; lesson: string; compact?: boolean }) {
-  const { data, setState, act, pending } = useStudio();
+  const { data, can, setState, act, pending } = useStudio();
   const key = `${track}/${lesson}`, read = data.state.read.includes(key);
-  return <button className={compact ? `read-toggle ${read ? 'checked' : ''}` : `button ${read ? 'soft' : 'secondary'}`} aria-label={compact ? `${read ? 'Mark unread' : 'Mark as read'}: ${lesson}` : undefined} aria-pressed={read} disabled={pending} onClick={() => act(async () => setState(await request<UserState>('/api/progress', { key, field: 'read', enabled: !read })))}>{read ? <Check size={16} /> : <span className="circle-outline" />}{!compact && (read ? 'Completed' : 'Mark as read')}</button>;
+  const premium = track === 'practice' ? problems.find(problem => problem.id === lesson)?.premium : getTrack(track)?.lessons.find(item => item.id === lesson)?.premium;
+  return <button className={compact ? `read-toggle ${read ? 'checked' : ''}` : `button ${read ? 'soft' : 'secondary'}`} aria-label={compact ? `${read ? 'Mark unread' : 'Mark as read'}: ${lesson}` : undefined} aria-pressed={read} disabled={pending || !!premium && !read && !can('learning.premium.write')} onClick={() => act(async () => setState(await request<UserState>('/api/progress', { key, field: 'read', enabled: !read })))}>{read ? <Check size={16} /> : <span className="circle-outline" />}{!compact && (read ? 'Completed' : 'Mark as read')}</button>;
 }
 export function BookmarkButton({ resource }: { resource: string }) {
   const { data, setState, act, pending } = useStudio();

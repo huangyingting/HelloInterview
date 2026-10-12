@@ -113,6 +113,16 @@ mode disables demo purchases, gifts, external AI and community writing. See
 [the identity runbook](docs/production/12-identity-implementation.md) before any
 configuration; this does not authorize public accounts.
 
+Managed accounts also have a **private entitlement engineering checkpoint**:
+immutable, source-scoped PostgreSQL grants and revocations; current server-clock
+feature decisions; separate content-only versus Pro permissions; and retained
+owned archives after expiry. The UI refreshes permissions at scheduled boundaries
+without trusting the browser's wall clock. Demo plans never authorize managed
+access. There is no public grant endpoint, paid checkout, approved subscription
+offer or external AI quota. See
+[the entitlement runbook](docs/production/13-entitlements-implementation.md);
+controlled PostgreSQL deployments must apply migration 7 before this release.
+
 | Area | Local functionality |
 | --- | --- |
 | Learning | Seven tracks, 74 original lessons; 24 substantial sourced lessons each for System Design and Coding, plus 12 for Low-Level Design, objectives, exercises, outlines, progress, bookmarks, comments, and five algorithm labs |

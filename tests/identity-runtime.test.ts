@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import { test } from 'node:test';
 import { openIdentityFixture } from './fixtures/identity';
+import { Entitlements } from '../server/entitlements';
 
 test('runtime-only release retains identity after restart and operates canonical reconciliation, backlog failure and the compiled worker', { timeout: 120000 }, async t => {
   const f = await openIdentityFixture({}, { brokerHostname: '127.0.0.1', lifecycle: true });
@@ -71,9 +72,15 @@ test('runtime-only release retains identity after restart and operates canonical
   const browser = f.browser(), authorization = await f.begin(browser);
   assert.equal((await f.complete(browser, authorization)).headers.get('location'), '/account');
   const before = await browser.bootstrap();
+  assert.ok(before.user);
   assert.equal(before.user?.identity?.status, 'active');
   assert.equal((await browser.request('/api/profile', { name: 'Compiled member' }, 'PATCH')).status, 200);
   assert.equal((await browser.security()).identities.length, 1);
+  const entitlements = new Entitlements(f.db);
+  const grant = { owner: before.user.id, source: { kind: 'engineering' as const, key: 'compiled-access-fixture' }, policy: 'pro-v1' as const,
+    startsAt: Date.now() - 1000, endsAt: Date.now() + 300000, evidence: { actor: 'compiled-fixture', reason: 'Runtime-only synthetic access rehearsal.' } };
+  await entitlements.issue(grant);
+  assert.equal((await browser.request('/api/content/lessons/system-design/replication')).status, 200);
   assert.equal((await f.db.prepare("SELECT attempts FROM identity_abuse_buckets WHERE scope='network'").get())?.attempts, 2);
   await stop!();
   await start();
@@ -81,6 +88,9 @@ test('runtime-only release retains identity after restart and operates canonical
   assert.equal(after.user?.id, before.user?.id);
   assert.equal(after.user?.name, 'Compiled member');
   assert.equal(after.user?.identity?.verified, true);
+  assert.equal(after.capabilities.access?.state, 'pro');
+  await entitlements.revoke(grant.owner, grant.source, grant.evidence);
+  assert.equal((await browser.request('/api/content/lessons/system-design/replication')).status, 403);
   assert.equal((await f.db.prepare("SELECT attempts FROM identity_abuse_buckets WHERE scope='network'").get())?.attempts, 2);
   await f.begin(browser);
   assert.equal((await f.db.prepare("SELECT attempts FROM identity_abuse_buckets WHERE scope='network'").get())?.attempts, 3);

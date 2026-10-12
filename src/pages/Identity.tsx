@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Download, ShieldCheck } from 'lucide-react';
 import type { IdentitySecurity } from '../../shared/types';
+import { proCapabilities } from '../../shared/access';
 import { AuthPrompt, Badge, PageHeading } from '../components';
 import { request, useStudio } from '../store';
 
@@ -95,7 +96,9 @@ export function ManagedAccountPage() {
         <h3>Passwords and recovery</h3><p>Use hosted email sign-in for password recovery. Studio sign-out does not sign you out of Google or GitHub. {data.capabilities.auth?.securityLifecycle ? 'Authenticated broker password events revoke Studio sessions. Missed events require the operated identity reconciler; upstream social password changes are not covered. This remains private staging.' : 'Password-reset session invalidation is not enabled yet; this integration is for private staging only.'}</p>
         {security?.identities.some(identity => identity.provider === 'email') ? <a className="text-link" href="/auth/login?provider=email">Open email sign-in and recovery</a> : <p>Recover a social account with its provider, or connect a verified email sign-in method below.</p>}
       </section>
-      <section className="panel"><h2>Preparation data</h2><p>Payments and production premium grants are not enabled yet. Demo purchases and gifts cannot upgrade a managed account.</p>
+      <section className="panel"><h2>Current access</h2><p>Server-verified access: <strong>{data.capabilities.access?.features.some(feature => proCapabilities.includes(feature.key) && feature.reason === 'unavailable') ? 'refresh unavailable' : data.capabilities.access?.state ?? 'unavailable'}</strong>. Content-only grants do not include premium practice, progress, projects or tutor work.</p>
+        {data.capabilities.access?.nextChangeAt && <p>Next scheduled access change: {new Date(data.capabilities.access.nextChangeAt).toLocaleString()}.</p>}
+        <p>Payments and subscriptions are not connected. Demo purchases and gifts cannot upgrade a managed account; an access grant is not proof of payment.</p><h3>Preparation data</h3>
         <p>Export your saved preparation after confirming your identity within ten minutes. The current export is not yet a complete privacy-request export.</p>
         <button className="button secondary small" disabled={pending || !active || !security?.fresh} onClick={() => act(async () => {
           const value = await request<unknown>('/api/export');

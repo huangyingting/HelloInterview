@@ -45,6 +45,9 @@ export async function createApplication(config: ServerConfig): Promise<Applicati
   }
   try {
     await assertDatabaseVersion(db);
+    if (db.dialect === 'postgres' && !config.identity && await db.prepare('SELECT 1 AS present WHERE EXISTS(SELECT 1 FROM entitlement_grants) OR EXISTS(SELECT 1 FROM entitlement_revocations)').get()) {
+      throw new Error('Stored managed entitlements require managed identity configuration. Local demo access is not a production fallback.');
+    }
     if (db.dialect === 'postgres' && !config.identity?.lifecycle && await db.prepare('SELECT 1 AS present FROM identity_subject_security LIMIT 1').get()) {
       throw new Error('Stored identity security authority requires managed lifecycle configuration. Disabling it is not an authentication fallback.');
     }

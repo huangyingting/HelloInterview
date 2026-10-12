@@ -1,7 +1,6 @@
 import { ArrowLeft, ArrowRight, BookOpen, Code2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { getTrack, problems } from "../../shared/public-catalog";
-import { hasPremium } from '../../shared/domain';
 import { Badge, ContentSections, PageHeading, SourceLinks } from '../components';
 import { useStudio } from '../store';
 import { NotFound, PremiumGate } from './Learn';
@@ -19,8 +18,8 @@ export function CodingLibrary({ track = 'code' }: { track?: SolutionTrack }) {
 }
 
 export function CodingReader({ problemId, track = 'code' }: { problemId: string; track?: SolutionTrack }) {
-  const { data } = useStudio(), metadata = problems.find(problem => problem.track === track && problem.id === problemId);
-  const access = !!metadata && (!metadata.premium || hasPremium(data.state));
+  const { can, data } = useStudio(), metadata = problems.find(problem => problem.track === track && problem.id === problemId);
+  const access = !!metadata && (!metadata.premium || can('content.premium.read'));
   const resource = useContent<Omit<Problem, 'keywords'>>(access ? `/api/content/references/${encodeURIComponent(problemId)}` : null);
   const problem = resource.value, solution = problem?.solution;
   if (!metadata?.hasSolution) return <NotFound />;

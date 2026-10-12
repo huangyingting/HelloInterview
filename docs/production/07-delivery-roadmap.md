@@ -15,7 +15,8 @@ gates are not implicitly satisfied by a foundation change.
 | W05 | Content-delivery checkpoint implemented; editorial/service authority pending W06/W12 | Allowlisted browser discovery graph; private readers/briefs/media; version-pinned server quiz sessions/checks/reports; readable/exportable owned history; migration 2 and replica/bundle checks |
 | W07 | Durable-job checkpoint implemented; provider/worker composition pending W08-W10 | Maintained PostgreSQL queue, controlled schema/policies, atomic operation/inbox/outbox, fenced completion, safe retries, audited replay and actual worker-death recovery |
 | W04 | In progress; private identity, shared admission and credential-lifecycle checkpoints implemented | Maintained OIDC verification, email/Google/GitHub reference connections, secure sessions/CSRF, fresh linking, paired PostgreSQL legacy proof, shared admission, signed reset revocation, read-only canonical security facts and compiled maintained-queue reconciliation; live delivery, operated alerts, notifications, broker-native abuse controls and imported-account recovery remain |
-| W06, W08-W13 | Pending | Production entitlements, billing, AI budgets, account administration, support, moderation, and launch gates |
+| W06 | Entitlement engineering checkpoint implemented; issuing adapters and commercial authority pending W08/W10/W12 | Immutable owned source grants, terminal revocation, database-clock capability policy, API/worker admission and publication checks, separate content-only access, licensed project snapshots, expiry-aware UI and retained archives |
+| W08-W13 | Pending | Billing, AI budgets, account administration, support, moderation, and launch gates |
 
 W01 preserves existing local accounts, SQLite schema, demo entitlements, API
 contracts, curriculum, and UI. `NODE_ENV=production` means built asset serving,
@@ -42,6 +43,10 @@ broker profile, migrations 4-6, sessions/linking, shared admission, authenticate
 password revocation, canonical reconciliation and remaining delivery/operating gates.
 It does not authorize a tenant purchase, real-user account beta or password-reset
 recovery claim; service mode remains disabled.
+The [W06 entitlement runbook](13-entitlements-implementation.md) records
+migration 7, immutable source authority, capability policy, archival licensing,
+client expiry behavior and trusted issuing-adapter requirements. No checkout,
+approved price, staff grant endpoint or external AI allowance is implied.
 
 ## Delivery strategy
 

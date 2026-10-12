@@ -2,7 +2,6 @@ import { ArrowLeft, ArrowRight, Code2, Download, FileCode2, Plus, Save, Trash2 }
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { problems } from "../../shared/public-catalog";
-import { hasPremium } from '../../shared/domain';
 import { projectPatch, sourcePathIssue } from '../../shared/premium';
 import type { PracticeProblem, ProjectFile, ProjectWorkspace, UserState } from '../../shared/types';
 import { AuthPrompt, Badge, Empty, PageHeading } from '../components';
@@ -33,13 +32,13 @@ async function readSourceFile(file: File): Promise<string> {
   return content;
 }
 function ProjectSetup() {
-  const { data, act, pending, setState, notify } = useStudio(), navigate = useNavigate();
+  const { can, data, act, pending, setState, notify } = useStudio(), navigate = useNavigate();
   const [problemId, setProblemId] = useState('event-dedup'), [title, setTitle] = useState('My event processing project'), [files, setFiles] = useState<{ path: string; content: string }[]>([]);
-  const starter = useContent<PracticeProblem>(hasPremium(data.state) ? '/api/content/problems/event-dedup' : null);
+  const starter = useContent<PracticeProblem>(can('project.create') ? '/api/content/problems/event-dedup' : null);
   useEffect(() => { const content=starter.value?.starter; if(content!==undefined)setFiles(current=>current.length?current:[{path:'event-dedup.js',content}]); }, [starter.value]);
   return <>
     <PageHeading eyebrow="BRING A SOURCE SNAPSHOT" title="Work with the code, not just the prompt." description="Make a bounded change, inspect the diff, record your verification, and take a patch back to your editor." />
-    <PremiumAccess><div className="two-column"><form className="panel premium-form" onSubmit={e => { e.preventDefault(); void act(async () => {
+    <PremiumAccess feature="project.create"><div className="two-column"><form className="panel premium-form" onSubmit={e => { e.preventDefault(); void act(async () => {
       const result = await request<{ state: UserState; project: ProjectWorkspace }>('/api/projects', { title, problemId, files });
       setState(result.state); navigate(`/premium/projects/${result.project.id}`);
     }); }}><h2>A bounded project task</h2><label>Project title<input aria-label="Project title" value={title} onChange={e => setTitle(e.target.value)} minLength={3} maxLength={100} required /></label><label>Acceptance task<select aria-label="Project task" value={problemId} onChange={e => setProblemId(e.target.value)}>{problems.filter(p => p.track === 'ai-coding').map(p => <option value={p.id} key={p.id}>{p.title}</option>)}</select></label>
@@ -62,11 +61,11 @@ function ProjectSetup() {
       {!starter.value && <ContentStatus {...starter}/>}<p className="fine-print">Credential/generated paths are rejected before reading. This is not a secret scanner: do not import keys, confidential code, or private data. Only text snapshots are stored; no repository is cloned and no backend code is executed.</p>
       <button className="button" disabled={pending || !files.length}>Create project workspace <ArrowRight size={16} /></button>
     </form><section className="panel"><h2>Your saved workspaces</h2><ProjectArchive /></section></div></PremiumAccess>
-    {!hasPremium(data.state) && data.state.projects.length > 0 && <section className="panel premium-library"><ProjectArchive /></section>}
+    {!can('project.create') && data.state.projects.length > 0 && <section className="panel premium-library"><ProjectArchive /></section>}
   </>;
 }
 function ProjectEditor({ id }: { id: string }) {
-  const { data, act, pending, setState, notify } = useStudio(), project = data.state.projects.find(p => p.id === id);
+  const { can, data, act, pending, setState, notify } = useStudio(), project = data.state.projects.find(p => p.id === id);
   const resource = useContent<PracticeProblem>(project ? `/api/content/problems/${encodeURIComponent(project.problemId)}?project=${encodeURIComponent(id)}` : null);
   const [files, setFiles] = useState<ProjectFile[]>(project?.files || []), [active, setActive] = useState(project?.files[0]?.path || '');
   const [explanation, setExplanation] = useState(project?.explanation || ''), [verification, setVerification] = useState(project?.verification || '');
@@ -75,31 +74,31 @@ function ProjectEditor({ id }: { id: string }) {
   if (!data.user) return <AuthPrompt />;
   if (!project) return <NotFound />;
   const task = resource.value;
-  if (!task) return <ContentStatus {...resource}/>;
   const file = files.find(f => f.path === active), patch = projectPatch(files);
-  const editable = hasPremium(data.state), dirty = JSON.stringify(files) !== JSON.stringify(project.files) || explanation !== project.explanation || verification !== project.verification;
+  const editable = can('project.create'), dirty = JSON.stringify(files) !== JSON.stringify(project.files) || explanation !== project.explanation || verification !== project.verification;
   const save = async () => {
     const state = await request<UserState>(`/api/projects/${id}/save`, { revision: project.revision, files: files.map(f => ({ path: f.path, content: f.content })), explanation, verification });
     setState(state); return state.projects.find(p => p.id === id)!;
   };
   return <>
     <Link className="back-link" to="/premium/projects"><ArrowLeft size={15} /> Project archive</Link>
-    <PageHeading eyebrow={dirty ? 'UNSAVED CHANGES' : 'SAVED SOURCE SNAPSHOT'} title={project.title} description={task.description} action={<button className="button secondary small" disabled={pending || !editable} onClick={() => act(async () => { await save(); notify('Project files and notes saved.'); })}><Save size={15} /> Save project</button>} />
-    {!editable && <div className="local-notice">Your files and report remain readable and exportable. Activate a premium demo plan to edit or request a new review.</div>}
+    <PageHeading eyebrow={dirty ? 'UNSAVED CHANGES' : 'SAVED SOURCE SNAPSHOT'} title={project.title} description={task?.description} action={<button className="button secondary small" disabled={pending || !editable} onClick={() => act(async () => { await save(); notify('Project files and notes saved.'); })}><Save size={15} /> Save project</button>} />
+    {!task && <ContentStatus {...resource}/>}
+    {!editable && <div className="local-notice">Your files and report remain readable and exportable. Current premium permission is required to edit or request a new review.</div>}
     <div className="project-workspace">
       <aside className="panel project-files"><h2>Project files</h2>{files.map(f => <button key={f.path} className={active === f.path ? 'active' : ''} onClick={() => setActive(f.path)}><FileCode2 size={15} /><span>{f.path}{f.content === null ? ' · deleted' : ''}</span></button>)}
         <label>New relative path<input aria-label="New project file path" placeholder="tests.js" value={newFile} onChange={e => setNewFile(e.target.value)} disabled={!editable || pending} maxLength={160} /></label>
         {newFile && sourcePathIssue(newFile) && <p className="error-text">{sourcePathIssue(newFile)}</p>}
         {newFile && files.some(f => f.path === newFile) && <p className="error-text">This path is already tracked. Select it in the file list instead.</p>}
         <button className="button secondary small" disabled={!editable || pending || !newFile || !!sourcePathIssue(newFile) || files.some(f => f.path === newFile) || files.length >= 16} onClick={() => { setFiles([...files, { path: newFile, original: null, content: '' }]); setActive(newFile); setNewFile(''); }}><Plus size={14} /> Add file</button>
-        <h3>Acceptance criteria</h3><ul>{task.requirements.map(r => <li key={r}>{r}</li>)}</ul>
+        <h3>Acceptance criteria</h3><ul>{task?.requirements.map(r => <li key={r}>{r}</li>)}</ul>
       </aside>
       <section className="panel project-editor"><div className="tabs" role="tablist" aria-label="Project views">{['editor', 'changes', 'review'].map(t => <button role="tab" aria-selected={tab === t} key={t} onClick={() => setTab(t)}>{t === 'editor' ? 'Source editor' : t === 'changes' ? 'Changes' : 'Review and verification'}</button>)}</div>
         {tab === 'editor' && file && <><div className="section-heading"><h3>{file.path}</h3><button className="text-button" disabled={!editable || pending} onClick={() => { setFiles(files.map(f => f.path === file.path ? { ...f, content: f.content === null ? f.original || '' : null } : f)); setResults(null); }}><Trash2 size={14} />{file.content === null ? 'Restore file' : 'Delete file'}</button></div>
           <label>Source contents<textarea className="code-editor" aria-label="Project source contents" value={file.content || ''} disabled={!editable || file.content === null || running || pending} maxLength={20000} spellCheck={false} rows={16} onChange={e => { const content = file.content?.includes('\r\n') ? e.target.value.replace(/\r?\n/g, '\r\n') : e.target.value; setFiles(files.map(f => f.path === active ? { ...f, content } : f)); setResults(null); }} /></label>
-          <div className="project-editor-actions"><button className="button secondary small" disabled={running || pending || !editable || file.content === null || !file.path.endsWith('.js')} onClick={() => act(async () => {
+          <div className="project-editor-actions"><button className="button secondary small" disabled={running || pending || !editable || !task || file.content === null || !file.path.endsWith('.js')} onClick={() => act(async () => {
             setRunning(true);
-            try { const cases = await runCode(file.content || '', task.testCases || []); setResults({ path: file.path, cases }); }
+            try { if (!task) throw new Error('The task examples are unavailable.'); const cases = await runCode(file.content || '', task.testCases || []); setResults({ path: file.path, cases }); }
             finally { setRunning(false); }
           })}>{running ? 'Running…' : 'Run example checks'}</button><p className="fine-print">Runs this file’s synchronous solve(input) in the browser sandbox. Imported modules and other languages are not executed.</p></div>
           {results && <div className="project-results" role="status"><strong>{results.cases.filter(c => c.passed).length}/{results.cases.length} example checks passed · {results.path}</strong>{results.cases.map(c => <div key={c.label}><Badge tone={c.passed ? 'green' : 'amber'}>{c.passed ? 'Pass' : 'Fail'}</Badge><span>{c.label} {c.error || `· expected ${c.expected}, got ${c.actual}`}</span></div>)}</div>}

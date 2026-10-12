@@ -2,7 +2,6 @@ import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronRight, Clock3, Code2, Gr
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getTrack, problems, tracks } from "../../shared/public-catalog";
-import { hasPremium } from '../../shared/domain';
 import { AuthPrompt, Badge, BookmarkButton, CardLink, Comments, ContentSections, IconTile, PageHeading, Progress, ReadButton, SourceLinks } from '../components';
 import { useStudio } from '../store';
 import { trackIcons } from './Home';
@@ -29,9 +28,9 @@ export function TrackOverview({ id }: { id: string }) {
   </>;
 }
 export function LessonPage({ trackId, lessonId }: { trackId: string; lessonId: string }) {
-  const { data } = useStudio();
+  const { can, data } = useStudio();
   const track=getTrack(trackId), metadata=track?.lessons.find(l=>l.id===lessonId);
-  const access = !!metadata && (!metadata.premium || hasPremium(data.state));
+  const access = !!metadata && (!metadata.premium || can('content.premium.read'));
   const resource = useContent<Lesson>(access ? `/api/content/lessons/${encodeURIComponent(trackId)}/${encodeURIComponent(lessonId)}` : null);
   const lesson = resource.value;
   const [reading, setReading] = useState(0);
@@ -82,7 +81,7 @@ export function AlgorithmLab({ kind }: { kind: string }) {
 }
 export function PremiumGate() {
   const {data}=useStudio();
-  if(data.capabilities.commerce==='disabled')return <div className="premium-gate"><IconTile icon={LockKeyhole}/><h2>Production premium access is not enabled yet.</h2><p>Local demo purchases do not unlock managed-account access. Your existing preparation archive is unchanged.</p><Link className="button" to="/account">Open Account <ArrowRight size={16}/></Link></div>;
+  if(data.capabilities.commerce==='disabled')return <div className="premium-gate"><IconTile icon={LockKeyhole}/><h2>Current access does not include this feature.</h2><p>Check your verified access on Account. Content-only access does not include new premium practice or progress. Payments are not connected; demo purchases cannot upgrade managed accounts. Your saved archive is unchanged.</p><Link className="button" to="/account">Open Account <ArrowRight size={16}/></Link></div>;
   return <div className="premium-gate"><IconTile icon={LockKeyhole}/><h2>A deeper practice opportunity.</h2><p>This original Studio exercise is part of the local premium demo. Activate a demo plan to explore it; no payment or card information is collected.</p><Link className="button" to="/pricing">Explore demo plans <ArrowRight size={16}/></Link></div>;
 }
 export function NotFound() {

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { PgBoss, JobWithMetadata } from 'pg-boss';
 import type { Database } from '../db/connection';
 import { HttpError } from '../http-error';
+import { Entitlements } from '../entitlements';
 import { startBoss } from './queue';
 import {
   claimDataSchema, deadLetterQueue, digest, encodePayload, eventSchema, identifier,
@@ -41,20 +42,24 @@ export class DurableJobs {
     await this.db.prepare('SELECT id FROM users WHERE id=? FOR UPDATE').get(ownerId);
     await this.db.prepare('SELECT user_id FROM managed_accounts WHERE user_id=? FOR UPDATE').get(ownerId);
   }
-  private async ownerActive(ownerId: string | null) {
+  private async ownerActive(ownerId: string | null, kind: Operation['kind']) {
     if (ownerId === null) return false;
-    const row = await this.db.prepare('SELECT u.id,a.status FROM users u LEFT JOIN managed_accounts a ON a.user_id=u.id WHERE u.id=?').get(ownerId);
-    return !!row && (row.status === null || row.status === 'active');
+    const row = await this.db.prepare('SELECT u.id,a.status,a.contact_verified FROM users u LEFT JOIN managed_accounts a ON a.user_id=u.id WHERE u.id=?').get(ownerId);
+    if (!row) return false;
+    if (row.status === null) return true;
+    if (row.status !== 'active' || row.contact_verified !== 1) return false;
+    return kind !== 'ai.evaluate' || new Entitlements(this.db).allows(ownerId, 'ai.feedback.consume');
   }
   async enqueue(input: OperationRequest): Promise<Operation> {
     this.assertOpen();
     const request = requestSchema.parse(input), payload = encodePayload(request.payload);
+    if (request.kind === 'ai.evaluate' && request.principal.type !== 'user') throw new HttpError(403, 'AI operations require an owned user permission and cannot borrow system authority.');
     const scope = `${request.principal.type}:${request.principal.id}`;
     const hash = requestDigest(scope, request, payload);
     return this.db.transaction(async () => {
       if (request.principal.type === 'user') {
         await this.lockOwner(request.principal.id);
-        if (!await this.ownerActive(request.principal.id)) throw new HttpError(403, 'Only an active account can create a provider operation.');
+        if (!await this.ownerActive(request.principal.id, request.kind)) throw new HttpError(403, 'The current verified account and feature permission do not allow this provider operation.');
       }
       const id = randomUUID(), jobId = randomUUID();
       const inserted = await this.db.prepare(`INSERT INTO durable_operations
@@ -143,7 +148,8 @@ export class DurableJobs {
     });
   }
   private async assertClaim(operation: Operation, claim: JobClaim, signal?: AbortSignal): Promise<void> {
-    if (operation.principal.type === 'user' && !await this.ownerActive(operation.ownerId)) throw new TerminalJobFailure('not-eligible');
+    if (operation.kind === 'ai.evaluate' && operation.principal.type !== 'user' ||
+        operation.principal.type === 'user' && !await this.ownerActive(operation.ownerId, operation.kind)) throw new TerminalJobFailure('not-eligible');
     const [current] = await this.boss.findJobs<ClaimData>(claim.name, { id: claim.id });
     const now = await this.db.prepare('SELECT clock_timestamp() AS now').get();
     const time = z.date().parse(now?.now).getTime();
@@ -197,7 +203,8 @@ export class DurableJobs {
           try {
             const operation = await this.operation(claimDataSchema.parse(claim.data).operationId);
             if (operation.jobId !== claim.id || operation.generation !== claim.data.generation || operation.kind !== kind) throw new LostJobClaim();
-            if (operation.principal.type === 'user' && !await this.ownerActive(operation.ownerId)) throw new TerminalJobFailure('not-eligible');
+            if (operation.kind === 'ai.evaluate' && operation.principal.type !== 'user' ||
+                operation.principal.type === 'user' && !await this.ownerActive(operation.ownerId, operation.kind)) throw new TerminalJobFailure('not-eligible');
             const mutation = await handler(operation, claim.signal);
             await this.finish(claim, db => mutation(db), claim.signal);
             return [{ id: claim.id, status: 'completed', output: { operationId: operation.id } }];

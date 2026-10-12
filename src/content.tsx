@@ -3,7 +3,9 @@ import { request, useStudio } from './store';
 
 export function useContent<T>(url: string | null) {
   const { data } = useStudio();
-  const key = `${url}|${data.user?.id ?? 'anonymous'}|${data.state.plan}|${data.state.planExpiresAt}`;
+  const access = data.capabilities.access;
+  const policy = access ? access.features.map(feature => `${feature.key}:${feature.allowed}:${feature.validUntil}`).join('|') : `${data.state.plan}|${data.state.planExpiresAt}`;
+  const key = `${url}|${data.user?.id ?? 'anonymous'}|${policy}`;
   const [result, setResult] = useState<{ key: string; value: T | null; error: string }>({ key: '', value: null, error: '' });
   const [retry, setRetry] = useState(0);
   useEffect(() => {

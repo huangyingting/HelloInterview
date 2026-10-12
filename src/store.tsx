@@ -1,6 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Bootstrap, UserState } from '../shared/types';
 import { emptyState } from '../shared/domain';
+import { canUse, proCapabilities, type Capability } from '../shared/access';
 
 let csrfToken: string | undefined;
 export async function request<T>(url: string, data?: unknown, method?: string, signal?: AbortSignal): Promise<T> {
@@ -29,6 +30,7 @@ interface Store {
   setState: (state: UserState) => void;
   act: (operation: () => Promise<void>) => Promise<void>;
   notify: (message: string, error?: boolean) => void;
+  can: (capability: Capability) => boolean;
 }
 const Context = createContext<Store | null>(null);
 export function StudioProvider({ children }: { children: ReactNode }) {
@@ -36,11 +38,51 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true), [error, setError] = useState('');
   const [operations, setOperations] = useState(0);
   const [toast, setToast] = useState<Store['toast']>(null);
+  const accessClock = useRef<{ server: number; received: number } | null>(null);
+  const refreshing = useRef<Promise<void> | null>(null);
+  const [accessTick, setAccessTick] = useState(0);
   const notify = useCallback((text: string, error = false) => setToast({ text, error }), []);
-  const refresh = useCallback(async () => {
-    setData(await request<Bootstrap>('/api/bootstrap'));
-    setError('');
+  const refresh = useCallback(() => {
+    if (refreshing.current) return refreshing.current;
+    refreshing.current = (async () => {
+      const next = await request<Bootstrap>('/api/bootstrap');
+      accessClock.current = next.capabilities.access ? { server: Date.parse(next.capabilities.access.serverTime), received: performance.now() } : null;
+      setData(next);
+      setError('');
+    })().finally(() => { refreshing.current = null; });
+    return refreshing.current;
   }, []);
+  const can = useCallback((capability: Capability) => {
+    const clock = accessClock.current;
+    return canUse(data, capability, clock ? clock.server + performance.now() - clock.received : Date.now());
+  }, [data, accessTick]);
+  const refreshAccess = useCallback(() => {
+    setAccessTick(value => value + 1);
+    void refresh().catch(err => {
+      setData(current => {
+        const access = current.capabilities.access;
+        if (!access) return current;
+        return { ...current, capabilities: { ...current.capabilities, access: { ...access,
+          features: access.features.map(feature => proCapabilities.includes(feature.key) ? { ...feature, allowed: false, reason: 'unavailable' } : feature),
+        } } };
+      });
+      notify(err instanceof Error ? err.message : 'Could not refresh current access. Saved work is unchanged.', true);
+    });
+  }, [refresh, notify]);
+  useEffect(() => {
+    const access = data.capabilities.access, clock = accessClock.current;
+    if (!access?.nextChangeAt || !clock) return;
+    const delay = Date.parse(access.nextChangeAt) - clock.server - (performance.now() - clock.received);
+    const timeout = setTimeout(refreshAccess, Math.max(0, Math.min(2147483647, delay + 1)));
+    return () => clearTimeout(timeout);
+  }, [data.capabilities.access?.serverTime, data.capabilities.access?.nextChangeAt, refreshAccess]);
+  useEffect(() => {
+    if (data.capabilities.auth?.mode !== 'managed') return;
+    const focus = () => { if (!document.hidden) refreshAccess(); };
+    window.addEventListener('focus', focus);
+    document.addEventListener('visibilitychange', focus);
+    return () => { window.removeEventListener('focus', focus); document.removeEventListener('visibilitychange', focus); };
+  }, [data.capabilities.auth?.mode, refreshAccess]);
   useEffect(() => {
     refresh().catch(err => setError(err instanceof Error ? err.message : 'Could not load your account.')).finally(() => setLoading(false));
   }, [refresh]);
@@ -55,7 +97,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     catch (err) { notify(err instanceof Error ? err.message : 'The operation failed. Please try again.', true); }
     finally { setOperations(value => value - 1); }
   }, [notify]);
-  return <Context.Provider value={{ data, loading, error, pending: operations > 0, toast, refresh, setState: state => setData(current => ({ ...current, state })), act, notify }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ data, loading, error, pending: operations > 0, toast, refresh, can, setState: state => setData(current => ({ ...current, state })), act, notify }}>{children}</Context.Provider>;
 }
 export function useStudio() {
   const context = useContext(Context);

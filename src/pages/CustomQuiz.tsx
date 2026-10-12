@@ -10,6 +10,7 @@ import { NotFound } from './Learn';
 import { PremiumAccess } from './Premium';
 import { QuizAnswerChoices, SavedQuizReport } from './Quiz';
 import { ContentStatus, useContent } from '../content';
+import { download } from './Practice';
 
 export function CustomQuizPage({ id }: { id?: string }) {
   return id ? <CustomQuizSession id={id} /> : <CustomQuizBuilder />;
@@ -20,7 +21,7 @@ function CustomQuizBuilder() {
   const pool = customQuestionPool(topics, mode, data.state), valid = topics.length > 0 && Number.isInteger(Number(count)) && Number(count) >= 1 && Number(count) <= Math.min(20, pool.length);
   return <>
     <PageHeading eyebrow="A QUIZ BUILT AROUND YOUR NEXT QUESTION" title="Choose the gaps worth checking." description="Combine original topics or select only missed questions. The saved session preserves its order, answers, and score." />
-    <PremiumAccess><form className="panel custom-quiz-builder" onSubmit={e => { e.preventDefault(); void act(async () => {
+    <PremiumAccess feature="quiz.custom.create"><form className="panel custom-quiz-builder" onSubmit={e => { e.preventDefault(); void act(async () => {
       const result = await request<{ state: UserState; quiz: CustomQuiz }>('/api/custom-quizzes', { title, topics, mode, count: Number(count) });
       setState(result.state); navigate(`/quiz/custom/${result.quiz.id}`);
     }); }}><label>Session title<input aria-label="Custom quiz title" value={title} onChange={e => setTitle(e.target.value)} required minLength={3} maxLength={100} /></label>
@@ -33,7 +34,7 @@ function CustomQuizBuilder() {
   </>;
 }
 function CustomQuizSession({ id }: { id: string }) {
-  const { data, setState, act, pending } = useStudio(), quiz = data.state.customQuizzes.find(q => q.id === id);
+  const { data, can, setState, act, pending } = useStudio(), quiz = data.state.customQuizzes.find(q => q.id === id);
   const [selected, setSelected] = useState<number | null>(null), [feedback, setFeedback] = useState<QuizQuestion | null>(null);
   const nextId = quiz?.questionIds.find(q => !Object.hasOwn(quiz.answers, q));
   const resource=useContent<QuestionPrompt|null>(quiz && !quiz.completedAt ? `/api/custom-quizzes/${encodeURIComponent(id)}/question?revision=${quiz.revision}` : null);
@@ -47,12 +48,13 @@ function CustomQuizSession({ id }: { id: string }) {
     <SavedQuizReport id={id}/>
   </>;
   const question = feedback ?? resource.value;
+  if (!can('quiz.custom.create')) return <><PageHeading title={quiz.title} description="Your saved quiz remains readable. Current premium permission is required to answer or finish it."/><button className="button secondary small" onClick={() => download('custom-quiz-draft.json', JSON.stringify(quiz, null, 2))}>Export saved quiz</button>{question ? <section className="panel"><h2>{question.prompt}</h2><ol>{question.options.map(option => <li key={option}>{option}</li>)}</ol></section> : resource.error && <ContentStatus {...resource}/>}</>;
   const check = (answer: number) => act(async () => {
     const result = await request<{state:UserState;feedback:QuizQuestion}>(`/api/custom-quizzes/${id}/answer?feedback=true`, { revision: quiz.revision, questionId: nextId, answer });
     setState(result.state); setSelected(answer); setFeedback(result.feedback);
   });
   const number=Object.keys(quiz.answers).length+(feedback?0:1);
-  return <PremiumAccess>{question ? <div className="quiz-runner">
+  return <PremiumAccess feature="quiz.custom.create">{question ? <div className="quiz-runner">
     <div className="quiz-runner-top"><Link className="text-link" to="/quiz"><ArrowLeft size={15} /> {quiz.title}</Link><span>{number} of {quiz.questionIds.length}</span></div>
     <Progress value={Object.keys(quiz.answers).length / quiz.questionIds.length * 100} /><span className="eyebrow question-eyebrow">SAVED CUSTOM QUIZ</span><h1>{question.prompt}</h1>
     <QuizAnswerChoices question={question} selected={selected} feedback={feedback} pending={pending} onSelect={setSelected} />

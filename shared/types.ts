@@ -1,4 +1,5 @@
 import type { SourceId } from './content/sources';
+import type { AccessView } from './access';
 
 export type TrackId = 'system-design' | 'code' | 'low-level-design' | 'behavioral' | 'ai-coding' | 'ml-system-design' | 'salary-negotiation';
 export type Difficulty = 'Easy' | 'Medium' | 'Hard';
@@ -248,6 +249,8 @@ export interface ProjectFile {
   content: string | null;
 }
 export interface ProjectWorkspace {
+  brief?: PracticeProblem;
+  briefVersion?: string;
   id: string;
   title: string;
   problemId: string;
@@ -325,6 +328,7 @@ export interface Bootstrap {
   user: User | null;
   state: UserState;
   capabilities: {
+    access?: AccessView;
     ai: boolean;
     commerce: 'demo' | 'disabled';
     community: 'local' | 'read-only';

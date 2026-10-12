@@ -226,6 +226,43 @@ export const migrations = [{
       PRIMARY KEY (issuer,subject)
     );
   `,
+}, {
+  version: 7,
+  name: 'managed-entitlement-authority',
+  sql: `
+    CREATE TABLE entitlement_grants (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      source_kind TEXT NOT NULL CHECK (source_kind IN ('billing','support','promotion','engineering')),
+      source_key TEXT NOT NULL, policy TEXT NOT NULL CHECK (policy IN ('pro-v1','premium-read-v1')),
+      starts_at BIGINT NOT NULL CHECK (starts_at >= 0), ends_at BIGINT NOT NULL CHECK (ends_at > starts_at),
+      request_hash TEXT NOT NULL CHECK (request_hash ~ '^[a-f0-9]{64}$'), created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (source_kind,source_key)
+    );
+    CREATE INDEX entitlement_owner_window ON entitlement_grants(user_id,ends_at,starts_at);
+    CREATE TABLE entitlement_revocations (
+      source_kind TEXT NOT NULL CHECK (source_kind IN ('billing','support','promotion','engineering')),
+      source_key TEXT NOT NULL, user_id TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY (source_kind,source_key)
+    );
+    CREATE TABLE entitlement_events (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      grant_id TEXT REFERENCES entitlement_grants(id) ON DELETE CASCADE,
+      action TEXT NOT NULL CHECK (action IN ('issued','revoked')),
+      actor TEXT NOT NULL, reason TEXT NOT NULL, source_kind TEXT NOT NULL, source_key TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX entitlement_events_owner ON entitlement_events(user_id,created_at);
+    CREATE FUNCTION retire_entitlement_sources() RETURNS trigger LANGUAGE plpgsql AS $entitlement$
+    BEGIN
+      INSERT INTO entitlement_revocations (source_kind,source_key,user_id)
+        SELECT source_kind,source_key,user_id FROM entitlement_grants WHERE user_id=OLD.id
+        ON CONFLICT (source_kind,source_key) DO NOTHING;
+      RETURN OLD;
+    END
+    $entitlement$;
+    CREATE TRIGGER retire_entitlement_sources BEFORE DELETE ON users
+      FOR EACH ROW EXECUTE FUNCTION retire_entitlement_sources();
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }
