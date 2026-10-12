@@ -120,6 +120,7 @@ test('a delayed built route shows accessible loading while the same shell and it
   await expect(page.getByRole('heading', { name: 'Check what you know.', exact: true })).toBeVisible();
   await expect(page.getByRole('status', { name: 'Loading screen' })).toHaveCount(0);
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.getByRole('button', { name: 'Switch to light theme', exact: true })).toBeFocused();
   assert.equal(f.documents.length, 1);
   assert.deepEqual(f.mutations, []);
 });
@@ -142,6 +143,160 @@ test('query-only search updates preserve focus and the selected category', async
   assert.deepEqual(f.mutations, []);
 });
 
+test('rapid search typing retains every character and follows canonical URL changes without losing focus or category', async t => {
+  const f = await fixture(t), { page } = f;
+  await page.goto(`${f.url}/search?q=replication`);
+  const main = page.locator('main'), input = main.getByRole('textbox', { name: 'Search the Studio', exact: true });
+  await main.getByRole('button', { name: 'Lessons', exact: true }).click();
+  for (const query of ['caching behavior and consistency', '\u7f13\u5b58 queues & jobs', 'literal % underscore_\\']) {
+    await input.fill('');
+    await input.pressSequentially(query);
+    await expect(input).toHaveValue(query);
+    await expect(input).toBeFocused();
+    await expect(page).toHaveURL(`${f.url}/search?${new URLSearchParams({ q: query })}`);
+  }
+  await input.fill('cache consistency');
+  await input.evaluate(element => {
+    if (!(element instanceof HTMLInputElement)) throw new Error('Search textbox expected.');
+    element.setSelectionRange(6, 6);
+  });
+  await input.pressSequentially('queue ');
+  await expect(input).toHaveValue('cache queue consistency');
+  assert.equal(await input.evaluate(element => {
+    if (!(element instanceof HTMLInputElement)) throw new Error('Search textbox expected.');
+    return element.selectionStart;
+  }), 12);
+  await expect(main.getByRole('button', { name: 'Lessons', exact: true })).toHaveClass('active');
+  await page.evaluate(() => {
+    history.pushState({}, '', '/search?q=queues');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await expect(input).toHaveValue('queues');
+  await expect(input).toBeFocused();
+  await expect(main.getByRole('button', { name: 'Lessons', exact: true })).toHaveClass('active');
+  await page.getByRole('link', { name: 'Quizzes', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Check what you know.', exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(input).toHaveValue('queues');
+  await expect(input).toBeFocused();
+  assert.equal(f.documents.length, 1);
+  assert.deepEqual(f.mutations, []);
+});
+
+test('keyboard navigation focuses a ready screen and the skip link starts tabbing inside its main landmark', async t => {
+  const f = await fixture(t), { page } = f;
+  await page.goto(`${f.url}/learn`);
+  await expect(page.getByRole('link', { name: 'Quizzes', exact: true })).toBeVisible();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('link', { name: 'Skip to content', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('main')).toBeFocused();
+  await expect(page.locator('main')).toHaveCSS('outline-style', 'solid');
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.getElementById('main')?.contains(document.activeElement)), true);
+  await page.getByRole('link', { name: 'Quizzes', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: 'Check what you know.', exact: true })).toBeVisible();
+  await expect(page.locator('main')).toBeFocused();
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.getElementById('main')?.contains(document.activeElement)), true);
+  assert.equal(f.documents.length, 1);
+  assert.deepEqual(f.mutations, []);
+});
+
+test('delayed keyboard navigation waits for its screen, while superseded loading never takes focus from Search', async t => {
+  const f = await fixture(t), { page } = f;
+  await page.goto(`${f.url}/learn`);
+  await expect(page.getByRole('link', { name: 'Quizzes', exact: true })).toBeVisible();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  t.after(() => release());
+  await page.route(`**/${manifest['src/pages/Quiz.tsx'].file}`, async route => { await gate; await route.continue(); });
+  const quizzes = page.getByRole('link', { name: 'Quizzes', exact: true });
+  await quizzes.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('status', { name: 'Loading screen' })).toBeVisible();
+  await expect(quizzes).toBeFocused();
+  await page.keyboard.press('Control+k');
+  const input = page.getByRole('textbox', { name: 'Search the Studio', exact: true });
+  await expect(input).toBeFocused();
+  release();
+  await input.pressSequentially('queues');
+  await expect(input).toHaveValue('queues');
+  await expect(input).toBeFocused();
+  await quizzes.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: 'Check what you know.', exact: true })).toBeVisible();
+  await expect(page.locator('main')).toBeFocused();
+  assert.equal(f.documents.length, 1);
+  assert.deepEqual(f.mutations, []);
+});
+
+test('Search shortcuts refocus the existing input and ignore composing or already-handled key events', async t => {
+  const f = await fixture(t), { page } = f;
+  await page.goto(`${f.url}/learn`);
+  await expect(page.getByRole('link', { name: 'Quizzes', exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, isComposing: true, bubbles: true }));
+    const handled = new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, cancelable: true, bubbles: true });
+    handled.preventDefault();
+    window.dispatchEvent(handled);
+  });
+  await expect(page).toHaveURL(`${f.url}/learn`);
+  await page.keyboard.press('Control+k');
+  const input = page.getByRole('textbox', { name: 'Search the Studio', exact: true });
+  await expect(input).toBeFocused();
+  await input.pressSequentially('caching');
+  await page.locator('main').getByRole('button', { name: 'Lessons', exact: true }).focus();
+  await page.keyboard.press('Meta+k');
+  await expect(input).toBeFocused();
+  await expect(input).toHaveValue('caching');
+  await expect(page).toHaveURL(`${f.url}/search?q=caching`);
+  assert.equal(f.documents.length, 1);
+  assert.deepEqual(f.mutations, []);
+});
+
+test('closed mobile navigation is outside the tab order and open navigation returns focus when dismissed', async t => {
+  const f = await fixture(t), { page } = f;
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${f.url}/learn`);
+  const open = page.getByRole('button', { name: 'Open navigation', exact: true });
+  await expect(open).toBeVisible();
+  await expect(page.locator('.sidebar')).not.toBeVisible();
+  await expect(open).toHaveAttribute('aria-expanded', 'false');
+  for (let step = 0; step < 12; step++) {
+    await page.keyboard.press('Tab');
+    assert.equal(await page.evaluate(() => !!document.activeElement?.closest('.sidebar')), false);
+  }
+  await open.focus();
+  await page.keyboard.press('Enter');
+  const close = page.getByRole('button', { name: 'Close navigation', exact: true });
+  await expect(close).toBeFocused();
+  await expect(open).toHaveAttribute('aria-expanded', 'true');
+  await page.keyboard.press('Escape');
+  await expect(open).toBeFocused();
+  await expect(page.locator('.sidebar')).not.toBeVisible();
+  await open.press('Enter');
+  await close.press('Enter');
+  await expect(open).toBeFocused();
+  await open.press('Enter');
+  await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true })));
+  await expect(open).toHaveAttribute('aria-expanded', 'true');
+  await page.getByRole('button', { name: 'Close navigation backdrop', exact: true }).click({ position: { x: 350, y: 400 } });
+  await expect(open).toBeFocused();
+  await open.press('Enter');
+  await page.getByRole('link', { name: 'Quizzes', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: 'Check what you know.', exact: true })).toBeVisible();
+  await expect(page.locator('.sidebar')).not.toBeVisible();
+  await expect(page.locator('main')).toBeFocused();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(page.getByRole('complementary', { name: 'Primary navigation' })).toBeVisible();
+  await page.getByRole('link', { name: 'Your dashboard', exact: true }).focus();
+  await expect(page.getByRole('link', { name: 'Your dashboard', exact: true })).toBeFocused();
+  assert.deepEqual(f.mutations, []);
+});
+
 test('healthy account aliases preserve unsaved state, while an actual owner change clears it', async t => {
   const f = await fixture(t), { page } = f;
   await page.goto(`${f.url}/auth`);
@@ -153,6 +308,7 @@ test('healthy account aliases preserve unsaved state, while an actual owner chan
     window.dispatchEvent(new PopStateEvent('popstate'));
   });
   await expect(page.getByLabel('Display name')).toHaveValue('Unsaved synthetic account draft');
+  await expect(page.getByLabel('Display name')).toBeFocused();
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Great interviews start with a little practice.', exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Your Studio', exact: true }).click();
@@ -180,6 +336,9 @@ for (const failure of ['missing-chunk', 'render-error'] as const) {
     });
     await page.getByRole('link', { name: 'Quizzes', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'This screen could not open.', exact: true })).toBeVisible();
+    await expect(page.locator('main')).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(page.getByRole('button', { name: 'Reload page', exact: true })).toBeFocused();
     await expect(page.getByRole('alert')).toContainText('No action was retried');
     await expect(page.getByText('Synthetic private error detail', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Reloading may discard unsaved changes on this page.', { exact: true })).toBeVisible();
@@ -202,3 +361,26 @@ for (const failure of ['missing-chunk', 'render-error'] as const) {
     assert.deepEqual(savedAfter.state, savedBefore.state);
   });
 }
+
+test('leaving a failed screen waits for the next delayed module instead of focusing the stale error', async t => {
+  const f = await fixture(t), { page } = f;
+  await page.goto(`${f.url}/learn`);
+  await expect(page.getByRole('link', { name: 'Quizzes', exact: true })).toBeVisible();
+  await page.route(`**/${manifest['src/pages/Quiz.tsx'].file}`, route => route.fulfill({ status: 503, contentType: 'text/javascript', body: 'Synthetic asset outage.' }));
+  await page.getByRole('link', { name: 'Quizzes', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'This screen could not open.', exact: true })).toBeVisible();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  t.after(() => release());
+  await page.route(`**/${manifest['src/pages/Explore.tsx'].file}`, async route => { await gate; await route.continue(); });
+  const search = page.getByRole('link', { name: /^Search the Studio/ });
+  await search.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('status', { name: 'Loading screen' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'This screen could not open.', exact: true })).toHaveCount(0);
+  await expect(search).toBeFocused();
+  release();
+  await expect(page.getByRole('textbox', { name: 'Search the Studio', exact: true })).toBeFocused();
+  assert.equal(f.documents.length, 1);
+  assert.deepEqual(f.mutations, []);
+});

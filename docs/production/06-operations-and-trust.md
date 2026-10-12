@@ -39,6 +39,13 @@ automatic reload or action replay. The
 completeness and old-chunk retention requirements. No deployed compression,
 Core Web Vitals, complete accessibility assessment or launch approval is implied.
 
+**Implemented keyboard-navigation checkpoint (W12):** the skip target and
+committed-screen focus, closed mobile navigation/return focus, and rapid Search
+input/history behavior are verified in the built browser. The
+[keyboard runbook](29-keyboard-screen-navigation.md) describes non-disruptive
+focus and composing-key boundaries. Real assistive-device/IME review and
+broader contrast, validation, media/workspace and accessibility gates remain.
+
 ## Operating model
 
 Name accountable people before launch, even if one person initially fills

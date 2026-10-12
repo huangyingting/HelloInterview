@@ -75,6 +75,10 @@ or retrying an action; reload may discard unsaved work. The
 [screen-delivery runbook](docs/production/28-deferred-screen-delivery.md) records
 fixed entry/cold JavaScript budgets and deployment requirements for retaining
 old hashed assets across releases. These are not deployed performance SLAs.
+Keyboard navigation also has a focusable skip target, readiness-aware screen
+focus, dismissible mobile navigation and reliable rapid Search input; see the
+[keyboard-navigation boundaries](docs/production/29-keyboard-screen-navigation.md).
+This is not a complete accessibility assessment.
 
 **This is a production-format runtime, not a production-ready paid service.**
 Local accounts, demo plans, and the existing service limitations remain.

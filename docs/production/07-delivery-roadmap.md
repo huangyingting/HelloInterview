@@ -20,7 +20,7 @@ gates are not implicitly satisfied by a foundation change.
 | W09 | In progress; internal usage-ledger, native-intent and saved-input provenance checkpoints implemented | Explicit immutable sandbox manifests, atomic replica unit/cost/native/private-input reservations, pinned operation/job/generation, owned source/model/prompt hashes, exact UTF-8 bounds, transactional raw-payload retirement, overlap-safe original-calendar windows, unknown holds and coupled cancellation/SQL settlement; actual managed provider dispatch, consent/UX, model/token/cost policy, operating reconciliation and approval remain |
 | W10 | In progress; owned member-support receipts checkpoint implemented | Private paginated request history, immutable replica-safe retry keys, current-session fences and shared write admission; truthful saved/not-delivered UI; staff MFA/RBAC/audit, operated helpdesk/email, comprehensive export/deletion and retention approvals remain |
 | W11 | In progress; private-safe community-read checkpoint implemented | Explicit anonymous/public DTOs without account IDs, server-derived ownership, bounded cursor filtering/search/sort, independent detail and full-body cross-kind search; managed writing remains denied, operated moderation/report/appeal and reviewed publication gates remain |
-| W12 | In progress; deferred-screen delivery checkpoint implemented | Separated public navigation/discovery graphs, fixed transitive cold JavaScript budgets, explicit accessible loading/failure and manual recovery without action replay; reviewed content/offers, broad accessibility and operated serving remain |
+| W12 | In progress; deferred-screen and keyboard-navigation checkpoints implemented | Separated public navigation/discovery graphs, fixed transitive cold JavaScript budgets, explicit loading/failure/manual recovery, non-disruptive ready-screen/skip focus, keyboard-safe mobile disclosure and reliable rapid Search input; reviewed content/offers, broad accessibility and operated serving remain |
 | W13 | Pending | Integrated provider lifecycle, load/recovery/security evidence and operating/launch gates |
 
 W01 preserves existing local accounts, SQLite schema, demo entitlements, API
@@ -110,6 +110,11 @@ explicit loading/failure and manual reload, actual built-chunk browser evidence
 and multi-release asset-retention requirements. It changes no capability or
 content-access flag and establishes no Core Web Vitals, serving-compression,
 editorial, broad accessibility or public-launch approval.
+The [keyboard-navigation runbook](29-keyboard-screen-navigation.md) records
+readiness-aware main focus without interrupting form/query work, mobile
+disclosure visibility/return focus, and canonical concurrent Search input.
+Human screen-reader/device/IME review and wider workspace/contrast/validation
+assessment remain; no complete accessibility or operating approval is inferred.
 
 ## Delivery strategy
 

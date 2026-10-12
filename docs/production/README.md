@@ -58,6 +58,7 @@ service with defined recovery and support commitments.
 | [26 - Owned support receipts](26-owned-support-receipts.md) | Private member request history, immutable retry keys, current-session fences, shared write admission and truthful saved/not-delivered UX; no staff/helpdesk/email operation | Support and full-stack |
 | [27 - Private-safe community reads](27-private-safe-community-reads.md) | Explicit public DTOs without account IDs, server-derived ownership, bounded query/cursor feeds, independent detail and body-aware cross-kind search; no public-writing/moderation approval | Community and full-stack |
 | [28 - Deferred screen delivery](28-deferred-screen-delivery.md) | Bounded transitive cold JavaScript graphs, separated public metadata, accessible loading/failure, manual recovery and multi-release asset requirements; no launch/performance SLA approval | Frontend and operations |
+| [29 - Keyboard screen navigation](29-keyboard-screen-navigation.md) | Non-disruptive ready-screen focus, skip target, hidden/dismissible mobile navigation and reliable rapid Search/URL behavior; no complete accessibility approval | Frontend and accessibility |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to

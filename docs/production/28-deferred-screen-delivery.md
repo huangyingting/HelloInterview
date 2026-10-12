@@ -43,9 +43,9 @@ static dependency graph, not just its named output file.
 
 | Graph | Raw JavaScript ceiling | Gzip-estimate ceiling | Measured raw bytes | Measured gzip-estimate bytes |
 | --- | --- | --- | --- | --- |
-| Entry | 350 KiB | 100 KiB | 293,353 | 93,464 |
-| Cold landing | 350 KiB | 100 KiB | 299,958 | 96,619 |
-| Cold sign-in | 350 KiB | 100 KiB | 309,582 | 99,610 |
+| Entry | 350 KiB | 100 KiB | 294,502 | 93,858 |
+| Cold landing | 350 KiB | 100 KiB | 301,107 | 97,007 |
+| Cold sign-in | 350 KiB | 100 KiB | 310,731 | 100,010 |
 
 These are one release build's measurements; hashes and sizes can change.
 The tests enforce the ceilings independently of these recorded numbers.
@@ -87,6 +87,10 @@ available, deliberate document reload starts a fresh lazy-module cache.
 Reload can discard unsaved work; navigation/render failures are not a new
 durable-draft mechanism or a guarantee to preserve every unmounted editor.
 Already saved account/history remains in the server and is not replayed.
+The [keyboard-navigation checkpoint](29-keyboard-screen-navigation.md) adds
+non-disruptive committed-screen focus, a focusable skip target, keyboard-safe
+mobile disclosure and reliable concurrent Search input. These do not complete
+the broader accessibility or deployed-performance gates.
 
 ## Release and deployment
 
