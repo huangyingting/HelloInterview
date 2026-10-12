@@ -23,6 +23,14 @@ are available. The [support runbook](26-owned-support-receipts.md) records
 migration 20 and explicit saved/not-delivered UI. This is not an operated queue,
 staff reply/MFA workflow, email/helpdesk delivery or privacy-retention approval.
 
+**Implemented community-read checkpoint (W11):** all public post DTOs omit
+stable account IDs, questions force anonymous labels, and server-derived
+ownership replaces browser account comparisons. The
+[community-read runbook](27-private-safe-community-reads.md) records migration
+21, bounded cursor feeds, independent detail and full-body global search.
+Managed contributions remain read-only; moderation, public-writing and reviewed
+editorial-content approval are not implied.
+
 ## Operating model
 
 Name accountable people before launch, even if one person initially fills
@@ -138,9 +146,9 @@ fields. Return `isMine` for the authenticated author rather than exposing
 `authorId` to everyone. Moderators see the mapping only with authorized,
 audited access. Explain that anonymity is from other members, not the service.
 
-Move filtering/search/sorting/pagination to the server. Support cursor-based
-published lists and direct post lookup; a post must not become inaccessible
-because it fell outside the current 1,000-row fetch. Enforce moderation/access
+Filtering/search/sorting/pagination and independent post lookup are implemented
+in the W11 read checkpoint; older posts no longer depend on the compatibility
+1,000-row fetch. Cursor pages are not frozen exports. Enforce moderation/access
 state consistently in search, direct reads, comments, exports and notification
 previews.
 

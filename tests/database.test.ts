@@ -202,7 +202,8 @@ test('PostgreSQL API supports restart, relational DTO parity and atomic concurre
   assert.equal(post.response.status, 201);
   await api(first.url, `/api/posts/${post.value.id}/vote`, {}, authenticated.cookie);
   const posts = await api<Record<string, unknown>[]>(second.url, '/api/posts?kind=discussion', undefined, authenticated.cookie);
-  assert.equal(posts.value[0].authorId, authenticated.id);
+  assert.equal(posts.value[0].isMine, true);
+  assert.ok(!Object.hasOwn(posts.value[0],'authorId'));
   assert.equal(posts.value[0].voted, true);
   assert.equal(posts.value[0].votes, 1);
   assert.equal(typeof posts.value[0].createdAt, 'string');

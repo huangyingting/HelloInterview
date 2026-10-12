@@ -371,6 +371,27 @@ test('community pagination and reversible upvotes use persisted local records', 
   await expect(vote).toHaveAttribute('aria-pressed','false');
 });
 
+test('global community search loads further server matches beyond the old 80-result cap and preserves body-only matches',async({page})=>{
+  await demo(page);
+  const marker=`community-body-${Date.now()}`;
+  for(let index=0;index<85;index++){
+    const response=await page.request.post('/api/posts',{data:{kind:'discussion',title:`Search pagination record ${index}`,
+      body:`${'Saved context. '.repeat(30)} ${marker}`,company:'',track:'system-design',level:'Senior',region:'Global'}});
+    expect(response.status()).toBe(201);
+  }
+  const legacyReads:string[]=[];page.on('request',request=>{if(new URL(request.url()).pathname==='/api/posts')legacyReads.push(request.url());});
+  await page.goto(`/search?q=${marker}`);
+  await page.locator('main').getByRole('button',{name:'Community',exact:true}).click();
+  await expect(page.locator('.search-results h3')).toHaveCount(50);
+  await expect(page.getByText('85 results',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Load more community results',exact:true}).click();
+  await expect(page.locator('.search-results h3')).toHaveCount(85);
+  await expect(page.getByRole('button',{name:'Load more community results',exact:true})).toHaveCount(0);
+  expect(legacyReads).toEqual([]);
+  await page.locator('.search-results a').last().click();
+  await expect(page.locator('.post-body')).toContainText(marker);
+});
+
 test('mobile navigation, theme, and no horizontal overflow on main surfaces', async ({page}) => {
   await page.setViewportSize({width:390,height:844});
   await demo(page);

@@ -26,6 +26,7 @@ import { resumptionRequestSchema } from './billing/resumption-schema';
 import { TerminalJobFailure } from './jobs';
 import { z } from 'zod';
 import { SupportRequests, supportContactSchema } from './support';
+import { CommunityReads } from './community';
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new HttpError(400, 'Expected an object.');
   return value as Record<string, unknown>;
@@ -63,6 +64,7 @@ function sourceText(value: unknown): string {
 export function createApp(config: ServerConfig, db: Database, shutdown: AbortSignal, draining: AbortSignal = shutdown, identityTransport?: IdentityTransport, lifecycle?: IdentityLifecycle, billing?: BillingNotifications): express.Express {
   const states = new StateRepository(db);
   const content = new ContentRepository(db);
+  const community = new CommunityReads(db);
   if (config.identity && !config.publicOrigin) throw new Error('Managed identity requires a canonical application origin.');
   if (config.identity?.lifecycle && !lifecycle) throw new Error('Configured identity lifecycle must be opened before serving requests.');
   if (config.billing && !billing) throw new Error('Configured billing notifications must be opened before serving requests.');
@@ -184,11 +186,11 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     app.use('/api', async (req, res, next) => {
       if (!['GET', 'HEAD'].includes(req.method)) await identity.checkMutation(req);
       const user = await identity.user(req);
-      const publicRead = ['GET', 'HEAD'].includes(req.method) && ['/api/content/', '/api/posts', '/api/comments'].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix));
+      const publicRead = ['GET', 'HEAD'].includes(req.method) && ['/api/content/', '/api/posts', '/api/community/posts', '/api/comments'].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix));
       const accountRoute = ['/api/bootstrap', '/api/entitlements', '/api/logout', '/api/support', '/api/support/requests', '/api/profile', '/api/ready'].includes(req.originalUrl.split('?')[0]) || req.originalUrl.startsWith('/api/identity/');
       if (user?.identity?.status !== undefined && user.identity.status !== 'active' && !publicRead && !accountRoute) throw new HttpError(403, 'This account needs verified contact information or account review. Open Account or contact support.');
       if (['/api/auth/', '/api/plan', '/api/gift', '/api/profile/password'].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix))) throw new HttpError(404, 'Local authentication, demo commerce and local passwords are disabled for managed identity.');
-      if (!['GET', 'HEAD'].includes(req.method) && ['/api/posts', '/api/comments'].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix))) throw new HttpError(503, 'Community contributions are read-only until production moderation is enabled.');
+      if (!['GET', 'HEAD'].includes(req.method) && ['/api/posts', '/api/community/posts', '/api/comments'].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix))) throw new HttpError(503, 'Community contributions are read-only until production moderation is enabled.');
       next();
     });
     identity.register(app);
@@ -860,13 +862,17 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   });
   app.get('/api/posts', async (req, res) => {
     const user = (await currentUser(req));
-    const kind = choice(req.query.kind, ['questions', 'stories', 'submissions', 'discussion'], 'community section');
-    const rows = (await db.prepare(`SELECT p.id,p.kind,p.title,p.body,p.company,p.track,p.level,p.region,p.author,p.author_id AS "authorId",p.created_at AS "createdAt",p.sample,
-      CAST((SELECT COUNT(*) FROM votes WHERE post_id=p.id) AS INTEGER) AS votes,
-      EXISTS(SELECT 1 FROM votes WHERE post_id=p.id AND user_id=?) AS voted,
-      EXISTS(SELECT 1 FROM follows WHERE post_id=p.id AND user_id=?) AS followed
-      FROM posts p WHERE p.kind=? ORDER BY p.created_at DESC LIMIT 1000`).all(user?.id || '', user?.id || '', kind));
-    res.json(rows.map(row => ({ ...row, voted: !!row.voted, followed: !!row.followed, sample: !!row.sample })));
+    const result = await community.legacy(req.query.kind,user?.id ?? null);
+    res.setHeader('X-Community-Truncated',String(result.truncated));
+    res.json(result.posts);
+  });
+  app.get('/api/community/posts',async(req,res)=>{
+    const user=await currentUser(req);
+    res.json(await community.feed(req.query,user?.id ?? null));
+  });
+  app.get('/api/community/posts/:id',async(req,res)=>{
+    const user=await currentUser(req);
+    res.json(await community.detail(req.params.id,req.query,user?.id ?? null));
   });
   app.post('/api/posts', async (req, res) => {
     const user = (await requireUser(req)), body = record(req.body);

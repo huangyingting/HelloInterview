@@ -1,10 +1,10 @@
 import { ArrowLeft, ArrowRight, BookOpen, CalendarDays, Check, ChevronRight, Download, Gift, GraduationCap, KeyRound, LifeBuoy, LockKeyhole, Mail, MessageSquare, Search, Send, Settings2, ShieldCheck, Sparkles, Trash2, UserRound } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { companies, levels, practiceLabels, problems, tracks } from "../../shared/public-catalog";
 import { hasPremium } from '../../shared/domain';
 import { courses } from "../../shared/public-catalog";
-import type { CommunityPost, UserState } from '../../shared/types';
+import type { CommunityFeed, UserState } from '../../shared/types';
 import { AuthPrompt, Badge, Comments, Empty, Footer, IconTile, PageHeading } from '../components';
 import { request, useStudio } from '../store';
 import { NotFound } from './Learn';
@@ -78,15 +78,34 @@ export function GuidePage({company='meta',level='senior'}:{company?:string;level
 }
 
 export function SearchPage() {
-  const [params,setParams]=useSearchParams(),{notify}=useStudio();
-  const [query,setQuery]=useState(params.get('q')||''),[category,setCategory]=useState('all'),[posts,setPosts]=useState<CommunityPost[]>([]);
-  useEffect(()=>{let alive=true;Promise.all(['questions','stories','submissions','discussion'].map(kind=>request<CommunityPost[]>(`/api/posts?kind=${kind}`))).then(groups=>{if(alive)setPosts(groups.flat());}).catch(error=>{if(alive)notify(`Community search failed: ${error.message}`,true);});return()=>{alive=false;};},[notify]);
+  const [params,setParams]=useSearchParams(),{data}=useStudio();
+  const query=params.get('q')||'',[category,setCategory]=useState('all'),key=`${data.user?.id ?? ''}:${query}`;
+  const [community,setCommunity]=useState<{key:string;feed:CommunityFeed}>(),[failure,setFailure]=useState<{key:string;text:string}>(),[loading,setLoading]=useState(false),[moreLoading,setMoreLoading]=useState(false),more=useRef<AbortController|null>(null);
+  const feed=community?.key===key?community.feed:undefined,posts=feed?.posts ?? [],error=failure?.key===key?failure.text:'';
+  const url=`/api/community/posts?${new URLSearchParams({q:query,limit:'50'})}`;
+  useEffect(()=>{
+    const controller=new AbortController();more.current?.abort();setMoreLoading(false);setLoading(true);setFailure(undefined);
+    const timer=setTimeout(()=>void request<CommunityFeed>(url,undefined,'GET',controller.signal).then(value=>{if(!controller.signal.aborted)setCommunity({key,feed:value});})
+      .catch(reason=>{if(!controller.signal.aborted)setFailure({key,text:reason instanceof Error?reason.message:'Community search failed.'});})
+      .finally(()=>{if(!controller.signal.aborted)setLoading(false);}),150);
+    return()=>{clearTimeout(timer);controller.abort();more.current?.abort();};
+  },[key]);
+  const loadMore=async()=>{
+    if(!feed?.nextCursor||moreLoading)return;
+    const controller=new AbortController();more.current=controller;setMoreLoading(true);setFailure(undefined);
+    try{
+      const next=await request<CommunityFeed>(`${url}&cursor=${encodeURIComponent(feed.nextCursor)}`,undefined,'GET',controller.signal);
+      if(!controller.signal.aborted)setCommunity({key,feed:{...next,posts:[...posts,...next.posts.filter(post=>!posts.some(saved=>saved.id===post.id))]}});
+    }catch(reason){if(!controller.signal.aborted)setFailure({key,text:reason instanceof Error?reason.message:'More community results could not be loaded.'});}
+    finally{if(!controller.signal.aborted)setMoreLoading(false);}
+  };
   const entries=[...([{category:'premium',title:'Adaptive mock interviews',description:'Saved conversations, gap-based follow-ups and interview reports',to:'/premium/mock'},{category:'premium',title:'Custom quiz builder',description:'Combined topics and missed-question sessions',to:'/quiz/custom'},{category:'premium',title:'Company-focused study plans',description:'Progress-aware two- and four-week preparation',to:'/premium/plans'},{category:'premium',title:'Project workbench',description:'Imported source snapshots, browser checks, diffs and patch export',to:'/premium/projects'}]),...courses.map(c=>({category:'courses',title:c.title,description:c.description,to:`/learn/courses/${c.id}`})),...tracks.flatMap(t=>t.lessons.map(l=>({category:'lessons',title:l.title,description:`${t.title} · ${l.summary}`,to:`/learn/${t.id}/${l.id}`}))),...problems.map(p=>({category:'practice',title:p.title,description:`${practiceLabels[p.track]} · ${p.difficulty}`,to:`/practice/${p.track}/${p.id}`})),...journal.map(p=>({category:'journal',title:p.title,description:p.summary,to:`/blog/${p.id}`})),...companies.map(c=>({category:'guides',title:`${c} preparation guide`,description:'Original company preparation planning',to:`/guides/${c.toLowerCase()}/senior`})),...posts.map(p=>({category:'community',title:p.title,description:`${p.kind} · ${p.company||'Local Studio'}`,to:`/community/${p.kind}/${p.kind==='submissions'?`${p.track}/`:''}${p.id}`}))];
   entries.push({category:'cases',title:'System design worked designs',description:'Original architectures, hypothetical capacity calculations, failure paths and public sources',to:'/learn/system-design/cases'},...problems.filter(p=>p.hasWorkedCase).map(p=>({category:'cases',title:p.title,description:p.caseSummary,to:`/practice/${p.track}/${p.id}/writeup`})));
   entries.push({category:'solutions',title:'Coding worked solutions',description:'Original algorithm reasoning, executable examples, JavaScript implementations and public sources',to:'/learn/code/solutions'},...problems.filter(p=>p.track==='code'&&p.hasSolution).map(p=>({category:'solutions',title:p.title,description:p.description,to:`/practice/${p.track}/${p.id}/writeup`})));
   entries.push({category:'object-designs',title:'Low-level design worked models',description:'Original object boundaries, state histories, reference protocols, JavaScript exercises and public sources',to:'/learn/low-level-design/solutions'},...problems.filter(p=>p.track==='low-level-design'&&p.hasSolution).map(p=>({category:'object-designs',title:p.title,description:p.description,to:`/practice/${p.track}/${p.id}/writeup`})));
-  const results=entries.filter(e=>(category==='all'||e.category===category)&&`${e.title} ${e.description}`.toLowerCase().includes(query.toLowerCase()));
-  return <><PageHeading eyebrow="FIND THE NEXT GOOD STEP" title="Search the Studio." description="Lessons, worked designs, coding solutions, object models, practice, guides, and local conversations—all in one place."/><div className="search-field global-search-field"><Search size={21}/><input autoFocus aria-label="Search the Studio" placeholder="Try caching, conflict, or an interview topic…" value={query} onChange={e=>{setQuery(e.target.value);setParams(e.target.value?{q:e.target.value}:{},{replace:true});}}/></div><div className="tabs">{['all','lessons','cases','solutions','object-designs','practice','guides','journal','community'].map(c=><button className={category===c?'active':''} onClick={()=>setCategory(c)} key={c}>{c==='cases'?'Worked designs':c==='solutions'?'Coding solutions':c==='object-designs'?'Object designs':c[0].toUpperCase()+c.slice(1)}</button>)}</div><span className="search-count">{results.length} results</span><div className="search-results">{results.slice(0,80).map((r,i)=><Link to={r.to} key={`${r.to}-${i}`}><IconTile icon={r.category==='practice'?Sparkles:r.category==='community'?MessageSquare:BookOpen} small/><div><span className="eyebrow">{r.category}</span><h3>{r.title}</h3><p>{r.description}</p></div><ArrowRight size={17}/></Link>)}</div>{!results.length&&<Empty title="No matches yet" description="Try a broader topic or a different term."/>}</>;
+  const results=entries.filter(e=>(category==='all'||e.category===category)&&(e.category==='community'||`${e.title} ${e.description}`.toLowerCase().includes(query.toLowerCase())));
+  const local=results.filter(entry=>entry.category!=='community'),showCommunity=category==='all'||category==='community',visible=[...local.slice(0,80),...results.filter(entry=>entry.category==='community')];
+  return <><PageHeading eyebrow="FIND THE NEXT GOOD STEP" title="Search the Studio." description="Lessons, worked designs, coding solutions, object models, practice, guides, and local conversations—all in one place."/><div className="search-field global-search-field"><Search size={21}/><input autoFocus aria-label="Search the Studio" maxLength={200} placeholder="Try caching, conflict, or an interview topic…" value={query} onChange={e=>setParams(e.target.value?{q:e.target.value}:{},{replace:true})}/></div><div className="tabs">{['all','lessons','cases','solutions','object-designs','practice','guides','journal','community'].map(c=><button className={category===c?'active':''} onClick={()=>setCategory(c)} key={c}>{c==='cases'?'Worked designs':c==='solutions'?'Coding solutions':c==='object-designs'?'Object designs':c[0].toUpperCase()+c.slice(1)}</button>)}</div><span className="search-count">{local.length+(showCommunity?(feed?.total ?? 0):0)} results{showCommunity&&!feed?' · community results not loaded':''}</span><div className="search-results">{visible.map((r,i)=><Link to={r.to} key={`${r.to}-${i}`}><IconTile icon={r.category==='practice'?Sparkles:r.category==='community'?MessageSquare:BookOpen} small/><div><span className="eyebrow">{r.category}</span><h3>{r.title}</h3><p>{r.description}</p></div><ArrowRight size={17}/></Link>)}</div>{local.length>80&&<p className="fine-print">Showing the first 80 catalog matches. Choose a category or refine your search.</p>}{showCommunity&&loading&&<p className="muted">Searching community contributions…</p>}{showCommunity&&error&&<p className="error-text" role="alert">{error}</p>}{showCommunity&&feed?.nextCursor&&<button className="button secondary small" disabled={moreLoading||loading} onClick={()=>void loadMore()}>{moreLoading?'Loading more…':'Load more community results'}</button>}{!visible.length&&(!showCommunity||feed)&&!loading&&!error&&<Empty title="No matches yet" description="Try a broader topic or a different term."/>}</>;
 }
 
 export function AccountPage() {

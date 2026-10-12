@@ -322,12 +322,20 @@ export interface CommunityPost {
   level: string;
   region: string;
   author: string;
-  authorId: string;
+  isMine: boolean;
   createdAt: string;
   votes: number;
   voted: boolean;
   followed: boolean;
   sample: boolean;
+}
+export interface CommunityFeed {
+  posts: CommunityPost[];
+  total: number;
+  limit: number;
+  nextCursor: string | null;
+  companies: string[];
+  companyOptionsTruncated: boolean;
 }
 export interface Comment {
   id: string;

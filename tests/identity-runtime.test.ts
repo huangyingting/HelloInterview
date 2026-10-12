@@ -89,6 +89,14 @@ test('runtime-only release retains identity after restart and operates canonical
   const supportResponse = await browser.request('/api/support', supportInput);
   assert.equal(supportResponse.status, 200);
   const supportReceipt: unknown = await supportResponse.json();
+  const communityPost=randomUUID(),communityBody='An independently addressable, saved community post in the runtime-only release.';
+  await f.db.prepare('INSERT INTO posts(id,kind,title,body,company,track,level,region,author,author_id,created_at,sample) VALUES(?,?,?,?,?,?,?,?,?,?,?,0)')
+    .run(communityPost,'questions','Compiled community question',communityBody,'Fixture Company','system-design','Senior','Global','Private compiled name',before.user.id,new Date().toISOString());
+  const publicDetail=await browser.request(`/api/community/posts/${communityPost}?kind=questions`);
+  assert.equal(publicDetail.status,200);
+  const privateSafePost=await publicDetail.json();
+  assert.equal(privateSafePost.isMine,true);assert.equal(privateSafePost.author,'Anonymous');assert.equal(privateSafePost.body,communityBody);
+  assert.ok(!JSON.stringify(privateSafePost).includes(before.user.id));assert.ok(!Object.hasOwn(privateSafePost,'authorId'));
   const entitlements = new Entitlements(f.db);
   const grant = { owner: before.user.id, source: { kind: 'engineering' as const, key: 'compiled-access-fixture' }, policy: 'pro-v1' as const,
     startsAt: Date.now() - 1000, endsAt: Date.now() + 300000, evidence: { actor: 'compiled-fixture', reason: 'Runtime-only synthetic access rehearsal.' } };
@@ -107,6 +115,9 @@ test('runtime-only release retains identity after restart and operates canonical
   const supportHistory = await browser.request('/api/support/requests');
   assert.equal(supportHistory.status, 200);
   assert.deepEqual((await supportHistory.json()).tickets, [supportReceipt]);
+  const communityFeed=await browser.request('/api/community/posts?kind=questions&q=independently&scope=mine');
+  assert.equal(communityFeed.status,200);assert.deepEqual((await communityFeed.json()).posts,[privateSafePost]);
+  assert.equal((await browser.request(`/api/community/posts/${communityPost}`,{})).status,503);
   await entitlements.revoke(grant.owner, grant.source, grant.evidence);
   assert.equal((await browser.request('/api/content/lessons/system-design/replication')).status, 403);
   assert.equal((await f.db.prepare("SELECT attempts FROM identity_abuse_buckets WHERE scope='network'").get())?.attempts, 2);

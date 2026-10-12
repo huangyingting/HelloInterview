@@ -680,6 +680,14 @@ export const migrations = [{
     ALTER TABLE identity_abuse_buckets ADD CONSTRAINT identity_abuse_buckets_scope_check
       CHECK (scope IN ('network','legacy-account','account-security','billing','support-network','support-account'));
   `,
+}, {
+  version: 21,
+  name: 'bounded-community-read-indexes',
+  sql: `
+    CREATE INDEX posts_owner_order ON posts(author_id,created_at DESC,id DESC);
+    CREATE INDEX posts_created_order ON posts(created_at DESC,id DESC);
+    CREATE INDEX follows_owner ON follows(user_id,post_id);
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

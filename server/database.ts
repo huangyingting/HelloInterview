@@ -56,6 +56,10 @@ export function openDatabase(dataDir: string): DatabaseSync {
         completed_at TEXT
       );
       CREATE INDEX IF NOT EXISTS assessment_sessions_owner ON assessment_sessions(user_id,completed_at);
+      CREATE INDEX IF NOT EXISTS posts_kind_order ON posts(kind,created_at DESC,id);
+      CREATE INDEX IF NOT EXISTS posts_owner_order ON posts(author_id,created_at DESC,id DESC);
+      CREATE INDEX IF NOT EXISTS posts_created_order ON posts(created_at DESC,id DESC);
+      CREATE INDEX IF NOT EXISTS follows_owner ON follows(user_id,post_id);
     `);
     if (!db.prepare('SELECT id FROM posts LIMIT 1').get()) {
       const samples: [CommunityKind, string, string, string, string][] = [

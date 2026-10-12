@@ -24,6 +24,10 @@ export function postgresParameters(sql: string): string {
 }
 
 export function sqliteConnection(connection: DatabaseSync): Database {
+  connection.function('studio_casefold', { deterministic: true }, value => {
+    if (typeof value !== 'string') throw new Error('Community search requires text.');
+    return value.toLowerCase();
+  });
   const context = new AsyncLocalStorage<boolean>();
   let tail: Promise<unknown> = Promise.resolve();
   let closing: Promise<void> | undefined;

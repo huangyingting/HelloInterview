@@ -22,6 +22,7 @@
     "test:entitlements": "npm run build && tsx --test tests/entitlements.test.ts",
     "test:usage": "npm run build && tsx --test tests/usage.test.ts",
     "test:support": "npm run build && tsx --test tests/support.test.ts",
+    "test:community": "npm run build && tsx --test tests/community.test.ts",
     "test:billing": "npm run build && tsx --test tests/billing.test.ts tests/billing-checkout.test.ts tests/billing-ledger.test.ts tests/billing-payments.test.ts tests/billing-service.test.ts tests/billing-cancellation.test.ts tests/billing-portal.test.ts tests/billing-resumption.test.ts tests/billing-recheckout.test.ts",
     "test:billing-browser": "npm run build && tsx --test tests/billing-browser.test.ts",
     "test:container": "tsx --test tests/container.test.ts",
