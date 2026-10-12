@@ -127,6 +127,11 @@ claim full-text indexing, search SLAs or operated read-abuse protection.
 
 ## Independent detail and current readers
 
+[Runbook 30](30-opaque-community-addresses.md) adds canonical query-addressed
+browser/API detail for exact legacy IDs and local interactions. The path reads
+below remain compatible; new generated links use `GET /api/community/post`
+with required `id` and `kind` and optional nonempty exact `track`.
+
 ```http
 GET /api/community/posts/:id?kind=questions
 GET /api/community/posts/:id?kind=submissions&track=system-design

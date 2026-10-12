@@ -3,8 +3,9 @@ import type { CommunityFeed, CommunityPost } from '../shared/types';
 import type { Database } from './db/connection';
 import { HttpError } from './http-error';
 import { digest, encodePayload } from './jobs/schema';
+import { communityKinds } from '../shared/community-routes';
 
-const kindSchema = z.enum(['questions','stories','submissions','discussion']);
+const kindSchema = z.enum(communityKinds);
 const text = (max: number) => z.string().max(max).refine(value => !value.includes('\0'));
 const querySchema = z.strictObject({
   kind: kindSchema.optional(), q: text(200).default(''), company: text(80).default(''), level: text(40).default(''),
@@ -13,6 +14,12 @@ const querySchema = z.strictObject({
   limit: z.enum(['6','20','50']).transform(Number).default(6), cursor: z.string().max(2048).optional(),
 });
 const identifier = text(200).min(1);
+export const communityActionSchema = z.strictObject({ id: identifier, action: z.enum(['vote','follow']), enabled: z.boolean() });
+export function communityIdentifier(value: unknown) {
+  const parsed = identifier.safeParse(value);
+  if (!parsed.success) throw new HttpError(400, 'Choose a valid community post identifier.');
+  return parsed.data;
+}
 const flag = z.union([z.boolean(),z.literal(0),z.literal(1)]).transform(Boolean);
 const rowSchema = z.object({
   id: identifier, kind: kindSchema, title: text(200), body: text(10000), company: text(80), track: text(80),
@@ -52,6 +59,12 @@ export class CommunityReads {
       .get(viewer ?? '',viewer ?? '',viewer ?? '',parsedId.data,query.data.kind,...(query.data.track ? [query.data.track] : []));
     if (!row) throw new HttpError(404, 'Community post not found in this section.');
     return post(row);
+  }
+  async addressedDetail(input: unknown, viewer: string | null) {
+    const query = z.strictObject({ id: identifier, kind: kindSchema, track: text(80).optional() }).safeParse(input);
+    if (!query.success) throw new HttpError(400, 'Choose a valid community post and section.');
+    const { id, ...selection } = query.data;
+    return this.detail(id, selection, viewer);
   }
   async feed(input: unknown, viewer: string | null): Promise<CommunityFeed> {
     const parsed = querySchema.safeParse(input);

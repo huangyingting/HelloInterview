@@ -67,6 +67,15 @@ export async function createApplication(config: ServerConfig): Promise<Applicati
       vite = await createServer({ root: config.rootDir, server: { middlewareMode: true }, appType: 'spa' });
       app.use(vite.middlewares);
     }
+    const addressError: express.ErrorRequestHandler = (error: unknown, req, res, next) => {
+      if (config.environment === 'production' && error instanceof URIError && !res.headersSent &&
+        req.method === 'GET' && req.get('Accept')?.includes('text/html') &&
+        !['/api/', '/auth/', '/webhooks/', '/assets/', '/media/'].some(prefix => req.path.startsWith(prefix))) {
+        res.setHeader('Cache-Control', 'no-store');
+        res.status(400).sendFile(path.join(config.frontendDir, 'index.html'), error => { if (error) next(error); });
+      } else next(error);
+    };
+    app.use(addressError);
     app.use(handleError);
     return { app, close, drain: () => { draining.abort(); } };
   } catch (error) {

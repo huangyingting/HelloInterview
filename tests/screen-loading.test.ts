@@ -9,6 +9,8 @@ import { loadConfig } from '../server/config';
 import { startServer } from '../server/runtime';
 import { navigationTracks } from '../shared/public-navigation';
 import { tracks } from '../shared/public-tracks';
+import { localConnection } from '../server/db/connection';
+import { communityPostPath } from '../shared/community-routes';
 
 const manifestSchema = z.record(z.string(), z.object({
   file: z.string(),
@@ -47,8 +49,93 @@ async function fixture(t: TestContext) {
     if (requested.isNavigationRequest() && requested.frame() === page.mainFrame()) documents.push(requested.url());
     if (!['GET', 'HEAD'].includes(requested.method())) mutations.push(new URL(requested.url()).pathname);
   });
-  return { ...runtime, browser, context, page, documents, mutations };
+  return { ...runtime, directory, browser, context, page, documents, mutations };
 }
+
+test('community cards and global search address exact opaque records instead of normalizing IDs as paths',async t=>{
+  const f=await fixture(t),{page}=f,db=localConnection(f.directory);t.after(()=>db.close());
+  const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);
+  const owner=(await login.json()).user.id;
+  await db.prepare('DELETE FROM posts').run();
+  const ids=['.','..','slash/?query#fragment%\\',' padded ','界'.repeat(200),'padded'];
+  for(const [index,id] of ids.entries())await db.prepare('INSERT INTO posts VALUES(?,?,?,?,?,?,?,?,?,?,?,0)')
+    .run(id,'questions',`Opaque conversation ${index}`,`Original complete body for opaque-address-needle ${index}.`,'Fixture Company','system-design','Senior','Global','Anonymous',owner,`2026-01-0${index+1}T00:00:00.000Z`);
+  for(const [index,id] of ids.entries()){
+    await page.goto(`${f.url}/community/questions`);
+    const card=page.locator('.community-card').filter({has:page.getByRole('heading',{name:`Opaque conversation ${index}`,exact:true})});
+    await card.getByRole('link',{name:'View details'}).click();
+    await expect(page.locator('.community-detail h1')).toHaveText(`Opaque conversation ${index}`);
+    assert.equal(new URL(page.url()).searchParams.get('id'),id);
+    await expect(page.locator('.post-body')).toContainText(`opaque-address-needle ${index}`);
+    await page.getByRole('button',{name:'0 local reports',exact:true}).click();
+    await expect(page.getByRole('button',{name:'1 local reports',exact:true})).toHaveAttribute('aria-pressed','true');
+    await page.getByRole('button',{name:'Follow',exact:true}).click();
+    await expect(page.getByRole('button',{name:'Following',exact:true})).toHaveAttribute('aria-pressed','true');
+    await page.getByLabel('Add a comment').fill(`Exact conversation comment ${index}.`);
+    await page.getByRole('button',{name:'Post comment',exact:true}).click();
+    await expect(page.locator('.comment')).toContainText(`Exact conversation comment ${index}.`);
+    await page.reload();
+    await expect(page.locator('.community-detail h1')).toHaveText(`Opaque conversation ${index}`);
+    await expect(page.locator('.comment')).toHaveCount(1);
+    await expect(page.locator('main [role=alert]')).toHaveCount(0);
+  }
+  await page.goto(`${f.url}/search?q=opaque-address-needle`);
+  await page.locator('main').getByRole('button',{name:'Community',exact:true}).click();
+  await page.getByRole('link').filter({has:page.getByRole('heading',{name:'Opaque conversation 2',exact:true})}).click();
+  await expect(page.locator('.community-detail h1')).toHaveText('Opaque conversation 2');
+  assert.equal(new URL(page.url()).searchParams.get('id'),ids[2]);
+});
+
+test('malformed path and detail-query escapes show a usable, explicit invalid-address screen without leaking the address',async t=>{
+  const f=await fixture(t),{page}=f,errors:string[]=[];
+  page.on('pageerror',error=>errors.push(error.name));
+  for(const route of ['/learn/%E0%A4','/learn/%','/community/post?kind=questions&id=%E0%A4','/community/post?kind=questions&id=.&id=..']){
+    const response=await page.goto(`${f.url}${route}`);
+    assert.ok(response);assert.ok([200,400].includes(response.status()));
+    await expect(page.getByRole('heading',{name:'This address could not open.',exact:true})).toBeVisible();
+    await expect(page.getByRole('alert')).toContainText('invalid');
+    await expect(page.getByRole('complementary',{name:'Primary navigation'})).toBeVisible();
+    await expect(page.locator('main')).not.toContainText('%E0%A4');
+    await page.getByRole('link',{name:'Quizzes',exact:true}).click();
+    await expect(page.getByRole('heading',{name:'Check what you know.',exact:true})).toBeVisible();
+    await expect(page.locator('main')).toBeFocused();
+  }
+  await page.evaluate(()=>{history.pushState(null,'','/learn/%');window.dispatchEvent(new PopStateEvent('popstate'));});
+  await expect(page.getByRole('heading',{name:'This address could not open.',exact:true})).toBeVisible();
+  assert.deepEqual(errors,[]);assert.deepEqual(f.mutations,[]);
+});
+
+test('submission return links preserve legacy tracks, while semantic detail changes clear drafts and move focus without a document reload',async t=>{
+  const f=await fixture(t),{page}=f,db=localConnection(f.directory);t.after(()=>db.close());
+  const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);
+  const owner=(await login.json()).user.id,track='legacy/track?x#y\\..';
+  await db.prepare('DELETE FROM posts').run();
+  for(const [id,title,type] of [['.','Tracked opaque design',track],['..','Untracked opaque design',''],['literal%2F','Legacy encoded question','system-design']])
+    await db.prepare('INSERT INTO posts VALUES(?,?,?,?,?,?,?,?,?,?,?,0)').run(id,id==='literal%2F'?'questions':'submissions',title,`Original complete design body for ${title}.`,'Fixture Company',type,'Senior','Global','Synthetic author',owner,'2026-01-01T00:00:00.000Z');
+  await page.goto(`${f.url}/community/submissions`);
+  await expect(page.locator('.community-card')).toHaveCount(2);
+  await page.getByRole('link',{name:'Tracked opaque design',exact:true}).click();
+  await expect(page.locator('.community-detail h1')).toHaveText('Tracked opaque design');
+  assert.equal(new URL(page.url()).searchParams.get('track'),track);
+  const comment=page.getByLabel('Add a comment');
+  await comment.fill('An unsaved draft for exactly this design.');
+  const reordered=`/community/post?${new URLSearchParams({track,id:'.',kind:'submissions'})}`;
+  await page.evaluate(route=>{history.pushState(null,'',route);window.dispatchEvent(new PopStateEvent('popstate'));},reordered);
+  await expect(comment).toHaveValue('An unsaved draft for exactly this design.');await expect(comment).toBeFocused();
+  await page.evaluate(route=>{history.pushState(null,'',route);window.dispatchEvent(new PopStateEvent('popstate'));},communityPostPath({kind:'submissions',id:'..'}));
+  await expect(page.locator('.community-detail h1')).toHaveText('Untracked opaque design');
+  await expect(page.getByLabel('Add a comment')).toHaveValue('');await expect(page.locator('main')).toBeFocused();
+  await page.goBack();
+  await expect(page.locator('.community-detail h1')).toHaveText('Tracked opaque design');
+  await page.locator('main').getByRole('link',{name:'Peer design library',exact:true}).click();
+  assert.equal(new URL(page.url()).pathname,'/community/submissions');assert.equal(new URL(page.url()).searchParams.get('track'),track);
+  await expect(page.getByLabel('Type filter')).toHaveValue(track);await expect(page.locator('.community-card')).toHaveCount(1);
+  await page.getByRole('button',{name:'Add a design',exact:true}).click();
+  await expect(page.getByLabel('Post interview type')).toHaveValue('system-design');
+  assert.equal(f.documents.length,1);
+  await page.goto(`${f.url}/community/questions/literal%252F`);
+  await expect(page.locator('.community-detail h1')).toHaveText('Legacy encoded question');
+});
 
 test('complete eager, landing and sign-in JavaScript graphs meet fixed raw/gzip budgets without deferred discovery modules', async t => {
   assert.deepEqual(navigationTracks, tracks.map(({ id, title, short, description, color }) => ({ id, title, short, description, color })));
@@ -186,6 +273,7 @@ test('rapid search typing retains every character and follows canonical URL chan
 test('keyboard navigation focuses a ready screen and the skip link starts tabbing inside its main landmark', async t => {
   const f = await fixture(t), { page } = f;
   await page.goto(`${f.url}/learn`);
+  await expect(page.getByRole('heading', { name: 'Build a stronger foundation.', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Quizzes', exact: true })).toBeVisible();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('link', { name: 'Skip to content', exact: true })).toBeFocused();

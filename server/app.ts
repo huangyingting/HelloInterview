@@ -26,7 +26,8 @@ import { resumptionRequestSchema } from './billing/resumption-schema';
 import { TerminalJobFailure } from './jobs';
 import { z } from 'zod';
 import { SupportRequests, supportContactSchema } from './support';
-import { CommunityReads } from './community';
+import { CommunityReads, communityActionSchema, communityIdentifier } from './community';
+import { communityKinds } from '../shared/community-routes';
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new HttpError(400, 'Expected an object.');
   return value as Record<string, unknown>;
@@ -61,10 +62,19 @@ function sourceText(value: unknown): string {
   if (value.includes('\0')) throw new HttpError(400, 'Import text source files, not binary content.');
   return value;
 }
+function commentResource(value: unknown) {
+  if (typeof value === 'string' && !value.startsWith('post/') && value.trimStart().startsWith('post/')) throw new HttpError(400, 'Post discussions require an exact resource identifier.');
+  if (typeof value === 'string' && value.startsWith('post/')) {
+    communityIdentifier(value.slice(5));
+    return value;
+  }
+  return text(value, 'Comment resource', 1, 150);
+}
 export function createApp(config: ServerConfig, db: Database, shutdown: AbortSignal, draining: AbortSignal = shutdown, identityTransport?: IdentityTransport, lifecycle?: IdentityLifecycle, billing?: BillingNotifications): express.Express {
   const states = new StateRepository(db);
   const content = new ContentRepository(db);
   const community = new CommunityReads(db);
+  const communityPaths = ['/api/posts', '/api/community/post', '/api/comments'];
   if (config.identity && !config.publicOrigin) throw new Error('Managed identity requires a canonical application origin.');
   if (config.identity?.lifecycle && !lifecycle) throw new Error('Configured identity lifecycle must be opened before serving requests.');
   if (config.billing && !billing) throw new Error('Configured billing notifications must be opened before serving requests.');
@@ -96,7 +106,9 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
         return;
       }
     }
-    if (/\.cred|\.env|\/data\/|\/\.git\//i.test(decodeURIComponent(req.path))) {
+    const decodedPath = decodeURIComponent(req.path), queryStart = req.originalUrl.indexOf('?');
+    if (queryStart >= 0) decodeURIComponent(req.originalUrl.slice(queryStart + 1).replaceAll('+', ' '));
+    if (/\.cred|\.env|\/data\/|\/\.git\//i.test(decodedPath)) {
       res.status(404).json({ error: 'Not found.' });
       return;
     }
@@ -186,11 +198,11 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     app.use('/api', async (req, res, next) => {
       if (!['GET', 'HEAD'].includes(req.method)) await identity.checkMutation(req);
       const user = await identity.user(req);
-      const publicRead = ['GET', 'HEAD'].includes(req.method) && ['/api/content/', '/api/posts', '/api/community/posts', '/api/comments'].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix));
+      const publicRead = ['GET', 'HEAD'].includes(req.method) && ['/api/content/', ...communityPaths].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix));
       const accountRoute = ['/api/bootstrap', '/api/entitlements', '/api/logout', '/api/support', '/api/support/requests', '/api/profile', '/api/ready'].includes(req.originalUrl.split('?')[0]) || req.originalUrl.startsWith('/api/identity/');
       if (user?.identity?.status !== undefined && user.identity.status !== 'active' && !publicRead && !accountRoute) throw new HttpError(403, 'This account needs verified contact information or account review. Open Account or contact support.');
       if (['/api/auth/', '/api/plan', '/api/gift', '/api/profile/password'].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix))) throw new HttpError(404, 'Local authentication, demo commerce and local passwords are disabled for managed identity.');
-      if (!['GET', 'HEAD'].includes(req.method) && ['/api/posts', '/api/community/posts', '/api/comments'].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix))) throw new HttpError(503, 'Community contributions are read-only until production moderation is enabled.');
+      if (!['GET', 'HEAD'].includes(req.method) && communityPaths.some(prefix => req.originalUrl.split('?')[0].startsWith(prefix))) throw new HttpError(503, 'Community contributions are read-only until production moderation is enabled.');
       next();
     });
     identity.register(app);
@@ -870,13 +882,17 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     const user=await currentUser(req);
     res.json(await community.feed(req.query,user?.id ?? null));
   });
+  app.get('/api/community/post',async(req,res)=>{
+    const user=await currentUser(req);
+    res.json(await community.addressedDetail(req.query,user?.id ?? null));
+  });
   app.get('/api/community/posts/:id',async(req,res)=>{
     const user=await currentUser(req);
     res.json(await community.detail(req.params.id,req.query,user?.id ?? null));
   });
   app.post('/api/posts', async (req, res) => {
     const user = (await requireUser(req)), body = record(req.body);
-    const kind = choice(body.kind, ['questions', 'stories', 'submissions', 'discussion'], 'community section');
+    const kind = choice(body.kind, communityKinds, 'community section');
     const id = randomUUID();
     await db.transaction(async () => {
       await db.prepare('INSERT INTO posts VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(id, kind, text(body.title, 'Title', 5, 200), text(body.body, 'Details', 20, 10000), text(body.company ?? '', 'Company', 0, 80), choice(body.track, [...tracks.map(t => t.id), 'code-review'], 'interview type'), choice(body.level, levels, 'level'), choice(body.region, regions, 'region'), kind === 'questions' ? 'Anonymous' : user.name, user.id, new Date().toISOString(), 0);
@@ -884,25 +900,35 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     });
     res.status(201).json({ id });
   });
-  app.post('/api/posts/:id/:action', async (req, res) => {
-    const user = (await requireUser(req));
-    const action = choice(req.params.action, ['vote', 'follow'], 'post action');
+  async function postMembership(user: User, id: string, action: 'vote' | 'follow', desired?: boolean) {
     await db.transaction(async () => {
-      await db.prepare(`SELECT id FROM users WHERE id=?${db.dialect === 'postgres' ? ' FOR UPDATE' : ''}`).get(user.id);
-      if (!(await db.prepare('SELECT id FROM posts WHERE id=?').get(req.params.id))) throw new HttpError(404, 'Post not found.');
+      if (!(await db.prepare(`SELECT id FROM users WHERE id=?${db.dialect === 'postgres' ? ' FOR UPDATE' : ''}`).get(user.id))) throw new HttpError(401, 'Sign in to update this community contribution.');
+      if (!(await db.prepare('SELECT id FROM posts WHERE id=?').get(id))) throw new HttpError(404, 'Post not found.');
       const table = action === 'vote' ? 'votes' : 'follows';
-      if ((await db.prepare(`SELECT user_id FROM ${table} WHERE post_id=? AND user_id=?`).get(req.params.id, user.id))) await db.prepare(`DELETE FROM ${table} WHERE post_id=? AND user_id=?`).run(req.params.id, user.id);
-      else await db.prepare(`INSERT INTO ${table} VALUES (?,?)`).run(req.params.id, user.id);
+      const exists = !!await db.prepare(`SELECT user_id FROM ${table} WHERE post_id=? AND user_id=?`).get(id, user.id);
+      const enabled = desired ?? !exists;
+      if (!enabled && exists) await db.prepare(`DELETE FROM ${table} WHERE post_id=? AND user_id=?`).run(id, user.id);
+      else if (enabled && !exists) await db.prepare(`INSERT INTO ${table} VALUES (?,?)`).run(id, user.id);
     });
+  }
+  app.post('/api/posts/actions', async (req, res) => {
+    const user = await requireUser(req), parsed = communityActionSchema.safeParse(req.body);
+    if (!parsed.success) throw new HttpError(400, 'Provide a post identifier, vote or follow action, and a boolean desired state.');
+    await postMembership(user, parsed.data.id, parsed.data.action, parsed.data.enabled);
+    res.json({ ok: true });
+  });
+  app.post('/api/posts/:id/:action', async (req, res) => {
+    const user = await requireUser(req), action = choice(req.params.action, ['vote', 'follow'], 'post action');
+    await postMembership(user, communityIdentifier(req.params.id), action);
     res.json({ ok: true });
   });
   app.get('/api/comments', async (req, res) => {
-    const resource = text(req.query.resource, 'Comment resource', 1, 150);
+    const resource = commentResource(req.query.resource);
     res.json((await db.prepare('SELECT id,resource,author,body,created_at AS "createdAt",parent_id AS "parentId" FROM comments WHERE resource=? ORDER BY created_at ASC LIMIT 500').all(resource)));
   });
   app.post('/api/comments', async (req, res) => {
     const user = (await requireUser(req)), body = record(req.body);
-    const resource = text(body.resource, 'Comment resource', 1, 150);
+    const resource = commentResource(body.resource);
     const parentId = body.parentId ? text(body.parentId, 'Parent comment', 1, 80) : null;
     if (parentId && !(await db.prepare('SELECT id FROM comments WHERE id=? AND resource=?').get(parentId, resource))) throw new HttpError(400, 'Reply must belong to this discussion.');
     const id = randomUUID();
@@ -999,6 +1025,8 @@ export const handleError: express.ErrorRequestHandler = (error: unknown, _req, r
   }
   if (error instanceof HttpError) {
     res.status(error.status).json({ error: error.message });
+  } else if (error instanceof URIError) {
+    res.status(400).json({ error: 'Invalid address encoding.' });
   } else if (error instanceof Error && ('code' in error && error.code === '23505' || 'errcode' in error && error.errcode === 2067)) {
     res.status(409).json({ error: 'An account or resource with this identifier already exists. Reload before retrying.' });
   } else if (error instanceof SyntaxError) {

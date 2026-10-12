@@ -188,6 +188,7 @@ test('community filtering, publishing, votes, follows and discussion are functio
   await page.getByLabel('Post details').fill('How would you support shared document annotations, permissions, concurrent changes, and efficient notification delivery?');
   await page.getByLabel('Post company').fill('Google');
   await page.getByRole('button',{name:'Publish locally',exact:true}).click();
+  await expect(page).toHaveURL(/\/community\/post\?kind=questions&id=/);
   await expect(page.getByRole('heading',{name:'Design a shared annotation tool'})).toBeVisible();
   await page.getByRole('button',{name:'0 local reports',exact:true}).click();
   await expect(page.getByRole('button',{name:'1 local reports',exact:true})).toBeVisible();

@@ -97,6 +97,8 @@ test('runtime-only release retains identity after restart and operates canonical
   const privateSafePost=await publicDetail.json();
   assert.equal(privateSafePost.isMine,true);assert.equal(privateSafePost.author,'Anonymous');assert.equal(privateSafePost.body,communityBody);
   assert.ok(!JSON.stringify(privateSafePost).includes(before.user.id));assert.ok(!Object.hasOwn(privateSafePost,'authorId'));
+  const addressedDetail=await browser.request(`/api/community/post?${new URLSearchParams({id:communityPost,kind:'questions'})}`);
+  assert.equal(addressedDetail.status,200);assert.deepEqual(await addressedDetail.json(),privateSafePost);
   const entitlements = new Entitlements(f.db);
   const grant = { owner: before.user.id, source: { kind: 'engineering' as const, key: 'compiled-access-fixture' }, policy: 'pro-v1' as const,
     startsAt: Date.now() - 1000, endsAt: Date.now() + 300000, evidence: { actor: 'compiled-fixture', reason: 'Runtime-only synthetic access rehearsal.' } };
@@ -118,6 +120,7 @@ test('runtime-only release retains identity after restart and operates canonical
   const communityFeed=await browser.request('/api/community/posts?kind=questions&q=independently&scope=mine');
   assert.equal(communityFeed.status,200);assert.deepEqual((await communityFeed.json()).posts,[privateSafePost]);
   assert.equal((await browser.request(`/api/community/posts/${communityPost}`,{})).status,503);
+  assert.equal((await browser.request('/api/posts/actions',{id:communityPost,action:'vote',enabled:true})).status,503);
   await entitlements.revoke(grant.owner, grant.source, grant.evidence);
   assert.equal((await browser.request('/api/content/lessons/system-design/replication')).status, 403);
   assert.equal((await f.db.prepare("SELECT attempts FROM identity_abuse_buckets WHERE scope='network'").get())?.attempts, 2);

@@ -43,9 +43,9 @@ static dependency graph, not just its named output file.
 
 | Graph | Raw JavaScript ceiling | Gzip-estimate ceiling | Measured raw bytes | Measured gzip-estimate bytes |
 | --- | --- | --- | --- | --- |
-| Entry | 350 KiB | 100 KiB | 294,502 | 93,858 |
-| Cold landing | 350 KiB | 100 KiB | 301,107 | 97,007 |
-| Cold sign-in | 350 KiB | 100 KiB | 310,731 | 100,010 |
+| Entry | 350 KiB | 100 KiB | 296,532 | 94,461 |
+| Cold landing | 350 KiB | 100 KiB | 303,137 | 97,617 |
+| Cold sign-in | 350 KiB | 100 KiB | 312,766 | 100,614 |
 
 These are one release build's measurements; hashes and sizes can change.
 The tests enforce the ceilings independently of these recorded numbers.

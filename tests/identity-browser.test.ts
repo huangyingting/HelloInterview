@@ -126,10 +126,10 @@ test('managed browser reads bounded private-safe community pages, independent de
   await page.goto(`${f.origin}/auth`);await page.getByRole('link',{name:'Continue with Google'}).click();
   await expect(page.getByRole('heading',{name:'Sign-in and security.'})).toBeVisible();
   const bootstrap:Bootstrap=await page.evaluate(async()=>(await fetch('/api/bootstrap')).json());assert.ok(bootstrap.user);
-  const owner=bootstrap.user.id;
+  const owner=bootstrap.user.id,firstId='managed/..?#%\\';
   const seed=async(start:number)=>{
     for(let index=start;index<9;index++)await f.db.prepare('INSERT INTO posts(id,kind,title,body,company,track,level,region,author,author_id,created_at,sample) VALUES(?,?,?,?,?,?,?,?,?,?,?,0)')
-      .run(`managed-community-${index}`,'questions',`Managed community question ${index}`,
+      .run(index===0?firstId:`managed-community-${index}`,'questions',`Managed community question ${index}`,
         `${'Original detail. '.repeat(30)} body-only-community-needle`,index===0?'Custom company':'Fixture Company',
         'system-design','Senior','Global','THIS STORED QUESTION NAME MUST NOT BE PUBLIC',owner,`2026-01-${String(index+1).padStart(2,'0')}T00:00:00.000Z`);
   };
@@ -140,7 +140,7 @@ test('managed browser reads bounded private-safe community pages, independent de
   await expect(page.getByRole('button',{name:'Upvote: Managed community question 8'})).toBeDisabled();
   await expect(page.getByRole('button',{name:'Add a question',exact:true})).toHaveCount(0);
   await expect(page.getByText('THIS STORED QUESTION NAME MUST NOT BE PUBLIC')).toHaveCount(0);
-  await f.db.prepare('DELETE FROM posts WHERE id<>?').run('managed-community-0');
+  await f.db.prepare('DELETE FROM posts WHERE id<>?').run(firstId);
   await page.getByRole('button',{name:'Next page',exact:true}).click();
   await expect(page.locator('.community-card')).toHaveCount(1);
   await expect(page.getByText('1 results',{exact:true})).toBeVisible();
@@ -154,10 +154,11 @@ test('managed browser reads bounded private-safe community pages, independent de
   await expect(page.getByRole('heading',{name:'Managed community question 0'})).toBeVisible();
   await expect(page.locator('.community-card')).toHaveCount(1);
   await page.getByRole('link',{name:'View details'}).click();
+  assert.equal(new URL(page.url()).searchParams.get('id'),firstId);
   await expect(page.locator('.post-body')).toContainText('body-only-community-needle');
   await expect(page.getByRole('button',{name:'0 local reports',exact:true})).toBeDisabled();
   await expect(page.getByLabel('Add a comment')).toHaveCount(0);
-  const detail=await page.evaluate(async()=>(await fetch('/api/community/posts/managed-community-0?kind=questions')).json());
+  const detail=await page.evaluate(async id=>(await fetch(`/api/community/post?${new URLSearchParams({kind:'questions',id})}`)).json(),firstId);
   assert.equal(detail.isMine,true);assert.equal(detail.author,'Anonymous');assert.ok(!JSON.stringify(detail).includes(owner));assert.ok(!Object.hasOwn(detail,'authorId'));
   await page.goto(`${f.origin}/search?q=body-only-community-needle`);
   await page.locator('main').getByRole('button',{name:'Community',exact:true}).click();

@@ -10,6 +10,7 @@ import { HttpError } from '../server/http-error';
 import { loadConfig } from '../server/config';
 import { startServer } from '../server/runtime';
 import type { CommunityPost } from '../shared/types';
+import { communityFeedPath, communityPostApi, communityPostPath, parseStudioAddress } from '../shared/community-routes';
 
 const databaseUrl=process.env.TEST_DATABASE_URL;
 if(!databaseUrl)throw new Error('TEST_DATABASE_URL must identify a dedicated community PostgreSQL fixture.');
@@ -49,6 +50,19 @@ function privateDto(value:CommunityPost,owner:string){
   assert.ok(!JSON.stringify(value).includes(owner));
   assert.ok(!Object.hasOwn(value,'authorId'));assert.ok(!Object.hasOwn(value,'author_id'));
 }
+test('community URL helpers preserve exact bounded data and reject malformed or ambiguous addresses without throwing',()=>{
+  for(const id of ['.','..','a/b?c#d%\\e',' padded ','+','%2F','界'.repeat(200)]){
+    const post={kind:'submissions' as const,id,track:'legacy/track?x#y\\..'},url=new URL(communityPostPath(post),'https://example.invalid');
+    assert.equal(url.pathname,'/community/post');assert.equal(url.searchParams.get('id'),id);assert.equal(url.hash,'');
+    assert.deepEqual(parseStudioAddress(url.pathname,url.search).detail,post);
+    const api=new URL(communityPostApi(post),'https://example.invalid');assert.equal(api.pathname,'/api/community/post');assert.equal(api.searchParams.get('id'),id);
+    const feed=new URL(communityFeedPath(post.kind,post.track),'https://example.invalid');
+    assert.equal(feed.pathname,'/community/submissions');assert.equal(parseStudioAddress(feed.pathname,feed.search).track,post.track);
+  }
+  for(const [path,query] of [['/learn/%',''],['/learn/%E0%A4',''],['/learn/%00',''],['/community/post','?kind=questions&id=%C0%AE'],['/community/post','?kind=questions&id=.&id=..'],['/community/post','?kind=questions&id=.&&actor=not-authority'],['/community/post','?kind=questions'],['/community/post/extra','?kind=questions&id=.'],['/community/submissions','?track=&track=code'],['/community/post',`?kind=questions&id=${'x'.repeat(201)}`]])
+    assert.equal(parseStudioAddress(path,query).invalid,true,`${path}${query}`);
+  assert.deepEqual(parseStudioAddress('/community/questions/literal%252F','').segments,['community','questions','literal%2F']);
+});
 
 test('migration 21 preserves actual migration-20 posts, memberships and immutable history while adding read indexes',async t=>{
   const f=await fixture(t,'postgres'),post=await f.add();
@@ -175,5 +189,66 @@ for(const dialect of ['sqlite','postgres'] as const){
       assert.equal((await api(`/api/community/posts?${query}`)).response.status,400);
     assert.equal((await api(`/api/community/posts/${question.id}?kind=questions&owner=untrusted`)).response.status,400);
     assert.equal((await api(`/api/community/posts/${question.id}?kind=submissions`)).response.status,404);
+  });
+  test(`${dialect}: query-addressed HTTP details preserve opaque identifiers and exact kind and track`,async t=>{
+    const f=await fixture(t,dialect);
+    const server=await startServer(loadConfig({NODE_ENV:'production',DATA_DIR:f.directory,...(f.url?{DATABASE_URL:f.url}:{}),PORT:'0',LOG_REQUESTS:'false'}));
+    t.after(()=>server.close());
+    const ids=['.','..','a/b?c#d%\\e',' padded ','padded',' padded','%','literal%2F','界'.repeat(200)];
+    for(const [index,id] of ids.entries()){
+      const track=index%2?'':'legacy/track?x#y\\..';
+      const saved=await f.add({id,kind:'submissions',track});
+      const query=new URLSearchParams({id,kind:'submissions',track});
+      const response=await fetch(`${server.url}/api/community/post?${query}`);
+      assert.equal(response.status,200,JSON.stringify(id));
+      const detail=await response.json();assert.equal(detail.id,id);assert.equal(detail.track,track);assert.equal(detail.body,saved.body);privateDto(detail,f.owners[0]);
+      query.set('kind','questions');
+      assert.equal((await fetch(`${server.url}/api/community/post?${query}`)).status,404);
+      query.set('kind','submissions');query.set('track','not-the-saved-track');
+      assert.equal((await fetch(`${server.url}/api/community/post?${query}`)).status,404);
+    }
+    for(const query of ['id=.&kind=questions&kind=stories','id=.&id=..&kind=questions','id=&kind=questions','id=.&kind=unknown','id=.&kind=questions&owner=untrusted','id=bad%00text&kind=questions',`id=${'x'.repeat(201)}&kind=questions`])
+      assert.equal((await fetch(`${server.url}/api/community/post?${query}`)).status,400,query);
+    await f.add({id:'detail'});
+    const compatibility=await fetch(`${server.url}/api/community/posts/detail?kind=questions`);
+    assert.equal(compatibility.status,200);assert.equal((await compatibility.json()).id,'detail');
+    for(const route of ['/api/community/posts/%E0%A4?kind=questions','/api/community/post?kind=questions&id=%','/api/comments?resource=%C0%AE']){
+      const response=await fetch(`${server.url}${route}`,{headers:{Accept:'text/html'}});
+      assert.equal(response.status,400);assert.match(response.headers.get('content-type') ?? '',/json/);assert.deepEqual(await response.json(),{error:'Invalid address encoding.'});
+    }
+  });
+  test(`${dialect}: exact-ID desired-state memberships and post discussions preserve actor and resource isolation`,async t=>{
+    const f=await fixture(t,dialect);
+    const server=await startServer(loadConfig({NODE_ENV:'production',DATA_DIR:f.directory,...(f.url?{DATABASE_URL:f.url}:{}),PORT:'0',LOG_REQUESTS:'false'}));t.after(()=>server.close());
+    const request=async(route:string,body?:unknown,cookie='')=>fetch(`${server.url}${route}`,{method:body===undefined?'GET':'POST',headers:{Cookie:cookie,...(body===undefined?{}:{'Content-Type':'application/json'})},body:body===undefined?undefined:JSON.stringify(body)});
+    const login=await request('/api/auth/demo',{});assert.equal(login.status,200);
+    const actor=(await login.json()).user.id,cookie=login.headers.getSetCookie().map(value=>value.split(';')[0]).join('; ');
+    assert.equal((await request('/api/posts/actions',{id:'.',action:'vote',enabled:true})).status,401);
+    for(const [index,id] of ['.','..','a/b?c#d%\\e',' padded ','padded',' padded','界'.repeat(200)].entries()){
+      await f.add({id});
+      for(const action of ['vote','follow'] as const){
+        const table=action==='vote'?'votes':'follows';
+        const responses=await Promise.all(Array.from({length:3},()=>request('/api/posts/actions',{id,action,enabled:true},cookie)));
+        assert.deepEqual(responses.map(response=>response.status),[200,200,200]);
+        assert.deepEqual((await f.db.prepare(`SELECT user_id FROM ${table} WHERE post_id=?`).all(id)).map(row=>row.user_id),[actor]);
+        for(let repeat=0;repeat<2;repeat++)assert.equal((await request('/api/posts/actions',{id,action,enabled:false},cookie)).status,200);
+        assert.deepEqual(await f.db.prepare(`SELECT user_id FROM ${table} WHERE post_id=?`).all(id),[]);
+      }
+      const resource=`post/${id}`,comment=await request('/api/comments',{resource,body:`Exact comment ${index}.`},cookie);assert.equal(comment.status,201);
+      const read=await request(`/api/comments?${new URLSearchParams({resource})}`);
+      const rows=await read.json();assert.equal(rows.length,1);assert.equal(rows[0].resource,resource);assert.equal(rows[0].body,`Exact comment ${index}.`);
+    }
+    const spaced=await request(`/api/comments?${new URLSearchParams({resource:'post/ padded '})}`);
+    const parent=(await spaced.json())[0].id;
+    assert.equal((await request('/api/comments',{resource:'post/padded',parentId:parent,body:'Not the same resource.'},cookie)).status,400);
+    for(const body of [{id:'.',action:'vote',enabled:true,userId:f.owners[0]},{id:'.',action:'vote',enabled:'true'},{id:'.',action:'unknown',enabled:true},{id:'.',action:'follow'},{id:'',action:'vote',enabled:true},{id:'x'.repeat(201),action:'vote',enabled:true},{id:'bad\0id',action:'vote',enabled:true}])
+      assert.equal((await request('/api/posts/actions',body,cookie)).status,400);
+    assert.equal((await request('/api/posts/actions',{id:'missing',action:'vote',enabled:true},cookie)).status,404);
+    for(const resource of ['post/','post/bad\0id',`post/${'x'.repeat(201)}`,' post/padded','x'.repeat(151)])
+      assert.equal((await request(`/api/comments?${new URLSearchParams({resource})}`)).status,400);
+    await f.add({id:'legacy-action'});
+    assert.equal((await request('/api/posts/legacy-action/vote',{},cookie)).status,200);
+    assert.equal((await request('/api/posts/legacy-action/vote',{},cookie)).status,200);
+    assert.deepEqual(await f.db.prepare('SELECT user_id FROM votes WHERE post_id=?').all('legacy-action'),[]);
   });
 }

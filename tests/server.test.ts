@@ -79,6 +79,12 @@ test('production runtime serves built assets, SPA routes and unchanged API error
   const malformed = await fetch(`${runtime.url}/api/auth/demo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{' });
   assert.equal(malformed.status, 400);
   assert.deepEqual(await malformed.json(), { error: 'Invalid JSON request.' });
+  const address=await fetch(`${runtime.url}/learn/%E0%A4`,{headers:{Accept:'text/html'}});
+  assert.equal(address.status,400);assert.equal(await address.text(),expectedHtml);assert.equal(address.headers.get('cache-control'),'no-store');
+  for(const route of ['/api/community/posts/%E0%A4?kind=questions','/auth/%','/assets/%']){
+    const invalid=await fetch(`${runtime.url}${route}`,{headers:{Accept:'text/html'}});
+    assert.equal(invalid.status,400);assert.match(invalid.headers.get('content-type') ?? '',/json/);assert.deepEqual(await invalid.json(),{error:'Invalid address encoding.'});
+  }
 });
 
 test('independent application instances isolate accounts and configuration while persisting saved state', async t => {

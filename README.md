@@ -194,6 +194,10 @@ cursor filtering/search/sort with independently addressable full post details.
 Global search finds full-body community matches without downloading four
 corpora or hiding further matches behind the catalog display cap. Local
 contributions remain local; managed writes and moderation are not enabled.
+The [opaque-address checkpoint](docs/production/30-opaque-community-addresses.md)
+preserves legacy post IDs through shared query-based detail links, exact local
+vote/follow/comment identities, and explicit malformed-address recovery.
+Existing routes remain compatible; managed community stays read-only.
 Controlled PostgreSQL deployments must apply **migration 21 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.

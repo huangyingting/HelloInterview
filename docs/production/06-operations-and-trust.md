@@ -46,6 +46,15 @@ input/history behavior are verified in the built browser. The
 focus and composing-key boundaries. Real assistive-device/IME review and
 broader contrast, validation, media/workspace and accessibility gates remain.
 
+**Implemented opaque-address checkpoint (W11/W12):** query-addressed community
+detail preserves exact bounded legacy IDs, local desired states and discussion
+resources preserve actor/record identity, and malformed addresses fail explicitly
+without blanking the production document shell. The
+[address runbook](30-opaque-community-addresses.md) specifies old/new route
+compatibility and managed denial, semantic query navigation and HTTP 400
+document recovery. Ordered writes, historic comment repair, moderation and
+customer-migration approval remain separate.
+
 ## Operating model
 
 Name accountable people before launch, even if one person initially fills

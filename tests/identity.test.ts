@@ -63,6 +63,29 @@ test('callbacks are browser-bound, one-use and fenced across independent API rep
   assert.equal((await f.db.prepare('SELECT count(*)::int AS count FROM sessions').get())?.count, 1);
 });
 
+test('opaque community detail stays a private-safe public read for inactive viewers without enabling either mutation surface',async t=>{
+  const f=await fixture(t),active=await login(f),owner=active.data.user?.id;assert.ok(owner);
+  const id='legacy/..?#%\\',query=new URLSearchParams({id,kind:'questions'});
+  await f.db.prepare('INSERT INTO posts VALUES(?,?,?,?,?,?,?,?,?,?,?,0)')
+    .run(id,'questions','Opaque managed community question','Original managed community content with enough detail.','Fixture Company','system-design','Senior','Global','PRIVATE SAVED AUTHOR',owner,new Date().toISOString());
+  const pending=f.browser();await f.complete(pending,await f.begin(pending,'github'),{sub:'github|opaque-pending',email:undefined,email_verified:undefined});
+  assert.equal((await pending.bootstrap()).user?.identity?.status,'pending-verification');
+  const anonymous=f.browser();
+  for(const [browser,isMine] of [[active.browser,true],[pending,false],[anonymous,false]] as const){
+    const response=await browser.request(`/api/community/post?${query}`);assert.equal(response.status,200);
+    const post=await response.json();assert.equal(post.id,id);assert.equal(post.isMine,isMine);assert.equal(post.author,'Anonymous');
+    assert.ok(!JSON.stringify(post).includes(owner));assert.ok(!Object.hasOwn(post,'authorId'));
+  }
+  for(const route of ['/api/posts/actions',`/api/community/post?${query}`,`/api/posts/${encodeURIComponent(id)}/vote`]){
+    assert.equal((await active.browser.request(route,{id,action:'vote',enabled:true})).status,503);
+    assert.equal((await pending.request(route,{id,action:'vote',enabled:true})).status,403);
+  }
+  await f.db.prepare("UPDATE managed_accounts SET status='suspended' WHERE user_id=?").run(owner);
+  assert.equal((await active.browser.request(`/api/community/post?${query}`)).status,200);
+  assert.equal((await active.browser.request('/api/posts/actions',{id,action:'follow',enabled:true})).status,403);
+  for(const table of ['votes','follows'])assert.deepEqual(await f.db.prepare(`SELECT * FROM ${table}`).all(),[]);
+});
+
 test('signed claims reject bad issuer, audience, nonce, lifetime, connection, authentication time, signature and algorithms', async t => {
   const f = await fixture(t);
   const cases = [

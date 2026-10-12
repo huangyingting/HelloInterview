@@ -18,7 +18,7 @@ accessibility queries and available to keyboard navigation.
 | SPA path/owner change | The committed selected screen receives main-landmark focus if the user has not deliberately moved focus elsewhere |
 | Deferred module | Loading status remains accessible; focus is not prematurely moved to a not-yet-committed screen |
 | Deferred failure | The explicit failure screen participates in the same navigation focus behavior; Tab reaches manual Reload page |
-| Query/hash update | Does not schedule a screen focus shift or remount healthy screen state |
+| Ordinary query/hash update | Does not schedule a screen focus shift or remount healthy screen state; changed canonical post selection is a screen change per runbook 30 |
 | Existing form/autofocus | Remains focused; alias changes and Search updates do not interrupt editing |
 | Closed mobile navigation | Hidden from accessibility queries, pointer interaction and sequential keyboard focus at the existing mobile breakpoint |
 | Open/dismissed navigation | Announced expanded/control relationship; opening focuses Close navigation, dismissal returns focus to the trigger |
@@ -27,7 +27,7 @@ accessibility queries and available to keyboard navigation.
 
 ## Focus lifecycle
 
-`useScreenFocus` records the focused element on an actual path or owner change
+`useScreenFocus` records the focused element on an actual screen or owner change
 after bootstrap is available. It intentionally records, but does not focus,
 the initial document's screen. The initial keyboard order therefore retains
 the skip link; existing native/autofocus behavior still applies.
@@ -48,6 +48,11 @@ a theme/navigation control while a chunk loads prevents a later focus steal.
 Search autofocus, existing form focus and query-only updates are preserved.
 Navigating elsewhere supersedes the earlier pending request; a late old chunk
 cannot steal focus back from the current screen.
+
+[Runbook 30](30-opaque-community-addresses.md) extends screen identity to the
+kind/ID/track of a query-addressed community detail. Equivalent parameter
+reordering preserves drafts/focus; changing the selected post is navigation,
+not ordinary Search-style query editing.
 
 Main has `tabIndex=-1`: programmatically/native-fragment focusable, not an
 extra stop in normal sequential tabbing. Keyboard focus uses the existing

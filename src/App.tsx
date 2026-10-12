@@ -2,7 +2,7 @@ import { ArrowRight, BookOpen, ChevronDown, ChevronRight, ClipboardCheck, Code2,
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { practiceLabels, practiceTracks, navigationTracks as tracks } from "../shared/public-navigation";
-import type { CommunityKind } from '../shared/types';
+import { isCommunityKind, parseStudioAddress } from '../shared/community-routes';
 import { AuthPrompt, NotFound } from './components/access';
 import { request, useStudio } from './store';
 import { ScreenBoundary, ScreenLoading, ScreenReady, useScreenFocus } from './ScreenBoundary';
@@ -50,18 +50,21 @@ export function App() {
   const navigationTrigger=useRef<HTMLButtonElement>(null),navigationClose=useRef<HTMLButtonElement>(null);
   const closeNavigation=useCallback(()=>{setMobileOpen(false);if(navigationTrigger.current?.getClientRects().length)navigationTrigger.current.focus();},[]);
   const [learnOpen,setLearnOpen]=useState(true),[practiceOpen,setPracticeOpen]=useState(false),[communityOpen,setCommunityOpen]=useState(false);
-  const path=location.pathname,segments=path.split('/').filter(Boolean).map(decodeURIComponent);
-  const screenFocus=useScreenFocus(path,data.user?.id,!loading&&!error);
+  const path=location.pathname,address=parseStudioAddress(path,location.search),{segments}=address;
+  const screenPath=address.detail?JSON.stringify([path,address.detail.kind,address.detail.id,address.detail.track ?? '']):segments[0]==='community'&&segments[1]==='post'?`${path}${location.search}`:path;
+  const screenFocus=useScreenFocus(screenPath,data.user?.id,!loading&&!error);
   const isLanding=path==='/'&&!data.user,isAuth=segments[0]==='login'||path==='/auth';
   const publicLayout=isLanding||isAuth||!data.user&&['pricing','premium','aboutus','terms','privacy','security'].includes(segments[0]);
   useEffect(()=>{document.documentElement.dataset.theme=theme;localStorage.setItem('studio-theme',theme);},[theme]);
-  useEffect(()=>{setMobileOpen(false);window.scrollTo(0,0);if(segments[0]==='practice')setPracticeOpen(true);if(segments[0]==='community')setCommunityOpen(true);document.title=`${segments[0]?segments[0][0].toUpperCase()+segments[0].slice(1).replaceAll('-',' '):'Your next chapter'} · Interview Studio`;},[path]);
+  useEffect(()=>{setMobileOpen(false);window.scrollTo(0,0);if(segments[0]==='practice')setPracticeOpen(true);if(segments[0]==='community')setCommunityOpen(true);document.title=`${segments[0]?segments[0][0].toUpperCase()+segments[0].slice(1).replaceAll('-',' '):'Your next chapter'} · Interview Studio`;},[screenPath]);
   useEffect(()=>{if(mobileOpen)navigationClose.current?.focus();},[mobileOpen]);
   useEffect(()=>{const shortcut=(e:KeyboardEvent)=>{if(e.defaultPrevented||e.isComposing)return;if((e.metaKey||e.ctrlKey)&&!e.altKey&&e.key.toLowerCase()==='k'){e.preventDefault();if(path==='/search')document.getElementById('studio-search')?.focus();else navigate('/search');}if(e.key==='Escape'&&mobileOpen)closeNavigation();};window.addEventListener('keydown',shortcut);return()=>window.removeEventListener('keydown',shortcut);},[navigate,path,mobileOpen,closeNavigation]);
   if(loading)return <div className="boot-screen"><div className="brand-mark">is</div><h2>Opening your Studio…</h2><span className="loading-bar"/></div>;
   if(error)return <div className="boot-screen"><h1>The Studio could not load.</h1><p role="alert">{error}</p><button className="button" onClick={()=>act(refresh)}>Try again</button></div>;
   let content:ReactNode;
-  if(!segments.length)content=data.user?<Dashboard/>:<Landing/>;
+  if(address.invalid)content=<section className="empty"><h1>This address could not open.</h1><p role="alert">This address contains an invalid escape or community selection. No action was retried.</p><Link className="text-link" to="/">Back to the Studio</Link></section>;
+  else if(address.detail)content=<CommunityPage key={screenPath} kind={address.detail.kind} track={address.detail.track} postId={address.detail.id}/>;
+  else if(!segments.length)content=data.user?<Dashboard/>:<Landing/>;
   else if(segments[0]==='dashboard')content=data.user?<Dashboard/>:<AuthPrompt/>;
   else if(segments[0]==='login'||segments[0]==='auth'&&segments.length===1)content=<AuthPage/>;
   else if(segments[0]==='learn'){
@@ -82,9 +85,9 @@ export function App() {
     else if(segments[1]==='low-level-design'&&segments[3]==='writeup')content=<CodingReader track="low-level-design" problemId={segments[2]} key={path}/>;
     else content=<PracticeSession track={segments[1]} id={segments[2]} key={`${path}${location.search}`}/>;
   }else if(segments[0]==='quiz')content=segments[1]==='custom'?<CustomQuizPage id={segments[2]} key={path}/>:segments[1]?<QuizRunner topic={segments[1]} key={`${path}${location.search}`}/>:<QuizIndex/>;
-  else if(segments[0]==='community'&&['questions','stories','submissions','discussion'].includes(segments[1])){
-    const kind=segments[1] as CommunityKind;
-    content=<CommunityPage key={path} kind={kind} track={kind==='submissions'?segments[2]||'':''} postId={kind==='submissions'?segments[3]||'':segments[2]||''}/>;
+  else if(segments[0]==='community'&&isCommunityKind(segments[1])){
+    const kind=segments[1];
+    content=<CommunityPage key={path} kind={kind} track={kind==='submissions'?segments[2]||address.track||'':''} postId={kind==='submissions'?segments[3]||'':segments[2]||''}/>;
   }else if(segments[0]==='guides')content=<GuidePage company={segments[1]} level={segments[2]}/>;
   else if(segments[0]==='blog')content=<BlogPage id={segments[1]}/>;
   else if(segments[0]==='history')content=<PracticeHistory/>;
@@ -103,7 +106,8 @@ export function App() {
   else if(segments[0]==='support')content=<SupportPage/>;
   else if(['aboutus','privacy','terms','security'].includes(segments[0]))content=<InfoPage id={segments[0]}/>;
   else content=<NotFound/>;
-  const active=(to:string)=>path===to||to!=='/dashboard'&&path.startsWith(`${to}/`);
+  const navPath=address.detail?`/community/${address.detail.kind}${address.detail.kind==='submissions'&&address.detail.track?`/${encodeURIComponent(address.detail.track)}`:''}`:address.track?`/community/submissions/${encodeURIComponent(address.track)}`:path;
+  const active=(to:string)=>navPath===to||to!=='/dashboard'&&navPath.startsWith(`${to}/`);
   const navLink=(to:string,label:string,icon?:typeof Home)=>{const Icon=icon;return <Link className={`nav-link ${active(to)?'active':''}`} to={to} aria-current={active(to)?'page':undefined} key={to}>{Icon&&<Icon size={17} strokeWidth={1.6}/>}<span>{label}</span>{active(to)&&<span className="nav-active-dot"/>}</Link>;};
   const toggleTheme=()=>setTheme(theme==='dark'?'light':'dark');
   const brand=<Link className="brand" to={data.user?'/dashboard':'/'}><span className="brand-mark">is<span/></span><span>interview<span className="brand-light"> studio</span><b>.</b></span></Link>;
