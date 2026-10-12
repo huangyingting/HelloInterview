@@ -112,6 +112,10 @@ reconciliation/alerts and service authorization are not complete. Managed
 mode disables demo purchases, gifts, external AI and community writing. See
 [the identity runbook](docs/production/12-identity-implementation.md) before any
 configuration; this does not authorize public accounts.
+The [owned support checkpoint](docs/production/26-owned-support-receipts.md)
+adds private member request history, retry-safe receipts and shared support
+admission. Saved requests are explicitly **not delivered**; no staff replies,
+email/helpdesk integration or response-time promise is connected.
 
 Managed accounts also have a **private entitlement engineering checkpoint**:
 immutable, source-scoped PostgreSQL grants and revocations; current server-clock
@@ -173,7 +177,7 @@ The [saved-input provenance checkpoint](docs/production/25-owned-ai-input-proven
 captures bounded private snapshots from actual owned work with immutable
 model/prompt/source fingerprints and transactional raw-payload retirement.
 Preparation is not provider permission; managed AI remains disabled.
-Controlled PostgreSQL deployments must apply **migration 19 and maintained queue
+Controlled PostgreSQL deployments must apply **migration 20 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 

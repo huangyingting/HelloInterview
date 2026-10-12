@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { cp, mkdtemp, rm, stat } from 'node:fs/promises';
@@ -83,6 +84,11 @@ test('runtime-only release retains identity after restart and operates canonical
   assert.equal(before.user?.identity?.status, 'active');
   assert.equal((await browser.request('/api/profile', { name: 'Compiled member' }, 'PATCH')).status, 200);
   assert.equal((await browser.security()).identities.length, 1);
+  const supportInput = { key: randomUUID(), email: 'compiled-support@example.invalid',
+    body: 'A private saved support request from the runtime-only compiled release.' };
+  const supportResponse = await browser.request('/api/support', supportInput);
+  assert.equal(supportResponse.status, 200);
+  const supportReceipt: unknown = await supportResponse.json();
   const entitlements = new Entitlements(f.db);
   const grant = { owner: before.user.id, source: { kind: 'engineering' as const, key: 'compiled-access-fixture' }, policy: 'pro-v1' as const,
     startsAt: Date.now() - 1000, endsAt: Date.now() + 300000, evidence: { actor: 'compiled-fixture', reason: 'Runtime-only synthetic access rehearsal.' } };
@@ -96,6 +102,11 @@ test('runtime-only release retains identity after restart and operates canonical
   assert.equal(after.user?.name, 'Compiled member');
   assert.equal(after.user?.identity?.verified, true);
   assert.equal(after.capabilities.access?.state, 'pro');
+  const replayedSupport = await browser.request('/api/support', supportInput);
+  assert.equal(replayedSupport.status, 200); assert.deepEqual(await replayedSupport.json(), supportReceipt);
+  const supportHistory = await browser.request('/api/support/requests');
+  assert.equal(supportHistory.status, 200);
+  assert.deepEqual((await supportHistory.json()).tickets, [supportReceipt]);
   await entitlements.revoke(grant.owner, grant.source, grant.evidence);
   assert.equal((await browser.request('/api/content/lessons/system-design/replication')).status, 403);
   assert.equal((await f.db.prepare("SELECT attempts FROM identity_abuse_buckets WHERE scope='network'").get())?.attempts, 2);

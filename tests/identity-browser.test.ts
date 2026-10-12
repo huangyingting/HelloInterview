@@ -14,17 +14,15 @@ async function fixture(t: TestContext, lifecycle = false) {
   browser = await chromium.launch({ executablePath: process.env.CHROME_PATH, headless: true, args: ['--no-proxy-server', '--host-resolver-rules=MAP studio.fixture 127.0.0.1,MAP broker.fixture 127.0.0.1'] });
   const context = await browser.newContext({ ignoreHTTPSErrors: true });
   const mutations: string[] = [];
-  const listeners: Promise<void>[] = [];
   context.on('request', requested => {
     const url = new URL(requested.url());
     if (url.origin !== f.origin) return;
     if (!['GET', 'HEAD'].includes(requested.method())) {
       mutations.push(url.pathname);
-      listeners.push(requested.allHeaders().then(headers => { assert.ok(headers['x-csrf-token'], `${url.pathname} needs a CSRF token in the actual browser.`); }));
+      assert.ok(requested.headers()['x-csrf-token'], `${url.pathname} needs a CSRF token in the actual browser.`);
     }
 
   });
-  f.cleanup.push(() => Promise.all(listeners));
   return { ...f, context, page: await context.newPage(), mutations };
 }
 
@@ -172,4 +170,90 @@ test('password reset revokes an actual browser session and stale SSO recovers wi
   assert.equal(authorizations.at(-1)?.searchParams.get('prompt'), 'login');
   assert.equal(authorizations.at(-1)?.searchParams.get('max_age'), '0');
   assert.equal((await f.db.prepare('SELECT user_id FROM managed_identities WHERE subject=?').get(subject))?.user_id, owner?.user_id);
+});
+
+test('managed support preserves a retry key after a lost response, shows private paginated history and clears it on sign-out', { timeout: 90000 }, async t => {
+  const f = await fixture(t), { page } = f;
+  await page.goto(`${f.origin}/auth`); await page.getByRole('link', { name: 'Continue with Google' }).click();
+  await expect(page.getByRole('heading', { name: 'Sign-in and security.' })).toBeVisible();
+  const data: Bootstrap = await page.evaluate(async () => (await fetch('/api/bootstrap')).json()); assert.ok(data.user);
+  for (let index = 0; index < 12; index++) await f.db.prepare('INSERT INTO support(id,user_id,email,body,created_at) VALUES(?,?,?,?,?)')
+    .run(randomUUID(), data.user.id, 'old-support@example.invalid', `A private older saved request number ${index}.`, '2026-01-01T00:00:00.000Z');
+  await page.goto(`${f.origin}/support`);
+  await expect(page.getByRole('heading', { name: 'Your saved requests' })).toBeVisible();
+  await expect(page.locator('.support-receipt')).toHaveCount(10);
+  await page.getByRole('button', { name: 'Load older requests' }).click();
+  await expect(page.locator('.support-receipt')).toHaveCount(12);
+  const privateBody = `A private saved browser request ${'without an external delivery claim '.repeat(12)}.`;
+  await page.getByLabel('Support question').fill(privateBody);
+  const keys: string[] = [];
+  f.context.on('request', requested => {
+    if (new URL(requested.url()).pathname === '/api/support' && requested.method() === 'POST') {
+      const body: unknown = requested.postDataJSON();
+      assert.ok(body && typeof body === 'object' && 'key' in body && typeof body.key === 'string'); keys.push(body.key);
+    }
+  });
+  const loseResponse: Parameters<typeof page.route>[1] = async route => {
+    const url=new URL(route.request().url());url.hostname='127.0.0.1';
+    const response=await route.fetch({ url:url.href,headers:{ ...await route.request().allHeaders(),host:new URL(f.origin).host } });
+    assert.equal(response.status(),200);await route.abort('failed');
+  };
+  await page.route('**/api/support', loseResponse);
+  await page.getByRole('button', { name: 'Save request', exact: true }).click();
+  await expect(page.getByLabel('Support question')).toHaveValue(privateBody);
+  await expect(page.getByRole('button', { name: 'Save request', exact: true })).toBeEnabled();
+  await page.unroute('**/api/support');
+  await page.getByRole('button', { name: 'Save request', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Request saved.' })).toBeVisible();
+  await expect(page.getByText('No external delivery occurred.', { exact: true })).toBeVisible();
+  assert.equal(keys.length, 2); assert.equal(keys[0], keys[1]);
+  assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM support WHERE request_key=?').get(keys[0]))?.count, 1);
+  await expect(page.locator('.support-receipt').getByText(privateBody, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Write another request' }).click();
+  const uncertain='A separate request whose successful response was lost after storage.';
+  await page.getByLabel('Support question').fill(uncertain);
+  await page.route('**/api/support',loseResponse);
+  await page.getByRole('button', { name: 'Save request', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Start a separate request' })).toBeVisible();
+  await page.unroute('**/api/support');
+  await page.getByRole('button', { name: 'Refresh saved requests' }).click();
+  await expect(page.locator('.support-receipt').getByText(uncertain, { exact: true })).toBeVisible();
+  const edited='An intentional new request with edited content after checking saved history.';
+  await page.getByLabel('Support question').fill(edited);
+  await page.getByRole('button', { name: 'Save request', exact: true }).click();
+  await expect(page.getByText(/key already belongs to different saved content/)).toBeVisible();
+  await page.getByRole('button', { name: 'Start a separate request' }).click();
+  await expect(page.getByLabel('Support question')).toHaveValue(edited);
+  await page.getByRole('button', { name: 'Save request', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Request saved.' })).toBeVisible();
+  assert.equal(keys[2],keys[3]);assert.notEqual(keys[3],keys[4]);
+  assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM support WHERE user_id=?').get(data.user.id))?.count,15);
+  await page.route('**/api/support/requests', route => route.fulfill({ status: 503, contentType: 'application/json',
+    body: JSON.stringify({ error: 'Synthetic support history outage.' }) }));
+  await page.reload(); await expect(page.getByRole('alert')).toContainText('Synthetic support history outage.');
+  await page.unroute('**/api/support/requests');
+  await page.getByRole('button', { name: 'Reload saved requests' }).click();
+  await expect(page.locator('.support-receipt').getByText(privateBody, { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${f.origin}/account`); await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await page.goto(`${f.origin}/support`);
+  await expect(page.getByRole('heading', { name: 'Your saved requests' })).toHaveCount(0);
+  await expect(page.getByText(privateBody, { exact: true })).toHaveCount(0);
+});
+
+test('pending managed contact can save a support request without acquiring a verified contact or product permission', async t => {
+  const f = await fixture(t), { page } = f;
+  f.setSubject('github|pending-support-browser'); f.setClaims({ email: undefined, email_verified: undefined });
+  await page.goto(`${f.origin}/auth`); await page.getByRole('link', { name: 'Continue with GitHub' }).click();
+  await expect(page.getByRole('heading', { name: 'A verified contact email is needed' })).toBeVisible();
+  await page.goto(`${f.origin}/support`);
+  await page.getByLabel('Contact email').fill('unverified-support@example.invalid');
+  await page.getByLabel('Support question').fill('A pending contact needs information about the supported verification process.');
+  await page.getByRole('button', { name: 'Save request', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Request saved.' })).toBeVisible();
+  await expect(page.locator('.support-receipt')).toHaveCount(1);
+  assert.equal((await f.db.prepare('SELECT contact_verified FROM managed_accounts').get())?.contact_verified, 0);
+  assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM durable_operations').get())?.count, 0);
 });

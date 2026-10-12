@@ -758,6 +758,12 @@ button:hover,a:hover { color: var(--accent); }
 .support-confirmation code { font-size: 10px; overflow-wrap: anywhere; }
 .support-confirmation p { margin: 12px 0; }
 .support-confirmation .button { margin-top: 15px; }
+.support-history { margin-top: 30px; }
+.support-receipt { padding: 20px 0; border-top: 1px solid var(--border); }
+.support-receipt>div { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.support-receipt time, .support-receipt small, .support-receipt code { color: var(--muted); font-size: 11px; }
+.support-receipt p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.support-receipt small, .support-receipt code { display: block; overflow-wrap: anywhere; margin-top: 8px; }
 .course-link-banner { display: flex; align-items: center; gap: 14px; border: 1px solid var(--border); background: var(--surface); border-radius: 12px; padding: 22px; margin: -10px 0 32px; }
 .course-link-banner>svg { color: var(--accent); }
 .course-link-banner>div { flex: 1; }

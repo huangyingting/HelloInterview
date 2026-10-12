@@ -25,6 +25,7 @@ import { cancellationRequestSchema } from './billing/cancellation-schema';
 import { resumptionRequestSchema } from './billing/resumption-schema';
 import { TerminalJobFailure } from './jobs';
 import { z } from 'zod';
+import { SupportRequests, supportContactSchema } from './support';
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new HttpError(400, 'Expected an object.');
   return value as Record<string, unknown>;
@@ -67,6 +68,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   if (config.billing && !billing) throw new Error('Configured billing notifications must be opened before serving requests.');
   const identity = config.identity && config.publicOrigin ? new ManagedIdentity(db, config.identity, config.publicOrigin, shutdown, identityTransport, lifecycle) : null;
   const entitlements = identity ? new Entitlements(db) : null;
+  const support = identity ? new SupportRequests(db, identity) : null;
   const connectedAi = identity ? null : config.ai;
   const app = express();
   app.disable('x-powered-by');
@@ -183,7 +185,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
       if (!['GET', 'HEAD'].includes(req.method)) await identity.checkMutation(req);
       const user = await identity.user(req);
       const publicRead = ['GET', 'HEAD'].includes(req.method) && ['/api/content/', '/api/posts', '/api/comments'].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix));
-      const accountRoute = ['/api/bootstrap', '/api/entitlements', '/api/logout', '/api/support', '/api/profile', '/api/ready'].includes(req.originalUrl.split('?')[0]) || req.originalUrl.startsWith('/api/identity/');
+      const accountRoute = ['/api/bootstrap', '/api/entitlements', '/api/logout', '/api/support', '/api/support/requests', '/api/profile', '/api/ready'].includes(req.originalUrl.split('?')[0]) || req.originalUrl.startsWith('/api/identity/');
       if (user?.identity?.status !== undefined && user.identity.status !== 'active' && !publicRead && !accountRoute) throw new HttpError(403, 'This account needs verified contact information or account review. Open Account or contact support.');
       if (['/api/auth/', '/api/plan', '/api/gift', '/api/profile/password'].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix))) throw new HttpError(404, 'Local authentication, demo commerce and local passwords are disabled for managed identity.');
       if (!['GET', 'HEAD'].includes(req.method) && ['/api/posts', '/api/comments'].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix))) throw new HttpError(503, 'Community contributions are read-only until production moderation is enabled.');
@@ -955,12 +957,31 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   });
   }
   app.post('/api/support', async (req, res) => {
-    const user = (await currentUser(req)), body = record(req.body);
+    const user = (await currentUser(req));
+    if (identity) await identity.admitSupport(req, user, res);
+    const body = record(req.body);
+    if (identity && support) {
+      if (user) return res.json(await support.save(user, body));
+      if ('key' in body) throw new HttpError(401, 'Sign in before retrying an owned support request; no anonymous replacement was created.');
+      const parsed = supportContactSchema.safeParse(body);
+      if (!parsed.success) throw new HttpError(400, 'Provide a valid contact email and 20-10,000 characters of support text.');
+      const id = randomUUID();
+      await db.prepare('INSERT INTO support(id,user_id,email,body,created_at) VALUES(?,NULL,?,?,?)')
+        .run(id, parsed.data.email, parsed.data.body, new Date().toISOString());
+      return res.json({ id, delivery: 'not-connected' });
+    }
     const id = randomUUID();
     const email = text(body.email ?? user?.email ?? '', 'Contact email', 5, 254);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'Enter a valid contact email address.');
-    await db.prepare('INSERT INTO support VALUES (?,?,?,?,?)').run(id, user?.id || null, email, text(body.body, 'Support request', 20, 10000), new Date().toISOString());
+    await db.prepare('INSERT INTO support(id,user_id,email,body,created_at) VALUES (?,?,?,?,?)').run(id, user?.id || null, email, text(body.body, 'Support request', 20, 10000), new Date().toISOString());
     res.json({ id, delivery: 'local-only' });
+  });
+  if (support) app.get('/api/support/requests', async (req, res) => {
+    const user = await currentUser(req);
+    if (!user) throw new HttpError(401, 'Sign in to see your own saved support requests.');
+    const query = z.strictObject({ cursor: z.string().max(1024).optional() }).safeParse(req.query);
+    if (!query.success) throw new HttpError(400, 'Use only a single owned support cursor.');
+    res.json(await support.history(user, query.data.cursor));
   });
   app.use('/api', (_req, res) => res.status(404).json({ error: 'API endpoint not found.' }));
   return app;

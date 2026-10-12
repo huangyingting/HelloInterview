@@ -198,6 +198,11 @@ Account security page:
 
 ## Staff user management
 
+The [owned support checkpoint](26-owned-support-receipts.md) provides narrowly
+scoped member receipts/history and shared support-write admission, including
+pending/restricted members with valid sessions. It adds no staff authority,
+external delivery, contact verification or completed privacy export/deletion.
+
 | Role | Permitted actions | Explicit exclusions |
 | --- | --- | --- |
 | Member | Own profile, preparation data, subscriptions and contributions | Other users' private records |

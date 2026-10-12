@@ -656,6 +656,30 @@ export const migrations = [{
     CREATE TRIGGER erase_project_ai_input AFTER DELETE ON project_workspaces FOR EACH ROW EXECUTE FUNCTION erase_deleted_ai_source('project');
     CREATE TRIGGER erase_tutor_ai_input AFTER DELETE ON tutor_messages FOR EACH ROW EXECUTE FUNCTION erase_deleted_ai_source('tutor');
   `,
+}, {
+  version: 20,
+  name: 'owned-support-receipts-and-admission',
+  sql: `
+    ALTER TABLE support ADD COLUMN request_key TEXT;
+    ALTER TABLE support ADD COLUMN request_hash TEXT;
+    ALTER TABLE support ADD CONSTRAINT support_request_pair CHECK (
+      (request_key IS NULL AND request_hash IS NULL) OR
+      (request_key IS NOT NULL AND request_hash IS NOT NULL AND user_id IS NOT NULL AND
+        request_key ~ '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$' AND request_hash ~ '^[a-f0-9]{64}$')
+    );
+    CREATE UNIQUE INDEX support_owned_request ON support(user_id,request_key) WHERE request_key IS NOT NULL;
+    CREATE FUNCTION retire_owned_support_key() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+      BEGIN
+        IF NEW.user_id IS NULL THEN NEW.request_key=NULL; NEW.request_hash=NULL; END IF;
+        RETURN NEW;
+      END;
+    $$;
+    CREATE TRIGGER retire_owned_support_key BEFORE UPDATE OF user_id ON support
+      FOR EACH ROW EXECUTE FUNCTION retire_owned_support_key();
+    ALTER TABLE identity_abuse_buckets DROP CONSTRAINT identity_abuse_buckets_scope_check;
+    ALTER TABLE identity_abuse_buckets ADD CONSTRAINT identity_abuse_buckets_scope_check
+      CHECK (scope IN ('network','legacy-account','account-security','billing','support-network','support-account'));
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

@@ -89,7 +89,10 @@ export class ManagedIdentity {
     if (fresh && await this.now() - session.authenticated_at > freshness) throw new HttpError(403, 'Confirm your identity again before changing security settings or exporting data.');
     return session;
   }
-  async assertWritable(user: User, fresh = false, allowPending = false) {
+  assertDatabase(db: Database) {
+    if (db !== this.db) throw new Error('Identity and owned support must share the exact database adapter and transaction.');
+  }
+  private async assertOwnedSession(user: User, statuses: readonly string[], fresh = false) {
     const context = this.contexts.get(user);
     if (!context) throw new HttpError(401, 'Sign in again.');
     await this.db.prepare('SELECT id FROM users WHERE id=? FOR UPDATE').get(user.id);
@@ -99,7 +102,17 @@ export class ManagedIdentity {
         AND (?=0 OR m.authenticated_at>${clockSql}-?)
       FOR UPDATE OF a,s,m
     `).get(user.id, context.token, idle, Number(fresh), freshness);
-    if (!row || !['active', ...(allowPending ? ['pending-verification'] : [])].includes(String(row.status))) throw new HttpError(403, 'Your account session or verification changed. Sign in again; your saved work is unchanged.');
+    if (!row || !statuses.includes(String(row.status))) throw new HttpError(403, 'Your account session or verification changed. Sign in again; your saved work is unchanged.');
+  }
+  async assertWritable(user: User, fresh = false, allowPending = false) {
+    await this.assertOwnedSession(user, ['active', ...(allowPending ? ['pending-verification'] : [])], fresh);
+  }
+  async assertSupport(user: User) {
+    await this.assertOwnedSession(user, statusSchema.options);
+  }
+  async admitSupport(req: express.Request, user: User | null, res: express.Response) {
+    await this.limits.enforce('support-network', networkAddress(req.ip ?? ''), res);
+    if (user) await this.limits.enforce('support-account', user.id, res);
   }
   async admitBilling(user: User, res: express.Response) {
     await this.limits.enforce('billing', user.id, res);

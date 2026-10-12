@@ -9,6 +9,7 @@ import { AuthPrompt, Badge, Comments, Empty, Footer, IconTile, PageHeading } fro
 import { request, useStudio } from '../store';
 import { NotFound } from './Learn';
 import { ManagedAccountPage, ManagedAuthPage } from './Identity';
+import { SupportHistoryPanel } from './Support';
 
 export function AuthPage() {
   const {data,act,refresh,pending,notify}=useStudio(),navigate=useNavigate();
@@ -98,9 +99,23 @@ export function AccountPage() {
 }
 
 export function SupportPage() {
+  const {data}=useStudio();
+  return <SupportForm key={`${data.capabilities.auth?.mode}:${data.user?.id ?? 'signed-out'}`}/>;
+}
+
+function SupportForm() {
   const {data,act,pending}=useStudio();
+  const managed=data.capabilities.auth?.mode==='managed';
   const [email,setEmail]=useState(data.user?.demo?'':data.user?.email||''),[body,setBody]=useState(''),[ticket,setTicket]=useState('');
-  return <><PageHeading eyebrow="A LITTLE HELP" title="What’s getting in your way?" description="Search the Studio FAQ or save a local support request."/><div className="support-layout"><section className="panel"><IconTile icon={LifeBuoy}/><h2>Create a local support ticket</h2><p>This saves the request in this application’s database. No email is sent and no external support team is connected.</p>{ticket?<div className="support-confirmation" role="status"><Check size={27}/><h3>Saved locally.</h3><p>Ticket reference: <code>{ticket}</code></p><p>No external delivery occurred.</p><button className="button secondary small" onClick={()=>setTicket('')}>Write another request</button></div>:<form onSubmit={e=>{e.preventDefault();void act(async()=>{const result=await request<{id:string}>('/api/support',{email,body});setTicket(result.id);setBody('');});}}><label>Contact email<input aria-label="Contact email" type="email" required maxLength={254} value={email} onChange={e=>setEmail(e.target.value)}/></label><label>Your question<textarea aria-label="Support question" required minLength={20} maxLength={10000} placeholder="Describe what happened and what you expected…" value={body} onChange={e=>setBody(e.target.value)}/></label><button className="button" disabled={pending}><Send size={15}/> Save local ticket</button></form>}</section><aside><h2>Start with a little clarity.</h2><p>The FAQ explains account storage, feedback, demo commerce, and production boundaries.</p><Link className="button secondary" to="/faq">Read the FAQ <ArrowRight size={16}/></Link><Link className="guide-next" to="/privacy"><ShieldCheck size={17}/> Read the privacy notes</Link></aside></div></>;
+  const [key,setKey]=useState(()=>managed&&data.user?crypto.randomUUID():'');
+  const [savedId,setSavedId]=useState('');
+  const [retrying,setRetrying]=useState(false);
+  return <><PageHeading eyebrow="A LITTLE HELP" title="What’s getting in your way?" description={managed?'Save a private request and revisit your own request history.':'Search the Studio FAQ or save a local support request.'}/><div className="support-layout"><section className="panel"><IconTile icon={LifeBuoy}/><h2>{managed?'Save a support request':'Create a local support ticket'}</h2><p>This saves the request in this application’s database. No email is sent and no external support team is connected.</p>{ticket?<div className="support-confirmation" role="status"><Check size={27}/><h3>{managed?'Request saved.':'Saved locally.'}</h3><p>Ticket reference: <code>{ticket}</code></p><p>No external delivery occurred.</p><button className="button secondary small" onClick={()=>{setTicket('');if(managed&&data.user)setKey(crypto.randomUUID());}}>Write another request</button></div>:<form onSubmit={e=>{e.preventDefault();void act(async()=>{
+    try {
+      const result=await request<{id:string;delivery:'local-only'|'not-connected'}>('/api/support',{email,body,...(managed&&data.user?{key}:{})});
+      setTicket(result.id);setBody('');setRetrying(false);if(managed&&data.user)setSavedId(result.id);
+    } catch(error) {setRetrying(true);throw error;}
+  });}}><label>Contact email<input aria-label="Contact email" type="email" required maxLength={254} value={email} onChange={e=>setEmail(e.target.value)}/></label><label>Your question<textarea aria-label="Support question" required minLength={20} maxLength={10000} placeholder="Describe what happened and what you expected…" value={body} onChange={e=>setBody(e.target.value)}/></label><button className="button" disabled={pending}><Send size={15}/> {managed?'Save request':'Save local ticket'}</button>{retrying&&managed&&data.user&&<><p className="fine-print">An earlier attempt may already be saved. Check your request history before starting another.</p><button type="button" className="text-button" disabled={pending} onClick={()=>{setKey(crypto.randomUUID());setRetrying(false);}}>Start a separate request</button></>}</form>}</section><aside><h2>Start with a little clarity.</h2><p>The FAQ explains account storage, feedback, demo commerce, and production boundaries.</p><Link className="button secondary" to="/faq">Read the FAQ <ArrowRight size={16}/></Link><Link className="guide-next" to="/privacy"><ShieldCheck size={17}/> Read the privacy notes</Link></aside></div>{managed&&data.user&&<SupportHistoryPanel savedId={savedId}/>}</>;
 }
 
 export function InfoPage({id}:{id:string}) {

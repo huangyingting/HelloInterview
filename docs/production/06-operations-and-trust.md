@@ -17,6 +17,12 @@ storage and audited maintenance replay are available. The
 [job runbook](11-jobs-implementation.md) distinguishes synthetic crash/recovery
 evidence from enabled email/payment/privacy handlers and operating approval.
 
+**Implemented member-support checkpoint (W10):** owner-only request history,
+immutable retry-safe receipts, shared write admission and current-session fences
+are available. The [support runbook](26-owned-support-receipts.md) records
+migration 20 and explicit saved/not-delivered UI. This is not an operated queue,
+staff reply/MFA workflow, email/helpdesk delivery or privacy-retention approval.
+
 ## Operating model
 
 Name accountable people before launch, even if one person initially fills

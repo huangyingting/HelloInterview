@@ -7,7 +7,7 @@ import { HttpError } from '../http-error';
 
 const windowMs = 900000, maximum = 30;
 const clock = 'floor(extract(epoch from clock_timestamp())*1000)::bigint';
-const scopes = ['network', 'legacy-account', 'account-security', 'billing'] as const;
+const scopes = ['network', 'legacy-account', 'account-security', 'billing', 'support-network', 'support-account'] as const;
 type Scope = typeof scopes[number];
 const decisionSchema = z.object({
   attempts: z.number().int().min(1).max(maximum + 1),
@@ -44,8 +44,10 @@ export class IdentityLimits {
     } catch (error) {
       if (!(error instanceof Error) || !('code' in error) || typeof error.code !== 'string' ||
         !['42P01', '42501', '08000', '08003', '08006', '57P01', '57P02', '57P03', '53300', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ENOTFOUND'].includes(error.code)) throw error;
-      console.error(JSON.stringify({ event: 'identity.admission.unavailable', code: error.code }));
-      throw new HttpError(503, 'Shared sign-in protection is unavailable. Try again later; no new sign-in or security action was admitted.');
+      console.error(JSON.stringify({ event: 'identity.admission.unavailable', scope, code: error.code }));
+      throw new HttpError(503, scope.startsWith('support-') ?
+        'Shared support protection is unavailable. Try again later; no support request was stored.' :
+        'Shared sign-in protection is unavailable. Try again later; no new sign-in or security action was admitted.');
     }
     const result = decisionSchema.parse(row);
     return { allowed: result.attempts <= maximum, retryAfter: result.retry_after };

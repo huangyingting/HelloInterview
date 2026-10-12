@@ -6,6 +6,20 @@ export type Difficulty = 'Easy' | 'Medium' | 'Hard';
 export type Level = 'Junior' | 'Mid-level' | 'Senior' | 'Staff' | 'Manager';
 export type CommunityKind = 'questions' | 'stories' | 'submissions' | 'discussion';
 
+export interface SupportReceipt {
+  id: string;
+  email: string;
+  body: string;
+  createdAt: string;
+  status: 'saved';
+  delivery: 'not-connected';
+}
+export interface SupportHistory {
+  tickets: SupportReceipt[];
+  nextCursor: string | null;
+  delivery: 'not-connected';
+}
+
 export interface ContentSection {
   title: string;
   body: string;

@@ -55,6 +55,7 @@ service with defined recovery and support commitments.
 | [23 - Sandbox AI usage ledger](23-sandbox-ai-usage-ledger.md) | Internal atomic unit/cost reservations, original-calendar overlap-safe windows, unknown-outcome holds and fenced settlement; no managed provider permission | AI and backend |
 | [24 - Owned AI native intents](24-owned-ai-native-intents.md) | Atomic owned reservation/native admission, pinned job/generation, explicit denied provider authority and coupled known-undispatched cancellation | AI and backend |
 | [25 - Owned AI input provenance](25-owned-ai-input-provenance.md) | Actual saved-source/model/prompt fingerprints, exact UTF-8 private snapshots, atomic admission and transactional source/owner raw-payload retirement; no provider permission | AI and backend |
+| [26 - Owned support receipts](26-owned-support-receipts.md) | Private member request history, immutable retry keys, current-session fences, shared write admission and truthful saved/not-delivered UX; no staff/helpdesk/email operation | Support and full-stack |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to

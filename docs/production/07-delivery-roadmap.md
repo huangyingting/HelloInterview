@@ -18,7 +18,8 @@ gates are not implicitly satisfied by a foundation change.
 | W06 | Entitlement engineering checkpoint implemented; issuing adapters and commercial authority pending W08/W10/W12 | Immutable owned source grants, terminal revocation, database-clock capability policy, API/worker admission and publication checks, separate content-only access, licensed project snapshots, expiry-aware UI and retained archives |
 | W08 | In progress; sandbox notifications, owned Checkout/recheckout, canonical funding/ledger, gated service authority, owned stop/resume cycles and restricted Portal checkpoints implemented | Pinned official Stripe SDK/API, signed durable evidence, stable owned financial keys, complete funding/adjustment traces, default-off calendar grants/scoped revocations, acknowledged exact-target renewal/recheckout with retained paid history and fresh restricted card-method/invoice sessions with URL-free audit; authentic provider evidence, commercial/grace policy, history partitioning/paid deletion and operated lifecycle remain |
 | W09 | In progress; internal usage-ledger, native-intent and saved-input provenance checkpoints implemented | Explicit immutable sandbox manifests, atomic replica unit/cost/native/private-input reservations, pinned operation/job/generation, owned source/model/prompt hashes, exact UTF-8 bounds, transactional raw-payload retirement, overlap-safe original-calendar windows, unknown holds and coupled cancellation/SQL settlement; actual managed provider dispatch, consent/UX, model/token/cost policy, operating reconciliation and approval remain |
-| W10-W13 | Pending | Account administration, support, moderation, and launch gates |
+| W10 | In progress; owned member-support receipts checkpoint implemented | Private paginated request history, immutable replica-safe retry keys, current-session fences and shared write admission; truthful saved/not-delivered UI; staff MFA/RBAC/audit, operated helpdesk/email, comprehensive export/deletion and retention approvals remain |
+| W11-W13 | Pending | Moderation, reviewed launch experience, and integrated operating/launch gates |
 
 W01 preserves existing local accounts, SQLite schema, demo entitlements, API
 contracts, curriculum, and UI. `NODE_ENV=production` means built asset serving,
@@ -92,6 +93,10 @@ explicit denied native provider authority. The
 actual owned saved-source/model/prompt provenance, exact private UTF-8 snapshots
 and transactional source/owner raw-payload retirement. Actual provider/claim/
 privacy-consent/token/budget-policy composition remains.
+The [W10 member-support runbook](26-owned-support-receipts.md) records migration
+20, narrow owner-only receipts/history, retry-safe creation and shared support
+write admission. It enables no staff reply, external delivery or privacy
+completion; operated support and staff/privacy workflows remain.
 
 ## Delivery strategy
 
