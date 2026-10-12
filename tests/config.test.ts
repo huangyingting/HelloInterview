@@ -153,6 +153,7 @@ test('sandbox billing is all-or-nothing, immutable, managed-only and cannot acce
   assert.ok(Object.isFrozen(config.billing));
   assert.equal(config.billing?.offers, null);
   assert.equal(config.billing?.accessPolicy, null);
+  assert.equal(config.billing?.portalConfiguration, null);
   assert.equal(config.billing?.accountId, env.STRIPE_TEST_ACCOUNT_ID);
   for (const override of [
     { STRIPE_TEST_ACCOUNT_ID: undefined }, { STRIPE_TEST_ACCOUNT_ID: 'wrong' },
@@ -167,6 +168,10 @@ test('sandbox billing is all-or-nothing, immutable, managed-only and cannot acce
   const configured = loadConfig({ ...env, STRIPE_TEST_OFFERS: '{"pro_monthly":"price_SyntheticMonthly","pro_annual":"price_SyntheticAnnual"}' });
   assert.ok(Object.isFrozen(configured.billing?.offers));
   assert.equal(loadConfig({ ...env, STRIPE_TEST_ACCESS_POLICY: 'sandbox-card-service-v1' }).billing?.accessPolicy, 'sandbox-card-service-v1');
+  assert.equal(loadConfig({ ...env, STRIPE_TEST_PORTAL_CONFIGURATION: 'bpc_SyntheticRestricted' }).billing?.portalConfiguration, 'bpc_SyntheticRestricted');
+  for (const value of ['', 'bpc_', 'default', 'true', 'pmc_Foreign', 'bpc_With Space', 'https://billing.stripe.com/p/session']) {
+    assert.throws(() => loadConfig({ ...env, STRIPE_TEST_PORTAL_CONFIGURATION: value }), ConfigurationError);
+  }
   for (const policy of ['', 'true', 'pro-v1', 'live-card-service-v1', 'sandbox-card-service-v2']) {
     assert.throws(() => loadConfig({ ...env, STRIPE_TEST_ACCESS_POLICY: policy }), ConfigurationError);
   }

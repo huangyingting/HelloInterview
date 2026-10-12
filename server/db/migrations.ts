@@ -436,6 +436,25 @@ export const migrations = [{
     );
     CREATE INDEX stripe_cancellation_customer ON stripe_subscription_cancellations(customer_ref);
   `,
+}, {
+  version: 14,
+  name: 'restricted-sandbox-portal-access',
+  sql: `
+    CREATE TABLE stripe_portal_access (
+      id TEXT PRIMARY KEY, user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      customer_ref TEXT NOT NULL REFERENCES stripe_owned_customers(id),
+      customer_id TEXT NOT NULL, configuration_id TEXT NOT NULL, origin TEXT NOT NULL,
+      auth_epoch BIGINT NOT NULL CHECK (auth_epoch >= 0),
+      policy_version TEXT NOT NULL CHECK (policy_version='sandbox-restricted-portal-v1'),
+      state TEXT NOT NULL CHECK (state IN ('requested','issued')),
+      created_at TIMESTAMPTZ NOT NULL, issued_at TIMESTAMPTZ,
+      provider_session_id TEXT UNIQUE, policy_proof TEXT CHECK (policy_proof ~ '^[a-f0-9]{64}$'),
+      CHECK ((state='issued') = (issued_at IS NOT NULL)),
+      CHECK ((state='issued') = (provider_session_id IS NOT NULL)),
+      CHECK ((state='issued') = (policy_proof IS NOT NULL))
+    );
+    CREATE INDEX stripe_portal_customer ON stripe_portal_access(customer_ref,created_at);
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

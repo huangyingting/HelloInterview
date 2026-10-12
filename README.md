@@ -129,7 +129,7 @@ and does not derive entitlements from notification hints. A second **owned
 sandbox checkout checkpoint** adds durable server-created customer/session
 correlations, fresh authenticated reservation/resume/refresh, stable external
 idempotency and a dedicated test-only billing page. Completed sandbox sessions
-alone grant no premium access; production purchases, Portal and the operated
+alone grant no premium access; production purchases and the operated
 financial lifecycle remain disabled. See
 [the billing notification runbook](docs/production/14-billing-implementation.md);
 [the owned checkout runbook](docs/production/15-owned-sandbox-checkout.md).
@@ -148,8 +148,14 @@ live commerce or external AI. The
 [owned sandbox cancellation checkpoint](docs/production/19-owned-sandbox-cancellation.md)
 adds fresh authenticated, retry-safe stop-renewal requests and canonical
 confirmation without refunding payment, shortening paid access or erasing saved
-work. Portal, resumption and paid account-deletion integration remain unavailable.
-Controlled PostgreSQL deployments must apply **migration 13 and maintained queue
+work. The default-off
+[restricted sandbox Portal checkpoint](docs/production/20-restricted-sandbox-portal.md)
+adds fresh owned hosted card-method updates and invoice history, without
+subscription/profile/login-page changes or payment/access authority. It audits
+preparation without retaining bearer URLs and explicitly handles unknown
+openings and already delivered links. Resumption, paid deletion, authentic
+provider recovery and live commerce remain unavailable.
+Controlled PostgreSQL deployments must apply **migration 14 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 

@@ -18,6 +18,7 @@ import { IdentityLifecycle } from '../../server/identity/lifecycle';
 import { migrateJobs } from '../../server/jobs';
 import type { IdentityTransport } from '../../server/identity/broker';
 import { BillingNotifications } from '../../server/billing';
+import type Stripe from 'stripe';
 
 const clientId = 'synthetic-client', clientSecret = 'synthetic-client-secret';
 let browserNumber = 0;
@@ -76,7 +77,7 @@ export class IdentityBrowser {
   }
 }
 
-export async function openIdentityFixture(env: NodeJS.ProcessEnv = {}, options: { brokerHostname?: string; lifecycle?: boolean } = {}) {
+export async function openIdentityFixture(env: NodeJS.ProcessEnv = {}, options: { brokerHostname?: string; lifecycle?: boolean; billingClient?: Stripe } = {}) {
   const databaseUrl = process.env.TEST_DATABASE_URL;
   if (!databaseUrl) throw new Error('TEST_DATABASE_URL must identify a dedicated PostgreSQL identity fixture.');
   const tlsDir = await mkdtemp(join(tmpdir(), 'studio-identity-tls-'));
@@ -203,7 +204,7 @@ export async function openIdentityFixture(env: NodeJS.ProcessEnv = {}, options: 
       };
       const lifecycle = config.identity?.lifecycle ? await IdentityLifecycle.open(connection, config.identity, shutdown.signal, transport) : undefined;
       if (lifecycle) cleanup.push(() => lifecycle.close());
-      const billing = config.billing ? await BillingNotifications.open(connection, config.billing, shutdown.signal, false, undefined, config.publicOrigin ?? undefined) : undefined;
+      const billing = config.billing ? await BillingNotifications.open(connection, config.billing, shutdown.signal, false, options.billingClient, config.publicOrigin ?? undefined) : undefined;
       if (billing) cleanup.push(() => billing.close());
       const app = createApp(config, connection, shutdown.signal, shutdown.signal, transport, lifecycle, billing);
       app.use(express.static(config.frontendDir));

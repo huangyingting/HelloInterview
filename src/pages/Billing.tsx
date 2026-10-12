@@ -107,6 +107,17 @@ export function SandboxBillingPage() {
         await load(); setSecurity(await request<IdentitySecurity>('/api/identity/security'));
         setIntent(saved); if (saved) setOffer(saved.offer); setIntentReady(true);
       })}>Reload owned status</button>
+      {view?.portalEnabled && <div>
+        <p>Restricted hosted sandbox Portal: card-method updates and invoice history only. No plan changes, provider-login shortcut or portal-side cancellation.
+          Updating a payment method or returning here is not payment or premium-access proof.</p>
+        <p>Each click prepares a fresh hosted session. An unknown opening can be retried without creating a subscription.
+          Signing out here cannot revoke a provider link already delivered; do not share it.</p>
+        <button className="button secondary small" disabled={pending || !view.customerReady || !security?.fresh} onClick={() => action(async () => {
+          const result = await request<{ url: string }>('/api/billing/portal', {});
+          window.location.assign(result.url);
+        })}>Open restricted sandbox Portal</button>
+      </div>}
+      {params.has('portal') && <p role="status">Returned from hosted billing. Refresh the owned canonical ledger; the return message cannot prove a card update or payment.</p>}
     </section>
     {checkout && <section className="panel">
       <h2>Your sandbox checkout</h2><p>{labels[checkout.offer]} - <strong>{checkout.state.replaceAll('-', ' ')}</strong></p>
@@ -145,7 +156,7 @@ export function SandboxBillingPage() {
             await request(`/api/billing/subscriptions/${sub.id}/cancel`, {}); await load();
           })}>Stop sandbox renewal</button>}</p>)}
       {!!view.ledger?.subscriptions.length && <p>Stopping sandbox renewal does not refund money, end paid access immediately or erase saved work.
-        Current access comes from eligible invoice intervals and account policy, not the cancellation request. Portal and resumption remain unavailable.</p>}
+        Current access comes from eligible invoice intervals and account policy, not the cancellation request. Renewal resumption remains unavailable.</p>}
       {view.ledger?.invoices.map(invoice => <p key={invoice.id}>Observed invoice: <strong>{invoice.status}</strong>.
         {' '}Total: {invoice.total} {invoice.currency.toUpperCase()} minor units; paid amount hint: {invoice.amountPaid}; remaining: {invoice.amountRemaining}.
         {' '}{invoice.funding ? `Referenced card funding: ${invoice.funding.state.replaceAll('-', ' ')}; captured: ${invoice.funding.captured}; succeeded refunds: ${invoice.funding.refunded}.` : 'Payment evidence has not been evaluated.'}

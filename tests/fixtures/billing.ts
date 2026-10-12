@@ -27,11 +27,23 @@ const sessionPost = z.strictObject({
   subscription_data: z.strictObject({ metadata: z.strictObject({ studio_customer_ref: z.uuid(), studio_checkout_ref: z.uuid() }) }),
   expires_at: z.string().regex(/^\d+$/), success_url: z.string(), cancel_url: z.string(),
 });
+export const sandboxPortalConfiguration = 'bpc_SyntheticRestricted';
+export const sandboxCardConfiguration = 'pmc_SyntheticCardOnly';
+const portalPost = z.strictObject({ customer: z.string(), configuration: z.literal(sandboxPortalConfiguration), return_url: z.string() });
 export async function openBillingFixture(t: TestContext, overrides: NodeJS.ProcessEnv = {}) {
-  const f = await openIdentityFixture({ ...sandboxSettings, ...overrides });
-  t.after(f.close);
-  assert.ok(f.billing?.checkout); assert.ok(f.config.billing);
   const customers = new Map<string, Record<string, unknown>>(), sessions = new Map<string, Record<string, unknown>>();
+  const portals = new Map<string, Record<string, unknown>>();
+  const portalConfiguration = { id: sandboxPortalConfiguration, object: 'billing_portal.configuration', active: true, livemode: false, application: null,
+    features: {
+      customer_update: { enabled: false, allowed_updates: [] as string[] }, invoice_history: { enabled: true },
+      payment_method_update: { enabled: true, payment_method_configuration: sandboxCardConfiguration },
+      subscription_cancel: { enabled: false }, subscription_update: { enabled: false },
+    }, login_page: { enabled: false, url: null as string | null } };
+  const cardConfiguration: Record<string, unknown> = { id: sandboxCardConfiguration, object: 'payment_method_configuration', active: true,
+    livemode: false, application: null, parent: null, is_default: false, name: 'Synthetic card-only',
+    card: { available: true, display_preference: { preference: 'on', value: 'on' } },
+    apple_pay: { available: false, display_preference: { preference: 'off', value: 'off' } },
+    bank_transfer: null, us_bank_account: { available: false, display_preference: { preference: 'off', value: 'off' } } };
   const subscriptions: Record<string, unknown>[] = [];
   const invoices = new Map<string, Record<string, unknown>>(), events = new Map<string, Record<string, unknown>>();
   const invoiceLines = new Map<string, Record<string, unknown>[]>(), invoicePayments = new Map<string, Record<string, unknown>[]>();
@@ -49,6 +61,7 @@ export async function openBillingFixture(t: TestContext, overrides: NodeJS.Proce
   const responses = new Map<string, Record<string, unknown>>();
   const requests: { method: string; path: string; key?: string; body: unknown; version?: string }[] = [];
   let account = sandboxSettings.STRIPE_TEST_ACCOUNT_ID, pagination = '', failPath = '';
+  let portalResponse: Record<string, unknown> = {};
   let barrier: ((path: string, method: string) => Promise<void>) | undefined;
   const app = express();
   app.use(express.urlencoded({ extended: true }));
@@ -57,6 +70,8 @@ export async function openBillingFixture(t: TestContext, overrides: NodeJS.Proce
     if (barrier) await barrier(req.path, req.method);
     if (req.path === failPath) return res.status(503).json({ error: { type: 'api_error', message: 'Synthetic sandbox provider outage.' } });
     if (req.path === '/v1/account') return res.json({ id: account, object: 'account' });
+    if (req.method === 'GET' && req.path === `/v1/billing_portal/configurations/${sandboxPortalConfiguration}`) return res.json(portalConfiguration);
+    if (req.method === 'GET' && req.path === `/v1/payment_method_configurations/${sandboxCardConfiguration}`) return res.json(cardConfiguration);
     const list = (values: Record<string, unknown>[]) => {
       values = values.filter(value => !omitted.has(String(value.id)));
       const after = typeof req.query.starting_after === 'string' ? req.query.starting_after : null;
@@ -101,6 +116,14 @@ export async function openBillingFixture(t: TestContext, overrides: NodeJS.Proce
       assert.ok(key, 'Every provider mutation must have a stable operation key.');
       const cached = responses.get(`${req.path}:${key}`);
       if (cached) return res.json(cached);
+      if (req.path === '/v1/billing_portal/sessions') {
+        const body = portalPost.parse(req.body), id = `bps_Synthetic${portals.size + 1}`;
+        assert.ok(customers.has(body.customer));
+        const session = { id, object: 'billing_portal.session', customer: body.customer, customer_account: null, configuration: body.configuration,
+          created: Math.floor(Date.now() / 1000), livemode: false, on_behalf_of: null, flow: null, return_url: body.return_url,
+          url: `https://billing.stripe.com/p/session?secret=test_SyntheticRestricted${portals.size + 1}`, ...portalResponse };
+        portals.set(id, session); responses.set(`${req.path}:${key}`, structuredClone(session)); return res.json(session);
+      }
       if (req.path === '/v1/customers') {
         const body = customerPost.parse(req.body), id = `cus_Synthetic${customers.size + 1}`;
         const customer = { id, object: 'customer', livemode: false, metadata: body.metadata };
@@ -132,17 +155,25 @@ export async function openBillingFixture(t: TestContext, overrides: NodeJS.Proce
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   const client = new Stripe(sandboxSettings.STRIPE_TEST_SECRET_KEY, { host: '127.0.0.1', port: address.port, protocol: 'http',
     apiVersion: stripeApiVersion, maxNetworkRetries: 0, timeout: 1000 });
+  let f: Awaited<ReturnType<typeof openIdentityFixture>>;
+  try { f = await openIdentityFixture({ ...sandboxSettings, ...overrides }, { billingClient: client }); }
+  catch (error) { server.closeAllConnections(); await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); throw error; }
+  t.after(f.close);
   const shutdown = new AbortController();
-  const worker = await BillingNotifications.open(f.db, f.config.billing, shutdown.signal, true, client, f.origin);
+  let worker: BillingNotifications | undefined;
   f.cleanup.push(async () => {
     shutdown.abort();
-    try { await worker.close(); } finally {
+    try { await worker?.close(); } finally {
       const closed = new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
       server.closeAllConnections(); await closed;
     }
   });
-  return { ...f, worker, client, customers, sessions, subscriptions, prices, product, requests, invoices, invoiceLines, invoicePayments, events,
-    paymentIntents, charges, refunds, disputes, credits, port: address.port,
+  assert.ok(f.billing?.checkout); assert.ok(f.config.billing);
+  worker = await BillingNotifications.open(f.db, f.config.billing, shutdown.signal, true, client, f.origin);
+  const activeWorker = worker;
+  return { ...f, worker: activeWorker, client, customers, sessions, subscriptions, prices, product, requests, invoices, invoiceLines, invoicePayments, events,
+    paymentIntents, charges, refunds, disputes, credits, portals, portalConfiguration, cardConfiguration, port: address.port,
+    portalResponse(value: Record<string, unknown>) { portalResponse = value; },
     barrier(value?: typeof barrier) { barrier = value; }, account(value: string) { account = value; },
     pagination(value: string) { pagination = value; }, outage(value: string) { failPath = value; },
     pageSize(path: string, value: number) { pageSizes.set(path, value); },
@@ -213,9 +244,9 @@ export async function openBillingFixture(t: TestContext, overrides: NodeJS.Proce
       return response.json();
     },
     async complete(kind: 'billing.customer' | 'billing.checkout' | 'billing.checkout.refresh' | 'billing.subscription.cancel' | 'billing.customer.snapshot' | 'billing.reconcile') {
-      const claim = await worker.jobs.claim(kind); assert.ok(claim, `Expected a ${kind} claim.`);
-      await worker.runClaim(claim);
-      return worker.jobs.operation(claim.data.operationId);
+      const claim = await activeWorker.jobs.claim(kind); assert.ok(claim, `Expected a ${kind} claim.`);
+      await activeWorker.runClaim(claim);
+      return activeWorker.jobs.operation(claim.data.operationId);
     },
   };
 }

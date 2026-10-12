@@ -13,6 +13,7 @@ import { SandboxCheckout } from './checkout';
 import { canonicalOriginSchema } from './checkout-schema';
 import { SandboxBillingLedger } from './ledger';
 import { assertSandboxAccessConfiguration } from './service';
+import { SandboxPortal } from './portal';
 
 export async function assertBillingConfiguration(db: Database, settings: BillingConfig | null) {
   if (db.dialect !== 'postgres') return;
@@ -26,14 +27,16 @@ export async function assertBillingConfiguration(db: Database, settings: Billing
 }
 export class BillingNotifications {
   private constructor(private readonly db: Database, private readonly settings: BillingConfig, readonly jobs: DurableJobs,
-    readonly provider: StripeEvidence, readonly checkout: SandboxCheckout | null, readonly ledger: SandboxBillingLedger) {}
+    readonly provider: StripeEvidence, readonly checkout: SandboxCheckout | null, readonly ledger: SandboxBillingLedger,
+    readonly portal: SandboxPortal | null) {}
   static async open(db: Database, settings: BillingConfig, shutdown: AbortSignal, worker = false, client?: Stripe, origin?: string) {
     await assertBillingConfiguration(db, settings);
-    if (settings.offers && !origin || origin && !canonicalOriginSchema.safeParse(origin).success) throw new Error('Owned sandbox checkout requires the canonical HTTPS application origin.');
+    if ((settings.offers || settings.portalConfiguration) && !origin || origin && !canonicalOriginSchema.safeParse(origin).success) throw new Error('Owned sandbox billing requires the canonical HTTPS application origin.');
     const provider = new StripeEvidence(settings, shutdown, client);
     const jobs = await DurableJobs.open(db, worker);
     const ledger = new SandboxBillingLedger(db, settings, jobs, provider);
-    return new BillingNotifications(db, settings, jobs, provider, origin ? new SandboxCheckout(db, settings, origin, jobs, provider, ledger) : null, ledger);
+    return new BillingNotifications(db, settings, jobs, provider, origin ? new SandboxCheckout(db, settings, origin, jobs, provider, ledger) : null, ledger,
+      origin ? new SandboxPortal(db, settings, origin) : null);
   }
   private source() { return `stripe:${this.settings.accountId}:sandbox`; }
   private resource(eventId: string) { return `stripe:${digest(`${this.settings.accountId}:${eventId}`)}`; }

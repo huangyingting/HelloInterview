@@ -233,6 +233,28 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
       if (!z.strictObject({}).safeParse(req.body).success) throw new HttpError(400, 'Use an empty request body; customer and invoice references are server-owned.');
       res.status(202).json(await billingAction(req, res, true, user => billing.ledger.refresh(user.id)));
     });
+    app.post('/api/billing/portal', async (req, res) => {
+      if (!z.strictObject({}).safeParse(req.body).success) throw new HttpError(400, 'Use an empty request body; Portal customer, configuration and return URL are server-owned.');
+      const portal = billing.portal;
+      if (!portal) throw new HttpError(503, 'Owned sandbox Portal is unavailable.');
+      const abort = new AbortController(), disconnect = () => abort.abort();
+      res.once('close', disconnect);
+      const signal = AbortSignal.any([shutdown, abort.signal, AbortSignal.timeout(30000)]);
+      try {
+        const scope = await billingAction(req, res, true, user => portal.prepare(user.id));
+        const result = await billing.provider.portalSession(scope, () => billingAction(req, res, false, async user => {
+          await billingIdentity.assertWritable(user, true); await portal.guard(scope, user.id);
+          await billingIdentity.assertWritable(user, true); signal.throwIfAborted();
+        }), signal);
+        signal.throwIfAborted();
+        await billingAction(req, res, false, async user => {
+          await billingIdentity.assertWritable(user, true); await portal.complete(scope, user.id, result);
+          await billingIdentity.assertWritable(user, true); signal.throwIfAborted();
+        });
+        signal.throwIfAborted();
+        res.json({ url: result.url });
+      } finally { res.off('close', disconnect); }
+    });
     app.post('/api/billing/checkouts', async (req, res) => {
       const parsed = checkoutRequestSchema.safeParse(req.body);
       if (!parsed.success) throw new HttpError(400, 'Choose a sandbox offer and a UUID request key; provider IDs, amounts and redirect URLs are not accepted.');

@@ -17,6 +17,7 @@ export interface BillingConfig {
   readonly webhookSecret: string;
   readonly offers: Readonly<{ pro_monthly: string; pro_annual: string }> | null;
   readonly accessPolicy: typeof sandboxServicePolicy | null;
+  readonly portalConfiguration: string | null;
 }
 export interface ServerConfig {
   readonly environment: 'development' | 'test' | 'production';
@@ -162,7 +163,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
     identity = Object.freeze({ issuer: `${issuer.origin}/`, clientId, clientSecret, connections: Object.freeze(connections), legacyLinkUntil, lifecycle });
   }
   let billing: Readonly<BillingConfig> | null = null;
-  const billingSettings = ['STRIPE_TEST_ACCOUNT_ID', 'STRIPE_TEST_SECRET_KEY', 'STRIPE_TEST_WEBHOOK_SECRET', 'STRIPE_TEST_OFFERS', 'STRIPE_TEST_ACCESS_POLICY'];
+  const billingSettings = ['STRIPE_TEST_ACCOUNT_ID', 'STRIPE_TEST_SECRET_KEY', 'STRIPE_TEST_WEBHOOK_SECRET', 'STRIPE_TEST_OFFERS', 'STRIPE_TEST_ACCESS_POLICY', 'STRIPE_TEST_PORTAL_CONFIGURATION'];
   const providedBillingSettings = Object.keys(env).filter(key => key.startsWith('STRIPE_') && env[key] !== undefined);
   if (providedBillingSettings.length) {
     if (providedBillingSettings.some(key => !billingSettings.includes(key))) throw new ConfigurationError('Stripe configuration', 'contains an unsupported setting; live billing is not enabled.');
@@ -186,7 +187,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
     if (env.STRIPE_TEST_ACCESS_POLICY !== undefined && env.STRIPE_TEST_ACCESS_POLICY !== sandboxServicePolicy) {
       throw new ConfigurationError('STRIPE_TEST_ACCESS_POLICY', 'must select the explicit sandbox-only service policy; real commerce remains disabled.');
     }
-    billing = Object.freeze({ accountId, secretKey, webhookSecret, offers, accessPolicy: env.STRIPE_TEST_ACCESS_POLICY === undefined ? null : sandboxServicePolicy });
+    const portalConfiguration = env.STRIPE_TEST_PORTAL_CONFIGURATION;
+    if (portalConfiguration !== undefined && !/^bpc_[A-Za-z0-9]{1,100}$/.test(portalConfiguration)) {
+      throw new ConfigurationError('STRIPE_TEST_PORTAL_CONFIGURATION', 'must identify an explicit restricted sandbox Portal configuration.');
+    }
+    billing = Object.freeze({ accountId, secretKey, webhookSecret, offers, accessPolicy: env.STRIPE_TEST_ACCESS_POLICY === undefined ? null : sandboxServicePolicy,
+      portalConfiguration: portalConfiguration ?? null });
   }
   const root = path.resolve(rootDir);
   return Object.freeze({

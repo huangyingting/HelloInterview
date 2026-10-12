@@ -14,6 +14,7 @@ import { ledgerStateSchema, subscriptionFactSchema } from './ledger-schema';
 import { cancellationOperationSchema, cancellationRowSchema, type CancellationRow } from './cancellation-schema';
 import { sandboxRenewalAuthority } from '../../shared/billing-ledger';
 import { assertSandboxAccessConfiguration } from './service';
+import { assertSandboxOwner, ownedSandboxCustomer } from './ownership';
 
 const clock = 'floor(extract(epoch from clock_timestamp())*1000)::bigint';
 const postWindowMs = 20 * 3600000, checkoutMarginMs = 31 * 60000;
@@ -23,15 +24,10 @@ export class SandboxCheckout {
     private readonly jobs: DurableJobs, private readonly provider: StripeEvidence, private readonly ledger: SandboxBillingLedger) {}
   private async now() { return z.coerce.number().int().parse((await this.db.prepare(`SELECT ${clock} AS now`).get())?.now); }
   private async owner(owner: string, epoch?: number) {
-    await this.db.prepare('SELECT id FROM users WHERE id=? FOR UPDATE').get(z.uuid().parse(owner));
-    const row = await this.db.prepare('SELECT status,contact_verified,session_epoch FROM managed_accounts WHERE user_id=? FOR UPDATE').get(owner);
-    if (!row || row.status !== 'active' || row.contact_verified !== 1 || epoch !== undefined && Number(row.session_epoch) !== epoch) throw new TerminalJobFailure('not-eligible');
-    return z.coerce.number().int().nonnegative().parse(row.session_epoch);
+    return assertSandboxOwner(this.db, owner, epoch);
   }
   private async customer(owner: string, id?: string): Promise<CustomerRow | null> {
-    const row = await this.db.prepare(`SELECT * FROM stripe_owned_customers WHERE account_id=? AND user_id=?${id ? ' AND id=?' : ''} FOR UPDATE`)
-      .get(this.settings.accountId, owner, ...(id ? [id] : []));
-    return row ? customerRowSchema.parse(row) : null;
+    return ownedSandboxCustomer(this.db, this.settings.accountId, owner, id);
   }
   private async attempt(customer: CustomerRow, id: string): Promise<CheckoutRow> {
     const row = await this.db.prepare('SELECT * FROM stripe_checkout_attempts WHERE id=? AND customer_ref=? FOR UPDATE').get(z.uuid().parse(id), customer.id);
@@ -87,14 +83,14 @@ export class SandboxCheckout {
     return this.db.transaction(async () => {
       await this.owner(owner);
       const customer = await this.customer(owner);
-      if (!customer) return { mode: 'sandbox', enabled: !!this.settings.offers, customerReady: false, checkout: null, ledger: null, accessAuthority: this.settings.accessPolicy ?? 'none' };
+      if (!customer) return { mode: 'sandbox', enabled: !!this.settings.offers, portalEnabled: !!this.settings.portalConfiguration, customerReady: false, checkout: null, ledger: null, accessAuthority: this.settings.accessPolicy ?? 'none' };
       const row = await this.db.prepare(`SELECT * FROM stripe_checkout_attempts WHERE customer_ref=?
         ORDER BY (state IN ('waiting-customer','queued','open','complete')) DESC,created_at DESC,id DESC LIMIT 1`).get(customer.id);
       const attempt = row ? checkoutRowSchema.parse(row) : null;
       if (attempt?.state === 'retired') throw new HttpError(403, 'This sandbox billing archive is retired.');
       const operationId = attempt?.refresh_operation_id ?? attempt?.operation_id ?? customer.operation_id;
       const operation = await this.jobs.ownedStatus(owner, operationId);
-      return { mode: 'sandbox', enabled: !!this.settings.offers, customerReady: customer.state === 'mapped', accessAuthority: this.settings.accessPolicy ?? 'none', ledger: await this.ledger.view(customer),
+      return { mode: 'sandbox', enabled: !!this.settings.offers, portalEnabled: !!this.settings.portalConfiguration, customerReady: customer.state === 'mapped', accessAuthority: this.settings.accessPolicy ?? 'none', ledger: await this.ledger.view(customer),
         checkout: attempt ? { id: attempt.id, requestKey: attempt.request_key, offer: attempt.offer_key, state: attempt.state, processing: operation.status,
           expiresAt: new Date(attempt.expires_at).toISOString(), paymentStatus: attempt.payment_status,
           quote: attempt.currency && attempt.unit_amount ? { currency: attempt.currency, unitAmount: attempt.unit_amount } : null } : null };

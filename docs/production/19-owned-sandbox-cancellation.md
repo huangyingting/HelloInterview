@@ -222,3 +222,8 @@ provider/test-clock evidence, approved commercial/grace/refund rules, partitione
 history, finance/privacy/support authority and operated recovery remain W08/W10
 work. Public accounts, real payments and launch remain gated. No real provider
 accounts, cards, charges or customer data were used.
+
+The subsequent [restricted Portal checkpoint](20-restricted-sandbox-portal.md)
+adds default-off card-method updates and invoice history only. Provider-side
+cancellation remains disabled; this checkpoint's owned cancellation authority
+and its paid-deletion/operated recovery limitations are unchanged.

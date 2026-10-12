@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import { chromium, expect } from '@playwright/test';
-import { openBillingFixture } from './fixtures/billing';
+import { openBillingFixture, sandboxPortalConfiguration } from './fixtures/billing';
 import type { Bootstrap } from '../shared/types';
 import { sandboxServicePolicy } from '../shared/billing-ledger';
 import type { SandboxBillingView } from '../shared/billing';
 
-async function fixture(t: TestContext, service = false) {
-  const f = await openBillingFixture(t, service ? { STRIPE_TEST_ACCESS_POLICY: sandboxServicePolicy } : {}), browser = await chromium.launch({ executablePath: process.env.CHROME_PATH, headless: true,
+async function fixture(t: TestContext, service = false, portal = false) {
+  const f = await openBillingFixture(t, { ...(service ? { STRIPE_TEST_ACCESS_POLICY: sandboxServicePolicy } : {}),
+    ...(portal ? { STRIPE_TEST_PORTAL_CONFIGURATION: sandboxPortalConfiguration } : {}) }), browser = await chromium.launch({ executablePath: process.env.CHROME_PATH, headless: true,
     args: ['--no-proxy-server', '--host-resolver-rules=MAP studio.fixture 127.0.0.1,MAP broker.fixture 127.0.0.1'] });
   f.cleanup.push(() => browser.close());
   const context = await browser.newContext({ ignoreHTTPSErrors: true }), page = await context.newPage();
@@ -35,6 +36,7 @@ async function fixture(t: TestContext, service = false) {
 
 test('actual managed browser prepares, resumes hosted sandbox and refreshes owned canonical results; return claims never grant Pro', { timeout: 60000 }, async t => {
   const f = await fixture(t), { page } = f;
+  await expect(page.getByRole('button', { name: 'Open restricted sandbox Portal' })).toHaveCount(0);
   await page.getByRole('checkbox', { name: /I understand this is sandbox-only/ }).check();
   await page.getByRole('button', { name: 'Prepare sandbox checkout' }).click();
   await expect(page.getByRole('heading', { name: 'Your sandbox checkout' })).toBeVisible();
@@ -67,6 +69,66 @@ test('actual managed browser prepares, resumes hosted sandbox and refreshes owne
   assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM entitlement_grants').get())?.count, 0);
   assert.ok(f.requests.some(request => request.path.endsWith('/open')));
   assert.ok(f.requests.some(request => request.path.endsWith('/refresh')));
+});
+
+test('actual managed browser opens only its restricted Portal and a forged hosted return never grants Pro or proves a card update', { timeout: 60000 }, async t => {
+  const f = await fixture(t, false, true), { page } = f;
+  await expect(page.getByRole('button', { name: 'Open restricted sandbox Portal' })).toBeDisabled();
+  await page.getByRole('checkbox', { name: /I understand this is sandbox-only/ }).check();
+  await page.getByRole('button', { name: 'Prepare sandbox checkout' }).click();
+  await expect(page.getByRole('heading', { name: 'Your sandbox checkout' })).toBeVisible();
+  await f.complete('billing.customer'); await f.complete('billing.checkout');
+  await expect(page.getByRole('button', { name: 'Open restricted sandbox Portal' })).toBeEnabled();
+  await page.route('https://billing.stripe.com/**', route => route.fulfill({ status: 200, contentType: 'text/html',
+    body: `<html><body><h1>Synthetic restricted Portal</h1><a href="${f.origin}/billing?portal=returned&paid=true&plan=pro">Return with untrusted claims</a></body></html>` }));
+  await page.getByRole('button', { name: 'Open restricted sandbox Portal' }).click();
+  await expect(page.getByRole('heading', { name: 'Synthetic restricted Portal' })).toBeVisible();
+  assert.match(page.url(), /^https:\/\/billing\.stripe\.com\/p\/session\?secret=test_/);
+  await page.getByRole('link', { name: 'Return with untrusted claims' }).click();
+  await expect(page.getByText(/return message cannot prove a card update or payment/)).toBeVisible();
+  const final: Bootstrap = await page.evaluate(async () => (await fetch('/api/bootstrap')).json());
+  assert.equal(final.capabilities.access?.state, 'free'); assert.equal(final.capabilities.commerce, 'disabled');
+  assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM entitlement_grants').get())?.count, 0);
+  assert.equal((await f.db.prepare('SELECT state FROM stripe_portal_access').get())?.state, 'issued');
+  assert.deepEqual(f.requests.filter(request => request.path === '/api/billing/portal').map(request => request.body), [{}]);
+  const local = await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }));
+  const text = await page.locator('body').innerText();
+  for (const secret of ['test_SyntheticRestricted', 'bps_Synthetic', 'cus_Synthetic', 'bpc_SyntheticRestricted', 'pmc_SyntheticCardOnly']) {
+    assert.ok(!local.includes(secret)); assert.ok(!text.includes(secret));
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+});
+
+test('a lost actual Portal response can be deliberately retried as a new audited ephemeral session, never a replacement financial intent', { timeout: 60000 }, async t => {
+  const f = await fixture(t, false, true), { page } = f;
+  await page.getByRole('checkbox', { name: /I understand this is sandbox-only/ }).check();
+  await page.getByRole('button', { name: 'Prepare sandbox checkout' }).click();
+  await expect(page.getByRole('heading', { name: 'Your sandbox checkout' })).toBeVisible();
+  await f.complete('billing.customer'); await f.complete('billing.checkout');
+  await expect(page.getByRole('button', { name: 'Open restricted sandbox Portal' })).toBeEnabled();
+  await page.route('**/api/billing/portal', async route => {
+    const source = new URL(route.request().url()), target = new URL(source); target.hostname = '127.0.0.1';
+    const response = await route.fetch({ url: target.href, headers: { ...route.request().headers(), host: source.host } });
+    assert.equal(response.status(), 200); await route.abort();
+  });
+  await page.getByRole('button', { name: 'Open restricted sandbox Portal' }).click();
+  await expect(page.getByRole('alert').first()).toContainText(/fetch|network/i);
+  assert.equal(f.portals.size, 1);
+  await page.unroute('**/api/billing/portal');
+  await page.route('https://billing.stripe.com/**', route => route.fulfill({ status: 200, contentType: 'text/html',
+    body: `<html><body><h1>Fresh synthetic Portal</h1><a href="${f.origin}/billing?portal=returned">Return without payment</a></body></html>` }));
+  await page.getByRole('button', { name: 'Open restricted sandbox Portal' }).click();
+  await expect(page.getByRole('heading', { name: 'Fresh synthetic Portal' })).toBeVisible();
+  assert.equal(f.portals.size, 2);
+  const rows = await f.db.prepare('SELECT id,state FROM stripe_portal_access').all();
+  assert.equal(new Set(rows.map(row => row.id)).size, 2); assert.ok(rows.every(row => row.state === 'issued'));
+  assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM stripe_checkout_attempts').get())?.count, 1);
+  assert.equal(f.customers.size, 1); assert.equal(f.subscriptions.length, 0);
+  await page.getByRole('link', { name: 'Return without payment' }).click();
+  await expect(page.getByText(/return message cannot prove a card update or payment/)).toBeVisible();
+  const final: Bootstrap = await page.evaluate(async () => (await fetch('/api/bootstrap')).json());
+  assert.equal(final.capabilities.access?.state, 'free');
 });
 
 test('an unknown request after an expired session retains its new UUID and offer through reload, never silently replacing the intent', { timeout: 60000 }, async t => {

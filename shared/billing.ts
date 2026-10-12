@@ -17,6 +17,7 @@ export interface SandboxBillingView {
   mode: 'sandbox';
   enabled: boolean;
   customerReady: boolean;
+  portalEnabled: boolean;
   checkout: SandboxCheckoutView | null;
   ledger: OwnedBillingLedgerView | null;
   accessAuthority: 'none' | typeof sandboxServicePolicy;

@@ -19,8 +19,11 @@ adapters. Its deliberately strict partial-refund/dispute/credit retirement
 policy is not approval or implementation of the commercial policies below.
 The [sixth checkpoint](19-owned-sandbox-cancellation.md) adds owned durable
 sandbox stop-renewal requests and canonical confirmation without a refund or
-immediate access loss. Portal, resumption and paid deletion are still unresolved.
-Live payment-derived entitlements, Portal and the operated financial lifecycle
+immediate access loss. The [seventh checkpoint](20-restricted-sandbox-portal.md)
+adds default-off restricted test Portal sessions for owned card-method updates
+and invoice history, without plan/cancel/profile/login-page features or payment/
+access authority. Resumption, paid deletion and authentic recovery remain unresolved.
+Live payment-derived entitlements and the operated financial lifecycle
 remain unimplemented; this specification is not launch authorization.
 
 ## Launch offer and boundaries
@@ -45,6 +48,10 @@ updates, invoice access and cancel-at-period-end. Enable only portal operations
 the backend lifecycle supports. Launch with interval switching disabled;
 changing monthly/annual cadence at the next renewal is a later, explicitly
 tested subscription-schedule feature, not a second concurrent checkout.
+The shipped sandbox Portal deliberately disables provider-side cancellation;
+stop-renewal uses the separately fenced owned app command. Hosted card updates
+and returns do not prove an invoice was retried/settled. Enabling live Portal
+operations requires separate lifecycle, provider and commercial approval.
 
 ## Domain responsibilities and invariants
 

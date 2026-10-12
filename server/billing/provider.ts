@@ -1,11 +1,12 @@
 import Stripe from 'stripe';
 import type { BillingConfig } from '../config';
-import { encodePayload } from '../jobs/schema';
+import { digest, encodePayload } from '../jobs/schema';
 import { canonicalObjectSchema, notification, observationSchema, providerId, referenceId, stripeApiVersion, type Notification, type Observation } from './schema';
 import { z } from 'zod';
 import { TerminalJobFailure } from '../jobs';
 import { checkoutSchema, customerSchema, hostedCheckoutUrl, priceSchema, type CheckoutRow } from './checkout-schema';
 import { readCanonicalLedger, type CanonicalRead, type LedgerReadInput } from './ledger-reader';
+import { cardOnlyConfiguration, hostedPortalUrl, portalAuthority, portalConfigurationSchema, portalSessionSchema, type PortalScope } from './portal-schema';
 
 const listSchema = z.looseObject({ object: z.literal('list'), has_more: z.boolean(), data: z.array(z.unknown()).max(100) });
 const subscriptionSchema = z.looseObject({
@@ -93,6 +94,36 @@ export class StripeEvidence {
     await read(() => this.account(signal));
     this.customer(await read(() => this.client.customers.retrieve(input.customerId)), input.customerRef, input.customerId);
     return readCanonicalLedger(this.client, input, read);
+  }
+  async portalSession(scope: PortalScope, beforeMutation: () => Promise<void>, signal?: AbortSignal) {
+    if (!this.settings.portalConfiguration || scope.configurationId !== this.settings.portalConfiguration) {
+      throw new Error('Restricted Portal issuance requires the explicit captured operator configuration.');
+    }
+    let requests = 0;
+    const read: CanonicalRead = async action => {
+      if (++requests > 8) throw new Error('Restricted Portal preparation exceeded its SDK request bound.');
+      this.assertRunning(signal); const value = await action(); this.assertRunning(signal); return value;
+    };
+    await read(() => this.account(signal));
+    this.customer(await read(() => this.client.customers.retrieve(scope.customerId)), scope.customerRef, scope.customerId);
+    const configuration = portalConfigurationSchema.parse(await read(() => this.client.billingPortal.configurations.retrieve(scope.configurationId)));
+    if (configuration.id !== scope.configurationId) throw new Error('The Portal configuration differs from the captured operator selection.');
+    const methodId = configuration.features.payment_method_update.payment_method_configuration;
+    const methods = cardOnlyConfiguration(await read(() => this.client.paymentMethodConfigurations.retrieve(methodId)), methodId);
+    await beforeMutation(); this.assertRunning(signal);
+    const session = portalSessionSchema.parse(await read(() => this.client.billingPortal.sessions.create({
+      customer: scope.customerId, configuration: scope.configurationId, return_url: `${scope.origin}/billing?portal=returned`,
+    }, { idempotencyKey: scope.id })));
+    if (session.customer !== scope.customerId || referenceId(session.configuration) !== scope.configurationId ||
+      session.return_url !== `${scope.origin}/billing?portal=returned`) throw new Error('The hosted Portal session differs from its owned preparation.');
+    const url = hostedPortalUrl(session.url);
+    const current = portalConfigurationSchema.parse(await read(() => this.client.billingPortal.configurations.retrieve(scope.configurationId)));
+    if (current.id !== configuration.id || encodePayload(current.features) !== encodePayload(configuration.features)) throw new Error('Portal policy moved during preparation.');
+    const finalMethods = cardOnlyConfiguration(await read(() => this.client.paymentMethodConfigurations.retrieve(methodId)), methodId);
+    if (methods !== finalMethods) throw new Error('Portal payment-method policy moved during preparation.');
+    this.customer(await read(() => this.client.customers.retrieve(scope.customerId)), scope.customerRef, scope.customerId);
+    return { id: session.id, created: session.created, url, proof: digest(encodePayload({ policy: portalAuthority,
+      configurationId: scope.configurationId, methodId, methods, features: configuration.features })) };
   }
   async createCustomer(reference: string, operationId: string, replayWindow: boolean, beforeMutation: () => Promise<void>, signal?: AbortSignal) {
     await this.account(signal);
