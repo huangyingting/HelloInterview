@@ -172,6 +172,98 @@ test('local owner editing preserves conflicting drafts and deletion is an explic
   assert.equal(f.documents.length,1);
 });
 
+test('local comment editing preserves conflict and lost-response drafts through closing, filtering and explicit saved-version adoption',async t=>{
+  const f=await fixture(t),{page}=f,db=localConnection(f.directory);t.after(()=>db.close());
+  const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);
+  const owner=(await login.json()).user.id,id=' comment/?%# ',post='comment-editor-parent',resource=`post/${post}`;
+  await db.prepare('INSERT INTO posts VALUES(?,?,?,?,?,?,?,?,?,?,?,0)').run(post,'questions','A comment editing fixture','An original local question with full context and reasoning.','Fixture Company','system-design','Senior','Global','Anonymous',owner,'2026-01-01T00:00:00.000Z');
+  await db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run(id,resource,owner,'Owned synthetic commenter','Original owner reply.','2026-01-01T00:00:00.000Z',null);
+  for(let index=0;index<3;index++)await db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run(`other-comment-${index}`,resource,'another-local-author','Other retained commenter',`Other original reply ${index}.`,'2026-01-01T00:00:00.000Z',null);
+  let releaseRead!:()=>void;
+  const reading=new Promise<void>(resolve=>{releaseRead=resolve;});
+  await page.route('**/api/comments?*',async route=>{
+    if(new URL(route.request().url()).pathname!=='/api/comments'){await route.continue();return;}
+    const response=await route.fetch();assert.equal(response.status(),200);await reading;await route.fulfill({response});
+  },{times:1});
+  try{
+    await page.goto(`${f.url}${communityPostPath({kind:'questions',id:post})}`);
+    await expect(page.getByText('Loading the discussion...',{exact:true})).toBeVisible();
+    await expect(page.getByRole('button',{name:'Post comment',exact:true})).toBeDisabled();
+    await expect(page.getByText('Start a thoughtful conversation. No comments yet.',{exact:true})).toHaveCount(0);
+  }finally{releaseRead();}
+  const comment=page.locator('.comment').filter({has:page.getByText('Owned synthetic commenter',{exact:true})});
+  await expect(page.getByRole('button',{name:'Edit my comment',exact:true})).toHaveCount(1);
+  await comment.getByRole('button',{name:'Edit my comment',exact:true}).click();
+  const text=comment.getByLabel('Edit comment text');
+  await expect(text).toHaveValue('Original owner reply.');
+  await text.fill('First confirmed comment edit.');
+  await comment.getByRole('button',{name:'Save comment changes',exact:true}).click();
+  await expect(comment.locator(':scope > div > p')).toHaveText('First confirmed comment edit.');
+  await text.fill('A preserved uncommitted reply.');
+  await db.prepare('UPDATE comments SET body=? WHERE id=?').run('A newer saved reply.',id);
+  await comment.getByRole('button',{name:'Save comment changes',exact:true}).click();
+  await expect(comment.getByRole('alert')).toContainText('changed');await expect(text).toHaveValue('A preserved uncommitted reply.');
+  await comment.getByRole('button',{name:'Close editor',exact:true}).click();
+  await expect(text).toHaveCount(0);
+  await comment.getByRole('button',{name:'Edit my comment',exact:true}).click();await expect(text).toHaveValue('A preserved uncommitted reply.');
+  await page.getByLabel('Search comments').fill('Other retained');
+  await expect(comment).toBeHidden();
+  await page.getByLabel('Search comments').fill('');await expect(text).toHaveValue('A preserved uncommitted reply.');
+  await comment.getByRole('button',{name:'Check saved version',exact:true}).click();
+  await expect(comment.getByRole('heading',{name:'Current saved version',exact:true})).toBeVisible();await expect(text).toHaveValue('A preserved uncommitted reply.');
+  await comment.getByRole('button',{name:'Replace my draft with saved version',exact:true}).click();
+  await expect(text).toHaveValue('A newer saved reply.');await expect(comment.locator(':scope > div > p')).toHaveText('A newer saved reply.');
+  await text.fill('A committed but unconfirmed reply.');
+  await page.route('**/api/comments/owned',async route=>{
+    assert.equal(route.request().method(),'PUT');const response=await route.fetch();assert.equal(response.status(),200);await route.abort('failed');
+  },{times:1});
+  await comment.getByRole('button',{name:'Save comment changes',exact:true}).click();
+  await expect(comment.getByRole('alert')).toContainText('Saving was not confirmed');
+  await expect(text).toHaveValue('A committed but unconfirmed reply.');
+  await expect(comment.locator(':scope > div > p')).toHaveText('A newer saved reply.');
+  assert.equal((await db.prepare('SELECT revision FROM community_comment_revisions WHERE comment_id=?').get(id))?.revision,3);
+  assert.equal(f.mutations.filter(path=>path==='/api/comments/owned').length,3);
+  await comment.getByRole('button',{name:'Check saved version',exact:true}).click();
+  await expect(comment.getByRole('heading',{name:'Current saved version',exact:true})).toBeVisible();
+  await expect(text).toHaveValue('A committed but unconfirmed reply.');
+  await comment.getByRole('button',{name:'Replace my draft with saved version',exact:true}).click();
+  await expect(comment.locator(':scope > div > p')).toHaveText('A committed but unconfirmed reply.');
+  await expect(comment.getByRole('button',{name:/Delete/})).toHaveCount(0);
+  await text.fill('x'.repeat(3000));await comment.getByRole('button',{name:'Save comment changes',exact:true}).click();
+  await expect(comment.locator(':scope > div > p')).toHaveText('x'.repeat(3000));
+  await page.setViewportSize({width:390,height:844});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
+  await expect(page.getByRole('dialog')).toHaveCount(0);assert.equal(f.documents.length,1);
+});
+
+test('superseded comment-owner reads cannot publish into another discussion or expose editing to a different account',async t=>{
+  const f=await fixture(t),{page}=f,db=localConnection(f.directory);t.after(()=>db.close());
+  const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);
+  const owner=(await login.json()).user.id;
+  for(const id of ['first-comment-page','second-comment-page']){
+    await db.prepare('INSERT INTO posts VALUES(?,?,?,?,?,?,?,?,?,?,?,0)').run(id,'questions',`Original ${id}`,'A complete original local question for this discussion.','Fixture Company','system-design','Senior','Global','Anonymous',owner,'2026-01-01T00:00:00.000Z');
+    await db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run(id,`post/${id}`,owner,'Synthetic commenter',`Original comment for ${id}.`,'2026-01-01T00:00:00.000Z',null);
+  }
+  let entered!:()=>void,release!:()=>void;
+  const waiting=new Promise<void>(resolve=>{entered=resolve;}),gate=new Promise<void>(resolve=>{release=resolve;});
+  await page.route('**/api/comments/owned?*',async route=>{
+    if(new URL(route.request().url()).searchParams.get('id')!=='first-comment-page'){await route.continue();return;}
+    const response=await route.fetch();entered();await gate;await route.fulfill({response});
+  });
+  await page.goto(`${f.url}${communityPostPath({kind:'questions',id:'first-comment-page'})}`);
+  try{
+    await page.getByRole('button',{name:'Edit my comment',exact:true}).click();await waiting;
+    await page.evaluate(route=>{history.pushState(null,'',route);window.dispatchEvent(new PopStateEvent('popstate'));},communityPostPath({kind:'questions',id:'second-comment-page'}));
+    await expect(page.locator('.community-detail h1')).toHaveText('Original second-comment-page');release();
+    await page.getByRole('button',{name:'Edit my comment',exact:true}).click();
+    await expect(page.getByLabel('Edit comment text')).toHaveValue('Original comment for second-comment-page.');
+    const stranger=await page.request.post(`${f.url}/api/auth/signup`,{data:{name:'A different commenter',email:`comment-${Date.now()}@example.invalid`,password:'fixture-password-123'}});assert.equal(stranger.status(),200);
+    await page.reload();await expect(page.getByText('Original comment for second-comment-page.',{exact:true})).toBeVisible();
+    await expect(page.getByRole('button',{name:'Edit my comment',exact:true})).toHaveCount(0);
+    await expect(page.getByLabel('Edit comment text')).toHaveCount(0);
+  }finally{release();}
+});
+
 test('lost owner edit and deletion responses preserve drafts without replay or claiming an unconfirmed outcome',async t=>{
   const f=await fixture(t),{page}=f,db=localConnection(f.directory);t.after(()=>db.close());
   const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);

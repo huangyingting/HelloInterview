@@ -7,8 +7,10 @@ read-only, including the new owner APIs. Illustrative examples are immutable.
 
 ## Deployment and storage
 
-Apply controlled **migration 22 and maintained queue migration** before starting
-this release. Migrations 1-21 retain their published names, SQL and checksums.
+Migration 22 introduced this checkpoint; the current release requires
+**migration 23 and maintained queue migration**, including
+[owned comment editing](32-owned-comment-editing.md), before starting.
+Migrations 1-22 retain their published names, SQL and checksums.
 PostgreSQL startup still checks the exact release history; it does not migrate
 on request or silently accept an older schema. Quiesce incompatible application
 versions before migration and promote the matching compiled release. An older
@@ -174,7 +176,9 @@ performance SLA evidence. Verify the actual downloadable archive, including
 its hidden manifest and all referenced assets, as in
 [runbook 28](28-deferred-screen-delivery.md).
 
-Remaining W11 work includes owner-managed comments, ordered/durable write
+Local author comment text editing is now implemented in
+[runbook 32](32-owned-comment-editing.md). Remaining W11 work includes comment
+deletion/reply-retention policy, ordered/durable write
 intents and unknown-outcome receipts, rules/consent, reporting/review/appeals,
 staff permission/audit, anti-abuse controls and consistently enforced
 publication/moderation state. Managed writing remains denied until these

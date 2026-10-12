@@ -159,6 +159,10 @@ test('managed browser reads bounded private-safe community pages, independent de
   await expect(page.getByRole('button',{name:'0 local reports',exact:true})).toBeDisabled();
   await expect(page.getByLabel('Add a comment')).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Manage your post',exact:true})).toHaveCount(0);
+  await f.db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run('managed-owner-comment',`post/${firstId}`,owner,'Synthetic managed commenter','An owned managed comment must stay read-only.','2026-01-01T00:00:00.000Z',null);
+  await page.reload();
+  await expect(page.getByText('An owned managed comment must stay read-only.',{exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Edit my comment',exact:true})).toHaveCount(0);
   const detail=await page.evaluate(async id=>(await fetch(`/api/community/post?${new URLSearchParams({kind:'questions',id})}`)).json(),firstId);
   assert.equal(detail.isMine,true);assert.equal(detail.author,'Anonymous');assert.ok(!JSON.stringify(detail).includes(owner));assert.ok(!Object.hasOwn(detail,'authorId'));
   await page.goto(`${f.origin}/search?q=body-only-community-needle`);

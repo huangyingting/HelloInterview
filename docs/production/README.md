@@ -61,6 +61,7 @@ service with defined recovery and support commitments.
 | [29 - Keyboard screen navigation](29-keyboard-screen-navigation.md) | Non-disruptive ready-screen focus, skip target, hidden/dismissible mobile navigation and reliable rapid Search/URL behavior; no complete accessibility approval | Frontend and accessibility |
 | [30 - Opaque community addresses](30-opaque-community-addresses.md) | Exact legacy-ID browser/API roundtrips, actor-scoped local desired states, exact post discussions and explicit malformed-address recovery; no managed-writing or historic-data repair approval | Community and frontend |
 | [31 - Owned community contributions](31-owned-community-contributions.md) | Private local owner snapshots, revision/current-session-fenced original-post editing and exact thread deletion, explicit draft/lost-response recovery and migration 22; no managed-writing, immutable history or privacy-deletion approval | Community and full-stack |
+| [32 - Owned comment editing](32-owned-comment-editing.md) | Private author-only local text editing, viewer-derived ownership, parent/comment lock ordering, shared draft/conflict recovery and migration 23; no comment-deletion, managed-writing or retention approval | Community and full-stack |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to

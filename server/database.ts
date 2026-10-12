@@ -8,6 +8,7 @@ export function openDatabase(dataDir: string): DatabaseSync {
   const db = new DatabaseSync(path.join(dataDir, 'studio.sqlite'));
   try {
     const hasCommunityRevisions = !!db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name='community_post_revisions'").get();
+    const hasCommentRevisions = !!db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name='community_comment_revisions'").get();
     db.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA foreign_keys = ON;
@@ -53,6 +54,18 @@ export function openDatabase(dataDir: string): DatabaseSync {
         id TEXT PRIMARY KEY, resource TEXT NOT NULL, user_id TEXT NOT NULL,
         author TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL, parent_id TEXT
       );
+      CREATE TABLE IF NOT EXISTS community_comment_revisions (
+        comment_id TEXT PRIMARY KEY NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
+        revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0 AND revision <= 2147483647)
+      );
+      CREATE TRIGGER IF NOT EXISTS initialize_community_comment_revision AFTER INSERT ON comments
+        BEGIN INSERT INTO community_comment_revisions(comment_id) VALUES(NEW.id); END;
+      CREATE TRIGGER IF NOT EXISTS advance_community_comment_revision AFTER UPDATE ON comments
+        BEGIN
+          SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM community_comment_revisions WHERE comment_id=NEW.id)
+            THEN RAISE(ABORT,'Missing community comment revision.') END;
+          UPDATE community_comment_revisions SET revision=revision+1 WHERE comment_id=NEW.id;
+        END;
       CREATE TABLE IF NOT EXISTS support (
         id TEXT PRIMARY KEY, user_id TEXT, email TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL
       );
@@ -77,6 +90,9 @@ export function openDatabase(dataDir: string): DatabaseSync {
     if (!hasCommunityRevisions) db.exec('INSERT OR IGNORE INTO community_post_revisions(post_id) SELECT id FROM posts');
     if (db.prepare('SELECT p.id FROM posts p LEFT JOIN community_post_revisions r ON r.post_id=p.id WHERE r.post_id IS NULL LIMIT 1').get())
       throw new Error('Community post revision data is incomplete. Restore or reconcile the database before starting.');
+    if (!hasCommentRevisions) db.exec('INSERT OR IGNORE INTO community_comment_revisions(comment_id) SELECT id FROM comments');
+    if (db.prepare('SELECT c.id FROM comments c LEFT JOIN community_comment_revisions r ON r.comment_id=c.id WHERE r.comment_id IS NULL LIMIT 1').get())
+      throw new Error('Community comment revision data is incomplete. Restore or reconcile the database before starting.');
     if (!db.prepare('SELECT id FROM posts LIMIT 1').get()) {
       const samples: [CommunityKind, string, string, string, string][] = [
         ['questions', 'Design a collaborative reading list', 'Practice prompt: a team saves articles, organizes them into lists, and sees updates across devices. Discuss sharing, pagination, and offline changes.', 'Meta', 'system-design'],

@@ -82,6 +82,10 @@ test('opaque community detail stays a private-safe public read for inactive view
   }
   assert.equal((await active.browser.request(`/api/posts/owned?${new URLSearchParams({id})}`)).status,503);
   assert.equal((await pending.request(`/api/posts/owned?${new URLSearchParams({id})}`)).status,403);
+  assert.equal((await active.browser.request(`/api/comments/owned?${new URLSearchParams({id})}`)).status,503);
+  assert.equal((await pending.request(`/api/comments/owned?${new URLSearchParams({id})}`)).status,403);
+  assert.equal((await active.browser.request('/api/comments/owned',{id,revision:0,body:'Managed comment editing remains disabled.'},'PUT')).status,503);
+  assert.equal((await pending.request('/api/comments/owned',{id,revision:0,body:'Managed comment editing remains disabled.'},'PUT')).status,403);
   for(const method of ['PUT','DELETE']){
     const response=await active.browser.request('/api/posts/owned',{id,revision:0,title:'Managed changes remain denied',body:'Managed writing has not been approved for this release.'},method);
     assert.equal(response.status,503,`${method}: ${await response.text()}`);

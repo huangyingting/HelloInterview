@@ -710,6 +710,28 @@ export const migrations = [{
     CREATE TRIGGER maintain_community_post_revision AFTER INSERT OR UPDATE ON posts
       FOR EACH ROW EXECUTE FUNCTION maintain_community_post_revision();
   `,
+}, {
+  version: 23,
+  name: 'owned-community-comment-revisions',
+  sql: `
+    CREATE TABLE community_comment_revisions (
+      comment_id TEXT PRIMARY KEY REFERENCES comments(id) ON DELETE CASCADE,
+      revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0)
+    );
+    INSERT INTO community_comment_revisions(comment_id) SELECT id FROM comments;
+    CREATE FUNCTION maintain_community_comment_revision() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+      BEGIN
+        IF TG_OP='INSERT' THEN INSERT INTO community_comment_revisions(comment_id) VALUES(NEW.id);
+        ELSE
+          UPDATE community_comment_revisions SET revision=revision+1 WHERE comment_id=NEW.id;
+          IF NOT FOUND THEN RAISE EXCEPTION 'Missing community comment revision.'; END IF;
+        END IF;
+        RETURN NEW;
+      END;
+    $$;
+    CREATE TRIGGER maintain_community_comment_revision AFTER INSERT OR UPDATE ON comments
+      FOR EACH ROW EXECUTE FUNCTION maintain_community_comment_revision();
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

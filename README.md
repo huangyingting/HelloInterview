@@ -203,7 +203,12 @@ adds local original-post editing/deletion with current-session ownership,
 revision conflicts, exact discussion removal and explicit in-page draft/
 lost-response recovery. Illustrative examples remain immutable; managed
 owner management is still disabled.
-Controlled PostgreSQL deployments must apply **migration 22 and maintained queue
+The [owned-comment checkpoint](docs/production/32-owned-comment-editing.md)
+adds author-only local text editing, private version snapshots and server-derived
+ownership without account IDs. Its shared in-page editor preserves drafts
+through conflicts, lost responses, closing and filtering. Comment deletion and
+managed discussion writing remain disabled.
+Controlled PostgreSQL deployments must apply **migration 23 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 

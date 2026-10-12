@@ -181,8 +181,10 @@ hidden manifest and referenced assets as required by
 
 Local original-post editing/deletion now uses the private revision-fenced
 protocol in [runbook 31](31-owned-community-contributions.md), requiring migration
-22; immutable examples and managed-writing denial remain.
-Owner-managed comments, durable/ordered write intents, abuse controls,
+22, and local author comment text edits follow
+[runbook 32](32-owned-comment-editing.md), requiring migration 23; immutable
+examples and managed-writing denial remain.
+Comment deletion/reply-retention policy, durable/ordered write intents, abuse controls,
 moderation/reports/appeals, operated publication, historic comment repair,
 full accessibility/device/IME assessment and deployment/recovery evidence
 remain open. Real providers, customer migration and public launch still require

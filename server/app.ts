@@ -213,7 +213,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     app.use('/api', async (req, res, next) => {
       if (!['GET', 'HEAD'].includes(req.method)) await identity.checkMutation(req);
       const user = await identity.user(req);
-      const publicRead = ['GET', 'HEAD'].includes(req.method) && !/^\/api\/posts\/owned\/?$/.test(req.originalUrl.split('?')[0]) && ['/api/content/', ...communityPaths].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix));
+      const publicRead = ['GET', 'HEAD'].includes(req.method) && !/^\/api\/(?:posts|comments)\/owned\/?$/.test(req.originalUrl.split('?')[0]) && ['/api/content/', ...communityPaths].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix));
       const accountRoute = ['/api/bootstrap', '/api/entitlements', '/api/logout', '/api/support', '/api/support/requests', '/api/profile', '/api/ready'].includes(req.originalUrl.split('?')[0]) || req.originalUrl.startsWith('/api/identity/');
       if (user?.identity?.status !== undefined && user.identity.status !== 'active' && !publicRead && !accountRoute) throw new HttpError(403, 'This account needs verified contact information or account review. Open Account or contact support.');
       if (['/api/auth/', '/api/plan', '/api/gift', '/api/profile/password'].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix))) throw new HttpError(404, 'Local authentication, demo commerce and local passwords are disabled for managed identity.');
@@ -951,7 +951,16 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   });
   app.get('/api/comments', async (req, res) => {
     const resource = commentResource(req.query.resource);
-    res.json((await db.prepare('SELECT id,resource,author,body,created_at AS "createdAt",parent_id AS "parentId" FROM comments WHERE resource=? ORDER BY created_at ASC LIMIT 500').all(resource)));
+    const user = await currentUser(req);
+    res.json(await contributions.comments(resource,user?.id ?? null));
+  });
+  app.get('/api/comments/owned', async (req, res) => {
+    const user = await requireLocalContributor(req);
+    res.json(await contributions.readComment(req.query,user.id,() => assertLocalCommunitySession(req,user)));
+  });
+  app.put('/api/comments/owned', async (req, res) => {
+    const user = await requireLocalContributor(req);
+    res.json(await contributions.updateComment(req.body,user.id,() => assertLocalCommunitySession(req,user)));
   });
   app.post('/api/comments', async (req, res) => {
     const user = (await requireUser(req)), body = record(req.body);

@@ -345,7 +345,9 @@ export interface Comment {
   body: string;
   createdAt: string;
   parentId: string | null;
+  isMine: boolean;
 }
+export interface OwnedCommunityComment { comment: Comment; revision: number }
 export interface Bootstrap {
   csrf?: string;
   user: User | null;

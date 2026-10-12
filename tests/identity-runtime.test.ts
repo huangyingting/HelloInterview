@@ -124,6 +124,8 @@ test('runtime-only release retains identity after restart and operates canonical
   assert.equal((await browser.request(`/api/posts/owned?${new URLSearchParams({id:communityPost})}`)).status,503);
   assert.equal((await browser.request('/api/posts/owned',{id:communityPost,revision:0,title:'Compiled writes remain denied',body:'The compiled managed release must preserve the read-only boundary.'},'PUT')).status,503);
   assert.equal((await browser.request('/api/posts/owned',{id:communityPost,revision:0},'DELETE')).status,503);
+  assert.equal((await browser.request(`/api/comments/owned?${new URLSearchParams({id:communityPost})}`)).status,503);
+  assert.equal((await browser.request('/api/comments/owned',{id:communityPost,revision:0,body:'Compiled managed comment editing remains disabled.'},'PUT')).status,503);
   await entitlements.revoke(grant.owner, grant.source, grant.evidence);
   assert.equal((await browser.request('/api/content/lessons/system-design/replication')).status, 403);
   assert.equal((await f.db.prepare("SELECT attempts FROM identity_abuse_buckets WHERE scope='network'").get())?.attempts, 2);

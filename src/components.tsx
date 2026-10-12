@@ -1,5 +1,5 @@
 import { Bookmark, Check, MessageSquare, Send, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { request, useStudio } from './store';
 import type { Comment, ContentSection, SourceReference, UserState } from '../shared/types';
 import { contentResearchDate, contentSources } from '../shared/content/sources';
@@ -34,20 +34,31 @@ export function BookmarkButton({ resource }: { resource: string }) {
   const saved = data.state.bookmarks.includes(resource);
   return <button className={`icon-button ${saved ? 'active' : ''}`} aria-label={saved ? 'Remove bookmark' : 'Bookmark lesson'} aria-pressed={saved} disabled={pending} onClick={() => act(async () => setState(await request<UserState>('/api/progress', { key: resource, field: 'bookmarks', enabled: !saved })))}><Bookmark size={19} fill={saved ? 'currentColor' : 'none'} /></button>;
 }
+const CommentOwner = lazy(() => import('./pages/CommunityOwner').then(module => ({ default: module.CommentOwner })));
+function CommentTools({ comment, onSaved }: { comment: Comment; onSaved: (comment: Comment) => void }) {
+  const [editing, setEditing] = useState(false);
+  return editing ? <Suspense fallback={<p role="status">Loading your comment editor...</p>}><CommentOwner comment={comment} onSaved={onSaved} /></Suspense>
+    : <button className="text-button" onClick={() => setEditing(true)}>Edit my comment</button>;
+}
 export function Comments({ resource }: { resource: string }) {
   const { data, act, notify, pending } = useStudio();
-  const [comments, setComments] = useState<Comment[]>([]), [body, setBody] = useState(''), [filter, setFilter] = useState(''), [reply, setReply] = useState<Comment | null>(null);
-  const [error, setError] = useState('');
+  const scope = JSON.stringify([data.user?.id ?? null,resource]);
+  const [loaded, setLoaded] = useState<{ scope: string; comments?: Comment[]; error?: string }>(), [body, setBody] = useState(''), [filter, setFilter] = useState(''), [reply, setReply] = useState<Comment | null>(null);
+  const comments = loaded?.scope === scope ? loaded.comments ?? [] : [];
+  const error = loaded?.scope === scope ? loaded.error ?? '' : '';
+  const reading = loaded?.scope !== scope || !loaded?.comments && !error;
+  const setComments = (value: Comment[]) => setLoaded(current => current?.scope === scope ? { scope, comments: value } : current);
   useEffect(() => {
-    let alive = true;
-    setComments([]); setError('');
-    request<Comment[]>(`/api/comments?resource=${encodeURIComponent(resource)}`).then(value => { if (alive) setComments(value); }).catch(err => { if (alive) setError(err.message); });
-    return () => { alive = false; };
-  }, [resource]);
+    const controller = new AbortController();
+    setLoaded({scope}); setBody(''); setReply(null); setFilter('');
+    request<Comment[]>(`/api/comments?resource=${encodeURIComponent(resource)}`,undefined,'GET',controller.signal).then(value => { if (!controller.signal.aborted) setComments(value); }).catch(err => { if (!controller.signal.aborted) setLoaded(current => current?.scope === scope ? {scope,error:err.message} : current); });
+    return () => controller.abort();
+  }, [scope]);
   return <section className="comments" id="comments"><div className="section-heading"><h2><MessageSquare size={20} /> Discussion <span className="muted">{comments.length}</span></h2>{comments.length > 3 && <input aria-label="Search comments" placeholder="Search comments" value={filter} onChange={e => setFilter(e.target.value)} />}</div>
     {error && <p role="alert" className="error-text">{error}</p>}
-    {data.capabilities.community==='read-only' ? <p className="local-notice">Discussion is read-only until production moderation is enabled.</p> : data.user ? <form onSubmit={e => { e.preventDefault(); void act(async () => { await request('/api/comments', { resource, body, parentId: reply?.id }); setComments(await request<Comment[]>(`/api/comments?resource=${encodeURIComponent(resource)}`)); setBody(''); setReply(null); notify('Comment added to the local discussion.'); }); }}>{reply && <div className="reply-label">Replying to {reply.author}<button type="button" className="icon-button" aria-label="Cancel reply" onClick={() => setReply(null)}><X size={14} /></button></div>}<textarea aria-label="Add a comment" placeholder="Share a question or an insight…" minLength={2} maxLength={3000} required value={body} onChange={e => setBody(e.target.value)} /><button className="button small" disabled={pending}><Send size={15} /> Post comment</button></form> : <AuthPrompt message="Sign in to join this local discussion." />}
-    {comments.filter(c => `${c.author} ${c.body}`.toLowerCase().includes(filter.toLowerCase())).map(comment => <article className={`comment ${comment.parentId ? 'reply' : ''}`} key={comment.id}><span className="avatar small">{comment.author[0]}</span><div><strong>{comment.author}</strong><time>{new Date(comment.createdAt).toLocaleDateString()}</time><p>{comment.body}</p>{data.capabilities.community!=='read-only'&&<button className="text-button" onClick={() => setReply(comment)}>Reply</button>}</div></article>)}
-    {!comments.length && !error && <p className="muted">Start a thoughtful conversation. No comments yet.</p>}
+    {reading && <p role="status">Loading the discussion...</p>}
+    {data.capabilities.community==='read-only' ? <p className="local-notice">Discussion is read-only until production moderation is enabled.</p> : data.user ? <form onSubmit={e => { e.preventDefault(); void act(async () => { await request('/api/comments', { resource, body, parentId: reply?.id }); setComments(await request<Comment[]>(`/api/comments?resource=${encodeURIComponent(resource)}`)); setBody(''); setReply(null); notify('Comment added to the local discussion.'); }); }}>{reply && <div className="reply-label">Replying to {reply.author}<button type="button" className="icon-button" aria-label="Cancel reply" onClick={() => setReply(null)}><X size={14} /></button></div>}<textarea aria-label="Add a comment" placeholder="Share a question or an insight…" minLength={2} maxLength={3000} required value={body} onChange={e => setBody(e.target.value)} /><button className="button small" disabled={pending||reading}><Send size={15} /> Post comment</button></form> : <AuthPrompt message="Sign in to join this local discussion." />}
+    {comments.map(comment => <article className={`comment ${comment.parentId ? 'reply' : ''}`} hidden={!`${comment.author} ${comment.body}`.toLowerCase().includes(filter.toLowerCase())} key={`${scope}:${comment.id}`}><span className="avatar small">{comment.author[0]}</span><div><strong>{comment.author}</strong><time>{new Date(comment.createdAt).toLocaleDateString()}</time><p>{comment.body}</p>{data.capabilities.community!=='read-only'&&<button className="text-button" onClick={() => setReply(comment)}>Reply</button>}{data.user&&comment.isMine&&data.capabilities.community!=='read-only'&&<CommentTools comment={comment} onSaved={saved=>setLoaded(current=>current?.scope===scope&&current.comments?{scope,comments:current.comments.map(row=>row.id===saved.id?saved:row)}:current)}/>}</div></article>)}
+    {!reading && !comments.length && !error && <p className="muted">Start a thoughtful conversation. No comments yet.</p>}
   </section>;
 }

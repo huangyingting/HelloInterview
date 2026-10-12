@@ -8,8 +8,9 @@ moderation is enabled by a separate reviewed implementation.
 ## Deployment and compatibility
 
 Migration 21 introduced this read checkpoint; the current release requires
-**migration 22 and maintained queue migration**, including the
-[local owner-contribution protocol](31-owned-community-contributions.md), before
+**migration 23 and maintained queue migration**, including the
+[local owner-contribution protocol](31-owned-community-contributions.md) and
+[owned comment editing](32-owned-comment-editing.md), before
 starting this release:
 
 ```sh
@@ -178,7 +179,7 @@ Local original-post revision-fenced owner editing/deletion is now implemented
 in [runbook 31](31-owned-community-contributions.md); actor-scoped desired-state
 votes/follows are implemented in [runbook 30](30-opaque-community-addresses.md).
 Still required before public writing: approved rules, staffed moderation,
-owner-managed comments, ordered/durable mutation receipts, reports/review/appeals,
+comment deletion/reply-retention policy, ordered/durable mutation receipts, reports/review/appeals,
 notifications and audited staff permissions, anti-abuse controls and truthful
 production recognition accounting. Publication/access/moderation
 state must be integrated consistently into every reader when those states are

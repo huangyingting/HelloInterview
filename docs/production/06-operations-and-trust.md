@@ -61,7 +61,15 @@ deletion and serialized post-comment admission are available. The
 [owner runbook](31-owned-community-contributions.md) records migration 22 and
 in-page conflict/lost-response recovery without replay. Examples remain
 immutable and managed owner management stays denied; this is not immutable
-history, moderation operation, owner-managed comments or account/privacy deletion.
+history, moderation operation, comment deletion or account/privacy deletion.
+
+**Implemented local comment-editing checkpoint (W11):** server-derived viewer
+ownership, private current-session/CAS snapshots and text-only author edits
+share the in-page post editor without loading it into cold initial screens.
+The [comment runbook](32-owned-comment-editing.md) records migration 23,
+parent-before-comment lock ordering, conflict/lost-response and close/filter
+draft preservation. Comment deletion/reply retention, managed writing,
+moderation operation and comprehensive privacy workflows remain separate gates.
 
 ## Operating model
 
@@ -144,7 +152,9 @@ unmoderated public writing as-is. If moderation is not staffed, ship read-only
 editorial content and disable write APIs.
 Local original-post owner editing/deletion now follows the
 [revision-fenced owner protocol](31-owned-community-contributions.md).
-Public/managed writes and comment owner management remain separate work; local
+Local author comment text edits now follow
+[runbook 32](32-owned-comment-editing.md). Public/managed writes and comment
+deletion/reply-retention policy remain separate work; local
 deletion is not the comprehensive privacy-erasure coordinator.
 
 Launch requirements:
