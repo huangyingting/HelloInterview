@@ -12,7 +12,7 @@ import type { StripeEvidence } from './provider';
 import { observationSchema, providerId } from './schema';
 import { assertSandboxAccessConfiguration, SandboxBillingAccess } from './service';
 import { serviceEvidenceSchema } from './service-policy';
-import { sandboxRenewalAuthority } from '../../shared/billing-ledger';
+import { sandboxResumptionAuthority, sandboxRenewalAuthority, sandboxRenewalCycleAuthority } from '../../shared/billing-ledger';
 
 const pending = ['created', 'active', 'retry'];
 const timestamp = (value: number | null) => value === null ? null : new Date(value * 1000).toISOString();
@@ -236,8 +236,12 @@ export class SandboxBillingLedger {
     const state = ledgerStateSchema.parse(row);
     const snapshot = state.snapshot ? ledgerSnapshotSchema.parse(JSON.parse(state.snapshot)) : null;
     const subscriptions = await this.db.prepare(`SELECT s.id,s.payload,c.id AS cancellation_id,c.policy_version,c.state AS cancellation_state,
-      c.operation_id AS cancellation_operation,c.confirmed_at,c.result AS cancellation_result FROM stripe_owned_subscription_ledger s
-      LEFT JOIN stripe_subscription_cancellations c ON c.subscription_ref=s.id AND c.customer_ref=s.customer_ref
+      c.operation_id AS cancellation_operation,c.confirmed_at,c.result AS cancellation_result,c.cycle,c.previous_resumption_id,
+      r.id AS resumption_id,r.policy_version AS resumption_policy,r.state AS resumption_state,r.operation_id AS resumption_operation,
+      r.confirmed_at AS resumption_confirmed_at,r.result AS resumption_result FROM stripe_owned_subscription_ledger s
+      LEFT JOIN LATERAL (SELECT * FROM stripe_subscription_cancellations c WHERE c.subscription_ref=s.id AND c.customer_ref=s.customer_ref
+        ORDER BY c.cycle DESC LIMIT 1) c ON true
+      LEFT JOIN stripe_subscription_resumptions r ON r.cancellation_id=c.id AND r.customer_ref=s.customer_ref AND r.subscription_ref=s.id
       WHERE s.customer_ref=? ORDER BY s.revision DESC,s.id LIMIT 21`).all(customer.id);
     const invoices = await this.db.prepare(`SELECT i.id,i.payload,s.payload AS service FROM stripe_owned_invoice_ledger i
       LEFT JOIN stripe_invoice_service_evidence s ON s.account_id=i.account_id AND s.invoice_id=i.invoice_id AND s.customer_ref=i.customer_ref
@@ -253,11 +257,18 @@ export class SandboxBillingLedger {
         const sub = subscriptionFactSchema.parse(JSON.parse(z.string().parse(row.payload)));
         return { id: z.uuid().parse(row.id), status: sub.status, nonrenewing: sub.cancelAtPeriodEnd,
           currentPeriodEnd: sub.items.length === 1 ? timestamp(sub.items[0].periodEnd) : null,
-          cancellation: row.cancellation_id ? { id: z.uuid().parse(row.cancellation_id), policy: z.literal(sandboxRenewalAuthority).parse(row.policy_version),
+          cancellation: row.cancellation_id ? { id: z.uuid().parse(row.cancellation_id), policy: z.enum([sandboxRenewalAuthority, sandboxRenewalCycleAuthority]).parse(row.policy_version),
+            cycle: z.coerce.number().int().nonnegative().safe().parse(row.cycle),
+            previousResumptionId: z.uuid().nullable().parse(row.previous_resumption_id),
             state: z.enum(['queued', 'confirmed']).parse(row.cancellation_state),
             processing: (await this.jobs.ownedStatus(z.uuid().parse(customer.user_id), z.uuid().parse(row.cancellation_operation))).status,
             confirmedAt: row.confirmed_at === null ? null : z.date().parse(row.confirmed_at).toISOString(),
-            result: z.enum(['nonrenewing', 'ended']).nullable().parse(row.cancellation_result) } : null };
+            result: z.enum(['nonrenewing', 'ended']).nullable().parse(row.cancellation_result),
+            resumption: row.resumption_id ? { id: z.uuid().parse(row.resumption_id), policy: z.literal(sandboxResumptionAuthority).parse(row.resumption_policy),
+              state: z.enum(['queued', 'confirmed']).parse(row.resumption_state),
+              processing: (await this.jobs.ownedStatus(z.uuid().parse(customer.user_id), z.uuid().parse(row.resumption_operation))).status,
+              confirmedAt: row.resumption_confirmed_at === null ? null : z.date().parse(row.resumption_confirmed_at).toISOString(),
+              result: z.literal('renewing').nullable().parse(row.resumption_result) } : null } : null };
       })),
       invoices: invoices.slice(0, 20).map(row => {
         const invoice = invoiceFactSchema.parse(JSON.parse(z.string().parse(row.payload)));

@@ -153,9 +153,13 @@ work. The default-off
 adds fresh owned hosted card-method updates and invoice history, without
 subscription/profile/login-page changes or payment/access authority. It audits
 preparation without retaining bearer URLs and explicitly handles unknown
-openings and already delivered links. Resumption, paid deletion, authentic
-provider recovery and live commerce remain unavailable.
-Controlled PostgreSQL deployments must apply **migration 14 and maintained queue
+openings and already delivered links. The
+[owned renewal-cycle checkpoint](docs/production/21-owned-sandbox-renewal-cycles.md)
+adds acknowledged same-offer sandbox resumption and immutable repeat stop/resume
+cycles with exact predecessor tokens, so stale retries cannot affect later
+cycles. This changes no paid interval or funding. Ended-subscription recheckout,
+paid deletion, authentic provider recovery and live commerce remain unavailable.
+Controlled PostgreSQL deployments must apply **migration 15 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 

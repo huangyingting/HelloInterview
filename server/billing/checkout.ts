@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { SandboxBillingView } from '../../shared/billing';
 import type { BillingConfig } from '../config';
-import type { Database } from '../db/connection';
+import type { Database, DatabaseRow } from '../db/connection';
 import { HttpError } from '../http-error';
 import { DurableJobs, TerminalJobFailure, type JobClaim, type Operation } from '../jobs';
 import { bindBillingReference } from './reference';
@@ -10,15 +10,17 @@ import { checkoutOperationSchema, checkoutRequestSchema, checkoutRowSchema, cust
 import type { StripeEvidence } from './provider';
 import { encodePayload } from '../jobs/schema';
 import type { SandboxBillingLedger } from './ledger';
-import { ledgerStateSchema, subscriptionFactSchema } from './ledger-schema';
-import { cancellationOperationSchema, cancellationRowSchema, type CancellationRow } from './cancellation-schema';
-import { sandboxRenewalAuthority } from '../../shared/billing-ledger';
+import { invoiceFactSchema, ledgerSnapshotSchema, ledgerStateSchema, subscriptionFactSchema } from './ledger-schema';
+import { cancellationOperationSchema, cancellationRequestSchema, cancellationRowSchema, type CancellationRequest, type CancellationRow } from './cancellation-schema';
+import { resumptionOperationSchema, resumptionRequestSchema, resumptionRowSchema, type ResumptionRequest, type ResumptionRow } from './resumption-schema';
+import { sandboxResumptionAuthority, sandboxRenewalAuthority, sandboxRenewalCycleAuthority } from '../../shared/billing-ledger';
 import { assertSandboxAccessConfiguration } from './service';
 import { assertSandboxOwner, ownedSandboxCustomer } from './ownership';
+import { evaluateSandboxService } from './service-policy';
 
 const clock = 'floor(extract(epoch from clock_timestamp())*1000)::bigint';
 const postWindowMs = 20 * 3600000, checkoutMarginMs = 31 * 60000;
-export const checkoutJobKinds = ['billing.customer', 'billing.checkout', 'billing.checkout.refresh', 'billing.subscription.cancel'] as const;
+export const checkoutJobKinds = ['billing.customer', 'billing.checkout', 'billing.checkout.refresh', 'billing.subscription.cancel', 'billing.subscription.resume'] as const;
 export class SandboxCheckout {
   constructor(private readonly db: Database, private readonly settings: BillingConfig, private readonly origin: string,
     private readonly jobs: DurableJobs, private readonly provider: StripeEvidence, private readonly ledger: SandboxBillingLedger) {}
@@ -124,20 +126,44 @@ export class SandboxCheckout {
       return { accepted: true };
     });
   }
-  private cancellationIntent(row: Pick<CancellationRow, 'id' | 'customer_ref' | 'subscription_ref' | 'attempt_id' | 'auth_epoch'>, subscriptionId: string, priceId: string) {
-    return { policy: sandboxRenewalAuthority, id: row.id, customerRef: row.customer_ref, subscriptionRef: row.subscription_ref,
+  private cancellationIntent(row: Pick<CancellationRow, 'id' | 'customer_ref' | 'subscription_ref' | 'attempt_id' | 'auth_epoch' | 'cycle' | 'previous_resumption_id'>,
+    subscriptionId: string, priceId: string) {
+    const common = { id: row.id, customerRef: row.customer_ref, subscriptionRef: row.subscription_ref,
       subscriptionId, attemptId: row.attempt_id, priceId, authEpoch: row.auth_epoch };
+    return row.cycle === 0 ? { ...common, policy: sandboxRenewalAuthority } :
+      { ...common, policy: sandboxRenewalCycleAuthority, cycle: row.cycle, previousResumptionId: z.uuid().parse(row.previous_resumption_id) };
   }
-  async cancelRenewal(owner: string, id: string) {
+  private async renewalAdmission(owner: string, id: string) {
+    const epoch = await this.owner(owner), customer = await this.customer(owner);
+    if (!customer || customer.state !== 'mapped') throw new HttpError(404, 'Owned sandbox subscription not found.');
+    await assertSandboxAccessConfiguration(this.db, this.settings);
+    const stateRow = await this.db.prepare('SELECT * FROM stripe_customer_ledger_state WHERE customer_ref=? FOR UPDATE').get(customer.id);
+    const subRow = await this.db.prepare('SELECT subscription_id,payload FROM stripe_owned_subscription_ledger WHERE id=? AND customer_ref=? AND account_id=? FOR UPDATE')
+      .get(z.uuid().parse(id), customer.id, this.settings.accountId);
+    if (!subRow) throw new HttpError(404, 'Owned sandbox subscription not found.');
+    return { epoch, customer, stateRow, subRow };
+  }
+  private async renewalObservation(stateRow: DatabaseRow | undefined, subRow: DatabaseRow) {
+    const state = stateRow ? ledgerStateSchema.parse(stateRow) : null, now = await this.now();
+    const age = state?.observed_at ? now - state.observed_at.getTime() : -1;
+    if (!state?.observed_at || state.requested_revision !== state.reconciled_revision || age < 0 || age >= 300000) {
+      throw new HttpError(409, 'Refresh the owned canonical ledger before changing sandbox renewal.');
+    }
+    const sub = subscriptionFactSchema.parse(JSON.parse(z.string().parse(subRow.payload)));
+    if (sub.id !== subRow.subscription_id || !sub.attemptId) throw new HttpError(409, 'This subscription lacks its owned completed Checkout correlation.');
+    return { sub, state, now };
+  }
+  private async latestCancellation(subscriptionRef: string) {
+    const row = await this.db.prepare('SELECT * FROM stripe_subscription_cancellations WHERE subscription_ref=? ORDER BY cycle DESC LIMIT 1 FOR UPDATE').get(subscriptionRef);
+    return row ? cancellationRowSchema.parse(row) : null;
+  }
+  async cancelRenewal(owner: string, id: string, input: CancellationRequest = {}) {
+    const request = cancellationRequestSchema.parse(input);
+    const predecessor = 'previousResumptionId' in request ? request.previousResumptionId : null;
     return this.db.transaction(async () => {
-      const epoch = await this.owner(owner), customer = await this.customer(owner);
-      if (!customer || customer.state !== 'mapped') throw new HttpError(404, 'Owned sandbox subscription not found.');
-      await assertSandboxAccessConfiguration(this.db, this.settings);
-      const stateRow = await this.db.prepare('SELECT * FROM stripe_customer_ledger_state WHERE customer_ref=? FOR UPDATE').get(customer.id);
-      const subRow = await this.db.prepare('SELECT subscription_id,payload FROM stripe_owned_subscription_ledger WHERE id=? AND customer_ref=? AND account_id=? FOR UPDATE')
-        .get(z.uuid().parse(id), customer.id, this.settings.accountId);
-      if (!subRow) throw new HttpError(404, 'Owned sandbox subscription not found.');
-      const previous = await this.db.prepare('SELECT * FROM stripe_subscription_cancellations WHERE subscription_ref=? FOR UPDATE').get(id);
+      const { epoch, customer, stateRow, subRow } = await this.renewalAdmission(owner, id);
+      const previous = await this.db.prepare(`SELECT * FROM stripe_subscription_cancellations WHERE subscription_ref=? AND
+        ${predecessor ? 'previous_resumption_id=?' : 'cycle=0'} FOR UPDATE`).get(id, ...(predecessor ? [predecessor] : []));
       const old = previous ? cancellationRowSchema.parse(previous) : null;
       if (old && old.customer_ref !== customer.id) throw new HttpError(409, 'Stored cancellation ownership conflicts; operator reconciliation is required.');
       if (old?.state === 'queued') {
@@ -147,28 +173,40 @@ export class SandboxCheckout {
         }
         return { id: old.id, accepted: true };
       }
-      const state = stateRow ? ledgerStateSchema.parse(stateRow) : null, now = await this.now();
-      if (!state?.observed_at || state.requested_revision !== state.reconciled_revision ||
-        now - state.observed_at.getTime() >= 300000) throw new HttpError(409, 'Refresh the owned canonical ledger before stopping sandbox renewal.');
-      const sub = subscriptionFactSchema.parse(JSON.parse(z.string().parse(subRow.payload)));
-      if (sub.id !== subRow.subscription_id || !sub.attemptId) throw new HttpError(409, 'This subscription lacks its owned completed Checkout correlation.');
+      if (old && await this.db.prepare("SELECT id FROM stripe_subscription_resumptions WHERE cancellation_id=? AND state='confirmed'").get(old.id)) {
+        return { id: old.id, accepted: true };
+      }
+      const { sub } = await this.renewalObservation(stateRow, subRow);
       if (old) {
         if (!sub.cancelAtPeriodEnd && !['canceled', 'incomplete_expired'].includes(sub.status)) {
-          throw new HttpError(409, 'The earlier cancellation differs from current provider state. Operator reconciliation is required; resumption is not implemented.');
+          throw new HttpError(409, 'The earlier cancellation differs from current provider state without a confirmed owned resumption. Operator reconciliation is required.');
         }
         return { id: old.id, accepted: true };
       }
-      const attempt = await this.attempt(customer, sub.attemptId);
+      const latest = await this.latestCancellation(id);
+      let cycle = 0;
+      if (predecessor) {
+        const row = await this.db.prepare('SELECT * FROM stripe_subscription_resumptions WHERE id=? AND customer_ref=? AND subscription_ref=? FOR UPDATE')
+          .get(predecessor, customer.id, id);
+        if (!row) throw new HttpError(404, 'Owned sandbox resumption not found.');
+        const resume = resumptionRowSchema.parse(row);
+        if (resume.state !== 'confirmed' || !latest || resume.cancellation_id !== latest.id || latest.attempt_id !== resume.attempt_id) {
+          throw new HttpError(409, 'Only the latest confirmed owned resumption can authorize the next cancellation cycle.');
+        }
+        cycle = z.number().int().positive().safe().parse(latest.cycle + 1);
+      } else if (latest) throw new HttpError(409, 'Use the exact owned predecessor for this cancellation cycle.');
+      const attempt = await this.attempt(customer, z.uuid().parse(sub.attemptId));
       if (attempt.state !== 'complete' || attempt.subscription_id !== sub.id) throw new HttpError(409, 'Refresh the owned completed Checkout before stopping renewal.');
-      const request = { id: randomUUID(), customer_ref: customer.id, subscription_ref: id, attempt_id: attempt.id, auth_epoch: epoch };
+      const intent = { id: randomUUID(), customer_ref: customer.id, subscription_ref: id, attempt_id: attempt.id, auth_epoch: epoch,
+        cycle, previous_resumption_id: predecessor };
+      const payload = this.cancellationIntent(intent, sub.id, attempt.price_id);
       const operation = await this.jobs.enqueue({ principal: { type: 'user', id: owner }, kind: 'billing.subscription.cancel',
-        key: `cancel:${request.id}`, resource: `sandbox-customer:${customer.id}`,
-        payload: this.cancellationIntent(request, sub.id, attempt.price_id), retryMode: 'idempotent' });
+        key: `cancel:${intent.id}`, resource: `sandbox-customer:${customer.id}`, payload, retryMode: 'idempotent' });
       await this.db.prepare(`INSERT INTO stripe_subscription_cancellations
-        (id,policy_version,customer_ref,subscription_ref,attempt_id,auth_epoch,operation_id,state) VALUES (?,?,?,?,?,?,?,'queued')`)
-        .run(request.id, sandboxRenewalAuthority, customer.id, id, attempt.id, epoch, operation.id);
+        (id,policy_version,customer_ref,subscription_ref,attempt_id,auth_epoch,operation_id,cycle,previous_resumption_id,state)
+        VALUES (?,?,?,?,?,?,?,?,?,'queued')`).run(intent.id, payload.policy, customer.id, id, attempt.id, epoch, operation.id, cycle, predecessor);
       await this.owner(owner, epoch);
-      return { id: request.id, accepted: true };
+      return { id: intent.id, accepted: true };
     });
   }
   private async cancellationContext(operation: Operation, expected: 'queued' | 'confirmed' = 'queued') {
@@ -180,10 +218,19 @@ export class SandboxCheckout {
       if (!customer || customer.state !== 'mapped' || !customer.customer_id || operation.resource !== `sandbox-customer:${customer.id}`) throw new TerminalJobFailure('not-eligible');
       await assertSandboxAccessConfiguration(this.db, this.settings);
       const row = cancellationRowSchema.parse(await this.db.prepare('SELECT * FROM stripe_subscription_cancellations WHERE id=? AND customer_ref=? FOR UPDATE').get(input.id, customer.id));
+      if (row.cycle > 0) {
+        const previous = await this.db.prepare(`SELECT r.*,c.cycle AS previous_cycle FROM stripe_subscription_resumptions r
+          JOIN stripe_subscription_cancellations c ON c.id=r.cancellation_id
+          WHERE r.id=? AND r.customer_ref=? AND r.subscription_ref=?`).get(z.uuid().parse(row.previous_resumption_id), customer.id, row.subscription_ref);
+        if (!previous || resumptionRowSchema.parse(previous).state !== 'confirmed' ||
+          z.coerce.number().int().nonnegative().safe().parse(previous.previous_cycle) !== row.cycle - 1) throw new TerminalJobFailure('not-eligible');
+      }
       const sub = await this.db.prepare('SELECT subscription_id FROM stripe_owned_subscription_ledger WHERE id=? AND customer_ref=? AND account_id=?')
         .get(row.subscription_ref, customer.id, this.settings.accountId);
       const attempt = await this.attempt(customer, row.attempt_id);
+      const latest = await this.latestCancellation(row.subscription_ref);
       if (!sub || row.state !== expected || row.operation_id !== operation.id ||
+        latest?.id !== row.id ||
         attempt.state !== 'complete' || attempt.subscription_id !== sub.subscription_id ||
         encodePayload(this.cancellationIntent(row, z.string().parse(sub.subscription_id), attempt.price_id)) !== encodePayload(input)) throw new TerminalJobFailure('not-eligible');
       return { owner, customer, attempt, input, now: await this.now() };
@@ -210,7 +257,129 @@ export class SandboxCheckout {
           .run(result, context.input.id);
         await this.ledger.request(current.customer.id);
         await this.cancellationContext(operation, 'confirmed');
-        return { cancellationId: context.input.id, result, authority: sandboxRenewalAuthority };
+        return { cancellationId: context.input.id, result, authority: context.input.policy };
+      }, signal);
+    });
+  }
+  private resumptionIntent(row: Pick<ResumptionRow, 'id' | 'cancellation_id' | 'customer_ref' | 'subscription_ref' | 'attempt_id' |
+    'auth_epoch' | 'price_id' | 'offer_key' | 'currency' | 'unit_amount' | 'item_id' | 'period_start' | 'period_end' | 'billing_anchor' | 'invoice_id' | 'eligibility_proof'>,
+    subscriptionId: string) {
+    return resumptionOperationSchema.parse({ policy: sandboxResumptionAuthority, id: row.id, cancellationId: row.cancellation_id,
+      customerRef: row.customer_ref, subscriptionRef: row.subscription_ref, subscriptionId, attemptId: row.attempt_id,
+      priceId: row.price_id, offer: row.offer_key, currency: row.currency, unitAmount: row.unit_amount, itemId: row.item_id,
+      periodStart: row.period_start, periodEnd: row.period_end, invoiceId: row.invoice_id, eligibilityProof: row.eligibility_proof,
+      billingAnchor: row.billing_anchor,
+      acknowledged: true, authEpoch: row.auth_epoch });
+  }
+  private async resumableObservation(customer: CustomerRow, stateRow: DatabaseRow | undefined, subRow: DatabaseRow, attempt: CheckoutRow) {
+    const { sub, state, now } = await this.renewalObservation(stateRow, subRow);
+    if (sub.status !== 'active' || !sub.cancelAtPeriodEnd || attempt.state !== 'complete' ||
+      attempt.id !== sub.attemptId || attempt.subscription_id !== sub.id || this.settings.offers?.[attempt.offer_key] !== attempt.price_id) {
+      throw new HttpError(409, 'Only an active owned scheduled cancellation with its still-enabled reference offer can resume.');
+    }
+    const invoiceRow = sub.latestInvoiceId ? await this.db.prepare('SELECT payload FROM stripe_owned_invoice_ledger WHERE invoice_id=? AND customer_ref=? AND account_id=?')
+      .get(sub.latestInvoiceId, customer.id, this.settings.accountId) : null;
+    const invoice = invoiceRow ? invoiceFactSchema.parse(JSON.parse(z.string().parse(invoiceRow.payload))) : null;
+    const snapshot = state.snapshot ? ledgerSnapshotSchema.parse(JSON.parse(state.snapshot)) : null;
+    const eligibility = invoice ? evaluateSandboxService(invoice, sub, attempt, customer.id, snapshot?.reviewReasons ?? []) : null;
+    if (!invoice || eligibility?.decision !== 'eligible' || !eligibility.proof || eligibility.startsAt === null || eligibility.endsAt === null ||
+      now < eligibility.startsAt || now >= eligibility.endsAt) {
+      throw new HttpError(409, 'Renewal resumption requires the current funded supported calendar interval; refresh or seek operator review.');
+    }
+    return { sub, invoice, eligibility: { ...eligibility, proof: eligibility.proof }, now };
+  }
+  async resumeRenewal(owner: string, id: string, input: ResumptionRequest) {
+    const request = resumptionRequestSchema.parse(input);
+    return this.db.transaction(async () => {
+      const { epoch, customer, stateRow, subRow } = await this.renewalAdmission(owner, id);
+      const row = await this.db.prepare('SELECT * FROM stripe_subscription_cancellations WHERE id=? AND subscription_ref=? AND customer_ref=? FOR UPDATE')
+        .get(request.cancellationId, id, customer.id);
+      if (!row) throw new HttpError(404, 'Owned sandbox cancellation not found.');
+      const cancellation = cancellationRowSchema.parse(row), latest = await this.latestCancellation(id);
+      const previous = await this.db.prepare('SELECT * FROM stripe_subscription_resumptions WHERE cancellation_id=? FOR UPDATE').get(cancellation.id);
+      if (previous) {
+        const resume = resumptionRowSchema.parse(previous);
+        if (resume.state === 'queued') {
+          const status = await this.jobs.ownedStatus(owner, resume.operation_id);
+          if (resume.auth_epoch !== epoch || latest?.id !== cancellation.id || !['created', 'active', 'retry'].includes(status.status)) {
+            throw new HttpError(409, 'This resumption needs operator reconciliation; its unknown future-renewal outcome cannot be replaced.');
+          }
+        } else if (latest?.id === cancellation.id) {
+          const { sub } = await this.renewalObservation(stateRow, subRow);
+          if (sub.cancelAtPeriodEnd || sub.status !== 'active') throw new HttpError(409, 'Current renewal differs from the retained resumption; operator review is required.');
+        }
+        return { id: resume.id, accepted: true };
+      }
+      if (latest?.id !== cancellation.id || cancellation.state !== 'confirmed' || cancellation.result !== 'nonrenewing') {
+        throw new HttpError(409, 'Resume only the latest confirmed owned end-of-period cancellation.');
+      }
+      const attempt = await this.attempt(customer, cancellation.attempt_id);
+      const current = await this.resumableObservation(customer, stateRow, subRow, attempt), item = current.sub.items[0];
+      const intent = { id: randomUUID(), cancellation_id: cancellation.id, customer_ref: customer.id, subscription_ref: id,
+        attempt_id: attempt.id, auth_epoch: epoch, price_id: attempt.price_id, offer_key: attempt.offer_key, currency: 'usd' as const,
+        unit_amount: z.number().int().positive().safe().parse(attempt.unit_amount), item_id: item.id, period_start: item.periodStart,
+        period_end: item.periodEnd, invoice_id: current.invoice.id, eligibility_proof: current.eligibility.proof };
+      const captured = { ...intent, billing_anchor: z.number().int().nonnegative().safe().parse(current.sub.billingCycleAnchor) };
+      const operation = await this.jobs.enqueue({ principal: { type: 'user', id: owner }, kind: 'billing.subscription.resume',
+        key: `resume:${intent.id}`, resource: `sandbox-customer:${customer.id}`, payload: this.resumptionIntent(captured, current.sub.id), retryMode: 'idempotent' });
+      await this.db.prepare(`INSERT INTO stripe_subscription_resumptions
+        (id,policy_version,cancellation_id,customer_ref,subscription_ref,attempt_id,auth_epoch,price_id,offer_key,currency,unit_amount,
+          item_id,period_start,period_end,billing_anchor,invoice_id,eligibility_proof,acknowledged,operation_id,state)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,'queued')`).run(intent.id, sandboxResumptionAuthority, cancellation.id, customer.id, id,
+          attempt.id, epoch, intent.price_id, intent.offer_key, intent.currency, intent.unit_amount, item.id, item.periodStart, item.periodEnd,
+          captured.billing_anchor, intent.invoice_id, z.string().parse(intent.eligibility_proof), operation.id);
+      await this.owner(owner, epoch);
+      return { id: intent.id, accepted: true };
+    });
+  }
+  private async resumptionContext(operation: Operation, expected: 'queued' | 'confirmed' = 'queued') {
+    if (operation.kind !== 'billing.subscription.resume' || operation.principal.type !== 'user' || !operation.ownerId) throw new TerminalJobFailure('not-eligible');
+    const input = resumptionOperationSchema.parse(operation.payload), owner = operation.ownerId;
+    return this.db.transaction(async () => {
+      await this.owner(owner, input.authEpoch);
+      const customer = await this.customer(owner, input.customerRef);
+      if (!customer || customer.state !== 'mapped' || !customer.customer_id || operation.resource !== `sandbox-customer:${customer.id}`) throw new TerminalJobFailure('not-eligible');
+      await assertSandboxAccessConfiguration(this.db, this.settings);
+      const cancellation = await this.latestCancellation(input.subscriptionRef);
+      const row = resumptionRowSchema.parse(await this.db.prepare('SELECT * FROM stripe_subscription_resumptions WHERE id=? AND customer_ref=? FOR UPDATE').get(input.id, customer.id));
+      const sub = await this.db.prepare('SELECT subscription_id,payload FROM stripe_owned_subscription_ledger WHERE id=? AND customer_ref=? AND account_id=?')
+        .get(input.subscriptionRef, customer.id, this.settings.accountId);
+      const attempt = await this.attempt(customer, input.attemptId);
+      if (!sub || row.state !== expected || row.operation_id !== operation.id || cancellation?.id !== row.cancellation_id ||
+        cancellation.state !== 'confirmed' || cancellation.result !== 'nonrenewing' || cancellation.attempt_id !== row.attempt_id ||
+        attempt.state !== 'complete' || attempt.subscription_id !== sub.subscription_id || attempt.price_id !== row.price_id ||
+        attempt.offer_key !== row.offer_key || attempt.currency !== row.currency || attempt.unit_amount !== row.unit_amount ||
+        encodePayload(this.resumptionIntent(row, z.string().parse(sub.subscription_id))) !== encodePayload(input)) throw new TerminalJobFailure('not-eligible');
+      return { owner, customer, attempt, input, sub, now: await this.now() };
+    });
+  }
+  private async runResumption(claim: JobClaim, operation: Operation, signal?: AbortSignal) {
+    const context = await this.resumptionContext(operation), customerId = context.customer.customer_id;
+    if (!customerId) throw new TerminalJobFailure('not-eligible');
+    const beforeMutation = async () => {
+      await this.db.transaction(async () => {
+        const current = await this.resumptionContext(operation);
+        if (current.customer.customer_id !== customerId) throw new TerminalJobFailure('not-eligible');
+        const stateRow = await this.db.prepare('SELECT * FROM stripe_customer_ledger_state WHERE customer_ref=? FOR UPDATE').get(current.customer.id);
+        const funded = await this.resumableObservation(current.customer, stateRow, current.sub, current.attempt);
+        if (funded.invoice.id !== current.input.invoiceId || funded.eligibility.proof !== current.input.eligibilityProof) throw new TerminalJobFailure('reconciliation-required');
+        await this.jobs.assertCurrentClaim(claim, signal);
+        const elapsed = await this.now() - Date.parse(operation.createdAt);
+        if (elapsed < 0 || elapsed >= postWindowMs) throw new TerminalJobFailure('reconciliation-required');
+      });
+    };
+    const age = context.now - Date.parse(operation.createdAt);
+    const result = await this.provider.resumeRenewal(context.attempt, context.input, customerId, operation.id,
+      age >= 0 && age < postWindowMs, beforeMutation, () => this.jobs.heartbeat(claim, signal), signal);
+    await this.db.transaction(async () => {
+      const current = await this.resumptionContext(operation);
+      if (current.customer.customer_id !== customerId) throw new TerminalJobFailure('not-eligible');
+      await this.jobs.finish(claim, async () => {
+        await this.db.prepare("UPDATE stripe_subscription_resumptions SET state='confirmed',confirmed_at=clock_timestamp(),result=? WHERE id=?")
+          .run(result, current.input.id);
+        await this.ledger.request(current.customer.id);
+        await this.resumptionContext(operation, 'confirmed');
+        return { resumptionId: current.input.id, cancellationId: current.input.cancellationId, result, authority: sandboxResumptionAuthority };
       }, signal);
     });
   }
@@ -247,6 +416,7 @@ export class SandboxCheckout {
     if (!checkoutJobKinds.some(kind => kind === operation.kind)) throw new TerminalJobFailure('not-eligible');
     await this.jobs.assertCurrentClaim(claim, signal);
     if (operation.kind === 'billing.subscription.cancel') return this.runCancellation(claim, operation, signal);
+    if (operation.kind === 'billing.subscription.resume') return this.runResumption(claim, operation, signal);
     const context = await this.context(operation);
     const beforeMutation = async () => {
       const current = await this.context(operation);

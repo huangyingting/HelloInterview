@@ -21,6 +21,8 @@ import { digest, encodePayload } from './jobs/schema';
 import type { Capability } from '../shared/access';
 import type { BillingNotifications } from './billing';
 import { checkoutRequestSchema } from './billing/checkout-schema';
+import { cancellationRequestSchema } from './billing/cancellation-schema';
+import { resumptionRequestSchema } from './billing/resumption-schema';
 import { TerminalJobFailure } from './jobs';
 import { z } from 'zod';
 function record(value: unknown): Record<string, unknown> {
@@ -261,9 +263,14 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
       res.status(202).json(await billingAction(req, res, true, user => checkout.reserve(user.id, parsed.data)));
     });
     app.post('/api/billing/subscriptions/:id/cancel', async (req, res) => {
-      const id = z.uuid().safeParse(req.params.id);
-      if (!id.success || !z.strictObject({}).safeParse(req.body).success) throw new HttpError(400, 'Use an owned subscription ID and an empty body; this stops sandbox renewal only.');
-      res.status(202).json(await billingAction(req, res, true, user => checkout.cancelRenewal(user.id, id.data)));
+      const id = z.uuid().safeParse(req.params.id), body = cancellationRequestSchema.safeParse(req.body);
+      if (!id.success || !body.success) throw new HttpError(400, 'Use an owned subscription ID and the exact owned cycle predecessor, or an empty body for the original stop request.');
+      res.status(202).json(await billingAction(req, res, true, user => checkout.cancelRenewal(user.id, id.data, body.data)));
+    });
+    app.post('/api/billing/subscriptions/:id/resume', async (req, res) => {
+      const id = z.uuid().safeParse(req.params.id), body = resumptionRequestSchema.safeParse(req.body);
+      if (!id.success || !body.success) throw new HttpError(400, 'Acknowledge future sandbox renewals and select the exact owned cancellation; provider targets, prices and charges are not client authority.');
+      res.status(202).json(await billingAction(req, res, true, user => checkout.resumeRenewal(user.id, id.data, body.data)));
     });
     for (const action of ['open', 'refresh'] as const) app.post(`/api/billing/checkouts/:id/${action}`, async (req, res) => {
       const id = z.uuid().safeParse(req.params.id);

@@ -5,6 +5,7 @@ import { openBillingFixture, sandboxPortalConfiguration } from './fixtures/billi
 import type { Bootstrap } from '../shared/types';
 import { sandboxServicePolicy } from '../shared/billing-ledger';
 import type { SandboxBillingView } from '../shared/billing';
+import { problems } from '../shared/catalog';
 
 async function fixture(t: TestContext, service = false, portal = false) {
   const f = await openBillingFixture(t, { ...(service ? { STRIPE_TEST_ACCESS_POLICY: sandboxServicePolicy } : {}),
@@ -311,4 +312,97 @@ test('actual owned browser recovers an unknown cancellation response without rep
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   const text = await page.locator('body').innerText();
   for (const secret of ['cus_Synthetic', 'sub_Synthetic', 'price_Synthetic', 'studio_customer_ref', 'authEpoch']) assert.ok(!text.includes(secret));
+});
+
+async function scheduledCancellation(f: Awaited<ReturnType<typeof fixture>>) {
+  const { page } = f;
+  await page.getByRole('checkbox', { name: /I understand this is sandbox-only/ }).check();
+  await page.getByRole('button', { name: 'Prepare sandbox checkout' }).click();
+  await expect(page.getByRole('heading', { name: 'Your sandbox checkout' })).toBeVisible();
+  await f.complete('billing.customer'); await f.complete('billing.checkout');
+  await expect(page.getByRole('button', { name: 'Open hosted sandbox checkout' })).toBeVisible();
+  const facts = await f.settleCheckout();
+  const refreshing = page.waitForResponse(response => response.url().endsWith('/refresh') && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Refresh canonical session' }).click(); assert.equal((await refreshing).status(), 200);
+  await f.complete('billing.checkout.refresh'); await f.complete('billing.customer.snapshot'); await f.complete('billing.customer.snapshot');
+  await expect(page.getByRole('button', { name: 'Stop sandbox renewal' })).toBeEnabled();
+  const stopping = page.waitForResponse(response => response.url().endsWith('/cancel') && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Stop sandbox renewal' }).click(); assert.equal((await stopping).status(), 202);
+  await f.complete('billing.subscription.cancel'); await f.complete('billing.customer.snapshot');
+  await expect(page.getByRole('button', { name: 'Resume sandbox renewal' })).toBeVisible();
+  return facts;
+}
+
+test('actual browser requires inline same-price renewal consent and can stop again with the exact owned predecessor and fresh next-cycle consent', { timeout: 90000 }, async t => {
+  const f = await fixture(t), { page } = f, facts = await scheduledCancellation(f);
+  const resume = page.getByRole('button', { name: 'Resume sandbox renewal' }),
+    consent = page.getByRole('checkbox', { name: /I acknowledge future automatic sandbox renewal/ });
+  await expect(resume).toBeDisabled(); await expect(consent).not.toBeChecked();
+  await expect(page.getByText(/at the same monthly reference offer: \$19.00/)).toBeVisible();
+  await consent.check(); await expect(resume).toBeEnabled();
+  const accepting = page.waitForResponse(response => response.url().endsWith('/resume') && response.request().method() === 'POST');
+  await resume.click(); assert.equal((await accepting).status(), 202);
+  await expect(page.getByText(/Sandbox resumption: queued/)).toBeVisible(); assert.equal(facts.sub.cancel_at_period_end, true);
+  await f.complete('billing.subscription.resume'); await f.complete('billing.customer.snapshot');
+  await expect(page.getByText(/Sandbox resumption: confirmed/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Stop sandbox renewal' })).toBeEnabled();
+  const first = await f.db.prepare('SELECT id,cancellation_id FROM stripe_subscription_resumptions').get(); assert.ok(first);
+  const stopping = page.waitForResponse(response => response.url().endsWith('/cancel') && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Stop sandbox renewal' }).click(); assert.equal((await stopping).status(), 202);
+  await f.complete('billing.subscription.cancel'); await f.complete('billing.customer.snapshot');
+  await expect(page.getByText(/Owned cancellation cycle: 1/)).toBeVisible();
+  await expect(resume).toBeDisabled(); await expect(consent).not.toBeChecked(); await consent.check();
+  const acceptingAgain = page.waitForResponse(response => response.url().endsWith('/resume') && response.request().method() === 'POST');
+  await resume.click(); assert.equal((await acceptingAgain).status(), 202);
+  await f.complete('billing.subscription.resume'); await f.complete('billing.customer.snapshot');
+  await expect(page.getByRole('button', { name: 'Stop sandbox renewal' })).toBeEnabled();
+  const mutations = f.requests.filter(request => /\/subscriptions\/.+\/(cancel|resume)$/.test(request.path));
+  const cancellations = await f.db.prepare('SELECT id FROM stripe_subscription_cancellations ORDER BY cycle').all();
+  assert.deepEqual(mutations.map(request => request.body), [{}, { cancellationId: first.cancellation_id, acknowledged: true },
+    { previousResumptionId: first.id }, { cancellationId: cancellations[1].id, acknowledged: true }]);
+  const final: Bootstrap = await page.evaluate(async () => (await fetch('/api/bootstrap')).json());
+  assert.equal(final.capabilities.access?.state, 'free'); assert.equal(final.capabilities.commerce, 'disabled');
+  assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM entitlement_grants').get())?.count, 0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+});
+
+test('a lost actual acknowledged resumption response reuses its durable consent, confirms canonical flags and preserves paid source and archive', { timeout: 90000 }, async t => {
+  const f = await fixture(t, true), { page } = f, facts = await scheduledCancellation(f);
+  const owner = await f.login(undefined, 'auth0|sandbox-browser-owner'), problem = problems.find(problem => problem.premium); assert.ok(problem);
+  assert.equal((await owner.browser.request('/api/mocks', { problemId: problem.id, company: 'Meta', level: 'Senior', length: 3 })).status, 200);
+  const grant = await f.db.prepare('SELECT * FROM entitlement_grants').get(), events = await f.db.prepare('SELECT * FROM entitlement_events').all(),
+    archive: Bootstrap = await page.evaluate(async () => (await fetch('/api/bootstrap')).json());
+  assert.equal(archive.state.mocks.length, 1);
+  const consent = page.getByRole('checkbox', { name: /I acknowledge future automatic sandbox renewal/ });
+  await consent.check();
+  const pattern = '**/api/billing/subscriptions/*/resume';
+  await page.route(pattern, async route => {
+    const source = new URL(route.request().url()), target = new URL(source); target.hostname = '127.0.0.1';
+    const accepted = await route.fetch({ url: target.href, headers: { ...route.request().headers(), host: source.host } });
+    assert.equal(accepted.status(), 202); await route.abort('failed');
+  });
+  await page.getByRole('button', { name: 'Resume sandbox renewal' }).click();
+  await expect(page.getByRole('alert').first()).toContainText(/fetch|network/i);
+  const intent = await f.db.prepare('SELECT id FROM stripe_subscription_resumptions').get(); assert.ok(intent);
+  assert.equal(facts.sub.cancel_at_period_end, true); await page.unroute(pattern);
+  const accepted = page.waitForResponse(response => response.url().endsWith('/resume') && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Resume sandbox renewal' }).click(); assert.equal((await accepted).status(), 202);
+  await expect(page.getByText(/Sandbox resumption: queued/)).toBeVisible();
+  assert.deepEqual(await f.db.prepare('SELECT id FROM stripe_subscription_resumptions').get(), intent);
+  assert.equal((await f.db.prepare("SELECT count(*)::integer AS count FROM durable_operations WHERE kind='billing.subscription.resume'").get())?.count, 1);
+  await f.complete('billing.subscription.resume'); await f.complete('billing.customer.snapshot');
+  await expect(page.getByText(/Sandbox resumption: confirmed/)).toBeVisible();
+  await expect(page.getByText(/No cancellation-at-period-end flag observed/)).toBeVisible();
+  assert.deepEqual(await f.db.prepare('SELECT * FROM entitlement_grants').get(), grant);
+  assert.deepEqual(await f.db.prepare('SELECT * FROM entitlement_events').all(), events);
+  const final: Bootstrap = await page.evaluate(async () => (await fetch('/api/bootstrap')).json());
+  assert.equal(final.capabilities.access?.state, 'pro'); assert.equal(final.capabilities.commerce, 'disabled');
+  assert.deepEqual(final.state.mocks, archive.state.mocks);
+  const text = await page.locator('body').innerText(), storage = await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }));
+  for (const secret of ['cus_Synthetic', 'sub_Synthetic', 'price_Synthetic', 'eligibilityProof', 'authEpoch']) {
+    assert.ok(!text.includes(secret)); assert.ok(!storage.includes(secret));
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
 });

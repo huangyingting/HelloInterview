@@ -142,9 +142,11 @@ export async function openBillingFixture(t: TestContext, overrides: NodeJS.Proce
         sessions.set(id, session); responses.set(`${req.path}:${key}`, structuredClone(session)); return res.json(session);
       }
       if (req.path.startsWith('/v1/subscriptions/')) {
-        z.strictObject({ cancel_at_period_end: z.literal('true'), proration_behavior: z.literal('none') }).parse(req.body);
+        const body = z.strictObject({ cancel_at_period_end: z.enum(['true', 'false']), proration_behavior: z.literal('none') }).parse(req.body);
         const sub = subscriptions.find(sub => sub.id === req.path.slice('/v1/subscriptions/'.length)); assert.ok(sub);
-        sub.cancel_at_period_end = true;
+        sub.cancel_at_period_end = body.cancel_at_period_end === 'true';
+        const items = z.object({ data: z.array(z.object({ current_period_end: z.number() })).length(1) }).parse(sub.items);
+        sub.cancel_at = sub.cancel_at_period_end ? items.data[0].current_period_end : null;
         responses.set(`${req.path}:${key}`, structuredClone(sub)); return res.json(sub);
       }
     }
@@ -200,10 +202,14 @@ export async function openBillingFixture(t: TestContext, overrides: NodeJS.Proce
       Object.assign(session, { status: 'complete', payment_status: 'paid', subscription: subId, url: null });
       const sub = { id: subId, object: 'subscription', customer: session.customer, livemode: false, status: 'active', cancel_at_period_end: false,
         cancel_at: null, schedule: null, pending_update: null,
+        application: null, on_behalf_of: null, application_fee_percent: null, transfer_data: null,
+        currency: 'usd', collection_method: 'charge_automatically', pause_collection: null, trial_end: null,
+        automatic_tax: { enabled: false }, discounts: [], default_tax_rates: [], billing_thresholds: null, pending_invoice_item_interval: null,
         metadata: { studio_customer_ref: String(attempt.customer_ref), studio_checkout_ref: String(attempt.id) }, latest_invoice: invoiceId,
         billing_cycle_anchor: now, billing_cycle_anchor_config: null,
         items: { object: 'list', has_more: false, data: [{ id: 'si_Synthetic1', object: 'subscription_item', subscription: subId,
-          price: { id: String(attempt.price_id), object: 'price', livemode: false }, quantity: 1, current_period_start: now, current_period_end: until }] } };
+          price: { id: String(attempt.price_id), object: 'price', livemode: false }, quantity: 1, current_period_start: now, current_period_end: until,
+          discounts: [], tax_rates: [], billing_thresholds: null }] } };
       const line = { id: `il_Synthetic${invoices.size + 1}`, object: 'line_item', invoice: invoiceId, livemode: false,
         currency: 'usd', amount, quantity: 1, quantity_decimal: '1', subscription: subId, period: { start: now, end: until - 1 },
         parent: { type: 'subscription_item_details', subscription_item_details: { subscription: subId, subscription_item: 'si_Synthetic1', proration: false } },
@@ -243,7 +249,7 @@ export async function openBillingFixture(t: TestContext, overrides: NodeJS.Proce
       const response = await browser.request('/api/billing'); assert.equal(response.status, 200);
       return response.json();
     },
-    async complete(kind: 'billing.customer' | 'billing.checkout' | 'billing.checkout.refresh' | 'billing.subscription.cancel' | 'billing.customer.snapshot' | 'billing.reconcile') {
+    async complete(kind: 'billing.customer' | 'billing.checkout' | 'billing.checkout.refresh' | 'billing.subscription.cancel' | 'billing.subscription.resume' | 'billing.customer.snapshot' | 'billing.reconcile') {
       const claim = await activeWorker.jobs.claim(kind); assert.ok(claim, `Expected a ${kind} claim.`);
       await activeWorker.runClaim(claim);
       return activeWorker.jobs.operation(claim.data.operationId);

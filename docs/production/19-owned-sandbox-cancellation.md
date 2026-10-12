@@ -5,6 +5,13 @@ This adds an owned, durable stop-renewal command to W08. It does not refund
 payment, cancel immediately, edit prices/items, resume renewal, open a Portal,
 issue a new paid interval or make account deletion production-safe.
 
+**Subsequent checkpoints:** [20](20-restricted-sandbox-portal.md) adds a
+subscription-disabled restricted Portal; [21](21-owned-sandbox-renewal-cycles.md)
+adds migration-15 resumption and repeat cancellation cycles. The one-shot
+contract below documents migration 13. Its original `{}` still targets cycle
+zero; later cycles require an exact confirmed resumption predecessor rather
+than replacing this historical intent.
+
 ## Release and authority
 
 Apply controlled **migration 13** and maintained queue migration with

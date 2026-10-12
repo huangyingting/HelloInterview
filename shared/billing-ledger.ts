@@ -10,13 +10,26 @@ export const fundingStates = ['unpaid', 'review-required', 'settled', 'partially
 export type FundingState = typeof fundingStates[number];
 export const sandboxServicePolicy = 'sandbox-card-service-v1' as const;
 export const sandboxRenewalAuthority = 'sandbox-renewal-control-v1' as const;
+export const sandboxRenewalCycleAuthority = 'sandbox-renewal-control-v2' as const;
+export const sandboxResumptionAuthority = 'sandbox-renewal-resumption-v1' as const;
+export interface SandboxResumptionView {
+  id: string;
+  policy: typeof sandboxResumptionAuthority;
+  state: 'queued' | 'confirmed';
+  processing: string;
+  confirmedAt: string | null;
+  result: 'renewing' | null;
+}
 export interface SandboxCancellationView {
   id: string;
-  policy: typeof sandboxRenewalAuthority;
+  policy: typeof sandboxRenewalAuthority | typeof sandboxRenewalCycleAuthority;
+  cycle: number;
+  previousResumptionId: string | null;
   state: 'queued' | 'confirmed';
   processing: string;
   confirmedAt: string | null;
   result: 'nonrenewing' | 'ended' | null;
+  resumption: SandboxResumptionView | null;
 }
 export const serviceReviewReasons = [
   'checkout-unverified', 'subscription-unverified', 'invoice-unsupported', 'funding-ineligible',

@@ -7,6 +7,8 @@ import { TerminalJobFailure } from '../jobs';
 import { checkoutSchema, customerSchema, hostedCheckoutUrl, priceSchema, type CheckoutRow } from './checkout-schema';
 import { readCanonicalLedger, type CanonicalRead, type LedgerReadInput } from './ledger-reader';
 import { cardOnlyConfiguration, hostedPortalUrl, portalAuthority, portalConfigurationSchema, portalSessionSchema, type PortalScope } from './portal-schema';
+import type { ResumptionOperation } from './resumption-schema';
+import { seconds } from './ledger-schema';
 
 const listSchema = z.looseObject({ object: z.literal('list'), has_more: z.boolean(), data: z.array(z.unknown()).max(100) });
 const subscriptionSchema = z.looseObject({
@@ -19,6 +21,20 @@ const renewalSchema = subscriptionSchema.extend({
   metadata: z.looseObject({ studio_customer_ref: z.uuid(), studio_checkout_ref: z.uuid() }),
   items: z.looseObject({ has_more: z.literal(false), data: z.array(z.looseObject({
     subscription: providerId, quantity: z.literal(1), price: z.looseObject({ id: providerId }),
+  })).length(1) }),
+});
+const resumptionSchema = renewalSchema.extend({
+  status: z.literal('active'), application: z.null(), on_behalf_of: z.null(), currency: z.literal('usd'),
+  application_fee_percent: z.null(), transfer_data: z.null(),
+  billing_cycle_anchor: seconds, billing_cycle_anchor_config: z.null(),
+  latest_invoice: z.union([providerId, z.looseObject({ id: providerId })]).nullable(),
+  collection_method: z.literal('charge_automatically'), pause_collection: z.null(), trial_end: z.null(),
+  automatic_tax: z.looseObject({ enabled: z.literal(false) }), discounts: z.array(z.never()).length(0),
+  default_tax_rates: z.array(z.never()).length(0), billing_thresholds: z.null(), pending_invoice_item_interval: z.null(),
+  items: z.looseObject({ has_more: z.literal(false), data: z.array(z.looseObject({
+    id: providerId, subscription: providerId, quantity: z.literal(1), price: z.looseObject({ id: providerId }),
+    current_period_start: seconds, current_period_end: seconds,
+    discounts: z.array(z.never()).length(0), tax_rates: z.array(z.never()).length(0), billing_thresholds: z.null(),
   })).length(1) }),
 });
 export class StripeEvidence {
@@ -176,6 +192,51 @@ export class StripeEvidence {
     if (['canceled', 'incomplete_expired'].includes(current.status)) return 'ended';
     if (!current.cancel_at_period_end) throw new TerminalJobFailure('reconciliation-required');
     return 'nonrenewing';
+  }
+  async resumeRenewal(attempt: CheckoutRow, input: ResumptionOperation, customerId: string, operationId: string, replayWindow: boolean,
+    beforeMutation: () => Promise<void>, checkpoint: () => Promise<void>, signal?: AbortSignal): Promise<'renewing'> {
+    let requests = 0;
+    const read: CanonicalRead = async action => {
+      if (++requests > 8) throw new TerminalJobFailure('reconciliation-required');
+      this.assertRunning(signal); await checkpoint();
+      const result = await action(); this.assertRunning(signal); return result;
+    };
+    const validate = (value: unknown) => {
+      const sub = resumptionSchema.parse(value), item = sub.items.data[0];
+      if (sub.id !== input.subscriptionId || sub.id !== attempt.subscription_id || sub.customer !== customerId ||
+        sub.metadata.studio_customer_ref !== attempt.customer_ref || sub.metadata.studio_checkout_ref !== attempt.id ||
+        item.id !== input.itemId || item.subscription !== sub.id || item.price.id !== input.priceId ||
+        sub.billing_cycle_anchor !== input.billingAnchor ||
+        item.current_period_end <= item.current_period_start) throw new TerminalJobFailure('reconciliation-required');
+      return sub;
+    };
+    await read(() => this.account(signal));
+    this.customer(await read(() => this.client.customers.retrieve(customerId)), attempt.customer_ref, customerId);
+    const initial = validate(await read(() => this.client.subscriptions.retrieve(input.subscriptionId))), item = initial.items.data[0];
+    if (initial.cancel_at_period_end) {
+      if (!replayWindow || initial.cancel_at !== null && initial.cancel_at !== item.current_period_end ||
+        item.current_period_start !== input.periodStart || item.current_period_end !== input.periodEnd ||
+        referenceId(initial.latest_invoice) !== input.invoiceId) throw new TerminalJobFailure('reconciliation-required');
+      const price = priceSchema.parse(await read(() => this.client.prices.retrieve(input.priceId)));
+      if (price.id !== input.priceId || !price.active || price.unit_amount !== input.unitAmount || price.currency !== input.currency ||
+        price.recurring.interval !== (input.offer === 'pro_annual' ? 'year' : 'month')) throw new TerminalJobFailure('reconciliation-required');
+      const productId = referenceId(price.product);
+      if (!productId) throw new TerminalJobFailure('reconciliation-required');
+      const product = z.looseObject({ id: providerId, object: z.literal('product'), active: z.literal(true), livemode: z.literal(false) })
+        .parse(await read(() => this.client.products.retrieve(productId)));
+      if (product.id !== productId) throw new TerminalJobFailure('reconciliation-required');
+      validate(await read(async () => {
+        await beforeMutation(); this.assertRunning(signal);
+        return this.client.subscriptions.update(initial.id,
+          { cancel_at_period_end: false, proration_behavior: 'none' }, { idempotencyKey: operationId });
+      }));
+    }
+    const current = validate(await read(() => this.client.subscriptions.retrieve(input.subscriptionId))), currentItem = current.items.data[0];
+    if (current.cancel_at_period_end || current.cancel_at !== null || initial.cancel_at_period_end &&
+      (currentItem.current_period_start !== input.periodStart || currentItem.current_period_end !== input.periodEnd ||
+        referenceId(current.latest_invoice) !== input.invoiceId)) throw new TerminalJobFailure('reconciliation-required');
+    this.customer(await read(() => this.client.customers.retrieve(customerId)), attempt.customer_ref, customerId);
+    return 'renewing';
   }
   private session(value: unknown, attempt: CheckoutRow, customerId: string, origin: string, checkLineItems = false) {
     const session = checkoutSchema.parse(value);

@@ -455,6 +455,50 @@ export const migrations = [{
     );
     CREATE INDEX stripe_portal_customer ON stripe_portal_access(customer_ref,created_at);
   `,
+}, {
+  version: 15,
+  name: 'owned-sandbox-renewal-cycles',
+  sql: `
+    ALTER TABLE stripe_subscription_cancellations DROP CONSTRAINT stripe_subscription_cancellations_subscription_ref_key;
+    ALTER TABLE stripe_subscription_cancellations DROP CONSTRAINT stripe_subscription_cancellations_policy_version_check;
+    ALTER TABLE stripe_subscription_cancellations
+      ADD COLUMN cycle BIGINT NOT NULL DEFAULT 0 CHECK (cycle >= 0),
+      ADD COLUMN previous_resumption_id TEXT UNIQUE,
+      ADD CONSTRAINT stripe_cancellation_cycle UNIQUE(subscription_ref,cycle),
+      ADD CONSTRAINT stripe_cancellation_scope UNIQUE(id,customer_ref,subscription_ref,attempt_id),
+      ADD CONSTRAINT stripe_cancellation_cycle_policy CHECK (
+        (cycle=0 AND previous_resumption_id IS NULL AND policy_version='sandbox-renewal-control-v1') OR
+        (cycle>0 AND previous_resumption_id IS NOT NULL AND policy_version='sandbox-renewal-control-v2'));
+    CREATE TABLE stripe_subscription_resumptions (
+      id TEXT PRIMARY KEY,
+      policy_version TEXT NOT NULL CHECK (policy_version='sandbox-renewal-resumption-v1'),
+      customer_ref TEXT NOT NULL REFERENCES stripe_owned_customers(id),
+      subscription_ref TEXT NOT NULL REFERENCES stripe_owned_subscription_ledger(id),
+      attempt_id TEXT NOT NULL REFERENCES stripe_checkout_attempts(id),
+      cancellation_id TEXT NOT NULL UNIQUE,
+      auth_epoch BIGINT NOT NULL CHECK (auth_epoch >= 0),
+      price_id TEXT NOT NULL, offer_key TEXT NOT NULL CHECK (offer_key IN ('pro_monthly','pro_annual')),
+      currency TEXT NOT NULL CHECK (currency='usd'), unit_amount BIGINT NOT NULL CHECK (unit_amount > 0),
+      item_id TEXT NOT NULL, period_start BIGINT NOT NULL CHECK (period_start >= 0),
+      period_end BIGINT NOT NULL CHECK (period_end > period_start),
+      billing_anchor BIGINT NOT NULL CHECK (billing_anchor >= 0),
+      invoice_id TEXT NOT NULL, eligibility_proof TEXT NOT NULL CHECK (eligibility_proof ~ '^[a-f0-9]{64}$'),
+      acknowledged INTEGER NOT NULL CHECK (acknowledged=1),
+      operation_id TEXT NOT NULL UNIQUE REFERENCES durable_operations(id),
+      state TEXT NOT NULL CHECK (state IN ('queued','confirmed')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+      confirmed_at TIMESTAMPTZ, result TEXT CHECK (result='renewing'),
+      UNIQUE(id,customer_ref,subscription_ref,attempt_id),
+      FOREIGN KEY(cancellation_id,customer_ref,subscription_ref,attempt_id)
+        REFERENCES stripe_subscription_cancellations(id,customer_ref,subscription_ref,attempt_id),
+      CHECK ((state='confirmed') = (confirmed_at IS NOT NULL)),
+      CHECK ((state='confirmed') = (result IS NOT NULL))
+    );
+    ALTER TABLE stripe_subscription_cancellations ADD CONSTRAINT stripe_cancellation_predecessor
+      FOREIGN KEY(previous_resumption_id,customer_ref,subscription_ref,attempt_id)
+        REFERENCES stripe_subscription_resumptions(id,customer_ref,subscription_ref,attempt_id);
+    CREATE INDEX stripe_resumption_customer ON stripe_subscription_resumptions(customer_ref);
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

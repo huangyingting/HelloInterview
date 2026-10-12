@@ -50,6 +50,7 @@ service with defined recovery and support commitments.
 | [18 - Sandbox service authority](18-sandbox-service-authority.md) | Default-off versioned calendar eligibility, immutable invoice-scoped grants and terminal adjustments, policy continuity, expiry-safe owned UI and unresolved commercial gates | Billing and full-stack |
 | [19 - Owned sandbox cancellation](19-owned-sandbox-cancellation.md) | Fresh owned stop-renewal requests, bounded stable provider writes, unknown-outcome recovery, atomic confirmation and unchanged paid access; Portal/live/deletion gates | Billing and operations |
 | [20 - Restricted sandbox Portal](20-restricted-sandbox-portal.md) | Default-off fresh owned card-method/invoice-history sessions, explicit restricted policy, minimized URL-free audit, honest hosted lifecycle and unchanged payment/access authority | Billing and full-stack |
+| [21 - Owned sandbox renewal cycles](21-owned-sandbox-renewal-cycles.md) | Acknowledged same-offer resumption, funded current-period checks, immutable repeat cycles and exact predecessor replay guards, bounded recovery and unchanged paid access | Billing and full-stack |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to

@@ -22,7 +22,10 @@ sandbox stop-renewal requests and canonical confirmation without a refund or
 immediate access loss. The [seventh checkpoint](20-restricted-sandbox-portal.md)
 adds default-off restricted test Portal sessions for owned card-method updates
 and invoice history, without plan/cancel/profile/login-page features or payment/
-access authority. Resumption, paid deletion and authentic recovery remain unresolved.
+access authority. The [eighth checkpoint](21-owned-sandbox-renewal-cycles.md)
+adds acknowledged same-offer sandbox resumption and immutable repeat stop/resume
+cycles with exact predecessor replay guards and unchanged paid intervals.
+Ended-subscription recheckout, paid deletion and authentic recovery remain unresolved.
 Live payment-derived entitlements and the operated financial lifecycle
 remain unimplemented; this specification is not launch authorization.
 

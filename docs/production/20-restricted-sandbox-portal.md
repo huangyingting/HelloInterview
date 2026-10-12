@@ -226,7 +226,9 @@ They check independent audit rows, no replacement customer/Checkout, no
 browser-stored secret, unchanged Free access and mobile layout.
 
 This is not authentic Stripe-hosted Portal/test-clock/card recovery evidence.
-Provider approval/configuration review, real sandbox evidence, resumption/
+Acknowledged owned resumption and repeat cycles are subsequently implemented in
+[checkpoint 21](21-owned-sandbox-renewal-cycles.md), not enabled in the Portal.
+Provider approval/configuration review, real sandbox evidence, ended-subscription
 recheckout, approved commercial rules, historical partitioning, staffed
 financial/privacy support, operated recovery and live-mode approval remain.
 Public accounts, real charging and service launch remain gated.

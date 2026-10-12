@@ -23,6 +23,7 @@ export function SandboxBillingPage() {
   const [view, setView] = useState<SandboxBillingView | null>(null), [security, setSecurity] = useState<IdentitySecurity | null>(null);
   const [offer, setOffer] = useState<SandboxOffer>('pro_monthly'), [intent, setIntent] = useState<SavedRequest | null>(null);
   const [acknowledged, setAcknowledged] = useState(false), [error, setError] = useState('');
+  const [resumeAcknowledgedFor, setResumeAcknowledgedFor] = useState<string | null>(null);
   const [intentReady, setIntentReady] = useState(false);
   const returned = useRef<string | null>(null);
   const accessSnapshot = useRef<string | null>(null);
@@ -51,7 +52,8 @@ export function SandboxBillingPage() {
   }, [available, storageKey, load]);
   const processing = view?.checkout?.processing, state = view?.checkout?.state;
   const ledgerProcessing = view?.ledger?.processing;
-  const cancellationReading = view?.ledger?.subscriptions.some(sub => ['created', 'retry', 'active'].includes(sub.cancellation?.processing ?? '')) ?? false;
+  const cancellationReading = view?.ledger?.subscriptions.some(sub => ['created', 'retry', 'active'].includes(sub.cancellation?.processing ?? '') ||
+    ['created', 'retry', 'active'].includes(sub.cancellation?.resumption?.processing ?? '')) ?? false;
   const sandboxAccess = !!view && view.accessAuthority !== 'none';
   useEffect(() => {
     const preparing = ['waiting-customer', 'queued'].includes(state ?? '');
@@ -142,21 +144,43 @@ export function SandboxBillingPage() {
         {' '}Processing: {view.ledger?.processing ?? 'not yet requested'}. {view.ledger?.stale && 'The last displayed snapshot is stale or a newer read is pending.'}</p>
       {view.ledger?.reviewReasons.length ? <p role="status">Operator review required: {view.ledger.reviewReasons.map(reason => reason.replaceAll('-', ' ')).join(', ')}.</p> : null}
       {['failed', 'cancelled', 'missing'].includes(view.ledger?.processing ?? '') && <p role="status">Canonical reconciliation is incomplete. An operator must inspect the queue before retrying; older records are not a fresh confirmation.</p>}
-      {view.ledger?.subscriptions.map(sub => <p key={sub.id}>Observed subscription: <strong>{sub.status.replaceAll('_', ' ')}</strong>.
+      {view.ledger?.subscriptions.map(sub => <div key={sub.id}><p>Observed subscription: <strong>{sub.status.replaceAll('_', ' ')}</strong>.
         {' '}{sub.nonrenewing ? 'Renewal is disabled.' : 'No cancellation-at-period-end flag observed.'}
         {' '}{sub.currentPeriodEnd && `Reported item period end: ${new Date(sub.currentPeriodEnd).toLocaleString()}.`}
         {' '}{sub.cancellation && <>Sandbox cancellation: <strong>{sub.cancellation.state}</strong>; processing: {sub.cancellation.processing}.
           {' '}{sub.cancellation.state === 'queued' && 'A requested cancellation is not confirmation. The maintained worker must verify provider state.'}
           {' '}{sub.cancellation.confirmedAt && `Last verified ${new Date(sub.cancellation.confirmedAt).toLocaleString()}: ${sub.cancellation.result}.`}
           {' '}{['failed', 'cancelled', 'missing'].includes(sub.cancellation.processing) && 'An operator must reconcile the unknown external outcome; do not replace this intent.'}
-          {' '}{sub.cancellation.state === 'confirmed' && !sub.nonrenewing && !view.ledger?.stale && !['canceled', 'incomplete_expired'].includes(sub.status) &&
-            'Current renewal state differs from the earlier confirmation. Operator review is required; resumption is not implemented.'}</>}
-        {' '}{!sub.nonrenewing && !sub.cancellation && ['active', 'past_due', 'unpaid', 'paused'].includes(sub.status) &&
+          {' '}Owned cancellation cycle: {sub.cancellation.cycle}.
+          {' '}{sub.cancellation.resumption && <>Sandbox resumption: <strong>{sub.cancellation.resumption.state}</strong>; processing: {sub.cancellation.resumption.processing}.
+            {' '}{sub.cancellation.resumption.state === 'queued' && 'Acknowledged future renewal is queued, not confirmed. Logout does not withdraw a durable billing request.'}
+            {' '}{sub.cancellation.resumption.confirmedAt && `Last verified ${new Date(sub.cancellation.resumption.confirmedAt).toLocaleString()}: ${sub.cancellation.resumption.result}.`}
+            {' '}{['failed', 'cancelled', 'missing'].includes(sub.cancellation.resumption.processing) && 'An operator must reconcile this unknown renewal outcome; do not replace its intent.'}</>}
+          {' '}{sub.cancellation.state === 'confirmed' && !view.ledger?.stale && !['canceled', 'incomplete_expired'].includes(sub.status) &&
+            (sub.cancellation.resumption?.state === 'confirmed' ? sub.nonrenewing : !sub.nonrenewing && !sub.cancellation.resumption) &&
+            'Current renewal state differs from the retained owned confirmation. Operator review is required; external changes are not silently overridden.'}</>}
+        {' '}{!sub.nonrenewing && (!sub.cancellation || sub.cancellation.resumption?.state === 'confirmed') && ['active', 'past_due', 'unpaid', 'paused'].includes(sub.status) &&
           <button className="button secondary small" disabled={pending || !security?.fresh || view.ledger?.stale} onClick={() => action(async () => {
-            await request(`/api/billing/subscriptions/${sub.id}/cancel`, {}); await load();
-          })}>Stop sandbox renewal</button>}</p>)}
+            const previous = sub.cancellation?.resumption;
+            await request(`/api/billing/subscriptions/${sub.id}/cancel`, previous ? { previousResumptionId: previous.id } : {}); await load();
+          })}>Stop sandbox renewal</button>}</p>
+        {sub.nonrenewing && sub.status === 'active' && sub.cancellation?.state === 'confirmed' && sub.cancellation.result === 'nonrenewing' &&
+          !sub.cancellation.resumption && view.checkout?.quote && <div>
+          <label><input type="checkbox" checked={resumeAcknowledgedFor === sub.cancellation.id}
+            disabled={pending || !security?.fresh || view.ledger?.stale || !view.enabled}
+            onChange={event => setResumeAcknowledgedFor(event.target.checked ? sub.cancellation?.id ?? null : null)}/>
+            I acknowledge future automatic sandbox renewal at the same {labels[view.checkout.offer].toLowerCase()}:
+            {' '}{new Intl.NumberFormat(undefined, { style: 'currency', currency: view.checkout.quote.currency }).format(view.checkout.quote.unitAmount / 100)}.
+            This grants no additional paid access now.</label>
+          <button className="button secondary small" disabled={pending || !security?.fresh || view.ledger?.stale || !view.enabled ||
+            resumeAcknowledgedFor !== sub.cancellation.id} onClick={() => action(async () => {
+              await request(`/api/billing/subscriptions/${sub.id}/resume`, { cancellationId: sub.cancellation?.id, acknowledged: true }); await load();
+            })}>Resume sandbox renewal</button>
+        </div>}
+      </div>)}
       {!!view.ledger?.subscriptions.length && <p>Stopping sandbox renewal does not refund money, end paid access immediately or erase saved work.
-        Current access comes from eligible invoice intervals and account policy, not the cancellation request. Renewal resumption remains unavailable.</p>}
+        Resuming acknowledges future test renewals at the captured reference offer, not an immediate payment or a new entitlement.
+        Current access comes from eligible invoice intervals and account policy, never a renewal-control request. Ended-subscription recheckout remains unavailable.</p>}
       {view.ledger?.invoices.map(invoice => <p key={invoice.id}>Observed invoice: <strong>{invoice.status}</strong>.
         {' '}Total: {invoice.total} {invoice.currency.toUpperCase()} minor units; paid amount hint: {invoice.amountPaid}; remaining: {invoice.amountRemaining}.
         {' '}{invoice.funding ? `Referenced card funding: ${invoice.funding.state.replaceAll('-', ' ')}; captured: ${invoice.funding.captured}; succeeded refunds: ${invoice.funding.refunded}.` : 'Payment evidence has not been evaluated.'}
