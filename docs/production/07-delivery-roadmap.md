@@ -4,6 +4,39 @@
 baseline is `b9db1ea`. Completion is recorded below; remaining design/approval
 gates are not implicitly satisfied by a foundation change.
 
+## GitHub delivery tracking
+
+The issues below mirror the work packages, with acceptance checklists, owning
+modules, dependencies, evidence and explicit approval boundaries. Closed
+engineering checkpoints record published work, not approval of a whole
+production feature. An open package can therefore contain a closed checkpoint.
+
+| Package | Delivery issue | Published checkpoint |
+| --- | --- | --- |
+| W00 - Product/provider decisions | [#1](https://github.com/huangyingting/HelloInterview/issues/1) | [#15 - Blueprint](https://github.com/huangyingting/HelloInterview/issues/15) |
+| W01 - Compiled runtime | [#2 - Completed](https://github.com/huangyingting/HelloInterview/issues/2) | Recorded in the delivery issue |
+| W02 - Persistence/cutover | [#3](https://github.com/huangyingting/HelloInterview/issues/3) | [#16 - Persistence foundation](https://github.com/huangyingting/HelloInterview/issues/16) |
+| W03 - Operated infrastructure | [#4](https://github.com/huangyingting/HelloInterview/issues/4) | [#17 - CI/container/recovery foundation](https://github.com/huangyingting/HelloInterview/issues/17) |
+| W04 - Operated identity/recovery | [#5](https://github.com/huangyingting/HelloInterview/issues/5) | [#18 - Identity/session foundation](https://github.com/huangyingting/HelloInterview/issues/18) |
+| W05 - Governed content publication | [#6](https://github.com/huangyingting/HelloInterview/issues/6) | [#19 - Protected content/quiz history](https://github.com/huangyingting/HelloInterview/issues/19) |
+| W06 - Production premium authority | [#7](https://github.com/huangyingting/HelloInterview/issues/7) | [#20 - Immutable entitlement foundation](https://github.com/huangyingting/HelloInterview/issues/20) |
+| W07 - Operated workers/delivery | [#8](https://github.com/huangyingting/HelloInterview/issues/8) | [#21 - Durable-job foundation](https://github.com/huangyingting/HelloInterview/issues/21) |
+| W08 - Authentic payment lifecycle | [#9](https://github.com/huangyingting/HelloInterview/issues/9) | [#22 - Sandbox billing/subscription lifecycle](https://github.com/huangyingting/HelloInterview/issues/22) |
+| W09 - Approved AI dispatch | [#10](https://github.com/huangyingting/HelloInterview/issues/10) | [#23 - Usage/native-intent/provenance foundation](https://github.com/huangyingting/HelloInterview/issues/23) |
+| W10 - Staff/support/privacy | [#11](https://github.com/huangyingting/HelloInterview/issues/11) | [#24 - Private member-support receipts](https://github.com/huangyingting/HelloInterview/issues/24) |
+| W11 - Community lifecycle/moderation | [#12](https://github.com/huangyingting/HelloInterview/issues/12) | [#25 - Reads/local ownership/pagination](https://github.com/huangyingting/HelloInterview/issues/25) |
+| W12 - Reviewed/accessible product | [#13](https://github.com/huangyingting/HelloInterview/issues/13) | [#26 - Deferred/keyboard/address recovery](https://github.com/huangyingting/HelloInterview/issues/26) |
+| W13 - Integrated acceptance/launch | [#14](https://github.com/huangyingting/HelloInterview/issues/14) | Pending |
+
+The unpublished comment-submission receipt slice remains open in
+[#27](https://github.com/huangyingting/HelloInterview/issues/27), under W11.
+It is not included in the migration-24 community checkpoint. Finish this
+already-started slice, then prioritize the larger staff/privacy milestone
+[#11](https://github.com/huangyingting/HelloInterview/issues/11) and integrated
+acceptance [#14](https://github.com/huangyingting/HelloInterview/issues/14).
+Provider, commercial, customer-migration and public-launch approvals remain
+explicit gates; issue creation or closure cannot supply them.
+
 ## Implementation progress
 
 | Package | Status | Delivered boundary |
