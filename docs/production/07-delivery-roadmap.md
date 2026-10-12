@@ -141,6 +141,12 @@ role grants, minimized exact account lookup, administrator-only revision-fenced
 status changes/session revocation and atomic immutable audit. It enables no
 impersonation, role UI, private preparation access, financial authority,
 helpdesk/email operation or comprehensive privacy completion.
+The [W10 privacy-export runbook](36-durable-owner-privacy-exports.md) records
+migration 27, fresh owner request/download admission, idempotent durable work,
+comprehensive owned preparation/identity/access/usage/community/support/
+sandbox-billing artifacts, 24-hour database expiry and integrity verification.
+It enables no external object storage, email delivery, approved retention,
+processor erasure, account deletion or paid-deletion completion.
 The [W11 community-read runbook](27-private-safe-community-reads.md) records
 migration 21, minimized public identities, query/viewer-bound cursor feeds and
 independent full-text detail across Community and global Search. It preserves

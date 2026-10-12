@@ -204,8 +204,7 @@ scoped member receipts/history and shared support-write admission. The
 adds verified OIDC MFA evidence, expiring append-only role grants, exact masked
 account lookup, revision-fenced suspension/reactivation, session revocation and
 immutable minimal audit. It adds no impersonation, external support delivery,
-private preparation access, role-management UI or completed privacy
-export/deletion.
+private preparation access, role-management UI or completed privacy deletion.
 
 | Role | Permitted actions | Explicit exclusions |
 | --- | --- | --- |
@@ -236,19 +235,19 @@ application commands, not manually edit subscription or JSON-state rows.
 
 ## Data portability, retention and deletion
 
-The existing `/api/export` is incomplete as a comprehensive privacy export:
-it covers user/state but not every relational contribution/support record.
+The [durable privacy-export checkpoint](36-durable-owner-privacy-exports.md)
+replaces managed `/api/export` with fresh-authenticated owner-only requests,
+durable worker processing, explicit status and 24-hour database artifacts. It
+includes owned profile/identity metadata, preparation state, assessment
+sessions, grants, usage, private AI inputs, contributions, support requests and
+customer-visible sandbox billing history. Session/CSRF secrets, provider
+credentials, hosted URLs, worker internals, operator references and other
+users' records are excluded.
 
-New exports are asynchronous, re-authenticated and owner-scoped. Include
-profile, identities without secrets, preferences/consents, learning history,
-drafts, stories, plans, project snapshots, quiz reports, own public
-contributions/comments, follows/votes, support history, and customer-visible
-billing history where permitted. Exclude other users' data, internal restricted
-moderation notes, credentials, hashes and provider secrets. Explain omissions.
-
-Generate encrypted private artifacts with a 24-hour download link and delete
-the export object after seven days. Notify only a verified address. The download
-endpoint checks ownership before signing; audit access without logging contents.
+External encrypted object storage, signed bearer links, verified-email
+delivery, approved retention and download audit are still unimplemented. The
+local SQLite `/api/export` remains a preparation archive rather than this
+managed privacy workflow.
 
 Proposed deletion lifecycle, subject to market/legal review:
 

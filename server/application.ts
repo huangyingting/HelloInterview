@@ -8,6 +8,7 @@ import { localConnection, postgresConnection } from './db/connection';
 import { assertDatabaseVersion } from './db/migrations';
 import { IdentityLifecycle } from './identity/lifecycle';
 import { assertBillingConfiguration, BillingNotifications } from './billing';
+import { PrivacyExports } from './privacy';
 
 export interface Application {
   readonly app: express.Express;
@@ -33,6 +34,7 @@ export async function createApplication(config: ServerConfig): Promise<Applicati
   let vite: ViteDevServer | undefined;
   let lifecycle: IdentityLifecycle | undefined;
   let billing: BillingNotifications | undefined;
+  let privacy:PrivacyExports|undefined;
   let closing: Promise<void> | undefined;
   function close(): Promise<void> {
     return closing ??= (async () => {
@@ -41,8 +43,10 @@ export async function createApplication(config: ServerConfig): Promise<Applicati
       try {
         await vite?.close();
       } finally {
-        try { await billing?.close(); } finally {
-          try { await lifecycle?.close(); } finally { await db.close(); }
+        try { await privacy?.close(); } finally {
+          try { await billing?.close(); } finally {
+            try { await lifecycle?.close(); } finally { await db.close(); }
+          }
         }
       }
     })();
@@ -58,7 +62,8 @@ export async function createApplication(config: ServerConfig): Promise<Applicati
     }
     if (config.identity?.lifecycle) lifecycle = await IdentityLifecycle.open(db, config.identity, shutdown.signal);
     if (config.billing) billing = await BillingNotifications.open(db, config.billing, shutdown.signal, false, undefined, config.publicOrigin ?? undefined);
-    const app = createApp(config, db, shutdown.signal, draining.signal, undefined, lifecycle, billing);
+    if(config.identity)privacy=await PrivacyExports.open(db);
+    const app = createApp(config, db, shutdown.signal, draining.signal, undefined, lifecycle, billing,privacy);
     if (config.environment === 'production') {
       app.use(express.static(config.frontendDir));
       app.get('/{*path}', (_req, res) => res.sendFile(path.join(config.frontendDir, 'index.html')));

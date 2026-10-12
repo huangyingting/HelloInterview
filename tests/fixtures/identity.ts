@@ -18,6 +18,7 @@ import { IdentityLifecycle } from '../../server/identity/lifecycle';
 import { migrateJobs } from '../../server/jobs';
 import type { IdentityTransport } from '../../server/identity/broker';
 import { BillingNotifications } from '../../server/billing';
+import { PrivacyExports } from '../../server/privacy';
 import type Stripe from 'stripe';
 
 const clientId = 'synthetic-client', clientSecret = 'synthetic-client-secret';
@@ -193,7 +194,7 @@ export async function openIdentityFixture(env: NodeJS.ProcessEnv = {}, options: 
       ...(options.lifecycle ? { OIDC_MANAGEMENT_ORIGIN: new URL(issuer).origin, OIDC_MANAGEMENT_CLIENT_ID: 'synthetic-manager',
         OIDC_MANAGEMENT_CLIENT_SECRET: 'synthetic-management-secret', OIDC_PASSWORD_HOOK_SECRET: '1'.repeat(64) } : {}),
     });
-    if (config.identity?.lifecycle || config.billing) await migrateJobs(db);
+    await migrateJobs(db);
     async function replica(server = createServer(tls)) {
       const connection = postgresConnection(url.href), shutdown = new AbortController();
       databases.push(connection); shutdowns.push(shutdown);
@@ -208,7 +209,9 @@ export async function openIdentityFixture(env: NodeJS.ProcessEnv = {}, options: 
       if (lifecycle) cleanup.push(() => lifecycle.close());
       const billing = config.billing ? await BillingNotifications.open(connection, config.billing, shutdown.signal, false, options.billingClient, config.publicOrigin ?? undefined) : undefined;
       if (billing) cleanup.push(() => billing.close());
-      const app = createApp(config, connection, shutdown.signal, shutdown.signal, transport, lifecycle, billing);
+      const privacy=await PrivacyExports.open(connection);
+      cleanup.push(()=>privacy.close());
+      const app = createApp(config, connection, shutdown.signal, shutdown.signal, transport, lifecycle, billing,privacy);
       app.use(express.static(config.frontendDir));
       app.get('/{*path}', (_req, res) => res.sendFile(`${config.frontendDir}/index.html`));
       app.use(handleError);
@@ -216,7 +219,7 @@ export async function openIdentityFixture(env: NodeJS.ProcessEnv = {}, options: 
       if (!servers.includes(server)) { servers.push(server); server.listen(0, '127.0.0.1'); await once(server, 'listening'); }
       const address = server.address();
       if (!address || typeof address === 'string') throw new Error('Synthetic app did not listen.');
-      return { db: connection, lifecycle, billing, address: `https://127.0.0.1:${address.port}`, browser: () => new IdentityBrowser(`https://127.0.0.1:${address.port}`, new URL(origin).host, certificate) };
+      return { db: connection, lifecycle, billing,privacy,address: `https://127.0.0.1:${address.port}`, browser: () => new IdentityBrowser(`https://127.0.0.1:${address.port}`, new URL(origin).host, certificate) };
     }
     const application = await replica(initialServer);
     return {

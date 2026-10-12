@@ -212,7 +212,7 @@ test('a private GitHub email has a recoverable pending screen and can activate o
   await page.getByRole('link', { name: 'Continue with GitHub' }).click();
   await expect(page.getByRole('heading', { name: 'A verified contact email is needed' })).toBeVisible();
   await expect(page.getByText(/No substitute address was invented/)).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Export preparation data' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Request privacy export' })).toBeDisabled();
   const owner = await f.db.prepare('SELECT user_id FROM managed_identities').get();
   f.setSubject('google-oauth2|synthetic-private-recovery');
   f.setClaims({ email: 'verified@example.invalid', email_verified: true });
@@ -221,7 +221,12 @@ test('a private GitHub email has a recoverable pending screen and can activate o
   const rows = await f.db.prepare('SELECT user_id FROM managed_identities').all();
   assert.equal(rows.length, 2);
   assert.ok(rows.every(row => row.user_id === owner?.user_id));
-  await expect(page.getByRole('button', { name: 'Export preparation data' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Request privacy export' })).toBeEnabled();
+  await page.getByRole('button',{name:'Request privacy export'}).click();
+  await expect(page.getByText('Waiting for worker',{exact:true})).toBeVisible();
+  const claim=await f.privacy.jobs.claim('privacy.process');assert.ok(claim);
+  await f.privacy.runClaim(claim);
+  await expect(page.getByRole('link',{name:'Download owner export'})).toBeVisible({timeout:10000});
 });
 
 test('password reset revokes an actual browser session and stale SSO recovers with fresh hosted authentication without losing work', async t => {

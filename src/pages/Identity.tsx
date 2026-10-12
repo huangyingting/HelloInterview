@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Download, ShieldCheck } from 'lucide-react';
-import type { IdentitySecurity } from '../../shared/types';
+import type { IdentitySecurity, PrivacyExportHistory } from '../../shared/types';
 import { proCapabilities } from '../../shared/access';
 import { AuthPrompt } from '../components/access';
 import { Badge, PageHeading } from '../components/primitives';
@@ -63,18 +63,28 @@ export function ManagedAccountPage() {
   const { data, act, refresh, pending, notify } = useStudio();
   const status = data.user?.identity?.status;
   const [name, setName] = useState(data.user?.name ?? ''), [security, setSecurity] = useState<IdentitySecurity | null>(null), [error, setError] = useState('');
+  const [exports,setExports]=useState<PrivacyExportHistory|null>(null);
   const loadSecurity = async () => {
     const result = await request<IdentitySecurity>('/api/identity/security');
     setSecurity(result); setError('');
   };
+  const loadExports=async()=>setExports(await request<PrivacyExportHistory>('/api/privacy/exports'));
   useEffect(() => {
     if (status !== 'active' && status !== 'pending-verification') return;
     const controller = new AbortController();
     request<IdentitySecurity>('/api/identity/security', undefined, undefined, controller.signal)
       .then(value => { if (!controller.signal.aborted) setSecurity(value); })
       .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Account security could not be loaded.'); });
+    request<PrivacyExportHistory>('/api/privacy/exports',undefined,undefined,controller.signal)
+      .then(value=>{if(!controller.signal.aborted)setExports(value);})
+      .catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Privacy exports could not be loaded.');});
     return () => controller.abort();
   }, [status]);
+  useEffect(()=>{
+    if(!exports?.exports.some(item=>['requested','processing'].includes(item.status)))return;
+    const timer=window.setInterval(()=>{void loadExports().catch(cause=>setError(cause instanceof Error?cause.message:'Privacy export status could not be refreshed.'));},3000);
+    return()=>window.clearInterval(timer);
+  },[exports]);
   if (!data.user) return <AuthPrompt/>;
   if (status !== 'active' && status !== 'pending-verification') return <>
     <PageHeading eyebrow="YOUR ACCOUNT" title="Account access is restricted." description="Product access is unavailable for this account. Email verification does not remove a suspension or deletion request."/>
@@ -100,14 +110,21 @@ export function ManagedAccountPage() {
       <section className="panel"><h2>Current access</h2><p>Server-verified access: <strong>{data.capabilities.access?.features.some(feature => proCapabilities.includes(feature.key) && feature.reason === 'unavailable') ? 'refresh unavailable' : data.capabilities.access?.state ?? 'unavailable'}</strong>. Content-only grants do not include premium practice, progress, projects or tutor work.</p>
         {data.capabilities.access?.nextChangeAt && <p>Next scheduled access change: {new Date(data.capabilities.access.nextChangeAt).toLocaleString()}.</p>}
         <p>Production payments and subscriptions remain disabled. Demo purchases and gifts cannot upgrade a managed account; an access grant is not proof of payment.</p>
-        {data.capabilities.billing && <p><Link className="text-link" to="/billing">Open private sandbox billing</Link> - hosted test sessions do not grant premium access.</p>}<h3>Preparation data</h3>
-        <p>Export your saved preparation after confirming your identity within ten minutes. The current export is not yet a complete privacy-request export.</p>
+        {data.capabilities.billing && <p><Link className="text-link" to="/billing">Open private sandbox billing</Link> - hosted test sessions do not grant premium access.</p>}<h3>Privacy exports</h3>
+        <p>Request a comprehensive owner export after confirming your identity within ten minutes. A worker prepares a private database artifact for 24 hours; no email or external storage is connected.</p>
         <button className="button secondary small" disabled={pending || !active || !security?.fresh} onClick={() => act(async () => {
-          const value = await request<unknown>('/api/export');
-          const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }));
-          try { const link = document.createElement('a'); link.href = url; link.download = 'interview-studio-data.json'; link.click(); }
-          finally { URL.revokeObjectURL(url); }
-        })}><Download size={15}/> Export preparation data</button>
+          await request('/api/privacy/exports',{requestId:crypto.randomUUID()});
+          await loadExports();notify('Privacy export requested. This page will update when processing finishes.');
+        })}><Download size={15}/> Request privacy export</button>{' '}
+        <button className="text-button" disabled={pending} onClick={()=>act(loadExports)}>Refresh export status</button>
+        {!exports&&<p role="status">Loading privacy export history...</p>}
+        {exports?.exports.length===0&&<p className="fine-print">No privacy exports have been requested.</p>}
+        {exports?.exports.map(item=><div className="panel" key={item.id}><strong>{item.status==='ready'?'Ready to download':item.status==='processing'?'Processing':item.status==='requested'?'Waiting for worker':item.status==='expired'?'Expired':'Processing failed'}</strong>
+          <p>Requested {new Date(item.requestedAt).toLocaleString()}{item.expiresAt?` - expires ${new Date(item.expiresAt).toLocaleString()}`:''}.</p>
+          {item.status==='ready'&&security?.fresh&&<a className="text-link" href={`/api/privacy/exports/${item.id}/download`}><Download size={14}/> Download owner export</a>}
+          {item.status==='ready'&&!security?.fresh&&<p className="fine-print">Confirm a sign-in method again before downloading this private artifact.</p>}
+          {item.status==='failed'&&<p className="fine-print">The worker did not publish an artifact. Request a new export after operations review.</p>}
+        </div>)}
       </section>
     </div>
     <section className="panel"><h2>Connected sign-in methods</h2>

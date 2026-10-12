@@ -165,7 +165,7 @@ test('unverified and private-email identities get minimal access without reservi
     ['/api/plan', { plan: 'lifetime' }], ['/api/gift', { plan: 'year' }], ['/api/auth/demo', {}],
     ['/api/tutor', { question: 'Tell me about retry-safe APIs', context: '' }], ['/api/posts', { title: 'Unverified contribution' }],
   ] as const) assert.ok([403, 404].includes((await browser.request(path, body)).status));
-  assert.equal((await browser.request('/api/export')).status, 403);
+  assert.equal((await browser.request('/api/privacy/exports', { requestId: randomUUID() })).status, 403);
   const verified = await login(f, f.browser(), 'google-oauth2|verified-owner');
   const unverified = f.browser();
   await f.complete(unverified, await f.begin(unverified), { sub: 'google-oauth2|unverified-owner', email_verified: false });
@@ -222,7 +222,7 @@ test('idle, absolute, epoch and account-status checks use current database facts
   await login(f, browser);
   await f.db.prepare("UPDATE managed_accounts SET status='suspended' WHERE user_id=?").run(id);
   assert.equal((await browser.request('/api/profile', { name: 'Blocked update' }, 'PATCH')).status, 403);
-  assert.equal((await browser.request('/api/export')).status, 403);
+  assert.equal((await browser.request('/api/privacy/exports', { requestId: randomUUID() })).status, 403);
   const denied = await f.complete(browser, await f.begin(browser));
   assert.equal(denied.headers.get('location'), '/auth?error=security_changed');
   assert.equal((await browser.request('/api/logout', {})).status, 200);
@@ -261,13 +261,14 @@ test('security actions require recent authentication and cannot finish after log
   const f = await fixture(t), { browser, data } = await login(f);
   await f.db.prepare('UPDATE managed_sessions SET authenticated_at=?').run(Date.now() - 600001);
   assert.equal((await browser.request('/api/identity/link', { provider: 'github' })).status, 403);
-  assert.equal((await browser.request('/api/export')).status, 403);
+  assert.equal((await browser.request('/api/privacy/exports', { requestId: randomUUID() })).status, 403);
   const start = await browser.request('/api/identity/reauth', { provider: 'google' });
   const authorization = new URL((await start.json()).url);
   const proof = await f.complete(browser, authorization);
   assert.equal(proof.headers.get('location'), '/account');
   await browser.bootstrap();
-  assert.equal((await browser.request('/api/export')).status, 200);
+  assert.equal((await browser.request('/api/privacy/exports', { requestId: randomUUID() })).status, 202);
+  assert.equal((await browser.request('/api/export')).status, 410);
   const link = await browser.request('/api/identity/link', { provider: 'github' });
   const stale = new URL((await link.json()).url);
   await f.db.prepare('UPDATE managed_accounts SET session_epoch=session_epoch+1 WHERE user_id=?').run(data.user!.id);

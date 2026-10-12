@@ -95,7 +95,17 @@ time-bounded append-only roles, exact masked lookup, revision-fenced account
 status changes, epoch session revocation and transactional immutable audit. No
 role is granted by default. Impersonation, other-staff changes, direct billing
 or private-content authority, operated helpdesk delivery and comprehensive
-privacy export/deletion remain unavailable.
+privacy deletion remains unavailable.
+
+**Implemented durable privacy-export checkpoint (W10):** migration 27 binds one
+fresh-authenticated owner request to one `privacy.process` operation and one
+immutable 24-hour database artifact. The
+[privacy runbook](36-durable-owner-privacy-exports.md) defines comprehensive
+owned-domain contents, secret/internal exclusions, explicit requested/
+processing/ready/failed/expired states, integrity checks and the compiled
+`privacy:process` / `privacy:worker` commands. External object storage, email
+delivery, approved retention, processor erasure and account deletion remain
+unavailable.
 
 ## Operating model
 

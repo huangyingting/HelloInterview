@@ -31,6 +31,7 @@ import { communityKinds } from '../shared/community-routes';
 import { CommunityContributions } from './community-contributions';
 import { CommunitySubmissions } from './community-submissions';
 import { StaffAdministration } from './staff';
+import type { PrivacyExports } from './privacy';
 function localSessionHash(req: express.Request) {
   const match = req.headers.cookie?.split(';').map(value => value.trim()).find(value => value.startsWith('studio_session='));
   const token = match?.slice('studio_session='.length);
@@ -70,7 +71,7 @@ function sourceText(value: unknown): string {
   if (value.includes('\0')) throw new HttpError(400, 'Import text source files, not binary content.');
   return value;
 }
-export function createApp(config: ServerConfig, db: Database, shutdown: AbortSignal, draining: AbortSignal = shutdown, identityTransport?: IdentityTransport, lifecycle?: IdentityLifecycle, billing?: BillingNotifications): express.Express {
+export function createApp(config: ServerConfig, db: Database, shutdown: AbortSignal, draining: AbortSignal = shutdown, identityTransport?: IdentityTransport, lifecycle?: IdentityLifecycle, billing?: BillingNotifications, privacy?:PrivacyExports): express.Express {
   const states = new StateRepository(db);
   const content = new ContentRepository(db);
   const community = new CommunityReads(db);
@@ -80,6 +81,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   if (config.identity && !config.publicOrigin) throw new Error('Managed identity requires a canonical application origin.');
   if (config.identity?.lifecycle && !lifecycle) throw new Error('Configured identity lifecycle must be opened before serving requests.');
   if (config.billing && !billing) throw new Error('Configured billing notifications must be opened before serving requests.');
+  if (config.identity && !privacy) throw new Error('Managed identity requires durable privacy export processing.');
   const identity = config.identity && config.publicOrigin ? new ManagedIdentity(db, config.identity, config.publicOrigin, shutdown, identityTransport, lifecycle) : null;
   const entitlements = identity ? new Entitlements(db) : null;
   const support = identity ? new SupportRequests(db, identity) : null;
@@ -382,12 +384,38 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     sessionCookie(token, res);
     res.json({ ok: true });
   });
+  if(identity&&privacy){
+    app.post('/api/privacy/exports',async(req,res)=>{
+      const user=await requireUser(req);
+      res.status(202).json(await privacy.request(user.id,req.body,()=>identity.assertWritable(user,true)));
+    });
+    app.get('/api/privacy/exports',async(req,res)=>{
+      const user=await requireUser(req);
+      res.json(await db.transaction(async()=>{
+        await identity.assertWritable(user);
+        const result=await privacy.history(user.id);
+        await identity.assertWritable(user);
+        return result;
+      }));
+    });
+    app.get('/api/privacy/exports/:id/download',async(req,res)=>{
+      const user=await requireUser(req);
+      const result=await db.transaction(async()=>{
+        await identity.assertWritable(user,true);
+        const download=await privacy.download(user.id,req.params.id);
+        await identity.assertWritable(user,true);
+        return download;
+      });
+      res.setHeader('Content-Disposition',`attachment; filename="interview-studio-owner-export-${result.status.id}.json"`);
+      res.type('application/json').send(result.artifact);
+    });
+  }
   app.get('/api/export', async (req, res) => {
+    if(identity)throw new HttpError(410,'Managed account exports now use the durable privacy export workflow on the Account page.');
     const user = (await requireUser(req));
     res.setHeader('Content-Disposition', 'attachment; filename="interview-studio-data.json"');
     const exported=await db.transaction(async()=>{
       await content.lockOwner(user.id);
-      if (identity) await identity.assertWritable(user, true);
       const state = await stateFor(user);
       const quizReports = await Promise.all([
         ...state.quizzes.filter(quiz => quiz.contentVersion).map(quiz => content.report(quiz.id, quiz.answers, quiz.contentVersion, quiz.questionIds ?? Object.keys(quiz.answers), quiz.score)),

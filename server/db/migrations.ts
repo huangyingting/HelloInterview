@@ -792,6 +792,46 @@ export const migrations = [{
     CREATE TRIGGER immutable_staff_audit_event BEFORE UPDATE ON staff_audit_events
       FOR EACH ROW EXECUTE FUNCTION immutable_staff_record();
   `,
+}, {
+  version:27,
+  name:'durable-owner-privacy-exports',
+  sql:`
+    CREATE TABLE privacy_exports (
+      id TEXT NOT NULL CHECK (id ~ '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'),
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      operation_id TEXT NOT NULL UNIQUE REFERENCES durable_operations(id),
+      state TEXT NOT NULL DEFAULT 'requested' CHECK (state IN ('requested','ready','expired')),
+      requested_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+      ready_at TIMESTAMPTZ,expires_at TIMESTAMPTZ,
+      artifact TEXT CHECK (artifact IS NULL OR octet_length(artifact)<=33554432),
+      artifact_hash TEXT CHECK (artifact_hash IS NULL OR artifact_hash ~ '^[a-f0-9]{64}$'),
+      artifact_bytes INTEGER CHECK (artifact_bytes IS NULL OR artifact_bytes BETWEEN 1 AND 33554432),
+      CHECK ((state<>'requested')=(ready_at IS NOT NULL)),
+      CHECK ((state<>'requested')=(expires_at IS NOT NULL)),
+      CHECK ((state='ready')=(artifact IS NOT NULL)),
+      CHECK ((state='ready')=(artifact_hash IS NOT NULL)),
+      CHECK ((state='ready')=(artifact_bytes IS NOT NULL)),
+      PRIMARY KEY(user_id,id),
+      CHECK (expires_at IS NULL OR expires_at=ready_at+interval '24 hours')
+    );
+    CREATE INDEX privacy_exports_owner_order ON privacy_exports(user_id,requested_at DESC,id DESC);
+    CREATE FUNCTION protect_privacy_export() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+      BEGIN
+        IF NEW.id<>OLD.id OR NEW.user_id<>OLD.user_id OR NEW.operation_id<>OLD.operation_id OR
+          NEW.requested_at<>OLD.requested_at OR NOT (
+            OLD.state='requested' AND NEW.state='ready' OR
+            OLD.state='ready' AND NEW.state='expired' AND OLD.expires_at<=clock_timestamp() AND
+              NEW.ready_at=OLD.ready_at AND NEW.expires_at=OLD.expires_at AND
+              NEW.artifact IS NULL AND NEW.artifact_hash IS NULL AND NEW.artifact_bytes IS NULL
+          ) THEN
+          RAISE EXCEPTION 'Privacy export records allow only one publish and one post-expiry erasure.';
+        END IF;
+        RETURN NEW;
+      END;
+    $$;
+    CREATE TRIGGER protect_privacy_export_update BEFORE UPDATE ON privacy_exports
+      FOR EACH ROW EXECUTE FUNCTION protect_privacy_export();
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

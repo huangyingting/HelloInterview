@@ -222,8 +222,14 @@ The [staff administration checkpoint](docs/production/35-mfa-staff-account-admin
 adds verified OIDC MFA evidence, time-bounded role events, exact masked lookup,
 revision-fenced account suspension/reactivation, session revocation and immutable
 minimal audit. It does not add impersonation, helpdesk delivery or complete
-privacy export/deletion.
-Controlled PostgreSQL deployments must apply **migration 26 and maintained queue
+privacy deletion.
+The [durable privacy-export checkpoint](docs/production/36-durable-owner-privacy-exports.md)
+adds fresh owner request/download admission, durable comprehensive artifacts,
+integrity metadata and explicit failure/expiry states. Artifacts are
+inaccessible after 24 hours and the operated worker erases expired bytes;
+external storage, email delivery, approved retention, processor erasure and
+account deletion are not claimed.
+Controlled PostgreSQL deployments must apply **migration 27 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 
@@ -283,11 +289,13 @@ claims, safe retry modes, fenced result commits and audited maintenance replay.
 auto-migrate. `npm run jobs:status` shows private operational metadata without
 request bodies. The compiled release includes a reusable worker module.
 
-Managed identity now supplies an optional compiled `identity:reconcile` /
-`identity:worker` composition for security facts; the web process does not start
-it automatically. This is not enabled billing, email, privacy or AI delivery:
-those handlers and their operated composition belong to their feature packages. Local SQLite
-workflows are unchanged. See [the durable-job runbook](docs/production/11-jobs-implementation.md)
+Managed identity supplies optional compiled `identity:reconcile` /
+`identity:worker` composition for security facts and `privacy:process` /
+`privacy:worker` composition for owner export artifacts; the web process starts
+neither worker automatically. Privacy artifacts are database-only and are not
+email or external-object delivery. Billing and AI provider workers remain
+separate feature compositions. Local SQLite workflows are unchanged. See
+[the durable-job runbook](docs/production/11-jobs-implementation.md)
 for contracts, replay safeguards, retention and actual worker-death/restore
 coverage.
 

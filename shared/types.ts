@@ -366,6 +366,11 @@ export interface StaffAuditEvent {
   reason:string;priorRevision:number|null;resultRevision:number|null;createdAt:string;
 }
 export interface StaffAuditPage {events:StaffAuditEvent[];nextCursor:string|null}
+export interface PrivacyExportStatus {
+  id:string;status:'requested'|'processing'|'ready'|'failed'|'expired';
+  requestedAt:string;readyAt:string|null;expiresAt:string|null;bytes:number|null;sha256:string|null;
+}
+export interface PrivacyExportHistory {exports:PrivacyExportStatus[]}
 export interface Bootstrap {
   csrf?: string;
   user: User | null;

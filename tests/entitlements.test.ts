@@ -11,6 +11,7 @@ import { problems, getTrack } from '../shared/catalog';
 import { courses } from '../shared/public-catalog';
 import type { Bootstrap, ProjectWorkspace, UserState } from '../shared/types';
 import { openIdentityFixture } from './fixtures/identity';
+import { completedPrivacyExport } from './fixtures/privacy';
 
 async function fixture(t: TestContext) {
   const f = await openIdentityFixture();
@@ -180,8 +181,8 @@ test('managed route matrix separates content, writes, archives and fake demo com
   assert.equal((await browser.request(`/api/custom-quizzes/${quiz.id}/question`)).status, 200);
   assert.equal((await browser.request(`/api/content/problems/${project.problemId}?project=${project.id}`)).status, 200);
   assert.equal((await browser.request(`/api/content/problems/${project.problemId}?project=${randomUUID()}`)).status, 404);
-  const exported = await value<{ state: UserState }>(await browser.request('/api/export'));
-  assert.deepEqual(exported.state.projects, before.state.projects);
+  const exported = await completedPrivacyExport(browser,f.privacy);
+  assert.deepEqual((exported.artifact.preparation as {state:UserState}).state.projects, before.state.projects);
   assert.doesNotMatch(JSON.stringify(exported), /source_key|request_hash|fixture-operator/);
 });
 
@@ -222,7 +223,7 @@ test('project archives keep the licensed original brief, never a later library u
   const states = new StateRepository(f.db);
   await states.mutate(f.owner, state => { delete state.projects[0].brief; delete state.projects[0].briefVersion; });
   assert.equal((await f.browser.request(`/api/content/problems/${problem.id}?project=${result.project.id}`)).status, 409);
-  assert.equal((await f.browser.request('/api/export')).status, 200);
+  assert.equal((await completedPrivacyExport(f.browser,f.privacy)).item.status,'ready');
 });
 
 test('managed AI is denied at enqueue and existing local claims cannot publish after identity adoption', async t => {
