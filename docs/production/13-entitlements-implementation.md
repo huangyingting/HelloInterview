@@ -36,8 +36,11 @@ Source kinds are billing, support, promotion and engineering. Engineering grants
 are limited to one day; other intervals to 400 days. These are defensive bounds,
 **not** approved prices, duration promises, credits or lifetime offers. No public
 endpoint or operator CLI issues grants. W08 must establish verified provider
-facts and customer/interval ownership before calling the domain. W10 must supply
-staff RBAC, fresh MFA, scoped approvals and audit before offering courtesy tools.
+facts and customer/interval ownership before calling the domain. The
+[sandbox service adapter](18-sandbox-service-authority.md) now does this under
+an explicit default-off test policy, using immutable invoice sources and scoped
+terminal adjustments; it does not establish live commercial authority. W10 must
+supply staff RBAC, fresh MFA, scoped approvals and audit before offering courtesy tools.
 Neither a source kind string nor the domain audit proves that a payment settled.
 
 ## Versioned policy and request matrix
@@ -118,6 +121,9 @@ writing; every direct API request remains independently authorized.
 There is no notification push channel for arbitrary revocation while a page stays
 focused. Such a page refreshes on its scheduled boundary/focus or explicit reload;
 the server nevertheless denies the next unauthorized request immediately.
+The opt-in sandbox billing page additionally refreshes permissions for each new
+ledger observation, waiting out any earlier in-flight bootstrap so stale
+permissions cannot satisfy that refresh.
 
 ## Evidence and remaining gates
 

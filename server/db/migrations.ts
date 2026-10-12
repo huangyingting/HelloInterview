@@ -401,6 +401,21 @@ export const migrations = [{
     );
     CREATE INDEX stripe_charge_customer ON stripe_invoice_charge_links(customer_ref,charge_id);
   `,
+}, {
+  version: 12,
+  name: 'sandbox-owned-service-authority',
+  sql: `
+    CREATE TABLE stripe_invoice_service_evidence (
+      account_id TEXT NOT NULL, invoice_id TEXT NOT NULL,
+      customer_ref TEXT NOT NULL REFERENCES stripe_owned_customers(id),
+      source_key TEXT NOT NULL UNIQUE, policy_version TEXT NOT NULL CHECK (policy_version='sandbox-card-service-v1'),
+      revision BIGINT NOT NULL CHECK (revision > 0),
+      payload TEXT NOT NULL CHECK (octet_length(payload) <= 8192),
+      PRIMARY KEY(account_id,invoice_id),
+      FOREIGN KEY(account_id,invoice_id) REFERENCES stripe_owned_invoice_ledger(account_id,invoice_id)
+    );
+    CREATE INDEX stripe_service_customer ON stripe_invoice_service_evidence(customer_ref);
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

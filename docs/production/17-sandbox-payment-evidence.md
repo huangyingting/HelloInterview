@@ -143,8 +143,13 @@ publication SQL ran before an expired claim rolled every write back. Compiled
 maintenance requires no development loaders; actual Chromium displays settled
 then partially refunded funding without Pro or provider/private details.
 
-Next W08 work: versioned eligible service-period policy, trusted immutable
-billing issuing/revoking adapters, approved grace/refund/dispute decisions,
+The subsequent [sandbox service checkpoint](18-sandbox-service-authority.md)
+adds default-off versioned service-period eligibility and trusted immutable
+issuing/revoking adapters. The no-grant behavior above remains the default;
+strict opt-in sandbox reversals are not approved commercial policy.
+
+Next W08 work: authentic provider lifecycle/period evidence, approved commercial
+and grace/refund/dispute decisions,
 restricted Portal and cancellation, partitioned history, retained financial
 privacy/support operations and authentic operated recovery. Approved merchant,
 prices/currency/tax/legal policies and live authorization remain gates.

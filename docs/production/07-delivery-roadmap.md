@@ -16,7 +16,7 @@ gates are not implicitly satisfied by a foundation change.
 | W07 | Durable-job checkpoint implemented; provider/worker composition pending W08-W10 | Maintained PostgreSQL queue, controlled schema/policies, atomic operation/inbox/outbox, fenced completion, safe retries, audited replay and actual worker-death recovery |
 | W04 | In progress; private identity, shared admission and credential-lifecycle checkpoints implemented | Maintained OIDC verification, email/Google/GitHub reference connections, secure sessions/CSRF, fresh linking, paired PostgreSQL legacy proof, shared admission, signed reset revocation, read-only canonical security facts and compiled maintained-queue reconciliation; live delivery, operated alerts, notifications, broker-native abuse controls and imported-account recovery remain |
 | W06 | Entitlement engineering checkpoint implemented; issuing adapters and commercial authority pending W08/W10/W12 | Immutable owned source grants, terminal revocation, database-clock capability policy, API/worker admission and publication checks, separate content-only access, licensed project snapshots, expiry-aware UI and retained archives |
-| W08 | In progress; sandbox notifications, owned hosted intents, canonical ledger and card-funding checkpoints implemented | Pinned official Stripe SDK/API, signed durable evidence, owned correlations and stable external keys, fresh resume/refresh, complete invoice/card allocations and historical refund/dispute/credit traces, dirty-revision/terminal fencing, retained history and test-only UI; service-period/commercial eligibility, billing grants, Portal and operated lifecycle remain |
+| W08 | In progress; sandbox notifications, owned hosted intents, canonical ledger, card funding and gated service-authority checkpoints implemented | Pinned official Stripe SDK/API, signed durable evidence, owned correlations and stable external keys, complete funding/adjustment traces, default-off versioned calendar eligibility, immutable scoped grants/revocations, dirty-revision/terminal fencing and expiry-aware UI; authentic provider evidence, commercial/grace policy, Portal and operated lifecycle remain |
 | W09-W13 | Pending | AI budgets, account administration, support, moderation, and launch gates |
 
 W01 preserves existing local accounts, SQLite schema, demo entitlements, API
@@ -59,8 +59,13 @@ owned subscription/invoice/line/payment-reference observations, bounded
 historical reads, notification handoff and dirty-revision fencing. The
 [payment-evidence runbook](17-sandbox-payment-evidence.md) records migration 11,
 narrow sandbox card funding, complete allocations, historical reversals/credits
-and consistency/terminal guards. None establishes eligible commercial service
-periods, subscription entitlements, an operated lifecycle or live-mode approval.
+and consistency/terminal guards. The
+[sandbox service-authority runbook](18-sandbox-service-authority.md) records
+migration 12, explicit default-off calendar eligibility, trusted immutable
+invoice-scoped issuing/revoking adapters, strict sandbox adjustments, policy
+continuity and fresh UI permissions. None establishes eligible commercial
+service periods, live subscription entitlements, an operated lifecycle or
+live-mode approval.
 
 ## Delivery strategy
 

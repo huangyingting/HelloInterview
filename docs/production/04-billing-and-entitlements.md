@@ -12,8 +12,12 @@ canonical subscription/invoice/service-line/payment-reference observations,
 dirty-revision fencing and retained history, explicitly without payment
 attestation. The [fourth checkpoint](17-sandbox-payment-evidence.md) adds narrow
 canonical card funding, complete allocations and historical refund/dispute/
-credit-note traces, without service-period or commercial authority.
-Payment-derived entitlements, Portal and the operated financial lifecycle below
+credit-note traces, without service-period or commercial authority. The
+[fifth checkpoint](18-sandbox-service-authority.md) adds explicit default-off
+sandbox calendar eligibility and immutable invoice-scoped issuing/revoking
+adapters. Its deliberately strict partial-refund/dispute/credit retirement
+policy is not approval or implementation of the commercial policies below.
+Live payment-derived entitlements, Portal and the operated financial lifecycle
 remain unimplemented; this specification is not launch authorization.
 
 ## Launch offer and boundaries

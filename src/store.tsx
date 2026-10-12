@@ -26,7 +26,7 @@ interface Store {
   pending: boolean;
   error: string;
   toast: { text: string; error: boolean } | null;
-  refresh: () => Promise<void>;
+  refresh: (fresh?: boolean) => Promise<void>;
   setState: (state: UserState) => void;
   act: (operation: () => Promise<void>) => Promise<void>;
   notify: (message: string, error?: boolean) => void;
@@ -42,7 +42,11 @@ export function StudioProvider({ children }: { children: ReactNode }) {
   const refreshing = useRef<Promise<void> | null>(null);
   const [accessTick, setAccessTick] = useState(0);
   const notify = useCallback((text: string, error = false) => setToast({ text, error }), []);
-  const refresh = useCallback(() => {
+  const refresh = useCallback(async (fresh = false) => {
+    if (refreshing.current) {
+      if (!fresh) return refreshing.current;
+      await refreshing.current;
+    }
     if (refreshing.current) return refreshing.current;
     refreshing.current = (async () => {
       const next = await request<Bootstrap>('/api/bootstrap');

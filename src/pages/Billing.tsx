@@ -19,19 +19,24 @@ function savedRequest(key: string): SavedRequest | null {
 }
 const labels = { pro_monthly: 'Monthly reference offer', pro_annual: 'Annual reference offer' };
 export function SandboxBillingPage() {
-  const { data, act, pending } = useStudio(), [params] = useSearchParams();
+  const { data, act, pending, refresh: refreshAccess } = useStudio(), [params] = useSearchParams();
   const [view, setView] = useState<SandboxBillingView | null>(null), [security, setSecurity] = useState<IdentitySecurity | null>(null);
   const [offer, setOffer] = useState<SandboxOffer>('pro_monthly'), [intent, setIntent] = useState<SavedRequest | null>(null);
   const [acknowledged, setAcknowledged] = useState(false), [error, setError] = useState('');
   const [intentReady, setIntentReady] = useState(false);
   const returned = useRef<string | null>(null);
+  const accessSnapshot = useRef<string | null>(null);
   const available = data.capabilities.auth?.mode === 'managed' && !!data.capabilities.billing && data.user?.identity?.status === 'active';
   const storageKey = `studio-sandbox-checkout:${data.user?.id ?? ''}`;
   const load = useCallback(async (signal?: AbortSignal) => {
     const result = await request<SandboxBillingView>('/api/billing', undefined, undefined, signal);
+    if (!signal?.aborted && result.accessAuthority !== 'none' && result.ledger?.observedAt && accessSnapshot.current !== result.ledger.observedAt) {
+      await refreshAccess(true);
+      if (!signal?.aborted) accessSnapshot.current = result.ledger.observedAt;
+    }
     if (!signal?.aborted) setView(result);
     return result;
-  }, []);
+  }, [refreshAccess]);
   useEffect(() => {
     if (!available) return;
     const controller = new AbortController();
@@ -46,6 +51,7 @@ export function SandboxBillingPage() {
   }, [available, storageKey, load]);
   const processing = view?.checkout?.processing, state = view?.checkout?.state;
   const ledgerProcessing = view?.ledger?.processing;
+  const sandboxAccess = !!view && view.accessAuthority !== 'none';
   useEffect(() => {
     const preparing = ['waiting-customer', 'queued'].includes(state ?? '');
     const reading = ['created', 'retry', 'active'].includes(processing ?? '');
@@ -81,10 +87,14 @@ export function SandboxBillingPage() {
   const savedExpired = checkout?.state === 'expired' && checkout.requestKey === intent?.key;
   const needsReview = checkout && ['failed', 'cancelled', 'missing'].includes(checkout.processing);
   return <>
-    <PageHeading eyebrow="PRIVATE SANDBOX" title="Rehearse hosted checkout." description="Test-mode billing only. No production purchase or payment-based premium access is enabled."/>
+    <PageHeading eyebrow="PRIVATE SANDBOX" title="Rehearse hosted checkout." description={sandboxAccess ?
+      'Test-mode billing with explicitly enabled, expiring sandbox service access. Production purchases remain disabled.' :
+      'Test-mode billing only. No production purchase or payment-based premium access is enabled.'}/>
     <section className="panel">
       <Badge tone="amber">Sandbox only</Badge>
-      <p>Use provider test payment details only, never a real card. Reference prices are not approved commercial offers. A completed sandbox checkout does not change your premium access.</p>
+      <p>Use provider test payment details only, never a real card. Reference prices are not approved commercial offers.
+        {' '}{sandboxAccess ? 'Only verified funding and an eligible service interval can issue test access under the configured sandbox policy.' :
+          'A completed sandbox checkout does not change your premium access.'}</p>
       <p>Customer and session ownership come from your authenticated account. Return URLs, email addresses and browser messages cannot prove payment.</p>
       {params.has('attempt') && <p role="status">Returned from hosted checkout. Only a refresh of your owned canonical session can update the status below.</p>}
       {error && <p role="alert">{error} Last displayed information is not a new payment confirmation.</p>}
@@ -102,7 +112,9 @@ export function SandboxBillingPage() {
       <p>Processing: {checkout.processing}. Hosted session deadline: {new Date(checkout.expiresAt).toLocaleString()}.</p>
       {checkout.quote && <p>Reference recurring price: {new Intl.NumberFormat(undefined, { style: 'currency', currency: checkout.quote.currency }).format(checkout.quote.unitAmount / 100)}. Final test details are shown by the provider.</p>}
       {needsReview && <p role="status">An operator must inspect this unresolved intent and reconcile its provider outcome. Do not create a replacement customer or checkout.</p>}
-      {checkout.state === 'complete' && <p>Sandbox session completed; payment display: {checkout.paymentStatus ?? 'unavailable'}. No paid entitlement was issued. Further subscriptions remain blocked pending billing lifecycle reconciliation.</p>}
+      {checkout.state === 'complete' && <p>Sandbox session completed; payment display: {checkout.paymentStatus ?? 'unavailable'}.
+        {' '}{sandboxAccess ? 'The session alone is not service authority; inspect the separate sandbox grant below.' : 'No paid entitlement was issued.'}
+        {' '}Further subscriptions remain blocked pending billing lifecycle reconciliation.</p>}
       {checkout.state === 'open' && <button className="button" disabled={pending || !security?.fresh || !!error} onClick={() => action(async () => {
         const result = await request<{ url: string }>(`/api/billing/checkouts/${checkout.id}/open`, {});
         window.location.assign(result.url);
@@ -112,7 +124,8 @@ export function SandboxBillingPage() {
     </section>}
     {view?.customerReady && <section className="panel">
       <h2>Canonical sandbox ledger</h2>
-      <p>Canonical sandbox financial observations only. A settled card-funding trace is not approved commercial or service-period authority. No paid access is granted.</p>
+      <p>{sandboxAccess ? 'Explicit sandbox service policy is enabled. Only eligible owned invoice intervals can issue expiring test access; refunds, disputes and issued credits terminally retire their source. This is not approved live commerce.' :
+        'Canonical sandbox financial observations only. A settled card-funding trace is not approved commercial or service-period authority. No paid access is granted.'}</p>
       <p>Last observation: {view.ledger?.observedAt ? new Date(view.ledger.observedAt).toLocaleString() : 'not yet available'}.
         {' '}Processing: {view.ledger?.processing ?? 'not yet requested'}. {view.ledger?.stale && 'The last displayed snapshot is stale or a newer read is pending.'}</p>
       {view.ledger?.reviewReasons.length ? <p role="status">Operator review required: {view.ledger.reviewReasons.map(reason => reason.replaceAll('-', ' ')).join(', ')}.</p> : null}
@@ -124,7 +137,12 @@ export function SandboxBillingPage() {
         {' '}Total: {invoice.total} {invoice.currency.toUpperCase()} minor units; paid amount hint: {invoice.amountPaid}; remaining: {invoice.amountRemaining}.
         {' '}{invoice.funding ? `Referenced card funding: ${invoice.funding.state.replaceAll('-', ' ')}; captured: ${invoice.funding.captured}; succeeded refunds: ${invoice.funding.refunded}.` : 'Payment evidence has not been evaluated.'}
         {' '}{invoice.funding?.creditAdjusted && 'Issued credit adjustments require review.'}
-        {' '}These amounts do not prove an eligible paid service period.</p>)}
+        {' '}{invoice.service && <>Sandbox service access: <strong>{invoice.service.state}</strong>.
+          {' '}{invoice.service.startsAt && `From ${new Date(invoice.service.startsAt).toLocaleString()}.`}
+          {' '}{invoice.service.endsAt && `Exclusive access end: ${new Date(invoice.service.endsAt).toLocaleString()}.`}
+          {' '}{invoice.service.reviewReasons.length > 0 && `Service review: ${invoice.service.reviewReasons.map(reason => reason.replaceAll('-', ' ')).join(', ')}.`}</>}
+        {' '}{sandboxAccess ? 'A historical grant label does not override expiry, account restrictions or independent current server permissions.' :
+          'These amounts do not prove an eligible paid service period.'}</p>)}
       {view.ledger?.historyTruncated && <p>The displayed owned history is limited to 20 subscriptions and 20 invoices. Older retained records have not been deleted.</p>}
       <button className="button secondary" disabled={pending || !security?.fresh} onClick={() => action(async () => {
         await request('/api/billing/reconcile', {}); await load();
@@ -138,7 +156,9 @@ export function SandboxBillingPage() {
       <label>Reference offer<select value={offer} disabled={pending || !!intent && !savedExpired} onChange={event => {
         const value = sandboxOffers.find(offer => offer === event.target.value); if (value) setOffer(value);
       }}>{sandboxOffers.map(value => <option key={value} value={value}>{labels[value]}</option>)}</select></label>
-      <label><input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)}/> I understand this is sandbox-only and grants no premium access.</label>
+      <label><input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)}/> {sandboxAccess ?
+        'I understand this is sandbox-only with test-service access, not a production purchase.' :
+        'I understand this is sandbox-only and grants no premium access.'}</label>
       <button className="button" disabled={pending || !intentReady || !view.enabled || !acknowledged || !security?.fresh || !!error} onClick={() => action(async () => {
         const saved = savedExpired ? null : intent;
         const next = saved ?? { key: crypto.randomUUID(), offer };

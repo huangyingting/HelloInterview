@@ -83,14 +83,14 @@ export class SandboxCheckout {
     return this.db.transaction(async () => {
       await this.owner(owner);
       const customer = await this.customer(owner);
-      if (!customer) return { mode: 'sandbox', enabled: !!this.settings.offers, customerReady: false, checkout: null, ledger: null, accessAuthority: 'none' };
+      if (!customer) return { mode: 'sandbox', enabled: !!this.settings.offers, customerReady: false, checkout: null, ledger: null, accessAuthority: this.settings.accessPolicy ?? 'none' };
       const row = await this.db.prepare(`SELECT * FROM stripe_checkout_attempts WHERE customer_ref=?
         ORDER BY (state IN ('waiting-customer','queued','open','complete')) DESC,created_at DESC,id DESC LIMIT 1`).get(customer.id);
       const attempt = row ? checkoutRowSchema.parse(row) : null;
       if (attempt?.state === 'retired') throw new HttpError(403, 'This sandbox billing archive is retired.');
       const operationId = attempt?.refresh_operation_id ?? attempt?.operation_id ?? customer.operation_id;
       const operation = await this.jobs.ownedStatus(owner, operationId);
-      return { mode: 'sandbox', enabled: !!this.settings.offers, customerReady: customer.state === 'mapped', accessAuthority: 'none', ledger: await this.ledger.view(customer),
+      return { mode: 'sandbox', enabled: !!this.settings.offers, customerReady: customer.state === 'mapped', accessAuthority: this.settings.accessPolicy ?? 'none', ledger: await this.ledger.view(customer),
         checkout: attempt ? { id: attempt.id, requestKey: attempt.request_key, offer: attempt.offer_key, state: attempt.state, processing: operation.status,
           expiresAt: new Date(attempt.expires_at).toISOString(), paymentStatus: attempt.payment_status,
           quote: attempt.currency && attempt.unit_amount ? { currency: attempt.currency, unitAmount: attempt.unit_amount } : null } : null };

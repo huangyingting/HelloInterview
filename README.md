@@ -129,8 +129,8 @@ and does not derive entitlements from notification hints. A second **owned
 sandbox checkout checkpoint** adds durable server-created customer/session
 correlations, fresh authenticated reservation/resume/refresh, stable external
 idempotency and a dedicated test-only billing page. Completed sandbox sessions
-grant no premium access; production purchases, Portal and the financial lifecycle
-remain disabled. See
+alone grant no premium access; production purchases, Portal and the operated
+financial lifecycle remain disabled. See
 [the billing notification runbook](docs/production/14-billing-implementation.md);
 [the owned checkout runbook](docs/production/15-owned-sandbox-checkout.md).
 The [canonical sandbox ledger](docs/production/16-canonical-sandbox-ledger.md)
@@ -138,10 +138,15 @@ adds owned subscription/invoice/service-line/payment-reference observations,
 dirty-revision reconciliation and retained history. The
 [sandbox payment-evidence checkpoint](docs/production/17-sandbox-payment-evidence.md)
 traces owned card funding, complete allocations, refunds, disputes and credit
-notes, including older targeted invoices. Settled funding is not an eligible
-service period or commercial authority and grants no access. Controlled
-PostgreSQL deployments must apply **migration 11 and maintained queue migration**
-before this release.
+notes, including older targeted invoices. Settled funding alone is not service
+or commercial authority. The default-off
+[sandbox service-authority checkpoint](docs/production/18-sandbox-service-authority.md)
+adds an explicit versioned opt-in for verified calendar service intervals,
+immutable expiring Pro grants and invoice-scoped terminal reversal handling.
+Without that policy, billing still grants no access; test access never enables
+live commerce or external AI. Controlled PostgreSQL deployments must apply
+**migration 12 and maintained queue migration** before this release and preserve
+the configured policy when retained service evidence exists.
 
 | Area | Local functionality |
 | --- | --- |

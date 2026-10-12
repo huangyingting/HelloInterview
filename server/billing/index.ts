@@ -12,6 +12,7 @@ import { bindBillingReference } from './reference';
 import { SandboxCheckout } from './checkout';
 import { canonicalOriginSchema } from './checkout-schema';
 import { SandboxBillingLedger } from './ledger';
+import { assertSandboxAccessConfiguration } from './service';
 
 export async function assertBillingConfiguration(db: Database, settings: BillingConfig | null) {
   if (db.dialect !== 'postgres') return;
@@ -21,6 +22,7 @@ export async function assertBillingConfiguration(db: Database, settings: Billing
   if (settings && await db.prepare('SELECT 1 AS present FROM stripe_event_notifications WHERE account_id<>? LIMIT 1').get(settings.accountId)) {
     throw new Error('Stored billing evidence belongs to a different provider account.');
   }
+  await assertSandboxAccessConfiguration(db, settings);
 }
 export class BillingNotifications {
   private constructor(private readonly db: Database, private readonly settings: BillingConfig, readonly jobs: DurableJobs,

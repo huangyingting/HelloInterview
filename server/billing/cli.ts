@@ -40,9 +40,9 @@ export async function runBillingCommand(command: string, client?: Stripe) {
         const row = await db.prepare("SELECT count(*)::integer AS pending FROM durable_operations WHERE kind LIKE 'billing.%' AND completed_at IS NULL").get();
         if (row?.pending !== 0) throw new Error('Sandbox billing reconciliation has deferred, active or failed operations. Inspect queue diagnostics; the pass is incomplete.');
         const reviewRequired = await billing.ledger.reviewRequiredCustomers();
-        if (reviewRequired) console.warn(JSON.stringify({ event: 'billing.ledger.review-required', customers: reviewRequired, authority: 'sandbox-ledger-observation-only' }));
+        if (reviewRequired) console.warn(JSON.stringify({ event: 'billing.ledger.review-required', customers: reviewRequired, authority: config.billing.accessPolicy ?? 'sandbox-ledger-observation-only' }));
         console.log(JSON.stringify({ event: owned ? 'billing.sandbox.reconciled' : 'billing.notifications.reconciled', completed,
-          authority: ledger ? 'sandbox-ledger-observation-only' : owned ? 'sandbox-correlation-only' : 'notification-evidence-only' }));
+          authority: ledger ? config.billing.accessPolicy ?? 'sandbox-ledger-observation-only' : owned ? 'sandbox-correlation-only' : 'notification-evidence-only' }));
         return;
       } else {
         try { await delay(1000, undefined, { signal: shutdown.signal }); }

@@ -10,12 +10,15 @@ import { checkoutRowSchema, customerRowSchema, type CustomerRow } from './checko
 import { invoiceFactSchema, ledgerOperationSchema, ledgerSnapshotSchema, ledgerStateSchema, subscriptionFactSchema, type LedgerSnapshot } from './ledger-schema';
 import type { StripeEvidence } from './provider';
 import { observationSchema, providerId } from './schema';
+import { assertSandboxAccessConfiguration, SandboxBillingAccess } from './service';
+import { serviceEvidenceSchema } from './service-policy';
 
 const pending = ['created', 'active', 'retry'];
 const timestamp = (value: number | null) => value === null ? null : new Date(value * 1000).toISOString();
 export class SandboxBillingLedger {
+  private readonly access: SandboxBillingAccess | null;
   constructor(private readonly db: Database, private readonly settings: BillingConfig, private readonly jobs: DurableJobs,
-    private readonly provider: StripeEvidence) {}
+    private readonly provider: StripeEvidence) { this.access = settings.accessPolicy ? new SandboxBillingAccess(db, settings) : null; }
   private source() { return `stripe:${this.settings.accountId}:sandbox`; }
   private async withCustomer<T>(id: string, action: (customer: CustomerRow) => Promise<T>): Promise<T> {
     const hint = await this.db.prepare("SELECT user_id FROM stripe_owned_customers WHERE id=? AND account_id=? AND state='mapped'").get(z.uuid().parse(id), this.settings.accountId);
@@ -28,6 +31,7 @@ export class SandboxBillingLedger {
       if (!user || !account || !row) throw new TerminalJobFailure('not-eligible');
       const customer = customerRowSchema.parse(row);
       if (customer.user_id !== owner || customer.state !== 'mapped' || !customer.customer_id) throw new TerminalJobFailure('not-eligible');
+      await assertSandboxAccessConfiguration(this.db, this.settings);
       return action(customer);
     });
   }
@@ -136,8 +140,21 @@ export class SandboxBillingLedger {
       })), knownSubscriptions, invoiceTargets: targets, chargeTargets, creditTargets, knownChargeLinks };
     });
     if (!context) return;
-    const snapshot = await this.provider.ledger({ ...context, customerRef: context.customer.id, customerId: input.customerId },
-      () => this.jobs.heartbeat(claim, signal), signal);
+    let snapshot: LedgerSnapshot;
+    try {
+      snapshot = await this.provider.ledger({ ...context, customerRef: context.customer.id, customerId: input.customerId, serviceProof: !!this.access },
+        () => this.jobs.heartbeat(claim, signal), signal);
+    } catch (error) {
+      if (!(error instanceof TerminalJobFailure) || error.code !== 'reconciliation-required') throw error;
+      const superseded = await this.withCustomer(input.customerRef, async customer => {
+        const state = await this.state(customer);
+        if (customer.customer_id !== input.customerId || state.operation_id !== operation.id) throw new TerminalJobFailure('not-eligible');
+        if (state.requested_revision === input.revision) return false;
+        await this.superseded(claim, operation, customer, state.requested_revision, signal); return true;
+      });
+      if (superseded) return;
+      throw error;
+    }
     const encoded = encodePayload(snapshot, 262144);
     await this.withCustomer(input.customerRef, async customer => {
       const state = await this.state(customer);
@@ -156,7 +173,7 @@ export class SandboxBillingLedger {
           }
         });
         return { revision: input.revision, subscriptions: snapshot.subscriptions.length, invoices: snapshot.invoices.length,
-          reviewRequired: snapshot.reviewReasons.length > 0, authority: 'sandbox-ledger-observation-only' };
+          reviewRequired: snapshot.reviewReasons.length > 0, authority: this.settings.accessPolicy ?? 'sandbox-ledger-observation-only' };
       }, signal);
     });
   }
@@ -208,20 +225,24 @@ export class SandboxBillingLedger {
           .get(this.settings.accountId, charge.id, invoice.id);
         if (link?.customer_ref !== customer.id) throw new TerminalJobFailure('reconciliation-required');
       }
+      await this.access?.apply(customer, revision, invoice, snapshot);
     }
   }
   async view(customer: CustomerRow): Promise<OwnedBillingLedgerView | null> {
+    await assertSandboxAccessConfiguration(this.db, this.settings);
     const row = await this.db.prepare('SELECT * FROM stripe_customer_ledger_state WHERE customer_ref=?').get(customer.id);
     if (!row) return null;
     const state = ledgerStateSchema.parse(row);
     const snapshot = state.snapshot ? ledgerSnapshotSchema.parse(JSON.parse(state.snapshot)) : null;
     const subscriptions = await this.db.prepare('SELECT id,payload FROM stripe_owned_subscription_ledger WHERE customer_ref=? ORDER BY revision DESC,id LIMIT 21').all(customer.id);
-    const invoices = await this.db.prepare('SELECT id,payload FROM stripe_owned_invoice_ledger WHERE customer_ref=? ORDER BY created_at_seconds DESC,id LIMIT 21').all(customer.id);
+    const invoices = await this.db.prepare(`SELECT i.id,i.payload,s.payload AS service FROM stripe_owned_invoice_ledger i
+      LEFT JOIN stripe_invoice_service_evidence s ON s.account_id=i.account_id AND s.invoice_id=i.invoice_id AND s.customer_ref=i.customer_ref
+      WHERE i.customer_ref=? ORDER BY i.created_at_seconds DESC,i.id LIMIT 21`).all(customer.id);
     const holds = await this.db.prepare(`SELECT payload::jsonb->'reviewReasons' AS reasons FROM stripe_owned_subscription_ledger WHERE customer_ref=?
       UNION SELECT payload::jsonb->'reviewReasons' AS reasons FROM stripe_owned_invoice_ledger WHERE customer_ref=?`).all(customer.id, customer.id);
     const reviewReasons = [...new Set([...(snapshot?.reviewReasons ?? []),
       ...holds.flatMap(row => ledgerSnapshotSchema.shape.reviewReasons.parse(row.reasons))])].sort();
-    return { authority: 'sandbox-ledger-observation-only', processing: state.operation_id ? (await this.jobs.systemStatus(this.source(), state.operation_id)).status : 'missing',
+    return { authority: this.settings.accessPolicy ?? 'sandbox-ledger-observation-only', processing: state.operation_id ? (await this.jobs.systemStatus(this.source(), state.operation_id)).status : 'missing',
       stale: state.requested_revision !== state.reconciled_revision || !state.observed_at || Date.now() - state.observed_at.getTime() >= 300000,
       observedAt: state.observed_at?.toISOString() ?? null, reviewReasons,
       subscriptions: subscriptions.slice(0, 20).map(row => {
@@ -231,10 +252,13 @@ export class SandboxBillingLedger {
       }),
       invoices: invoices.slice(0, 20).map(row => {
         const invoice = invoiceFactSchema.parse(JSON.parse(z.string().parse(row.payload)));
+        const service = row.service ? serviceEvidenceSchema.parse(JSON.parse(z.string().parse(row.service))) : null;
         return { id: z.uuid().parse(row.id), status: invoice.status, currency: invoice.currency, total: invoice.total, amountPaid: invoice.amountPaid,
           amountRemaining: invoice.amountRemaining, paidAt: timestamp(invoice.paidAt),
           funding: invoice.funding ? { state: invoice.funding.state, captured: invoice.funding.captured, refunded: invoice.funding.refunded,
-            creditAdjusted: invoice.funding.credits.some(credit => credit.status === 'issued') } : null };
+            creditAdjusted: invoice.funding.credits.some(credit => credit.status === 'issued') } : null,
+          service: service ? { policy: service.policy, state: service.state, startsAt: service.startsAt === null ? null : new Date(service.startsAt).toISOString(),
+            endsAt: service.endsAt === null ? null : new Date(service.endsAt).toISOString(), reviewReasons: service.reviewReasons } : null };
       }), historyTruncated: subscriptions.length > 20 || invoices.length > 20 };
   }
   async reviewRequiredCustomers() {

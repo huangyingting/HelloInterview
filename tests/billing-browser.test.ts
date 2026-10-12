@@ -3,9 +3,11 @@ import { test, type TestContext } from 'node:test';
 import { chromium, expect } from '@playwright/test';
 import { openBillingFixture } from './fixtures/billing';
 import type { Bootstrap } from '../shared/types';
+import { sandboxServicePolicy } from '../shared/billing-ledger';
+import type { SandboxBillingView } from '../shared/billing';
 
-async function fixture(t: TestContext) {
-  const f = await openBillingFixture(t), browser = await chromium.launch({ executablePath: process.env.CHROME_PATH, headless: true,
+async function fixture(t: TestContext, service = false) {
+  const f = await openBillingFixture(t, service ? { STRIPE_TEST_ACCESS_POLICY: sandboxServicePolicy } : {}), browser = await chromium.launch({ executablePath: process.env.CHROME_PATH, headless: true,
     args: ['--no-proxy-server', '--host-resolver-rules=MAP studio.fixture 127.0.0.1,MAP broker.fixture 127.0.0.1'] });
   f.cleanup.push(() => browser.close());
   const context = await browser.newContext({ ignoreHTTPSErrors: true }), page = await context.newPage();
@@ -154,4 +156,52 @@ test('actual owned browser displays canonical invoice and cancellation observati
     'private-fixture-client-secret', 'private-fixture-contact', 'private-card-contact']) assert.ok(!text.includes(secret));
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+});
+
+test('explicit sandbox service proof refreshes actual browser permissions, then a scoped refund retires Pro without reload or a live purchase', { timeout: 60000 }, async t => {
+  const f = await fixture(t, true), { page } = f;
+  await expect(page.getByText(/expiring sandbox service access/)).toBeVisible();
+  await page.getByRole('checkbox', { name: /I understand this is sandbox-only/ }).check();
+  await page.getByRole('button', { name: 'Prepare sandbox checkout' }).click();
+  await expect(page.getByRole('heading', { name: 'Your sandbox checkout' })).toBeVisible();
+  await f.complete('billing.customer'); await f.complete('billing.checkout');
+  await expect(page.getByRole('button', { name: 'Open hosted sandbox checkout' })).toBeVisible();
+  const facts = await f.settleCheckout();
+  const refreshing = page.waitForResponse(response => response.url().endsWith('/refresh') && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Refresh canonical session' }).click();
+  assert.equal((await refreshing).status(), 200);
+  let release!: () => void, captured!: () => void, intercepted = false;
+  const blocked = new Promise<void>(resolve => { release = resolve; }), stale = new Promise<void>(resolve => { captured = resolve; });
+  f.cleanup.push(async () => { release(); });
+  await f.context.route(`${f.origin}/api/bootstrap`, async route => {
+    if (intercepted) return route.continue();
+    intercepted = true;
+    const source = new URL(route.request().url()), target = new URL(source); target.hostname = '127.0.0.1';
+    const response = await route.fetch({ url: target.href, headers: { ...route.request().headers(), host: source.host } });
+    captured(); await blocked; await route.fulfill({ response });
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event('focus'))); await stale;
+  const delivered = page.waitForResponse(async response => {
+    if (!response.url().endsWith('/api/billing') || response.status() !== 200) return false;
+    const data: SandboxBillingView = await response.json();
+    return data.ledger?.invoices.some(invoice => invoice.service?.state === 'granted') ?? false;
+  });
+  await f.complete('billing.checkout.refresh'); await f.complete('billing.customer.snapshot'); await f.complete('billing.customer.snapshot');
+  await delivered; release();
+  await expect(page.getByText(/Sandbox service access: granted/)).toBeVisible();
+  await page.getByRole('link', { name: 'Premium Studio', exact: true }).first().click();
+  await expect(page.getByText('Pro access active', { exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByText(/Sandbox service access: granted/)).toBeVisible();
+  const refund = { id: 're_ServiceBrowser', object: 'refund', charge: facts.charge.id, payment_intent: facts.intent.id,
+    customer: facts.charge.customer, currency: 'usd', amount: 500, status: 'succeeded' };
+  f.refunds.set(refund.id, refund); facts.charge.amount_refunded = 500;
+  const refreshed = page.waitForResponse(response => response.url().endsWith('/api/billing/reconcile') && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Refresh canonical ledger' }).click(); assert.equal((await refreshed).status(), 202);
+  await f.complete('billing.customer.snapshot');
+  await expect(page.getByText(/Sandbox service access: revoked/)).toBeVisible();
+  await page.getByRole('link', { name: 'Premium Studio', exact: true }).first().click();
+  await expect(page.getByText('Check access on Account', { exact: true })).toBeVisible();
+  const data: Bootstrap = await page.evaluate(async () => (await fetch('/api/bootstrap')).json());
+  assert.equal(data.capabilities.access?.state, 'free'); assert.equal(data.capabilities.commerce, 'disabled');
 });

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { billingReviewReasons, fundingStates } from '../../shared/billing-ledger';
 import { providerId } from './schema';
+import type { InvoiceFact } from './ledger-schema';
 
 const amount = z.number().int().nonnegative().safe(), currency = z.string().regex(/^[a-z]{3}$/);
 export const allocationSchema = z.strictObject({
@@ -25,3 +26,18 @@ export const fundingEvidenceSchema = z.strictObject({
   credits: z.array(creditFactSchema).max(500), reviewReasons: z.array(z.enum(billingReviewReasons)).max(billingReviewReasons.length),
 });
 export type FundingEvidence = z.infer<typeof fundingEvidenceSchema>;
+
+export function cardSettlementEstablished(invoice: InvoiceFact, intents: FundingEvidence['intents'], charges: FundingEvidence['charges']) {
+  const paid = invoice.payments.filter(payment => payment.status === 'paid'),
+    primary = charges.filter(charge => charge.status === 'succeeded' && charge.paid && charge.captured),
+    allocations = intents.length === 1 ? intents[0].allocations.filter(allocation => allocation.status !== 'canceled') : [];
+  return invoice.status === 'paid' && invoice.paidAt !== null && invoice.total > 0 && invoice.amountRemaining === 0 &&
+    invoice.amountPaid === invoice.total && paid.length === 1 && paid[0].type === 'payment_intent' && paid[0].amountPaid === invoice.total &&
+    paid[0].currency === invoice.currency && intents.length === 1 && intents[0].status === 'succeeded' &&
+    intents[0].currency === invoice.currency && intents[0].amount === invoice.total && intents[0].received === invoice.total &&
+    intents[0].capturable === 0 && paid[0].reference === intents[0].id && allocations.length === 1 &&
+    allocations[0].id === paid[0].id && allocations[0].invoiceId === invoice.id && allocations[0].status === 'paid' && allocations[0].amountPaid === invoice.total &&
+    primary.length === 1 && primary[0].id === intents[0].latestCharge && primary[0].intentId === intents[0].id &&
+    primary[0].currency === invoice.currency && primary[0].method === 'card' && primary[0].amount === invoice.total &&
+    charges.reduce((amount, charge) => amount + charge.capturedAmount, 0) === invoice.total;
+}

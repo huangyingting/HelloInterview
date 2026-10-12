@@ -17,6 +17,8 @@ const currency = z.string().regex(/^[a-z]{3}$/), reasons = z.array(z.enum(billin
 export const subscriptionFactSchema = z.strictObject({
   id: providerId, status: z.enum(['active', 'canceled', 'incomplete', 'incomplete_expired', 'past_due', 'paused', 'trialing', 'unpaid']),
   cancelAtPeriodEnd: z.boolean(), latestInvoiceId: providerId.nullable(), attemptId: z.uuid().nullable(),
+  billingCycleAnchor: seconds.nullable().optional().default(null),
+  anchorConfigured: z.boolean().nullable().optional().default(null),
   items: z.array(z.strictObject({ id: providerId, priceId: providerId, quantity: z.number().int().nonnegative().nullable(),
     periodStart: seconds, periodEnd: seconds })).max(500),
   reviewReasons: reasons,
@@ -24,8 +26,11 @@ export const subscriptionFactSchema = z.strictObject({
 export const invoiceFactSchema = z.strictObject({
   id: providerId, subscriptionId: providerId.nullable(), status: z.enum(['draft', 'open', 'paid', 'uncollectible', 'void']),
   currency, created: seconds, total: money, amountPaid: money.nonnegative(), amountRemaining: money.nonnegative(), paidAt: seconds.nullable(),
+  billingReason: z.string().max(50).nullable().optional().default(null),
+  collectionMethod: z.enum(['charge_automatically', 'send_invoice']).nullable().optional().default(null),
   lines: z.array(z.strictObject({
-    id: providerId, priceId: providerId.nullable(), subscriptionId: providerId.nullable(), amount: money, currency,
+    id: providerId, priceId: providerId.nullable(), subscriptionId: providerId.nullable(),
+    itemId: providerId.nullable().optional().default(null), amount: money, currency,
     quantity: z.number().int().nonnegative().nullable(), quantityDecimal: z.string().max(40).nullable(),
     periodStart: seconds, periodEnd: seconds, proration: z.boolean().nullable(),
   })).max(500),

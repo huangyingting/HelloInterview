@@ -27,8 +27,8 @@ const sessionPost = z.strictObject({
   subscription_data: z.strictObject({ metadata: z.strictObject({ studio_customer_ref: z.uuid(), studio_checkout_ref: z.uuid() }) }),
   expires_at: z.string().regex(/^\d+$/), success_url: z.string(), cancel_url: z.string(),
 });
-export async function openBillingFixture(t: TestContext) {
-  const f = await openIdentityFixture(sandboxSettings);
+export async function openBillingFixture(t: TestContext, overrides: NodeJS.ProcessEnv = {}) {
+  const f = await openIdentityFixture({ ...sandboxSettings, ...overrides });
   t.after(f.close);
   assert.ok(f.billing?.checkout); assert.ok(f.config.billing);
   const customers = new Map<string, Record<string, unknown>>(), sessions = new Map<string, Record<string, unknown>>();
@@ -156,29 +156,35 @@ export async function openBillingFixture(t: TestContext) {
       assert.ok(attempt);
       const session = sessions.get(String(attempt.session_id)); assert.ok(session);
       const now = Math.floor(Date.now() / 1000), subId = `sub_Synthetic${subscriptions.length + 1}`, invoiceId = `in_Synthetic${invoices.size + 1}`;
+      const end = new Date(now * 1000);
+      if (attempt.offer_key === 'pro_annual') end.setUTCFullYear(end.getUTCFullYear() + 1);
+      else end.setUTCMonth(end.getUTCMonth() + 1);
+      const until = Math.floor(end.getTime() / 1000), amount = z.coerce.number().int().positive().parse(attempt.unit_amount);
       Object.assign(session, { status: 'complete', payment_status: 'paid', subscription: subId, url: null });
       const sub = { id: subId, object: 'subscription', customer: session.customer, livemode: false, status: 'active', cancel_at_period_end: false,
         metadata: { studio_customer_ref: String(attempt.customer_ref), studio_checkout_ref: String(attempt.id) }, latest_invoice: invoiceId,
+        billing_cycle_anchor: now, billing_cycle_anchor_config: null,
         items: { object: 'list', has_more: false, data: [{ id: 'si_Synthetic1', object: 'subscription_item', subscription: subId,
-          price: { id: String(attempt.price_id), object: 'price', livemode: false }, quantity: 1, current_period_start: now, current_period_end: now + 30 * 86400 }] } };
+          price: { id: String(attempt.price_id), object: 'price', livemode: false }, quantity: 1, current_period_start: now, current_period_end: until }] } };
       const line = { id: `il_Synthetic${invoices.size + 1}`, object: 'line_item', invoice: invoiceId, livemode: false,
-        currency: 'usd', amount: 1900, quantity: 1, quantity_decimal: '1', subscription: subId, period: { start: now, end: now + 30 * 86400 },
+        currency: 'usd', amount, quantity: 1, quantity_decimal: '1', subscription: subId, period: { start: now, end: until - 1 },
         parent: { type: 'subscription_item_details', subscription_item_details: { subscription: subId, subscription_item: 'si_Synthetic1', proration: false } },
         pricing: { type: 'price_details', price_details: { price: String(attempt.price_id), product: 'prod_SyntheticCheckout' } } };
       const payment = { id: `inpay_Synthetic${invoices.size + 1}`, object: 'invoice_payment', invoice: invoiceId, livemode: false,
-        currency: 'usd', status: 'paid', amount_paid: 1900, payment: { type: 'payment_intent', payment_intent: `pi_Synthetic${invoices.size + 1}` } };
+        currency: 'usd', status: 'paid', amount_paid: amount, payment: { type: 'payment_intent', payment_intent: `pi_Synthetic${invoices.size + 1}` } };
       const invoice = { id: invoiceId, object: 'invoice', customer: session.customer, livemode: false, created: now, status: 'paid',
-        currency: 'usd', total: 1900, amount_paid: 1900, amount_remaining: 0, status_transitions: { paid_at: now },
+        currency: 'usd', total: amount, amount_paid: amount, amount_remaining: 0, status_transitions: { paid_at: now },
+        billing_reason: 'subscription_create', collection_method: 'charge_automatically',
         parent: { type: 'subscription_details', subscription_details: { subscription: subId } },
         lines: { object: 'list', has_more: false, data: [line] }, payments: { object: 'list', has_more: false, data: [payment] },
         customer_email: 'private-fixture-contact@example.invalid', hosted_invoice_url: 'https://private.fixture/invoice',
         confirmation_secret: { client_secret: 'private-fixture-client-secret' } };
       const charge = { id: `ch_Synthetic${charges.size + 1}`, object: 'charge', customer: session.customer, livemode: false, currency: 'usd',
-        payment_intent: payment.payment.payment_intent, amount: 1900, amount_captured: 1900, amount_refunded: 0,
+        payment_intent: payment.payment.payment_intent, amount, amount_captured: amount, amount_refunded: 0,
         status: 'succeeded', paid: true, captured: true, refunded: false, disputed: false, payment_method_details: { type: 'card' },
         billing_details: { email: 'private-card-contact@example.invalid' }, receipt_url: 'https://private.fixture/receipt' };
       const intent = { id: payment.payment.payment_intent, object: 'payment_intent', customer: session.customer, livemode: false,
-        currency: 'usd', status: 'succeeded', amount: 1900, amount_received: 1900, amount_capturable: 0, latest_charge: charge.id,
+        currency: 'usd', status: 'succeeded', amount, amount_received: amount, amount_capturable: 0, latest_charge: charge.id,
         client_secret: 'private-payment-intent-secret' };
       charges.set(charge.id, charge); paymentIntents.set(intent.id, intent);
       subscriptions.push(sub); invoices.set(invoiceId, invoice); invoiceLines.set(invoiceId, [line]); invoicePayments.set(invoiceId, [payment]);

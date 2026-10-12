@@ -4,7 +4,7 @@ import type { BillingReviewReason } from '../../shared/billing-ledger';
 import { canonicalPages, consistent, type CanonicalRead } from './canonical-pages';
 import { providerId, referenceId } from './schema';
 import { money, type InvoiceFact } from './ledger-schema';
-import { chargeFactSchema, creditFactSchema, fundingEvidenceSchema, intentFactSchema, type FundingEvidence } from './payment-schema';
+import { cardSettlementEstablished, chargeFactSchema, creditFactSchema, fundingEvidenceSchema, intentFactSchema, type FundingEvidence } from './payment-schema';
 import { encodePayload } from '../jobs/schema';
 
 const ref = z.union([providerId, z.looseObject({ id: providerId })]), currency = z.string().regex(/^[a-z]{3}$/);
@@ -198,14 +198,7 @@ export class CanonicalPayments {
     }
     const captured = sum([...charges.values()].map(charge => charge.capturedAmount)),
       refunded = sum([...charges.values()].flatMap(charge => charge.refunds.filter(refund => refund.status === 'succeeded').map(refund => refund.amount)));
-    const paid = invoice.payments.filter(payment => payment.status === 'paid');
-    const primary = [...charges.values()].filter(charge => charge.status === 'succeeded' && charge.paid && charge.captured);
-    const established = invoice.status === 'paid' && invoice.paidAt !== null && invoice.total > 0 && invoice.amountRemaining === 0 &&
-      invoice.amountPaid === invoice.total && paid.length === 1 && paid[0].amountPaid === invoice.total &&
-      intents.length === 1 && intents[0].status === 'succeeded' && intents[0].amount === invoice.total &&
-      intents[0].received === invoice.total && intents[0].capturable === 0 &&
-      intents[0].allocations.filter(allocation => allocation.status !== 'canceled').length === 1 &&
-      primary.length === 1 && primary[0].id === intents[0].latestCharge && primary[0].method === 'card' && captured === invoice.total;
+    const established = cardSettlementEstablished(invoice, intents, [...charges.values()]);
     let state: FundingEvidence['state'] = established ? 'settled' : invoice.amountPaid === 0 && captured === 0 ? 'unpaid' : 'review-required';
     if (!established) reasons.push('payment-not-settled');
     if (credits.some(credit => credit.status === 'issued')) { reasons.push('credit-adjustment'); state = 'review-required'; }
