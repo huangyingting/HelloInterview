@@ -4,13 +4,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { problems } from "../../shared/public-catalog";
 import { projectPatch, sourcePathIssue } from '../../shared/premium';
 import type { PracticeProblem, ProjectFile, ProjectWorkspace, UserState } from '../../shared/types';
-import { AuthPrompt, Badge, Empty, PageHeading } from '../components';
+import { AuthPrompt, Badge, Empty, NotFound, PageHeading, PremiumAccess } from '../components';
 import { runCode, type TestResult } from '../sandbox';
 import { request, useStudio } from '../store';
-import { NotFound } from './Learn';
 import { ContentStatus, useContent } from '../content';
-import { download } from './Practice';
-import { PremiumAccess } from './Premium';
+import { download } from '../download';
 
 export function ProjectsPage({ id }: { id?: string }) {
   return id ? <ProjectEditor id={id} /> : <ProjectSetup />;

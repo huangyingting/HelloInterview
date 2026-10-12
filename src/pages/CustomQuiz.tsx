@@ -4,13 +4,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { quizTopics } from "../../shared/public-catalog";
 import { customQuestionPool } from '../../shared/premium';
 import type { CustomQuiz, QuestionPrompt, QuizQuestion, UserState } from '../../shared/types';
-import { AuthPrompt, Empty, PageHeading, Progress } from '../components';
+import { AuthPrompt, Empty, NotFound, PageHeading, PremiumAccess, Progress } from '../components';
 import { request, useStudio } from '../store';
-import { NotFound } from './Learn';
-import { PremiumAccess } from './Premium';
 import { QuizAnswerChoices, SavedQuizReport } from './Quiz';
 import { ContentStatus, useContent } from '../content';
-import { download } from './Practice';
+import { download } from '../download';
 
 export function CustomQuizPage({ id }: { id?: string }) {
   return id ? <CustomQuizSession id={id} /> : <CustomQuizBuilder />;

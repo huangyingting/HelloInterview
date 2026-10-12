@@ -3,18 +3,11 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { companies, levels, practiceLabels, practiceTracks, problems } from "../../shared/public-catalog";
 import type { Attempt, DiagramNode, PracticeProblem, Story, UserState } from '../../shared/types';
-import { AuthPrompt, Badge, Empty, IconTile, PageHeading, ReadButton } from '../components';
+import { AuthPrompt, Badge, Empty, IconTile, NotFound, PageHeading, PremiumGate, ReadButton } from '../components';
 import { request, useStudio } from '../store';
 import { runCode, type TestResult } from '../sandbox';
-import { NotFound, PremiumGate } from './Learn';
+import { download } from '../download';
 import { ContentStatus, useContent } from '../content';
-
-export function download(filename: string, value: string, type = 'application/json') {
-  const url = URL.createObjectURL(new Blob([value], { type }));
-  const link = document.createElement('a');
-  link.href=url; link.download=filename; link.click();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
-}
 
 export function PracticeIndex() {
   const descriptions: Record<string, string> = {

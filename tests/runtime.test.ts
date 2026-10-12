@@ -6,6 +6,7 @@ import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promi
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { Bootstrap } from '../shared/types';
+import { z } from 'zod';
 
 test('the compiled release runs with runtime-only dependencies, loads .env, persists data and handles SIGTERM', { timeout: 120000 }, async t => {
   const parent = path.resolve('data/runtime-tests');
@@ -69,6 +70,15 @@ test('the compiled release runs with runtime-only dependencies, loads .env, pers
   let url = await start();
   assert.equal((await fetch(`${url}/api/health`)).status, 200);
   assert.equal(await (await fetch(`${url}/dashboard`)).text(), await readFile(path.join(release, 'dist/index.html'), 'utf8'));
+  const assets = z.record(z.string(), z.object({
+    file: z.string(), css: z.array(z.string()).optional(), assets: z.array(z.string()).optional(),
+  })).parse(JSON.parse(await readFile(path.join(release, 'dist/.vite/manifest.json'), 'utf8')));
+  for (const file of new Set(Object.values(assets).flatMap(item => [item.file, ...item.css ?? [], ...item.assets ?? []]))) {
+    assert.match(file, /^assets\/[\w.-]+$/);
+    const response = await fetch(`${url}/${file}`);
+    assert.equal(response.status, 200, file);
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), await readFile(path.join(release, 'dist', file)), file);
+  }
   const login = await fetch(`${url}/api/auth/demo`, { method: 'POST' });
   assert.equal(login.status, 200);
   const cookie = login.headers.get('set-cookie')!.split(';')[0];

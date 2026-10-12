@@ -1,9 +1,8 @@
 import { ArrowLeft, ArrowRight, BookOpen, Code2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { getTrack, problems } from "../../shared/public-catalog";
-import { Badge, ContentSections, PageHeading, SourceLinks } from '../components';
+import { Badge, ContentSections, NotFound, PageHeading, PremiumGate, SourceLinks } from '../components';
 import { useStudio } from '../store';
-import { NotFound, PremiumGate } from './Learn';
 import type { Problem } from '../../shared/types';
 import { ContentStatus, useContent } from '../content';
 

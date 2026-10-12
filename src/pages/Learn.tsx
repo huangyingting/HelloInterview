@@ -2,9 +2,9 @@ import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronRight, Clock3, Code2, Gr
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getTrack, problems, tracks } from "../../shared/public-catalog";
-import { AuthPrompt, Badge, BookmarkButton, CardLink, Comments, ContentSections, IconTile, PageHeading, Progress, ReadButton, SourceLinks } from '../components';
+import { AuthPrompt, Badge, BookmarkButton, CardLink, Comments, ContentSections, IconTile, NotFound, PageHeading, PremiumGate, Progress, ReadButton, SourceLinks } from '../components';
 import { useStudio } from '../store';
-import { trackIcons } from './Home';
+import { trackIcons } from '../track-icons';
 import type { Lesson } from '../../shared/types';
 import { ContentStatus, useContent } from '../content';
 
@@ -78,12 +78,4 @@ export function AlgorithmLab({ kind }: { kind: string }) {
     {error?<p className="error-text" role="alert">{error}</p>:current&&<><div className={`algorithm-cells ${graph?'graph-cells':''}`}>{current.cells.map((v,i)=><div className={`${current.active.includes(i)?'active':''} ${current.done.includes(i)?'visited':''}`} key={i}><small>{graph?'node':i}</small><strong>{graph?String.fromCharCode(65+v):v}</strong>{current.active.includes(i)&&<span>↑</span>}</div>)}</div><div className="algorithm-explanation" aria-live="polite"><strong>{current.label}</strong><p>{current.note}</p></div></>}
     <div className="algorithm-controls"><button className="icon-button" aria-label="Reset visualization" onClick={()=>{setStep(0);setPlaying(false);}}><RotateCcw size={17}/></button><button className="button small" disabled={!steps.length||step===steps.length-1&&!playing} onClick={()=>setPlaying(!playing)}>{playing?<Pause size={15}/>:<Play size={15}/>} {playing?'Pause':'Play'}</button><button className="button secondary small" disabled={!steps.length||step>=steps.length-1} onClick={()=>setStep(i=>i+1)}><SkipForward size={15}/> Step</button><span>Step {steps.length?step+1:0} of {steps.length}</span></div>
   </section>;
-}
-export function PremiumGate() {
-  const {data}=useStudio();
-  if(data.capabilities.commerce==='disabled')return <div className="premium-gate"><IconTile icon={LockKeyhole}/><h2>Current access does not include this feature.</h2><p>Check your verified access on Account. Content-only access does not include new premium practice or progress. Payments are not connected; demo purchases cannot upgrade managed accounts. Your saved archive is unchanged.</p><Link className="button" to="/account">Open Account <ArrowRight size={16}/></Link></div>;
-  return <div className="premium-gate"><IconTile icon={LockKeyhole}/><h2>A deeper practice opportunity.</h2><p>This original Studio exercise is part of the local premium demo. Activate a demo plan to explore it; no payment or card information is collected.</p><Link className="button" to="/pricing">Explore demo plans <ArrowRight size={16}/></Link></div>;
-}
-export function NotFound() {
-  return <div className="empty"><BookOpen size={36}/><h1>This page isn’t in the Studio.</h1><p>Try the learning library or return to your dashboard.</p><Link className="button" to="/learn">Explore the library <ArrowRight size={16}/></Link></div>;
 }

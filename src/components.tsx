@@ -1,10 +1,12 @@
-import { ArrowRight, Bookmark, Check, ChevronRight, MessageSquare, Send, Sparkles, X, type LucideIcon } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Bookmark, Check, MessageSquare, Send, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { request, useStudio } from './store';
 import type { Comment, ContentSection, SourceReference, UserState } from '../shared/types';
 import { contentResearchDate, contentSources } from '../shared/content/sources';
 import { getTrack, problems } from '../shared/public-catalog';
+import { AuthPrompt } from './components/access';
+export { AuthPrompt, NotFound, PremiumAccess, PremiumGate } from './components/access';
+export { Badge, CardLink, Empty, Footer, IconTile, PageHeading, Progress } from './components/primitives';
 
 export function SourceLinks({ ids, sources }: { ids?: string[]; sources?: SourceReference[] }) {
   if (!ids?.length) return null;
@@ -21,24 +23,6 @@ export function ContentSections({ sections }: { sections: ContentSection[] }) {
   return <>{sections.map((section, i) => <section id={`section-${i}`} key={section.title}><h2>{section.title}</h2>{section.body.split(/\n\s*\n/).map((paragraph, j) => <p key={j}>{paragraph}</p>)}{section.bullets && <ul>{section.bullets.map(bullet => <li key={bullet}>{bullet}</li>)}</ul>}{section.code && <pre><code>{section.code}</code></pre>}{section.diagram && <ArchitectureFigure text={section.diagram} />}</section>)}</>;
 }
 
-export function IconTile({ icon: Icon, color = 'var(--accent)', small = false }: { icon: LucideIcon; color?: string; small?: boolean }) {
-  return <span className={`icon-tile ${small ? 'small' : ''}`} style={{ color, background: `color-mix(in srgb, ${color} 11%, var(--surface))` }}><Icon size={small ? 18 : 23} strokeWidth={1.7} /></span>;
-}
-export function PageHeading({ eyebrow, title, description, action }: { eyebrow?: string; title: ReactNode; description?: string; action?: ReactNode }) {
-  return <div className="page-heading"><div>{eyebrow && <span className="eyebrow">{eyebrow}</span>}<h1>{title}</h1>{description && <p>{description}</p>}</div>{action}</div>;
-}
-export function Empty({ title, description, children }: { title: string; description: string; children?: ReactNode }) {
-  return <div className="empty"><Sparkles size={30} strokeWidth={1.4} /><h3>{title}</h3><p>{description}</p>{children}</div>;
-}
-export function Badge({ children, tone = '' }: { children: ReactNode; tone?: string }) {
-  return <span className={`badge ${tone.toLowerCase()}`}>{children}</span>;
-}
-export function Progress({ value, label }: { value: number; label?: string }) {
-  return <div className="progress-wrap">{label && <div className="progress-label"><span>{label}</span><span>{Math.round(value)}%</span></div>}<div className="progress" role="progressbar" aria-label={label || 'Progress'} aria-valuenow={Math.round(value)} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${Math.max(0, Math.min(100, value))}%` }} /></div></div>;
-}
-export function AuthPrompt({ message = 'Sign in to save your progress and continue practicing.' }: { message?: string }) {
-  return <div className="callout"><Sparkles size={20} /><div><strong>Make this progress yours</strong><p>{message}</p></div><Link className="button small" to="/login">Sign in <ArrowRight size={15} /></Link></div>;
-}
 export function ReadButton({ track, lesson, compact = false }: { track: string; lesson: string; compact?: boolean }) {
   const { data, can, setState, act, pending } = useStudio();
   const key = `${track}/${lesson}`, read = data.state.read.includes(key);
@@ -66,10 +50,4 @@ export function Comments({ resource }: { resource: string }) {
     {comments.filter(c => `${c.author} ${c.body}`.toLowerCase().includes(filter.toLowerCase())).map(comment => <article className={`comment ${comment.parentId ? 'reply' : ''}`} key={comment.id}><span className="avatar small">{comment.author[0]}</span><div><strong>{comment.author}</strong><time>{new Date(comment.createdAt).toLocaleDateString()}</time><p>{comment.body}</p>{data.capabilities.community!=='read-only'&&<button className="text-button" onClick={() => setReply(comment)}>Reply</button>}</div></article>)}
     {!comments.length && !error && <p className="muted">Start a thoughtful conversation. No comments yet.</p>}
   </section>;
-}
-export function Footer() {
-  return <footer className="footer"><div><strong>Interview Studio<span className="brand-dot">.</span></strong><p>Small steps. Stronger interviews.</p><span className="fine-print">An independent, original local application.</span></div><div><h4>Prepare</h4><Link to="/learn/system-design">System design</Link><Link to="/learn/code">Coding patterns</Link><Link to="/practice/behavioral">Behavioral practice</Link></div><div><h4>Explore</h4><Link to="/community/questions">Interview questions</Link><Link to="/guides/meta/senior">Company guides</Link><Link to="/blog">The Studio journal</Link></div><div><h4>Studio</h4><Link to="/pricing">Plans</Link><Link to="/support">Support</Link><Link to="/privacy">Privacy</Link><Link to="/terms">Terms</Link></div></footer>;
-}
-export function CardLink({ to, title, description, icon: Icon, color }: { to: string; title: string; description: string; icon: LucideIcon; color?: string }) {
-  return <Link className="card-link" to={to}><IconTile icon={Icon} color={color} /><div><strong>{title}</strong><p>{description}</p></div><ChevronRight size={18} /></Link>;
 }

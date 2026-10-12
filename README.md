@@ -69,6 +69,13 @@ then run `npm ci --omit=dev` and `npm start` from the release directory. Keep
 `.env` and the data directory private and outside the frontend assets. Do not
 omit build dependencies before building.
 
+Screens load on demand while navigation stays available. A screen-load failure
+offers explicit navigation or manual reload rather than automatically reloading
+or retrying an action; reload may discard unsaved work. The
+[screen-delivery runbook](docs/production/28-deferred-screen-delivery.md) records
+fixed entry/cold JavaScript budgets and deployment requirements for retaining
+old hashed assets across releases. These are not deployed performance SLAs.
+
 **This is a production-format runtime, not a production-ready paid service.**
 Local accounts, demo plans, and the existing service limitations remain.
 PostgreSQL is available for persistence preparation; selecting it does not enable
@@ -429,6 +436,7 @@ npm run test:unit
 npm run test:server
 npm run test:runtime
 npm run test:ai
+npm run test:screens
 npm test
 ```
 
@@ -442,6 +450,9 @@ npm test
   loading, session persistence, and SIGTERM shutdown. It may require access to
   the npm registry/cache. It never copies your `.env` or runtime database.
 - Server/runtime/provider test commands build their required artifacts first.
+- `test:screens` enforces complete eager/cold graph byte budgets and exercises
+  actual production-built asset requests, delayed/failed screens, shell state
+  and deliberate reload recovery without replaying user mutations.
 - Content tests enforce exact inventory, instructional-depth floors, valid
   source/resource links, difficulty/answer-position coverage, and the arithmetic
   of every worked-design capacity calculation.

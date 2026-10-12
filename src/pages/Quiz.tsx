@@ -3,11 +3,10 @@ import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { questionIndex, quizTopics } from "../../shared/public-catalog";
 import type { QuestionPrompt, QuizQuestion, QuizReport, QuizSessionView, UserState } from '../../shared/types';
-import { AuthPrompt, Badge, Empty, IconTile, PageHeading, Progress, SourceLinks } from '../components';
+import { AuthPrompt, Badge, Empty, IconTile, NotFound, PageHeading, Progress, SourceLinks } from '../components';
 import { request, useStudio } from '../store';
-import { NotFound } from './Learn';
 import { ContentStatus, useContent } from '../content';
-import { download } from './Practice';
+import { download } from '../download';
 
 export function QuizIndex() {
   const {data}=useStudio(),[track,setTrack]=useState('all'),[history,setHistory]=useState('');

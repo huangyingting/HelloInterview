@@ -4,10 +4,9 @@ import { Link } from 'react-router-dom';
 import { courses } from "../../shared/public-catalog";
 import { courseCompletion, courseStepComplete } from '../../shared/domain';
 import type { UserState } from '../../shared/types';
-import { AuthPrompt, Badge, IconTile, PageHeading, Progress } from '../components';
+import { AuthPrompt, Badge, IconTile, NotFound, PageHeading, PremiumGate, Progress } from '../components';
 import { request, useStudio } from '../store';
-import { NotFound, PremiumGate } from './Learn';
-import { download } from './Practice';
+import { download } from '../download';
 
 export function CourseIndex() {
   return <><PageHeading eyebrow="A STRUCTURED WAY FORWARD" title="Connect each step of the journey." description="Original courses that bring lessons, captioned video, quizzes, and guided practice together."/><div className="learning-index">{courses.map(course=><Link className="track-card" to={`/learn/courses/${course.id}`} key={course.id}><IconTile icon={GraduationCap}/><h2>{course.title}</h2><p>{course.description}</p><div className="track-card-bottom"><span>{course.units.length} modules{course.premium?' · Premium demo':''}</span><ArrowRight size={17}/></div></Link>)}</div></>;

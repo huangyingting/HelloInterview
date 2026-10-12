@@ -1,23 +1,48 @@
 import { ArrowRight, BookOpen, ChevronDown, ChevronRight, ClipboardCheck, Code2, Command, GraduationCap, Home, Layers3, LifeBuoy, LogOut, Menu, MessageSquare, Moon, Network, Search, Settings2, Sparkles, Sun, Trophy, Users, X } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { practiceLabels, practiceTracks, tracks } from "../shared/public-catalog";
+import { practiceLabels, practiceTracks, navigationTracks as tracks } from "../shared/public-navigation";
 import type { CommunityKind } from '../shared/types';
-import { AuthPrompt, Footer } from './components';
+import { AuthPrompt, NotFound } from './components/access';
 import { request, useStudio } from './store';
-import { Dashboard, Landing, trackIcons } from './pages/Home';
-import { LessonPage, LearningIndex, NotFound, TrackOverview } from './pages/Learn';
-import { PracticeHistory, PracticeIndex, PracticeList, PracticeSession, StoryBank } from './pages/Practice';
-import { QuizIndex, QuizRunner } from './pages/Quiz';
-import { CommunityPage } from './pages/Community';
-import { AccountPage, AuthPage, BlogPage, FAQ, GiftPage, GuidePage, InfoPage, Pricing, SearchPage, SupportPage, TutorPage } from './pages/Explore';
-import { CourseIndex, CoursePage } from './pages/Courses';
-import { MockPage, PremiumStudio, StudyPlansPage } from './pages/Premium';
-import { ProjectsPage } from './pages/Projects';
-import { CustomQuizPage } from './pages/CustomQuiz';
-import { CaseLibrary, CaseReader } from './pages/Cases';
-import { CodingLibrary, CodingReader } from './pages/Coding';
-import { SandboxBillingPage } from './pages/Billing';
+import { ScreenBoundary, ScreenLoading } from './ScreenBoundary';
+
+const Landing = lazy(() => import('./pages/Landing').then(module => ({ default: module.Landing })));
+const Dashboard = lazy(() => import('./pages/Home').then(module => ({ default: module.Dashboard })));
+const LessonPage = lazy(() => import('./pages/Learn').then(module => ({ default: module.LessonPage })));
+const LearningIndex = lazy(() => import('./pages/Learn').then(module => ({ default: module.LearningIndex })));
+const TrackOverview = lazy(() => import('./pages/Learn').then(module => ({ default: module.TrackOverview })));
+const PracticeHistory = lazy(() => import('./pages/Practice').then(module => ({ default: module.PracticeHistory })));
+const PracticeIndex = lazy(() => import('./pages/Practice').then(module => ({ default: module.PracticeIndex })));
+const PracticeList = lazy(() => import('./pages/Practice').then(module => ({ default: module.PracticeList })));
+const PracticeSession = lazy(() => import('./pages/Practice').then(module => ({ default: module.PracticeSession })));
+const StoryBank = lazy(() => import('./pages/Practice').then(module => ({ default: module.StoryBank })));
+const QuizIndex = lazy(() => import('./pages/Quiz').then(module => ({ default: module.QuizIndex })));
+const QuizRunner = lazy(() => import('./pages/Quiz').then(module => ({ default: module.QuizRunner })));
+const CommunityPage = lazy(() => import('./pages/Community').then(module => ({ default: module.CommunityPage })));
+const AccountPage = lazy(() => import('./pages/Explore').then(module => ({ default: module.AccountPage })));
+const AuthPage = lazy(() => import('./pages/Auth').then(module => ({ default: module.AuthPage })));
+const BlogPage = lazy(() => import('./pages/Explore').then(module => ({ default: module.BlogPage })));
+const FAQ = lazy(() => import('./pages/Explore').then(module => ({ default: module.FAQ })));
+const GiftPage = lazy(() => import('./pages/Explore').then(module => ({ default: module.GiftPage })));
+const GuidePage = lazy(() => import('./pages/Explore').then(module => ({ default: module.GuidePage })));
+const InfoPage = lazy(() => import('./pages/Explore').then(module => ({ default: module.InfoPage })));
+const Pricing = lazy(() => import('./pages/Explore').then(module => ({ default: module.Pricing })));
+const SearchPage = lazy(() => import('./pages/Explore').then(module => ({ default: module.SearchPage })));
+const SupportPage = lazy(() => import('./pages/Explore').then(module => ({ default: module.SupportPage })));
+const TutorPage = lazy(() => import('./pages/Explore').then(module => ({ default: module.TutorPage })));
+const CourseIndex = lazy(() => import('./pages/Courses').then(module => ({ default: module.CourseIndex })));
+const CoursePage = lazy(() => import('./pages/Courses').then(module => ({ default: module.CoursePage })));
+const MockPage = lazy(() => import('./pages/Premium').then(module => ({ default: module.MockPage })));
+const PremiumStudio = lazy(() => import('./pages/Premium').then(module => ({ default: module.PremiumStudio })));
+const StudyPlansPage = lazy(() => import('./pages/Premium').then(module => ({ default: module.StudyPlansPage })));
+const ProjectsPage = lazy(() => import('./pages/Projects').then(module => ({ default: module.ProjectsPage })));
+const CustomQuizPage = lazy(() => import('./pages/CustomQuiz').then(module => ({ default: module.CustomQuizPage })));
+const CaseLibrary = lazy(() => import('./pages/Cases').then(module => ({ default: module.CaseLibrary })));
+const CaseReader = lazy(() => import('./pages/Cases').then(module => ({ default: module.CaseReader })));
+const CodingLibrary = lazy(() => import('./pages/Coding').then(module => ({ default: module.CodingLibrary })));
+const CodingReader = lazy(() => import('./pages/Coding').then(module => ({ default: module.CodingReader })));
+const SandboxBillingPage = lazy(() => import('./pages/Billing').then(module => ({ default: module.SandboxBillingPage })));
 
 export function App() {
   const {data,loading,error,refresh,act,toast}=useStudio(),location=useLocation(),navigate=useNavigate();
@@ -81,7 +106,7 @@ export function App() {
   return <div className={`app ${publicLayout?'public-layout':''}`}>
     <a className="skip-link" href="#main">Skip to content</a>
     {!publicLayout&&<><aside className={`sidebar ${mobileOpen?'mobile-open':''}`} aria-label="Primary navigation"><div className="sidebar-brand">{brand}<button className="icon-button mobile-close" aria-label="Close navigation" onClick={()=>setMobileOpen(false)}><X size={20}/></button></div><div className="sidebar-nav">{navLink('/dashboard','Your dashboard',Home)}<div className="nav-divider"/><span className="nav-section-label">MAKE YOUR NEXT STEP COUNT</span><button className={`nav-group ${segments[0]==='learn'?'current':''}`} aria-expanded={learnOpen} onClick={()=>setLearnOpen(!learnOpen)}><BookOpen size={17}/><span>Learn</span><ChevronDown size={14} style={{transform:learnOpen?'rotate(180deg)':undefined}}/></button>{learnOpen&&<div className="nav-children">{tracks.map(t=>navLink(`/learn/${t.id}`,t.title))}{navLink('/guides','Company guides')}{navLink('/blog','Studio journal')}</div>}<button className={`nav-group ${segments[0]==='practice'?'current':''}`} aria-expanded={practiceOpen} onClick={()=>setPracticeOpen(!practiceOpen)}><Code2 size={17}/><span>Practice</span><ChevronDown size={14} style={{transform:practiceOpen?'rotate(180deg)':undefined}}/></button>{practiceOpen&&<div className="nav-children">{practiceTracks.map(t=>navLink(`/practice/${t}`,practiceLabels[t]))}{navLink('/premium/mock','Mock interviews')}{navLink('/premium/projects','Project workbench')}{navLink('/history','Practice history')}{navLink('/learn/behavioral/stories','Your story bank')}</div>}<button className={`nav-group ${segments[0]==='community'?'current':''}`} aria-expanded={communityOpen} onClick={()=>setCommunityOpen(!communityOpen)}><Users size={17}/><span>Community</span><ChevronDown size={14} style={{transform:communityOpen?'rotate(180deg)':undefined}}/></button>{communityOpen&&<div className="nav-children">{navLink('/community/questions','Interview questions')}{navLink('/community/stories','Preparation stories')}{navLink('/community/submissions/system-design','System design library')}{navLink('/community/submissions/low-level-design','Object design library')}{navLink('/community/discussion','Ask the community')}</div>}{navLink('/quiz','Quizzes',ClipboardCheck)}{navLink('/premium/studio','Premium Studio',Sparkles)}<div className="sidebar-nudge"><Sparkles size={18}/><strong>A little more room to grow.</strong><p>{data.capabilities.commerce==='disabled'?'Production premium access is not enabled yet.':'Explore the premium demo.'}</p><Link to="/pricing">See what’s included <ArrowRight size={14}/></Link></div></div><div className="sidebar-bottom">{data.user?<><Link className="sidebar-profile" to="/account"><span className="avatar">{data.user.name[0]}</span><div><strong>{data.user.name}</strong><span>{data.user.demo?'Local demo account':'Studio member'}</span></div><Settings2 size={16}/></Link><div className="sidebar-bottom-links"><Link to="/support"><LifeBuoy size={15}/> Help</Link><button onClick={()=>act(async()=>{await request('/api/logout',{});await refresh();navigate('/');})}><LogOut size={15}/> Sign out</button></div></>:<Link className="button" to="/login">Make this Studio yours <ArrowRight size={15}/></Link>}</div></aside>{mobileOpen&&<button className="mobile-backdrop" aria-label="Close navigation backdrop" onClick={()=>setMobileOpen(false)}/>}</>}
-    <div className="app-body"><header className={`topbar ${publicLayout?'public-topbar':''}`}>{publicLayout?brand:<><button className="icon-button mobile-menu" aria-label="Open navigation" onClick={()=>setMobileOpen(true)}><Menu size={21}/></button><Link className="header-search" to="/search"><Search size={16}/><span>Search the Studio</span><kbd>⌘ K</kbd></Link></>}<nav className="topbar-actions" aria-label="Utility navigation">{publicLayout&&<><Link to="/learn">Learn</Link><Link to="/practice">Practice</Link><Link to="/community/questions" className="public-community-link">Community</Link></>}<Link to="/pricing" className="pricing-top-link">Plans</Link>{!isAuth&&<Link className="tutor-link" to="/tutor"><GraduationCap size={17}/><span>{data.capabilities.ai?'AI Tutor':'Study helper'}</span></Link>}{isLanding?<Link className="button small" to="/login">Your Studio <ArrowRight size={14}/></Link>:!isAuth&&<Link className="button small premium-top-link" to={data.user?'/account':'/login'}>{data.user?'Your account':'Sign in'}</Link>}<button className="theme-toggle icon-button" onClick={toggleTheme} aria-label={theme==='dark'?'Switch to light theme':'Switch to dark theme'}>{theme==='dark'?<Sun size={18}/>:<Moon size={18}/>}</button></nav></header><main id="main" className={`main-content ${isLanding?'landing-content':''} ${isAuth?'auth-content':''}`}>{content}</main>{!isLanding&&!isAuth&&<div className="shell-footer"><span>Small steps. Stronger interviews.</span><div><Link to="/faq">FAQ</Link><Link to="/privacy">Privacy</Link><Link to="/support">Support</Link></div></div>}</div>
+    <div className="app-body"><header className={`topbar ${publicLayout?'public-topbar':''}`}>{publicLayout?brand:<><button className="icon-button mobile-menu" aria-label="Open navigation" onClick={()=>setMobileOpen(true)}><Menu size={21}/></button><Link className="header-search" to="/search"><Search size={16}/><span>Search the Studio</span><kbd>⌘ K</kbd></Link></>}<nav className="topbar-actions" aria-label="Utility navigation">{publicLayout&&<><Link to="/learn">Learn</Link><Link to="/practice">Practice</Link><Link to="/community/questions" className="public-community-link">Community</Link></>}<Link to="/pricing" className="pricing-top-link">Plans</Link>{!isAuth&&<Link className="tutor-link" to="/tutor"><GraduationCap size={17}/><span>{data.capabilities.ai?'AI Tutor':'Study helper'}</span></Link>}{isLanding?<Link className="button small" to="/login">Your Studio <ArrowRight size={14}/></Link>:!isAuth&&<Link className="button small premium-top-link" to={data.user?'/account':'/login'}>{data.user?'Your account':'Sign in'}</Link>}<button className="theme-toggle icon-button" onClick={toggleTheme} aria-label={theme==='dark'?'Switch to light theme':'Switch to dark theme'}>{theme==='dark'?<Sun size={18}/>:<Moon size={18}/>}</button></nav></header><main id="main" className={`main-content ${isLanding?'landing-content':''} ${isAuth?'auth-content':''}`}><ScreenBoundary key={data.user?.id ?? 'signed-out'} resetKey={`${path}${location.search}`}><Suspense fallback={<ScreenLoading/>}>{content}</Suspense></ScreenBoundary></main>{!isLanding&&!isAuth&&<div className="shell-footer"><span>Small steps. Stronger interviews.</span><div><Link to="/faq">FAQ</Link><Link to="/privacy">Privacy</Link><Link to="/support">Support</Link></div></div>}</div>
     {toast&&<div className={`toast ${toast.error?'error':''}`} role={toast.error?'alert':'status'}><span>{toast.error?<X size={17}/>:<Sparkles size={17}/>}</span>{toast.text}</div>}
   </div>;
 }

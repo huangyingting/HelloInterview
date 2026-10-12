@@ -3,7 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Download, ShieldCheck } from 'lucide-react';
 import type { IdentitySecurity } from '../../shared/types';
 import { proCapabilities } from '../../shared/access';
-import { AuthPrompt, Badge, PageHeading } from '../components';
+import { AuthPrompt } from '../components/access';
+import { Badge, PageHeading } from '../components/primitives';
 import { request, useStudio } from '../store';
 
 const providers = ['email', 'google', 'github'] as const;

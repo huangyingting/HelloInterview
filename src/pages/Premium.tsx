@@ -1,22 +1,14 @@
 import { ArrowLeft, ArrowRight, CalendarDays, Check, ClipboardCheck, Code2, Download, MessageSquare, Target, Volume2 } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { companies, levels, practiceLabels, problems } from "../../shared/public-catalog";
 import { companyProblems, mockReport, planTaskComplete } from '../../shared/premium';
 import type { MockSession, PlanTask, StudyPlan, UserState } from '../../shared/types';
-import type { Capability } from '../../shared/access';
-import { AuthPrompt, Badge, CardLink, Empty, PageHeading, Progress } from '../components';
+import { AuthPrompt, Badge, CardLink, Empty, NotFound, PageHeading, PremiumAccess, Progress } from '../components';
 import { request, useStudio } from '../store';
 import { ContentStatus, useContent } from '../content';
 import type { PracticeProblem } from '../../shared/types';
-import { NotFound, PremiumGate } from './Learn';
-import { download } from './Practice';
-
-export function PremiumAccess({ children, feature = 'mock.create' }: { children: ReactNode; feature?: Capability }) {
-  const { can, data } = useStudio();
-  if (!data.user) return <AuthPrompt message="Sign in to explore the original premium preparation workflows." />;
-  return can(feature) ? <>{children}</> : <PremiumGate />;
-}
+import { download } from '../download';
 export function PremiumStudio() {
   const { can, data } = useStudio(), [company, setCompany] = useState('Meta'), [difficulty, setDifficulty] = useState('All');
   const list = companyProblems(company).filter(p => difficulty === 'All' || p.difficulty === difficulty);

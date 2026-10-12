@@ -31,6 +31,14 @@ ownership replaces browser account comparisons. The
 Managed contributions remain read-only; moderation, public-writing and reviewed
 editorial-content approval are not implied.
 
+**Implemented deferred-screen checkpoint (W12):** bounded transitive entry/
+cold landing/sign-in JavaScript graphs, accessible loading, descendant failure
+handling and explicit manual recovery preserve the application shell without
+automatic reload or action replay. The
+[screen-delivery runbook](28-deferred-screen-delivery.md) specifies artifact
+completeness and old-chunk retention requirements. No deployed compression,
+Core Web Vitals, complete accessibility assessment or launch approval is implied.
+
 ## Operating model
 
 Name accountable people before launch, even if one person initially fills

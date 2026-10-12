@@ -43,6 +43,7 @@ function noKeys(value:unknown) {
   assert.ok(!source.includes('"explanation":'));
 }
 test('public metadata and actual built artifacts exclude lesson bodies, solutions, answer keys and paid media',async()=>{
+  assert.deepEqual(metadata.navigationTracks,metadata.tracks.map(({id,title,short,description,color})=>({id,title,short,description,color})));
   for(const track of metadata.tracks)for(const lesson of track.lessons) {
     assert.ok(!('sections' in lesson));
     assert.ok(!('exercise' in lesson));

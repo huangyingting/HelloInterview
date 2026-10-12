@@ -57,6 +57,7 @@ service with defined recovery and support commitments.
 | [25 - Owned AI input provenance](25-owned-ai-input-provenance.md) | Actual saved-source/model/prompt fingerprints, exact UTF-8 private snapshots, atomic admission and transactional source/owner raw-payload retirement; no provider permission | AI and backend |
 | [26 - Owned support receipts](26-owned-support-receipts.md) | Private member request history, immutable retry keys, current-session fences, shared write admission and truthful saved/not-delivered UX; no staff/helpdesk/email operation | Support and full-stack |
 | [27 - Private-safe community reads](27-private-safe-community-reads.md) | Explicit public DTOs without account IDs, server-derived ownership, bounded query/cursor feeds, independent detail and body-aware cross-kind search; no public-writing/moderation approval | Community and full-stack |
+| [28 - Deferred screen delivery](28-deferred-screen-delivery.md) | Bounded transitive cold JavaScript graphs, separated public metadata, accessible loading/failure, manual recovery and multi-release asset requirements; no launch/performance SLA approval | Frontend and operations |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to
