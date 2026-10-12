@@ -146,8 +146,11 @@ and migration-17-to-18 preservation. Nontransactional sequence witnesses prove
 native insert, binding, cancellation and settlement SQL really ran before
 rollback for security/deadline/balance/payload/retry/generation failures.
 
-Next W09 work needs authorized immutable saved input and model/prompt
-provenance, reviewed provider/privacy consent and bounded request UX, an explicit
+The [saved-input checkpoint](25-owned-ai-input-provenance.md) supplies actual
+owned saved-source/model/prompt provenance, exact UTF-8 snapshots and
+transactional raw-payload retirement. Preparation remains distinct from provider
+authority. Next W09 work needs reviewed provider/privacy consent and bounded
+request UX, an explicit
 operation-specific dispatch/publication authority, native claim/heartbeat
 fencing around real SDK I/O, token/rate/spend enforcement, truthful unknown
 reconciliation and owned job/allowance UI. Never enable this by adding AI to

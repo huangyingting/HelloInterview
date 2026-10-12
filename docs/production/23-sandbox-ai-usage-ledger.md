@@ -204,9 +204,11 @@ without development loaders, and runtime-only release evidence imports it.
 The [native-intent checkpoint](24-owned-ai-native-intents.md) binds reservations
 atomically to queued accounting intents and known-undispatched cancellation.
 Bound intents cannot use this module's standalone dispatch/settlement methods.
-It does not enable a native provider handler. Next W09 work must add reviewed
+The [saved-input checkpoint](25-owned-ai-input-provenance.md) adds actual owned
+source/model/prompt provenance and bounded private snapshots without enabling a
+native provider handler. Next W09 work must add reviewed
 provider consent and request UX, bounded prompts/output/token/rate/cost policy,
-private model/prompt/input provenance, kill switches/circuit breakers, result
+kill switches/circuit breakers, result
 quality and immutable input checks, native claim/heartbeat fencing, truthful
 unknown-outcome reconciliation and owned allowance/job UI.
 

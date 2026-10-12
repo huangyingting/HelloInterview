@@ -613,6 +613,49 @@ export const migrations = [{
       FOREIGN KEY(operation_id,operation_scope,operation_kind) REFERENCES durable_operations(id,scope,kind)
     );
   `,
+}, {
+  version: 19,
+  name: 'owned-ai-input-provenance',
+  sql: `
+    CREATE TABLE ai_input_policies (
+      id TEXT PRIMARY KEY, payload TEXT NOT NULL CHECK(octet_length(payload)<=131072),
+      request_hash TEXT NOT NULL CHECK(request_hash ~ '^[a-f0-9]{64}$'),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+    );
+    CREATE TABLE ai_input_snapshots (
+      id TEXT PRIMARY KEY, owner_ref TEXT NOT NULL, user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      request_key TEXT NOT NULL, request_payload TEXT NOT NULL CHECK(octet_length(request_payload)<=16384),
+      request_hash TEXT NOT NULL CHECK(request_hash ~ '^[a-f0-9]{64}$'),
+      policy_id TEXT NOT NULL REFERENCES ai_input_policies(id),
+      reservation_id TEXT NOT NULL UNIQUE, kind TEXT NOT NULL CHECK(kind IN ('tutor','feedback','mock','project')),
+      source_id TEXT NOT NULL, source_revision INTEGER NOT NULL CHECK(source_revision>=0),
+      source_hash TEXT NOT NULL CHECK(source_hash ~ '^[a-f0-9]{64}$'),
+      input_hash TEXT NOT NULL CHECK(input_hash ~ '^[a-f0-9]{64}$'),
+      payload TEXT CHECK(octet_length(payload)<=131072), created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+      UNIQUE(owner_ref,request_key), CHECK(user_id IS NULL OR user_id=owner_ref),
+      CHECK((user_id IS NULL)=(payload IS NULL)),
+      FOREIGN KEY(reservation_id,owner_ref) REFERENCES ai_usage_reservations(id,owner_ref)
+    );
+    CREATE INDEX ai_input_live_source ON ai_input_snapshots(owner_ref,kind,source_id) WHERE user_id IS NOT NULL;
+    CREATE FUNCTION erase_owned_ai_inputs() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+      BEGIN
+        UPDATE ai_input_snapshots SET user_id=NULL,payload=NULL WHERE owner_ref=OLD.id AND user_id IS NOT NULL;
+        RETURN OLD;
+      END;
+    $$;
+    CREATE TRIGGER erase_owned_ai_inputs BEFORE DELETE ON users FOR EACH ROW EXECUTE FUNCTION erase_owned_ai_inputs();
+    CREATE FUNCTION erase_deleted_ai_source() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+      BEGIN
+        UPDATE ai_input_snapshots SET user_id=NULL,payload=NULL
+          WHERE owner_ref=OLD.user_id AND source_id=OLD.id AND kind=TG_ARGV[0] AND user_id IS NOT NULL;
+        RETURN OLD;
+      END;
+    $$;
+    CREATE TRIGGER erase_attempt_ai_input AFTER DELETE ON attempts FOR EACH ROW EXECUTE FUNCTION erase_deleted_ai_source('feedback');
+    CREATE TRIGGER erase_mock_ai_input AFTER DELETE ON mock_sessions FOR EACH ROW EXECUTE FUNCTION erase_deleted_ai_source('mock');
+    CREATE TRIGGER erase_project_ai_input AFTER DELETE ON project_workspaces FOR EACH ROW EXECUTE FUNCTION erase_deleted_ai_source('project');
+    CREATE TRIGGER erase_tutor_ai_input AFTER DELETE ON tutor_messages FOR EACH ROW EXECUTE FUNCTION erase_deleted_ai_source('tutor');
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

@@ -9,6 +9,8 @@ import { amount, budgetRowSchema, completionSchema, evidenceSchema, instant, rel
   reservationRequestSchema, reservationRowSchema, usagePolicySchema, windowRowSchema,
   type ReservationRequest, type ReservationRow, type UsagePolicy } from './schema';
 export { sandboxUsagePolicy, type ReservationRequest, type UsagePolicy } from './schema';
+export { SandboxInputs } from './inputs';
+export { sandboxInputPolicy, type InputPolicy, type InputRequest } from './schema';
 
 const clock = 'floor(extract(epoch from clock_timestamp())*1000)::bigint';
 const lineageSchema = z.object({ id: z.uuid(), owner_ref: z.uuid(), user_id: z.uuid().nullable(),
@@ -183,11 +185,22 @@ export class SandboxUsage {
     }
     return operation;
   }
-  private assertDatabase(db: Database) {
+  assertDatabase(db: Database) {
     if (db !== this.db) throw new Error('Usage and native jobs must share the exact database adapter and transaction.');
   }
   private async assertUnbound(row: ReservationRow) {
     if (await this.binding(row)) throw new HttpError(409, 'A bound native intent cannot use standalone dispatch or settlement; provider execution remains disabled.');
+  }
+  async assertQueuedAdmission(owner: string, id: string) {
+    return this.db.transaction(async () => {
+      await this.lockOwner(owner);
+      const { row, request } = await this.reservation(owner, id);
+      await this.lockOwner(owner, request.authEpoch); await this.assertPaid(owner);
+      if (row.user_id !== owner || row.state !== 'reserved' || !await this.binding(row, true)) {
+        throw new HttpError(409, 'Only an owned held native intent can prepare its original input.');
+      }
+      await this.assertDispatchWindow(row, (await this.integrity(row)).budgets);
+    });
   }
   async bindJob(db: Database, input: ReservationRequest, create: (request: OperationRequest) => Promise<Operation>,
     confirm: (operation: Operation, required: boolean) => Promise<void>) {

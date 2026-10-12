@@ -9,6 +9,10 @@ atomic settlement. It does not enable managed AI, approve the proposed values
 below or supply real-provider consent. The
 [native-intent checkpoint](24-owned-ai-native-intents.md) adds atomic queued
 accounting admission/cancellation, with provider dispatch explicitly denied.
+The [saved-input checkpoint](25-owned-ai-input-provenance.md) adds actual owned
+source/model/prompt fingerprints, exact bounded UTF-8 private snapshots and
+transactional raw-payload retirement. It supplies no provider privacy consent,
+token/pricing guarantee or dispatch authority.
 
 ## Product promise and success criteria
 

@@ -17,7 +17,7 @@ gates are not implicitly satisfied by a foundation change.
 | W04 | In progress; private identity, shared admission and credential-lifecycle checkpoints implemented | Maintained OIDC verification, email/Google/GitHub reference connections, secure sessions/CSRF, fresh linking, paired PostgreSQL legacy proof, shared admission, signed reset revocation, read-only canonical security facts and compiled maintained-queue reconciliation; live delivery, operated alerts, notifications, broker-native abuse controls and imported-account recovery remain |
 | W06 | Entitlement engineering checkpoint implemented; issuing adapters and commercial authority pending W08/W10/W12 | Immutable owned source grants, terminal revocation, database-clock capability policy, API/worker admission and publication checks, separate content-only access, licensed project snapshots, expiry-aware UI and retained archives |
 | W08 | In progress; sandbox notifications, owned Checkout/recheckout, canonical funding/ledger, gated service authority, owned stop/resume cycles and restricted Portal checkpoints implemented | Pinned official Stripe SDK/API, signed durable evidence, stable owned financial keys, complete funding/adjustment traces, default-off calendar grants/scoped revocations, acknowledged exact-target renewal/recheckout with retained paid history and fresh restricted card-method/invoice sessions with URL-free audit; authentic provider evidence, commercial/grace policy, history partitioning/paid deletion and operated lifecycle remain |
-| W09 | In progress; internal usage-ledger and native-intent admission checkpoints implemented | Explicit immutable sandbox manifests, atomic replica unit/cost/native reservations, pinned operation/job/generation, overlap-safe original-calendar windows, unknown holds and coupled cancellation/SQL settlement; actual managed provider dispatch, consent/UX, model/token/cost policy, operating reconciliation and approval remain |
+| W09 | In progress; internal usage-ledger, native-intent and saved-input provenance checkpoints implemented | Explicit immutable sandbox manifests, atomic replica unit/cost/native/private-input reservations, pinned operation/job/generation, owned source/model/prompt hashes, exact UTF-8 bounds, transactional raw-payload retirement, overlap-safe original-calendar windows, unknown holds and coupled cancellation/SQL settlement; actual managed provider dispatch, consent/UX, model/token/cost policy, operating reconciliation and approval remain |
 | W10-W13 | Pending | Account administration, support, moderation, and launch gates |
 
 W01 preserves existing local accounts, SQLite schema, demo entitlements, API
@@ -87,8 +87,11 @@ internal accounting authority, source continuity, captured user/cost windows,
 unknown-outcome holds and atomic publication/settlement. It is not managed AI
 dispatch permission. The [native-intent runbook](24-owned-ai-native-intents.md)
 records migration 18 and atomic pinned accounting admission/cancellation, with
-explicit denied native provider authority. Actual provider/claim/consent/
-budget-policy composition remains.
+explicit denied native provider authority. The
+[saved-input runbook](25-owned-ai-input-provenance.md) records migration 19,
+actual owned saved-source/model/prompt provenance, exact private UTF-8 snapshots
+and transactional source/owner raw-payload retirement. Actual provider/claim/
+privacy-consent/token/budget-policy composition remains.
 
 ## Delivery strategy
 

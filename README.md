@@ -169,7 +169,11 @@ without enabling managed AI or changing local grading/tutoring.
 The [native-intent checkpoint](docs/production/24-owned-ai-native-intents.md)
 atomically queues owned accounting intents and cancels known-undispatched work,
 with provider dispatch explicitly denied.
-Controlled PostgreSQL deployments must apply **migration 18 and maintained queue
+The [saved-input provenance checkpoint](docs/production/25-owned-ai-input-provenance.md)
+captures bounded private snapshots from actual owned work with immutable
+model/prompt/source fingerprints and transactional raw-payload retirement.
+Preparation is not provider permission; managed AI remains disabled.
+Controlled PostgreSQL deployments must apply **migration 19 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 

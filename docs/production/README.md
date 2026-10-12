@@ -54,6 +54,7 @@ service with defined recovery and support commitments.
 | [22 - Ended-subscription recheckout](22-owned-ended-subscription-recheckout.md) | Exact-parent acknowledged new hosted test purchases, scoped current-attempt cursor, retained Checkout/source history, bounded same-customer creation/recovery and independently eligible new intervals | Billing and full-stack |
 | [23 - Sandbox AI usage ledger](23-sandbox-ai-usage-ledger.md) | Internal atomic unit/cost reservations, original-calendar overlap-safe windows, unknown-outcome holds and fenced settlement; no managed provider permission | AI and backend |
 | [24 - Owned AI native intents](24-owned-ai-native-intents.md) | Atomic owned reservation/native admission, pinned job/generation, explicit denied provider authority and coupled known-undispatched cancellation | AI and backend |
+| [25 - Owned AI input provenance](25-owned-ai-input-provenance.md) | Actual saved-source/model/prompt fingerprints, exact UTF-8 private snapshots, atomic admission and transactional source/owner raw-payload retirement; no provider permission | AI and backend |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to

@@ -50,3 +50,32 @@ export const budgetRowSchema = z.object({
   policy_id: z.literal(sandboxUsagePolicy), cost_limit: z.coerce.number().pipe(amount),
   reserved: z.coerce.number().pipe(amount), consumed: z.coerce.number().pipe(amount),
 });
+
+export const sandboxInputPolicy = 'sandbox-ai-input-v1' as const;
+const modelSchema = z.strictObject({ id: identifier, revision: identifier });
+const promptSchema = z.strictObject({ version: identifier, text: z.string().min(1).max(8000) });
+export const inputPolicySchema = z.strictObject({
+  id: z.literal(sandboxInputPolicy), model: modelSchema,
+  prompts: z.strictObject({ tutor: promptSchema, feedback: promptSchema, mock: promptSchema, project: promptSchema }),
+  maxInputBytes: z.number().int().min(1000).max(131072),
+});
+export type InputPolicy = z.input<typeof inputPolicySchema>;
+export const inputRequestSchema = reservationRequestSchema.omit({
+  inputRef: true, inputRevision: true, inputHash: true, costCeilingMicros: true,
+}).extend({ sourceId: identifier, expectedRevision: z.number().int().min(0).max(2147483647) });
+export type InputRequest = z.input<typeof inputRequestSchema>;
+export const inputCommandSchema = z.strictObject({ request: inputRequestSchema, costCeilingMicros: amount.refine(value => value > 0) });
+export const inputEnvelopeSchema = z.strictObject({
+  authority: z.literal(sandboxInputPolicy), policyHash: fingerprint, model: modelSchema,
+  prompt: promptSchema.extend({ hash: fingerprint }),
+  source: z.strictObject({ kind: z.enum(usageKinds), id: identifier, revision: z.number().int().nonnegative(),
+    hash: fingerprint, contentVersion: fingerprint.nullable() }),
+  data: z.record(z.string(), z.json()),
+});
+export const inputRowSchema = z.object({
+  id: z.uuid(), owner_ref: z.uuid(), user_id: z.uuid().nullable(), request_key: z.uuid(),
+  request_payload: z.string(), request_hash: fingerprint, policy_id: z.literal(sandboxInputPolicy),
+  reservation_id: z.uuid(), kind: z.enum(usageKinds), source_id: identifier,
+  source_revision: z.number().int().nonnegative(), source_hash: fingerprint,
+  input_hash: fingerprint, payload: z.string().nullable(), created_at: z.date(),
+});
