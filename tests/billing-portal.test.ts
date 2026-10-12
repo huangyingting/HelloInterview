@@ -331,13 +331,13 @@ test('shared opening limits apply across replicas before SDK preparation and nev
   assert.ok(Number(response.headers.get('retry-after')) > 0); assert.equal(f.requests.length, 0); assert.deepEqual(await audit(f), []);
 });
 
-test('an abort after actual issuance COMMIT withholds URL delivery without falsely rolling back or revoking the provider session', { timeout: 45000 }, async t => {
+test('an abort after actual issuance COMMIT withholds URL delivery without falsely rolling back or revoking the provider session', { timeout: 50000 }, async t => {
   const f = await fixture(t), transaction = f.db.transaction.bind(f.db);
   let delayed = false;
   f.db.transaction = async operation => {
     const result = await transaction(operation);
     if (!delayed && posts(f).length && (await f.db.prepare("SELECT 1 AS issued FROM stripe_portal_access WHERE state='issued'").get())) {
-      delayed = true; await delay(30000);
+      delayed = true; await delay(31000);
     }
     return result;
   };
