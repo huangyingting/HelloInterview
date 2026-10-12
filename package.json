@@ -20,7 +20,7 @@
     "test:identity": "npm run build && tsx --test tests/identity.test.ts tests/identity-limits.test.ts tests/identity-contract.test.ts tests/identity-lifecycle.test.ts tests/identity-runtime.test.ts",
     "test:identity-browser": "npm run build && tsx --test tests/identity-browser.test.ts",
     "test:entitlements": "npm run build && tsx --test tests/entitlements.test.ts",
-    "test:billing": "npm run build && tsx --test tests/billing.test.ts tests/billing-checkout.test.ts tests/billing-ledger.test.ts tests/billing-payments.test.ts tests/billing-service.test.ts tests/billing-cancellation.test.ts tests/billing-portal.test.ts tests/billing-resumption.test.ts",
+    "test:billing": "npm run build && tsx --test tests/billing.test.ts tests/billing-checkout.test.ts tests/billing-ledger.test.ts tests/billing-payments.test.ts tests/billing-service.test.ts tests/billing-cancellation.test.ts tests/billing-portal.test.ts tests/billing-resumption.test.ts tests/billing-recheckout.test.ts",
     "test:billing-browser": "npm run build && tsx --test tests/billing-browser.test.ts",
     "test:container": "tsx --test tests/container.test.ts",
     "db:migrate": "node --env-file-if-exists=.env dist-server/db/cli.js migrate",

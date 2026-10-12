@@ -17,6 +17,7 @@ import { sandboxResumptionAuthority, sandboxRenewalAuthority, sandboxRenewalCycl
 import { assertSandboxAccessConfiguration } from './service';
 import { assertSandboxOwner, ownedSandboxCustomer } from './ownership';
 import { evaluateSandboxService } from './service-policy';
+import { sandboxRecheckoutAuthority } from '../../shared/billing';
 
 const clock = 'floor(extract(epoch from clock_timestamp())*1000)::bigint';
 const postWindowMs = 20 * 3600000, checkoutMarginMs = 31 * 60000;
@@ -36,6 +37,43 @@ export class SandboxCheckout {
     if (!row) throw new HttpError(404, 'Owned sandbox checkout not found.');
     return checkoutRowSchema.parse(row);
   }
+  private async currentAttempt(customer: CustomerRow): Promise<CheckoutRow | null> {
+    const row = await this.db.prepare(`SELECT a.* FROM stripe_customer_checkout_cursor p
+      JOIN stripe_checkout_attempts a ON a.id=p.attempt_id AND a.customer_ref=p.customer_ref WHERE p.customer_ref=? FOR UPDATE OF p`).get(customer.id);
+    if (!row && await this.db.prepare('SELECT id FROM stripe_checkout_attempts WHERE customer_ref=? LIMIT 1').get(customer.id)) {
+      throw new HttpError(409, 'The owned Checkout cursor is missing; operator reconciliation is required before preparing or displaying another intent.');
+    }
+    return row ? checkoutRowSchema.parse(row) : null;
+  }
+  private async recheckoutParent(customer: CustomerRow, subscriptionRef: string, attemptId?: string, subscriptionId?: string) {
+    const row = await this.db.prepare(`SELECT subscription_id,payload FROM stripe_owned_subscription_ledger
+      WHERE id=? AND customer_ref=? AND account_id=? FOR UPDATE`).get(subscriptionRef, customer.id, this.settings.accountId);
+    if (!row) throw new HttpError(404, 'Owned ended subscription not found.');
+    const sub = subscriptionFactSchema.parse(JSON.parse(z.string().parse(row.payload)));
+    if (!['canceled', 'incomplete_expired'].includes(sub.status) || sub.reviewReasons.length > 0 ||
+      !sub.attemptId || sub.id !== row.subscription_id || attemptId && sub.attemptId !== attemptId ||
+      subscriptionId && sub.id !== subscriptionId) throw new HttpError(409, 'The retained recheckout predecessor needs operator reconciliation.');
+    const previous = await this.attempt(customer, sub.attemptId);
+    if (previous.state !== 'complete' || previous.subscription_id !== sub.id) throw new HttpError(409, 'Recheckout requires its retained completed owned Checkout.');
+    return { sub, previous, row };
+  }
+  private async assertRecheckoutObservation(customer: CustomerRow, subscriptionRef: string, attemptId?: string, subscriptionId?: string) {
+    await assertSandboxAccessConfiguration(this.db, this.settings);
+    const state = await this.db.prepare('SELECT * FROM stripe_customer_ledger_state WHERE customer_ref=? FOR UPDATE').get(customer.id);
+    const rows = await this.db.prepare('SELECT subscription_id,payload FROM stripe_owned_subscription_ledger WHERE customer_ref=? AND account_id=?')
+      .all(customer.id, this.settings.accountId);
+    const parent = await this.recheckoutParent(customer, subscriptionRef, attemptId, subscriptionId);
+    await this.renewalObservation(state, parent.row);
+    if (!['canceled', 'incomplete_expired'].includes(parent.sub.status) || rows.length === 0 || rows.some(row => {
+      const sub = subscriptionFactSchema.parse(JSON.parse(z.string().parse(row.payload)));
+      return sub.id !== row.subscription_id || !['canceled', 'incomplete_expired'].includes(sub.status) || sub.reviewReasons.length > 0;
+    })) throw new HttpError(409, 'Recheckout requires complete canonical ended subscription history; active or unsupported history requires review.');
+    const unknown = await this.db.prepare(`SELECT c.id FROM stripe_subscription_cancellations c
+      LEFT JOIN stripe_subscription_resumptions r ON r.cancellation_id=c.id
+      WHERE c.customer_ref=? AND (c.state='queued' OR r.state='queued') LIMIT 1`).get(customer.id);
+    if (unknown) throw new HttpError(409, 'Reconcile unknown renewal-control outcomes before creating another sandbox subscription.');
+    return parent;
+  }
   private async enqueueCheckout(owner: string, customer: CustomerRow, attempt: CheckoutRow) {
     const operation = await this.jobs.enqueue({ principal: { type: 'user', id: owner }, kind: 'billing.checkout',
       key: `checkout:${attempt.id}`, resource: `sandbox-customer:${customer.id}`,
@@ -43,8 +81,11 @@ export class SandboxCheckout {
     await this.db.prepare("UPDATE stripe_checkout_attempts SET state='queued',operation_id=? WHERE id=?").run(operation.id, attempt.id);
   }
   private intent(attempt: CheckoutRow) {
-    return { customerRef: attempt.customer_ref, attemptId: attempt.id, priceId: attempt.price_id, offer: attempt.offer_key,
+    const common = { customerRef: attempt.customer_ref, attemptId: attempt.id, priceId: attempt.price_id, offer: attempt.offer_key,
       origin: attempt.origin, expiresAt: attempt.expires_at, authEpoch: attempt.auth_epoch };
+    return attempt.previous_subscription_ref === null ? common : { ...common, policy: sandboxRecheckoutAuthority,
+      previousSubscriptionRef: attempt.previous_subscription_ref, previousAttemptId: z.uuid().parse(attempt.previous_attempt_id),
+      previousSubscriptionId: z.string().parse(attempt.previous_subscription_id), acknowledged: true };
   }
   async reserve(owner: string, input: z.input<typeof checkoutRequestSchema>) {
     const request = checkoutRequestSchema.parse(input);
@@ -54,6 +95,7 @@ export class SandboxCheckout {
       const epoch = await this.owner(owner);
       await bindBillingReference(this.db, this.settings.accountId);
       let customer = await this.customer(owner);
+      if (!customer && 'previousSubscriptionRef' in request) throw new HttpError(404, 'Owned ended subscription not found.');
       if (!customer) {
         const id = randomUUID();
         const operation = await this.jobs.enqueue({ principal: { type: 'user', id: owner }, kind: 'billing.customer',
@@ -66,18 +108,47 @@ export class SandboxCheckout {
       const previous = await this.db.prepare('SELECT * FROM stripe_checkout_attempts WHERE customer_ref=? AND request_key=?').get(customer.id, request.key);
       if (previous) {
         const attempt = checkoutRowSchema.parse(previous);
-        if (attempt.offer_key !== request.offer) throw new HttpError(409, 'This checkout request key was already used with a different offer.');
+        if (attempt.offer_key !== request.offer || attempt.previous_subscription_ref !==
+          ('previousSubscriptionRef' in request ? request.previousSubscriptionRef : null)) throw new HttpError(409, 'This checkout request key was already used with a different offer or predecessor.');
         return { id: attempt.id };
       }
-      if (await this.db.prepare("SELECT id FROM stripe_checkout_attempts WHERE customer_ref=? AND state IN ('waiting-customer','queued','open','complete')").get(customer.id)) {
+      const current = await this.currentAttempt(customer);
+      if (await this.db.prepare("SELECT id FROM stripe_checkout_attempts WHERE customer_ref=? AND state IN ('waiting-customer','queued','open')").get(customer.id)) {
         throw new HttpError(409, 'An unresolved sandbox checkout already exists. Refresh or resume it; a second subscription cannot be started.');
+      }
+      let parent: Awaited<ReturnType<SandboxCheckout['recheckoutParent']>> | null = null;
+      if ('previousSubscriptionRef' in request) {
+        if (customer.state !== 'mapped') throw new HttpError(409, 'Recheckout requires the existing mapped owned customer.');
+        parent = await this.assertRecheckoutObservation(customer, request.previousSubscriptionRef);
+        if (!current || (current.state === 'complete' ? current.id !== parent.previous.id :
+          current.state !== 'expired' || current.previous_subscription_ref !== request.previousSubscriptionRef)) {
+          throw new HttpError(409, 'Use the exact current ended-subscription predecessor; older cycles cannot authorize a new Checkout.');
+        }
+      } else if (await this.db.prepare("SELECT id FROM stripe_checkout_attempts WHERE customer_ref=? AND state='complete' LIMIT 1").get(customer.id)) {
+        throw new HttpError(409, 'A completed Checkout is retained. Recheckout requires the exact ended-subscription predecessor and new acknowledgment.');
       }
       const id = randomUUID(), expiresAt = (Math.floor(await this.now() / 1000) + 7200) * 1000;
       await this.db.prepare(`INSERT INTO stripe_checkout_attempts
-        (id,customer_ref,request_key,offer_key,price_id,origin,auth_epoch,state,expires_at) VALUES (?,?,?,?,?,?,?,'waiting-customer',?)`)
-        .run(id, customer.id, request.key, request.offer, offers[request.offer], this.origin, epoch, expiresAt);
-      if (customer.state === 'mapped') await this.enqueueCheckout(owner, customer, await this.attempt(customer, id));
+        (id,customer_ref,request_key,offer_key,price_id,origin,auth_epoch,state,expires_at,
+          previous_subscription_ref,previous_attempt_id,previous_subscription_id,recheckout_acknowledged)
+        VALUES (?,?,?,?,?,?,?,'waiting-customer',?,?,?,?,?)`)
+        .run(id, customer.id, request.key, request.offer, offers[request.offer], this.origin, epoch, expiresAt,
+          'previousSubscriptionRef' in request ? request.previousSubscriptionRef : null, parent?.previous.id ?? null,
+          parent?.sub.id ?? null, parent ? 1 : null);
+      await this.db.prepare(`INSERT INTO stripe_customer_checkout_cursor(customer_ref,attempt_id) VALUES(?,?)
+        ON CONFLICT(customer_ref) DO UPDATE SET attempt_id=excluded.attempt_id`).run(customer.id, id);
+      const created = await this.attempt(customer, id);
+      if (created.request_key !== request.key || created.offer_key !== request.offer || created.price_id !== offers[request.offer] ||
+        created.origin !== this.origin || created.auth_epoch !== epoch || created.expires_at !== expiresAt ||
+        created.previous_subscription_ref !== ('previousSubscriptionRef' in request ? request.previousSubscriptionRef : null) ||
+        created.previous_attempt_id !== (parent?.previous.id ?? null) || created.previous_subscription_id !== (parent?.sub.id ?? null)) {
+        throw new TerminalJobFailure('not-eligible');
+      }
+      if (customer.state === 'mapped') await this.enqueueCheckout(owner, customer, created);
       await this.owner(owner, epoch);
+      const retained = await this.customer(owner, customer.id);
+      if (!retained || retained.state !== customer.state || retained.customer_id !== customer.customer_id ||
+        (await this.currentAttempt(retained))?.id !== id) throw new TerminalJobFailure('not-eligible');
       return { id };
     });
   }
@@ -86,15 +157,16 @@ export class SandboxCheckout {
       await this.owner(owner);
       const customer = await this.customer(owner);
       if (!customer) return { mode: 'sandbox', enabled: !!this.settings.offers, portalEnabled: !!this.settings.portalConfiguration, customerReady: false, checkout: null, ledger: null, accessAuthority: this.settings.accessPolicy ?? 'none' };
-      const row = await this.db.prepare(`SELECT * FROM stripe_checkout_attempts WHERE customer_ref=?
-        ORDER BY (state IN ('waiting-customer','queued','open','complete')) DESC,created_at DESC,id DESC LIMIT 1`).get(customer.id);
-      const attempt = row ? checkoutRowSchema.parse(row) : null;
+      const attempt = await this.currentAttempt(customer);
       if (attempt?.state === 'retired') throw new HttpError(403, 'This sandbox billing archive is retired.');
       const operationId = attempt?.refresh_operation_id ?? attempt?.operation_id ?? customer.operation_id;
       const operation = await this.jobs.ownedStatus(owner, operationId);
+      const subscription = attempt?.subscription_id ? await this.db.prepare(`SELECT id FROM stripe_owned_subscription_ledger
+        WHERE customer_ref=? AND account_id=? AND subscription_id=?`).get(customer.id, this.settings.accountId, attempt.subscription_id) : null;
       return { mode: 'sandbox', enabled: !!this.settings.offers, portalEnabled: !!this.settings.portalConfiguration, customerReady: customer.state === 'mapped', accessAuthority: this.settings.accessPolicy ?? 'none', ledger: await this.ledger.view(customer),
         checkout: attempt ? { id: attempt.id, requestKey: attempt.request_key, offer: attempt.offer_key, state: attempt.state, processing: operation.status,
           expiresAt: new Date(attempt.expires_at).toISOString(), paymentStatus: attempt.payment_status,
+          subscriptionRef: subscription ? z.uuid().parse(subscription.id) : null, previousSubscriptionRef: attempt.previous_subscription_ref,
           quote: attempt.currency && attempt.unit_amount ? { currency: attempt.currency, unitAmount: attempt.unit_amount } : null } : null };
     });
   }
@@ -104,6 +176,9 @@ export class SandboxCheckout {
       const customer = await this.customer(owner);
       if (!customer) throw new HttpError(404, 'Owned sandbox checkout not found.');
       const attempt = await this.attempt(customer, id);
+      if ((await this.currentAttempt(customer))?.id !== attempt.id) throw new HttpError(409, 'Only the current owned Checkout can be opened.');
+      if (attempt.previous_subscription_ref) await this.assertRecheckoutObservation(customer, attempt.previous_subscription_ref,
+        z.uuid().parse(attempt.previous_attempt_id), z.string().parse(attempt.previous_subscription_id));
       if (attempt.state !== 'open' || !attempt.hosted_url || await this.now() >= attempt.expires_at) throw new HttpError(409, 'This hosted checkout is not open. Refresh its canonical status before continuing.');
       return { url: hostedCheckoutUrl(attempt.hosted_url) };
     });
@@ -402,13 +477,16 @@ export class SandboxCheckout {
       const customer = await this.customer(owner, reference);
       if (!customer || operation.resource !== `sandbox-customer:${customer.id}`) throw new TerminalJobFailure('not-eligible');
       const attempt = checkoutInput ? await this.attempt(customer, checkoutInput.attemptId) : null;
+      const parent = attempt?.previous_subscription_ref ? await this.recheckoutParent(customer, attempt.previous_subscription_ref,
+        z.uuid().parse(attempt.previous_attempt_id), z.string().parse(attempt.previous_subscription_id)) : null;
       if (attempt && checkoutInput ? encodePayload(this.intent(attempt)) !== encodePayload(checkoutInput) :
         customer.auth_epoch !== customerInput?.authEpoch) throw new TerminalJobFailure('invalid-result');
       if (operation.kind !== 'billing.checkout.refresh') await this.owner(owner, attempt?.auth_epoch ?? customer.auth_epoch);
       if (operation.kind === 'billing.customer' && (customer.state !== 'reserved' || customer.operation_id !== operation.id) ||
-        operation.kind === 'billing.checkout' && (customer.state !== 'mapped' || attempt?.state !== 'queued' || attempt.operation_id !== operation.id) ||
+        operation.kind === 'billing.checkout' && (customer.state !== 'mapped' || attempt?.state !== 'queued' || attempt.operation_id !== operation.id ||
+          (await this.currentAttempt(customer))?.id !== attempt.id) ||
         operation.kind === 'billing.checkout.refresh' && (customer.state !== 'mapped' || !attempt?.session_id)) throw new TerminalJobFailure('not-eligible');
-      return { owner, customer, attempt, now: await this.now() };
+      return { owner, customer, attempt, parent, now: await this.now() };
     });
   }
   async runClaim(claim: JobClaim, signal?: AbortSignal) {
@@ -420,6 +498,19 @@ export class SandboxCheckout {
     const context = await this.context(operation);
     const beforeMutation = async () => {
       const current = await this.context(operation);
+      if (current.customer.customer_id !== context.customer.customer_id) throw new TerminalJobFailure('not-eligible');
+      if (current.attempt?.previous_subscription_ref) {
+        if (this.settings.offers?.[current.attempt.offer_key] !== current.attempt.price_id ||
+          current.parent?.previous.price_id !== context.parent?.previous.price_id) throw new TerminalJobFailure('not-eligible');
+        await this.db.transaction(async () => {
+          await this.owner(current.owner, current.attempt?.auth_epoch);
+          const customer = await this.customer(current.owner, current.customer.id);
+          if (!customer || customer.customer_id !== context.customer.customer_id ||
+            (await this.currentAttempt(customer))?.id !== current.attempt?.id) throw new TerminalJobFailure('not-eligible');
+          await this.assertRecheckoutObservation(customer, z.uuid().parse(current.attempt?.previous_subscription_ref),
+            z.uuid().parse(current.attempt?.previous_attempt_id), z.string().parse(current.attempt?.previous_subscription_id));
+        });
+      }
       await this.jobs.assertCurrentClaim(claim, signal);
       const now = await this.now(), age = now - Date.parse(operation.createdAt);
       if (age < 0 || age >= postWindowMs ||
@@ -449,13 +540,20 @@ export class SandboxCheckout {
     const attempt = context.attempt, customerId = context.customer.customer_id;
     if (!attempt || !customerId) throw new TerminalJobFailure('not-eligible');
     const creation = operation.kind === 'billing.checkout' ?
-      await this.provider.createCheckout(attempt, customerId, attempt.origin, operation.id, replayWindow && context.now + checkoutMarginMs < attempt.expires_at, beforeMutation, signal) : null;
+      await this.provider.createCheckout(attempt, customerId, attempt.origin, operation.id, replayWindow && context.now + checkoutMarginMs < attempt.expires_at,
+        beforeMutation, signal, context.parent ? { subscriptionId: context.parent.sub.id, attemptId: context.parent.previous.id, priceId: context.parent.previous.price_id } : undefined) : null;
     const facts = creation ?? await this.provider.refreshCheckout(attempt, customerId, attempt.origin, signal);
     await this.db.transaction(async () => {
       await this.owner(context.owner, operation.kind === 'billing.checkout' ? attempt.auth_epoch : undefined);
       const customer = await this.customer(context.owner, context.customer.id);
       if (!customer || customer.customer_id !== customerId || customer.state !== 'mapped') throw new TerminalJobFailure('not-eligible');
       const current = await this.attempt(customer, attempt.id);
+      if (operation.kind === 'billing.checkout' && (await this.currentAttempt(customer))?.id !== current.id) throw new TerminalJobFailure('not-eligible');
+      if (current.previous_subscription_ref) {
+        const parent = await this.recheckoutParent(customer, current.previous_subscription_ref,
+          z.uuid().parse(current.previous_attempt_id), z.string().parse(current.previous_subscription_id));
+        if (parent.previous.price_id !== context.parent?.previous.price_id) throw new TerminalJobFailure('not-eligible');
+      }
       if (encodePayload(this.intent(current)) !== encodePayload(operation.payload)) throw new TerminalJobFailure('invalid-result');
       if (current.session_id && current.session_id !== facts.id ||
         current.subscription_id && current.subscription_id !== facts.subscriptionId ||
@@ -467,8 +565,20 @@ export class SandboxCheckout {
           .run(facts.state, facts.id, facts.subscriptionId, facts.paymentStatus, facts.url,
             creation?.currency ?? null, creation?.unitAmount ?? null, attempt.id);
         await this.owner(context.owner, operation.kind === 'billing.checkout' ? attempt.auth_epoch : undefined);
+        const retained = await this.customer(context.owner, customer.id);
+        if (!retained || retained.state !== 'mapped' || retained.customer_id !== customerId) throw new TerminalJobFailure('not-eligible');
+        const published = await this.attempt(retained, attempt.id);
+        if (encodePayload(this.intent(published)) !== encodePayload(operation.payload) || published.state !== facts.state ||
+          published.session_id !== facts.id || published.subscription_id !== facts.subscriptionId ||
+          operation.kind === 'billing.checkout' && (await this.currentAttempt(customer))?.id !== attempt.id) throw new TerminalJobFailure('not-eligible');
+        if (published.previous_subscription_ref) {
+          const parent = await this.recheckoutParent(customer, published.previous_subscription_ref,
+            z.uuid().parse(published.previous_attempt_id), z.string().parse(published.previous_subscription_id));
+          if (parent.previous.price_id !== context.parent?.previous.price_id) throw new TerminalJobFailure('not-eligible');
+        }
         if (facts.state === 'complete') await this.ledger.request(customer.id);
-        return { checkoutId: attempt.id, state: facts.state, authority: 'sandbox-correlation-only' };
+        return { checkoutId: attempt.id, state: facts.state,
+          authority: published.previous_subscription_ref ? sandboxRecheckoutAuthority : 'sandbox-correlation-only' };
       }, signal);
     });
   }

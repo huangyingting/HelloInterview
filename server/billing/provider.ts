@@ -259,7 +259,7 @@ export class StripeEvidence {
     return this.session(session, attempt, customerId, origin, true);
   }
   async createCheckout(attempt: CheckoutRow, customerId: string, origin: string, operationId: string, replayWindow: boolean,
-    beforeMutation: () => Promise<void>, signal?: AbortSignal) {
+    beforeMutation: () => Promise<void>, signal?: AbortSignal, parent?: { subscriptionId: string; attemptId: string; priceId: string }) {
     await this.account(signal);
     this.customer(await this.client.customers.retrieve(customerId), attempt.customer_ref, customerId);
     this.assertRunning(signal);
@@ -281,6 +281,13 @@ export class StripeEvidence {
       const subscriptions = listSchema.parse(await this.client.subscriptions.list({ customer: customerId, status: 'all', limit: 100 }));
       if (subscriptions.has_more || subscriptions.data.map(value => subscriptionSchema.parse(value)).some(subscription => subscription.customer !== customerId ||
         !['canceled', 'incomplete_expired'].includes(subscription.status))) throw new TerminalJobFailure('reconciliation-required');
+      if (parent) {
+        const matches = subscriptions.data.filter(value => subscriptionSchema.parse(value).id === parent.subscriptionId);
+        if (matches.length !== 1) throw new TerminalJobFailure('reconciliation-required');
+        const previous = renewalSchema.parse(matches[0]), item = previous.items.data[0];
+        if (previous.metadata.studio_customer_ref !== attempt.customer_ref || previous.metadata.studio_checkout_ref !== parent.attemptId ||
+          item.subscription !== previous.id || item.price.id !== parent.priceId) throw new TerminalJobFailure('reconciliation-required');
+      }
       await beforeMutation();
       this.assertRunning(signal);
       const session = await this.client.checkout.sessions.create({

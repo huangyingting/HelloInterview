@@ -3,6 +3,7 @@ import type { sandboxServicePolicy } from './billing-ledger';
 
 export const sandboxOffers = ['pro_monthly', 'pro_annual'] as const;
 export type SandboxOffer = typeof sandboxOffers[number];
+export const sandboxRecheckoutAuthority = 'sandbox-ended-recheckout-v1' as const;
 export interface SandboxCheckoutView {
   id: string;
   requestKey: string;
@@ -12,6 +13,8 @@ export interface SandboxCheckoutView {
   expiresAt: string;
   quote: { currency: string; unitAmount: number } | null;
   paymentStatus: string | null;
+  subscriptionRef: string | null;
+  previousSubscriptionRef: string | null;
 }
 export interface SandboxBillingView {
   mode: 'sandbox';

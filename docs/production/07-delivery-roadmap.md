@@ -16,7 +16,7 @@ gates are not implicitly satisfied by a foundation change.
 | W07 | Durable-job checkpoint implemented; provider/worker composition pending W08-W10 | Maintained PostgreSQL queue, controlled schema/policies, atomic operation/inbox/outbox, fenced completion, safe retries, audited replay and actual worker-death recovery |
 | W04 | In progress; private identity, shared admission and credential-lifecycle checkpoints implemented | Maintained OIDC verification, email/Google/GitHub reference connections, secure sessions/CSRF, fresh linking, paired PostgreSQL legacy proof, shared admission, signed reset revocation, read-only canonical security facts and compiled maintained-queue reconciliation; live delivery, operated alerts, notifications, broker-native abuse controls and imported-account recovery remain |
 | W06 | Entitlement engineering checkpoint implemented; issuing adapters and commercial authority pending W08/W10/W12 | Immutable owned source grants, terminal revocation, database-clock capability policy, API/worker admission and publication checks, separate content-only access, licensed project snapshots, expiry-aware UI and retained archives |
-| W08 | In progress; sandbox notifications, owned Checkout, canonical funding/ledger, gated service authority, owned stop/resume cycles and restricted Portal checkpoints implemented | Pinned official Stripe SDK/API, signed durable evidence, stable owned financial keys, complete funding/adjustment traces, default-off calendar grants/scoped revocations, acknowledged exact-target renewal cycles and fresh restricted card-method/invoice sessions with URL-free audit; authentic provider evidence, commercial/grace policy, ended recheckout/paid deletion and operated lifecycle remain |
+| W08 | In progress; sandbox notifications, owned Checkout/recheckout, canonical funding/ledger, gated service authority, owned stop/resume cycles and restricted Portal checkpoints implemented | Pinned official Stripe SDK/API, signed durable evidence, stable owned financial keys, complete funding/adjustment traces, default-off calendar grants/scoped revocations, acknowledged exact-target renewal/recheckout with retained paid history and fresh restricted card-method/invoice sessions with URL-free audit; authentic provider evidence, commercial/grace policy, history partitioning/paid deletion and operated lifecycle remain |
 | W09-W13 | Pending | AI budgets, account administration, support, moderation, and launch gates |
 
 W01 preserves existing local accounts, SQLite schema, demo entitlements, API
@@ -74,7 +74,11 @@ unknown opening/lifecycle limitations and untrusted returns. The
 [owned renewal-cycle runbook](21-owned-sandbox-renewal-cycles.md) records migration
 15, explicit same-quote resumption consent, current funded-calendar admission,
 immutable exact-predecessor cycles, stale replay protection and bounded
-canonical recovery without access extension. None establishes
+canonical recovery without access extension. The
+[ended-subscription recheckout runbook](22-owned-ended-subscription-recheckout.md)
+records migration 16, exact-parent fresh new-purchase consent, a scoped current
+Checkout cursor, same-customer stable SDK creation/recovery and retained paid
+history with independently eligible new invoice intervals. None establishes
 eligible commercial service periods, live subscription entitlements, an operated
 lifecycle or live-mode approval.
 

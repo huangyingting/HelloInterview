@@ -404,7 +404,10 @@ test('migration 15 preserves actual migration-14 cancellation IDs, payloads and 
       .run(migration.version, migration.name, createHash('sha256').update(migration.sql).digest('hex'));
   }
   for (const table of ['users', 'durable_operations', 'stripe_billing_reference', 'stripe_owned_customers', 'stripe_checkout_attempts', 'stripe_owned_subscription_ledger']) {
-    await legacy.exec(`INSERT INTO "${schema}".${table} SELECT * FROM "${sourceSchema}".${table}`);
+    const columns = (await legacy.prepare(`SELECT column_name FROM information_schema.columns
+      WHERE table_schema=? AND table_name=? ORDER BY ordinal_position`).all(schema, table)).map(row => String(row.column_name));
+    assert.ok(columns.every(column => /^[a-z_][a-z0-9_]*$/.test(column)));
+    await legacy.exec(`INSERT INTO "${schema}".${table}(${columns.join(',')}) SELECT ${columns.join(',')} FROM "${sourceSchema}".${table}`);
   }
   const columns = 'id,policy_version,customer_ref,subscription_ref,attempt_id,auth_epoch,operation_id,state,created_at,confirmed_at,result';
   await legacy.exec(`INSERT INTO stripe_subscription_cancellations(${columns}) SELECT ${columns} FROM "${sourceSchema}".stripe_subscription_cancellations`);

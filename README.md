@@ -157,9 +157,13 @@ openings and already delivered links. The
 [owned renewal-cycle checkpoint](docs/production/21-owned-sandbox-renewal-cycles.md)
 adds acknowledged same-offer sandbox resumption and immutable repeat stop/resume
 cycles with exact predecessor tokens, so stale retries cannot affect later
-cycles. This changes no paid interval or funding. Ended-subscription recheckout,
-paid deletion, authentic provider recovery and live commerce remain unavailable.
-Controlled PostgreSQL deployments must apply **migration 15 and maintained queue
+cycles. This changes no paid interval or funding. The
+[ended-subscription recheckout checkpoint](docs/production/22-owned-ended-subscription-recheckout.md)
+adds exact-parent acknowledged new hosted test purchases on the same customer,
+with a scoped current-attempt cursor and retained historical paid sources.
+Only independently eligible new invoice evidence can issue a new test interval.
+Paid deletion, authentic provider recovery and live commerce remain unavailable.
+Controlled PostgreSQL deployments must apply **migration 16 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 

@@ -406,3 +406,77 @@ test('a lost actual acknowledged resumption response reuses its durable consent,
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
 });
+
+async function endedSubscription(f: Awaited<ReturnType<typeof fixture>>) {
+  const facts = await scheduledCancellation(f); facts.sub.status = 'canceled';
+  const refreshing = f.page.waitForResponse(response => response.url().endsWith('/api/billing/reconcile') && response.request().method() === 'POST');
+  await f.page.getByRole('button', { name: 'Refresh canonical ledger' }).click(); assert.equal((await refreshing).status(), 202);
+  await f.complete('billing.customer.snapshot');
+  await expect(f.page.getByRole('heading', { name: 'Recheckout after an ended sandbox subscription' })).toBeVisible();
+  const original = await f.db.prepare('SELECT * FROM stripe_checkout_attempts').get(); assert.ok(original);
+  const ref = await f.db.prepare('SELECT id FROM stripe_owned_subscription_ledger').get(); assert.ok(ref);
+  return { original, ref, facts };
+}
+
+test('actual browser requires new ended-subscription consent, prepares a different same-customer offer and remains Free after its funded test completion', { timeout: 90000 }, async t => {
+  const f = await fixture(t), { page } = f, { original, ref } = await endedSubscription(f);
+  const consent = page.getByRole('checkbox', { name: /I acknowledge a new sandbox subscription/ }),
+    preparing = page.getByRole('button', { name: 'Prepare new sandbox checkout' });
+  await expect(consent).not.toBeChecked(); await expect(preparing).toBeDisabled();
+  await page.getByLabel('Reference offer', { exact: true }).selectOption('pro_annual'); await consent.check();
+  const accepting = page.waitForResponse(response => response.url().endsWith('/api/billing/checkouts') && response.request().method() === 'POST');
+  await preparing.click(); assert.equal((await accepting).status(), 202);
+  await expect(page.getByText(/Annual reference offer - queued/)).toBeVisible();
+  const current = await f.db.prepare('SELECT attempt_id FROM stripe_customer_checkout_cursor').get(); assert.ok(current);
+  assert.notEqual(current.attempt_id, original.id); await f.complete('billing.checkout');
+  await expect(page.getByRole('button', { name: 'Open hosted sandbox checkout' })).toBeVisible();
+  await expect(page.getByText(/Reference recurring price: \$190.00/)).toBeVisible();
+  assert.deepEqual(await f.db.prepare('SELECT * FROM stripe_checkout_attempts WHERE id=?').get(String(original.id)), original);
+  const requested = f.requests.filter(request => request.path === '/api/billing/checkouts'); assert.equal(requested.length, 2);
+  assert.deepEqual(requested[1].body, { key: (await f.db.prepare('SELECT request_key FROM stripe_checkout_attempts WHERE id=?').get(String(current.attempt_id)))?.request_key,
+    offer: 'pro_annual', previousSubscriptionRef: ref.id, acknowledged: true });
+  assert.equal(f.customers.size, 1); await f.settleCheckout();
+  const refreshing = page.waitForResponse(response => response.url().endsWith('/refresh') && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Refresh canonical session' }).click(); assert.equal((await refreshing).status(), 200);
+  await f.complete('billing.checkout.refresh'); await f.complete('billing.customer.snapshot');
+  await expect(page.getByText(/Sandbox session completed; payment display: paid/)).toBeVisible();
+  const final: Bootstrap = await page.evaluate(async () => (await fetch('/api/bootstrap')).json());
+  assert.equal(final.capabilities.access?.state, 'free'); assert.equal(final.capabilities.commerce, 'disabled');
+  assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM entitlement_grants').get())?.count, 0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+});
+
+test('lost actual recheckout admission recovers the same four-field consent and current cursor after reload without replacing history or paid archives', { timeout: 90000 }, async t => {
+  const f = await fixture(t, true), { page } = f, { original, ref } = await endedSubscription(f);
+  const owner = await f.login(undefined, 'auth0|sandbox-browser-owner'), problem = problems.find(problem => problem.premium); assert.ok(problem);
+  assert.equal((await owner.browser.request('/api/mocks', { problemId: problem.id, company: 'Meta', level: 'Senior', length: 3 })).status, 200);
+  const grants = await f.db.prepare('SELECT * FROM entitlement_grants').all(), events = await f.db.prepare('SELECT * FROM entitlement_events').all(),
+    archive: Bootstrap = await page.evaluate(async () => (await fetch('/api/bootstrap')).json()); assert.equal(archive.state.mocks.length, 1);
+  await page.getByLabel('Reference offer', { exact: true }).selectOption('pro_annual');
+  await page.getByRole('checkbox', { name: /I acknowledge a new sandbox subscription/ }).check();
+  const pattern = '**/api/billing/checkouts';
+  await page.route(pattern, async route => {
+    const source = new URL(route.request().url()), target = new URL(source); target.hostname = '127.0.0.1';
+    const accepted = await route.fetch({ url: target.href, headers: { ...route.request().headers(), host: source.host } });
+    assert.equal(accepted.status(), 202); await route.abort('failed');
+  });
+  await page.getByRole('button', { name: 'Prepare new sandbox checkout' }).click();
+  await expect(page.getByRole('alert').first()).toContainText(/fetch|network/i);
+  const current = await f.db.prepare('SELECT attempt_id FROM stripe_customer_checkout_cursor').get(); assert.ok(current);
+  const request = await f.db.prepare('SELECT request_key FROM stripe_checkout_attempts WHERE id=?').get(String(current.attempt_id)); assert.ok(request);
+  const saved = await page.evaluate(() => Object.entries(sessionStorage).find(([key]) => key.startsWith('studio-sandbox-checkout:'))?.[1]); assert.ok(saved);
+  assert.deepEqual(JSON.parse(saved), { key: request.request_key, offer: 'pro_annual', previousSubscriptionRef: ref.id, acknowledged: true });
+  await page.unroute(pattern); await page.reload();
+  await expect(page.getByText(/Annual reference offer - queued/)).toBeVisible();
+  const restored = await page.evaluate(() => Object.entries(sessionStorage).find(([key]) => key.startsWith('studio-sandbox-checkout:'))?.[1]);
+  assert.equal(restored, saved); assert.equal(f.requests.filter(request => request.path === '/api/billing/checkouts').length, 2);
+  await f.complete('billing.checkout'); await expect(page.getByRole('button', { name: 'Open hosted sandbox checkout' })).toBeVisible();
+  assert.deepEqual(await f.db.prepare('SELECT * FROM stripe_checkout_attempts WHERE id=?').get(String(original.id)), original);
+  assert.deepEqual(await f.db.prepare('SELECT * FROM entitlement_grants').all(), grants);
+  assert.deepEqual(await f.db.prepare('SELECT * FROM entitlement_events').all(), events);
+  const final: Bootstrap = await page.evaluate(async () => (await fetch('/api/bootstrap')).json());
+  assert.equal(final.capabilities.access?.state, 'pro'); assert.deepEqual(final.state.mocks, archive.state.mocks);
+  const text = await page.locator('body').innerText();
+  for (const secret of ['cus_Synthetic', 'sub_Synthetic', 'price_Synthetic', 'authEpoch']) assert.ok(!text.includes(secret));
+});

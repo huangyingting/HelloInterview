@@ -51,6 +51,7 @@ service with defined recovery and support commitments.
 | [19 - Owned sandbox cancellation](19-owned-sandbox-cancellation.md) | Fresh owned stop-renewal requests, bounded stable provider writes, unknown-outcome recovery, atomic confirmation and unchanged paid access; Portal/live/deletion gates | Billing and operations |
 | [20 - Restricted sandbox Portal](20-restricted-sandbox-portal.md) | Default-off fresh owned card-method/invoice-history sessions, explicit restricted policy, minimized URL-free audit, honest hosted lifecycle and unchanged payment/access authority | Billing and full-stack |
 | [21 - Owned sandbox renewal cycles](21-owned-sandbox-renewal-cycles.md) | Acknowledged same-offer resumption, funded current-period checks, immutable repeat cycles and exact predecessor replay guards, bounded recovery and unchanged paid access | Billing and full-stack |
+| [22 - Ended-subscription recheckout](22-owned-ended-subscription-recheckout.md) | Exact-parent acknowledged new hosted test purchases, scoped current-attempt cursor, retained Checkout/source history, bounded same-customer creation/recovery and independently eligible new intervals | Billing and full-stack |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to

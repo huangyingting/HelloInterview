@@ -5,17 +5,21 @@ import type { IdentitySecurity } from '../../shared/types';
 import { AuthPrompt, Badge, PageHeading } from '../components';
 import { request, useStudio } from '../store';
 
-interface SavedRequest { key: string; offer: SandboxOffer }
+interface SavedRequest { key: string; offer: SandboxOffer; previousSubscriptionRef?: string; acknowledged?: true }
 function savedRequest(key: string): SavedRequest | null {
   const text = sessionStorage.getItem(key);
   if (!text) return null;
   const value: unknown = JSON.parse(text);
   if (!value || typeof value !== 'object' || !('key' in value) || typeof value.key !== 'string' ||
     !/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i.test(value.key) ||
-    !('offer' in value) || Object.keys(value).length !== 2) throw new Error('The saved sandbox request is invalid. Do not start a replacement while its outcome is unknown.');
+    !('offer' in value) || ![2, 4].includes(Object.keys(value).length)) throw new Error('The saved sandbox request is invalid. Do not start a replacement while its outcome is unknown.');
   const offer = sandboxOffers.find(offer => offer === value.offer);
   if (!offer) throw new Error('The saved sandbox offer is invalid. Refresh owned billing status before continuing.');
-  return { key: value.key, offer };
+  if (Object.keys(value).length === 2) return { key: value.key, offer };
+  if (!('previousSubscriptionRef' in value) || typeof value.previousSubscriptionRef !== 'string' ||
+    !/^[\da-f]{8}-[\da-f]{4}-4[\da-f]{3}-[89ab][\da-f]{3}-[\da-f]{12}$/i.test(value.previousSubscriptionRef) ||
+    !('acknowledged' in value) || value.acknowledged !== true) throw new Error('The saved recheckout predecessor or acknowledgment is invalid. Do not replace unknown consent.');
+  return { key: value.key, offer, previousSubscriptionRef: value.previousSubscriptionRef, acknowledged: true };
 }
 const labels = { pro_monthly: 'Monthly reference offer', pro_annual: 'Annual reference offer' };
 export function SandboxBillingPage() {
@@ -24,6 +28,7 @@ export function SandboxBillingPage() {
   const [offer, setOffer] = useState<SandboxOffer>('pro_monthly'), [intent, setIntent] = useState<SavedRequest | null>(null);
   const [acknowledged, setAcknowledged] = useState(false), [error, setError] = useState('');
   const [resumeAcknowledgedFor, setResumeAcknowledgedFor] = useState<string | null>(null);
+  const [recheckoutAcknowledgedFor, setRecheckoutAcknowledgedFor] = useState<string | null>(null);
   const [intentReady, setIntentReady] = useState(false);
   const returned = useRef<string | null>(null);
   const accessSnapshot = useRef<string | null>(null);
@@ -86,8 +91,18 @@ export function SandboxBillingPage() {
   }, [available, security?.fresh, view?.checkout?.id, state, params]);
   if (!data.user) return <AuthPrompt/>;
   if (!available) return <PageHeading eyebrow="BILLING" title="Sandbox billing is unavailable." description="A configured private sandbox and an active verified managed account are required. Production purchases remain disabled."/>;
-  const checkout = view?.checkout, unresolved = checkout && checkout.state !== 'expired';
+  const checkout = view?.checkout;
+  const previousRef = checkout?.state === 'complete' ? checkout.subscriptionRef : checkout?.previousSubscriptionRef;
+  const previous = previousRef ? view?.ledger?.subscriptions.find(sub => sub.id === previousRef) : null;
+  const recheckoutTarget = previous && ['canceled', 'incomplete_expired'].includes(previous.status) ? previous.id : null;
+  const recheckoutReady = recheckoutTarget && !view?.ledger?.stale && !view?.ledger?.historyTruncated &&
+    view?.ledger?.subscriptions.every(sub => ['canceled', 'incomplete_expired'].includes(sub.status) &&
+      sub.cancellation?.state !== 'queued' && sub.cancellation?.resumption?.state !== 'queued');
+  const unresolved = checkout && checkout.state !== 'expired' && !(checkout.state === 'complete' && recheckoutTarget);
   const savedExpired = checkout?.state === 'expired' && checkout.requestKey === intent?.key;
+  const savedCompleted = checkout?.state === 'complete' && checkout.requestKey === intent?.key && !!recheckoutTarget;
+  const savedResolved = savedExpired || savedCompleted;
+  const consentReady = recheckoutTarget ? recheckoutAcknowledgedFor === recheckoutTarget : acknowledged;
   const needsReview = checkout && ['failed', 'cancelled', 'missing'].includes(checkout.processing);
   return <>
     <PageHeading eyebrow="PRIVATE SANDBOX" title="Rehearse hosted checkout." description={sandboxAccess ?
@@ -128,7 +143,7 @@ export function SandboxBillingPage() {
       {needsReview && <p role="status">An operator must inspect this unresolved intent and reconcile its provider outcome. Do not create a replacement customer or checkout.</p>}
       {checkout.state === 'complete' && <p>Sandbox session completed; payment display: {checkout.paymentStatus ?? 'unavailable'}.
         {' '}{sandboxAccess ? 'The session alone is not service authority; inspect the separate sandbox grant below.' : 'No paid entitlement was issued.'}
-        {' '}Further subscriptions remain blocked pending billing lifecycle reconciliation.</p>}
+        {' '}A new subscription requires a canonically ended predecessor and explicit new sandbox consent.</p>}
       {checkout.state === 'open' && <button className="button" disabled={pending || !security?.fresh || !!error} onClick={() => action(async () => {
         const result = await request<{ url: string }>(`/api/billing/checkouts/${checkout.id}/open`, {});
         window.location.assign(result.url);
@@ -180,7 +195,8 @@ export function SandboxBillingPage() {
       </div>)}
       {!!view.ledger?.subscriptions.length && <p>Stopping sandbox renewal does not refund money, end paid access immediately or erase saved work.
         Resuming acknowledges future test renewals at the captured reference offer, not an immediate payment or a new entitlement.
-        Current access comes from eligible invoice intervals and account policy, never a renewal-control request. Ended-subscription recheckout remains unavailable.</p>}
+        Current access comes from eligible invoice intervals and account policy, never a renewal-control request.
+        Recheckout creates a new owned intent only after the previous subscription is canonically ended; preparation alone grants no access.</p>}
       {view.ledger?.invoices.map(invoice => <p key={invoice.id}>Observed invoice: <strong>{invoice.status}</strong>.
         {' '}Total: {invoice.total} {invoice.currency.toUpperCase()} minor units; paid amount hint: {invoice.amountPaid}; remaining: {invoice.amountRemaining}.
         {' '}{invoice.funding ? `Referenced card funding: ${invoice.funding.state.replaceAll('-', ' ')}; captured: ${invoice.funding.captured}; succeeded refunds: ${invoice.funding.refunded}.` : 'Payment evidence has not been evaluated.'}
@@ -197,22 +213,30 @@ export function SandboxBillingPage() {
       })}>Refresh canonical ledger</button>
     </section>}
     {view && !unresolved && <section className="panel">
-      <h2>Start a sandbox intent</h2>
+      <h2>{recheckoutTarget ? 'Recheckout after an ended sandbox subscription' : 'Start a sandbox intent'}</h2>
+      {recheckoutTarget && <p>Keep the previous Checkout and paid interval as retained history. This prepares a new test subscription at the selected reference offer,
+        not a resumption, refund, allowance reset or access extension. Final recurring test details are confirmed on hosted checkout.</p>}
+      {recheckoutTarget && !recheckoutReady && <p role="status">Refresh complete canonical ended history and reconcile unknown renewal-control outcomes before recheckout.</p>}
       {!intentReady && <p>Saved retry information must be loaded before reserving a new intent. Reload owned status; an unknown request must not be replaced.</p>}
       {!view.enabled && <p>New sandbox checkout is disabled by the operator. Existing owned intents are retained for reconciliation.</p>}
-      {intent && !savedExpired && <p>A saved request will be reused exactly. An unknown response never creates a replacement request key.</p>}
-      <label>Reference offer<select value={offer} disabled={pending || !!intent && !savedExpired} onChange={event => {
+      {intent && !savedResolved && <p>A saved request will be reused exactly. An unknown response never creates a replacement request key.</p>}
+      <label>Reference offer<select aria-label="Reference offer" value={offer} disabled={pending || !!intent && !savedResolved} onChange={event => {
         const value = sandboxOffers.find(offer => offer === event.target.value); if (value) setOffer(value);
       }}>{sandboxOffers.map(value => <option key={value} value={value}>{labels[value]}</option>)}</select></label>
-      <label><input type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)}/> {sandboxAccess ?
+      <label><input type="checkbox" checked={!!consentReady} onChange={event => {
+        if (recheckoutTarget) setRecheckoutAcknowledgedFor(event.target.checked ? recheckoutTarget : null);
+        else setAcknowledged(event.target.checked);
+      }}/> {recheckoutTarget ? 'I acknowledge a new sandbox subscription after the confirmed end of the previous subscription.' : sandboxAccess ?
         'I understand this is sandbox-only with test-service access, not a production purchase.' :
         'I understand this is sandbox-only and grants no premium access.'}</label>
-      <button className="button" disabled={pending || !intentReady || !view.enabled || !acknowledged || !security?.fresh || !!error} onClick={() => action(async () => {
-        const saved = savedExpired ? null : intent;
-        const next = saved ?? { key: crypto.randomUUID(), offer };
+      <button className="button" disabled={pending || !intentReady || !view.enabled || !consentReady || !security?.fresh || !!error ||
+        !!recheckoutTarget && !recheckoutReady} onClick={() => action(async () => {
+        const saved = savedResolved ? null : intent;
+        const next: SavedRequest = saved ?? { key: crypto.randomUUID(), offer,
+          ...(recheckoutTarget ? { previousSubscriptionRef: recheckoutTarget, acknowledged: true } : {}) };
         sessionStorage.setItem(storageKey, JSON.stringify(next)); setIntent(next);
         await request<{ id: string }>('/api/billing/checkouts', next); await load();
-      })}>{intent && !savedExpired ? 'Retry saved sandbox request' : 'Prepare sandbox checkout'}</button>
+      })}>{intent && !savedResolved ? 'Retry saved sandbox request' : recheckoutTarget ? 'Prepare new sandbox checkout' : 'Prepare sandbox checkout'}</button>
     </section>}
   </>;
 }

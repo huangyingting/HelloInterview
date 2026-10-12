@@ -191,10 +191,13 @@ export async function openBillingFixture(t: TestContext, overrides: NodeJS.Proce
       return event;
     },
     async settleCheckout() {
-      const attempt = await f.db.prepare('SELECT * FROM stripe_checkout_attempts WHERE session_id IS NOT NULL ORDER BY created_at DESC LIMIT 1').get();
+      const attempt = await f.db.prepare(`SELECT a.* FROM stripe_customer_checkout_cursor p
+        JOIN stripe_checkout_attempts a ON a.id=p.attempt_id AND a.customer_ref=p.customer_ref
+        WHERE a.session_id IS NOT NULL ORDER BY a.created_at DESC,a.id DESC LIMIT 1`).get();
       assert.ok(attempt);
       const session = sessions.get(String(attempt.session_id)); assert.ok(session);
-      const now = Math.floor(Date.now() / 1000), subId = `sub_Synthetic${subscriptions.length + 1}`, invoiceId = `in_Synthetic${invoices.size + 1}`;
+      const now = Math.floor(Date.now() / 1000), subId = `sub_Synthetic${subscriptions.length + 1}`,
+        itemId = `si_Synthetic${subscriptions.length + 1}`, invoiceId = `in_Synthetic${invoices.size + 1}`;
       const end = new Date(now * 1000);
       if (attempt.offer_key === 'pro_annual') end.setUTCFullYear(end.getUTCFullYear() + 1);
       else end.setUTCMonth(end.getUTCMonth() + 1);
@@ -207,12 +210,12 @@ export async function openBillingFixture(t: TestContext, overrides: NodeJS.Proce
         automatic_tax: { enabled: false }, discounts: [], default_tax_rates: [], billing_thresholds: null, pending_invoice_item_interval: null,
         metadata: { studio_customer_ref: String(attempt.customer_ref), studio_checkout_ref: String(attempt.id) }, latest_invoice: invoiceId,
         billing_cycle_anchor: now, billing_cycle_anchor_config: null,
-        items: { object: 'list', has_more: false, data: [{ id: 'si_Synthetic1', object: 'subscription_item', subscription: subId,
+        items: { object: 'list', has_more: false, data: [{ id: itemId, object: 'subscription_item', subscription: subId,
           price: { id: String(attempt.price_id), object: 'price', livemode: false }, quantity: 1, current_period_start: now, current_period_end: until,
           discounts: [], tax_rates: [], billing_thresholds: null }] } };
       const line = { id: `il_Synthetic${invoices.size + 1}`, object: 'line_item', invoice: invoiceId, livemode: false,
         currency: 'usd', amount, quantity: 1, quantity_decimal: '1', subscription: subId, period: { start: now, end: until - 1 },
-        parent: { type: 'subscription_item_details', subscription_item_details: { subscription: subId, subscription_item: 'si_Synthetic1', proration: false } },
+        parent: { type: 'subscription_item_details', subscription_item_details: { subscription: subId, subscription_item: itemId, proration: false } },
         pricing: { type: 'price_details', price_details: { price: String(attempt.price_id), product: 'prod_SyntheticCheckout' } } };
       const payment = { id: `inpay_Synthetic${invoices.size + 1}`, object: 'invoice_payment', invoice: invoiceId, livemode: false,
         currency: 'usd', status: 'paid', amount_paid: amount, payment: { type: 'payment_intent', payment_intent: `pi_Synthetic${invoices.size + 1}` } };

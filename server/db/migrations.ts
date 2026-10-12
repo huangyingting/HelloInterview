@@ -499,6 +499,37 @@ export const migrations = [{
         REFERENCES stripe_subscription_resumptions(id,customer_ref,subscription_ref,attempt_id);
     CREATE INDEX stripe_resumption_customer ON stripe_subscription_resumptions(customer_ref);
   `,
+}, {
+  version: 16,
+  name: 'owned-ended-subscription-recheckout',
+  sql: `
+    ALTER TABLE stripe_checkout_attempts ADD CONSTRAINT stripe_checkout_scope UNIQUE(id,customer_ref);
+    ALTER TABLE stripe_owned_subscription_ledger ADD CONSTRAINT stripe_subscription_scope UNIQUE(id,customer_ref);
+    ALTER TABLE stripe_checkout_attempts
+      ADD COLUMN previous_subscription_ref TEXT,
+      ADD COLUMN previous_attempt_id TEXT,
+      ADD COLUMN previous_subscription_id TEXT,
+      ADD COLUMN recheckout_acknowledged INTEGER,
+      ADD CONSTRAINT stripe_recheckout_subscription FOREIGN KEY(previous_subscription_ref,customer_ref)
+        REFERENCES stripe_owned_subscription_ledger(id,customer_ref),
+      ADD CONSTRAINT stripe_recheckout_attempt FOREIGN KEY(previous_attempt_id,customer_ref)
+        REFERENCES stripe_checkout_attempts(id,customer_ref),
+      ADD CONSTRAINT stripe_recheckout_scope CHECK (
+        (previous_subscription_ref IS NULL AND previous_attempt_id IS NULL AND previous_subscription_id IS NULL AND recheckout_acknowledged IS NULL) OR
+        (previous_subscription_ref IS NOT NULL AND previous_attempt_id IS NOT NULL AND previous_attempt_id<>id
+          AND previous_subscription_id IS NOT NULL AND recheckout_acknowledged IS NOT NULL AND recheckout_acknowledged=1));
+    CREATE TABLE stripe_customer_checkout_cursor (
+      customer_ref TEXT PRIMARY KEY REFERENCES stripe_owned_customers(id),
+      attempt_id TEXT NOT NULL,
+      FOREIGN KEY(attempt_id,customer_ref) REFERENCES stripe_checkout_attempts(id,customer_ref)
+    );
+    INSERT INTO stripe_customer_checkout_cursor(customer_ref,attempt_id)
+      SELECT DISTINCT ON (customer_ref) customer_ref,id FROM stripe_checkout_attempts
+      ORDER BY customer_ref,(state IN ('waiting-customer','queued','open','complete')) DESC,created_at DESC,id DESC;
+    DROP INDEX stripe_one_unresolved_checkout;
+    CREATE UNIQUE INDEX stripe_one_unresolved_checkout ON stripe_checkout_attempts(customer_ref)
+      WHERE state IN ('waiting-customer','queued','open');
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

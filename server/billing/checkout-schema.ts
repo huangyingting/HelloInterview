@@ -1,17 +1,26 @@
 import { z } from 'zod';
-import { sandboxOffers } from '../../shared/billing';
+import { sandboxOffers, sandboxRecheckoutAuthority } from '../../shared/billing';
 import { providerId } from './schema';
 
-export const checkoutRequestSchema = z.strictObject({ offer: z.enum(sandboxOffers), key: z.uuid() });
+const requestFields = { offer: z.enum(sandboxOffers), key: z.uuid() };
+export const checkoutRequestSchema = z.union([
+  z.strictObject(requestFields),
+  z.strictObject({ ...requestFields, previousSubscriptionRef: z.uuid(), acknowledged: z.literal(true) }),
+]);
 export const customerRequestSchema = z.strictObject({ customerRef: z.uuid(), authEpoch: z.number().int().nonnegative() });
 export const canonicalOriginSchema = z.string().refine(value => {
   try { const url = new URL(value); return url.protocol === 'https:' && url.origin === value && !url.username && !url.password; }
   catch { return false; }
 });
-export const checkoutOperationSchema = z.strictObject({
+const operationFields = {
   attemptId: z.uuid(), customerRef: z.uuid(), priceId: providerId, offer: z.enum(sandboxOffers),
   origin: canonicalOriginSchema, expiresAt: z.number().int().positive().safe(), authEpoch: z.number().int().nonnegative(),
-});
+};
+export const checkoutOperationSchema = z.union([
+  z.strictObject(operationFields),
+  z.strictObject({ ...operationFields, policy: z.literal(sandboxRecheckoutAuthority), previousSubscriptionRef: z.uuid(),
+    previousAttemptId: z.uuid(), previousSubscriptionId: providerId, acknowledged: z.literal(true) }),
+]);
 export const customerRowSchema = z.object({
   id: z.uuid(), account_id: providerId, user_id: z.uuid().nullable(), customer_id: providerId.nullable(),
   state: z.enum(['reserved', 'mapped', 'retired']), auth_epoch: z.coerce.number().int().nonnegative(), operation_id: z.uuid(),
@@ -25,7 +34,12 @@ export const checkoutRowSchema = z.object({
   refresh_operation_id: z.uuid().nullable(),
   payment_status: z.enum(['paid', 'unpaid', 'no_payment_required']).nullable(), hosted_url: z.string().nullable(), currency: z.literal('usd').nullable(),
   unit_amount: z.coerce.number().int().positive().safe().nullable(), expires_at: z.coerce.number().int().positive().safe(),
-});
+  previous_subscription_ref: z.uuid().nullable(), previous_attempt_id: z.uuid().nullable(),
+  previous_subscription_id: providerId.nullable(), recheckout_acknowledged: z.literal(1).nullable(),
+}).refine(row => row.previous_subscription_ref === null ?
+  row.previous_attempt_id === null && row.previous_subscription_id === null && row.recheckout_acknowledged === null :
+  row.previous_attempt_id !== null && row.previous_subscription_id !== null && row.recheckout_acknowledged === 1 &&
+  row.previous_attempt_id !== row.id, 'Recheckout requires coherent immutable acknowledged predecessor scope.');
 export type CustomerRow = z.infer<typeof customerRowSchema>;
 export type CheckoutRow = z.infer<typeof checkoutRowSchema>;
 const reference = z.union([providerId, z.looseObject({ id: providerId })]).nullable();

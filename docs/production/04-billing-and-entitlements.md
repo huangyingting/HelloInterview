@@ -25,7 +25,10 @@ and invoice history, without plan/cancel/profile/login-page features or payment/
 access authority. The [eighth checkpoint](21-owned-sandbox-renewal-cycles.md)
 adds acknowledged same-offer sandbox resumption and immutable repeat stop/resume
 cycles with exact predecessor replay guards and unchanged paid intervals.
-Ended-subscription recheckout, paid deletion and authentic recovery remain unresolved.
+The [ninth checkpoint](22-owned-ended-subscription-recheckout.md) adds acknowledged
+exact-parent recheckout after canonical subscription end, a current-attempt
+cursor and independently eligible new intervals without overwriting prior
+purchase/paid history. Paid deletion and authentic recovery remain unresolved.
 Live payment-derived entitlements and the operated financial lifecycle
 remain unimplemented; this specification is not launch authorization.
 

@@ -201,6 +201,9 @@ W08 remains in progress. Subsequent checkpoints add
 [card-funding/adjustment evidence](17-sandbox-payment-evidence.md),
 [default-off sandbox service grants](18-sandbox-service-authority.md) and
 [owned sandbox stop-renewal commands](19-owned-sandbox-cancellation.md).
+The later [ended-subscription recheckout checkpoint](22-owned-ended-subscription-recheckout.md)
+adds exact-parent acknowledged new purchases and a scoped current-attempt
+cursor without rewriting original completed Checkout or paid-source history.
 These are private engineering boundaries, not commercial approval.
 Approved commercial/grace/refund/dispute rules, restricted Portal/resumption,
 missing-event/drift sweeps and operated lifecycle recovery remain. Financial

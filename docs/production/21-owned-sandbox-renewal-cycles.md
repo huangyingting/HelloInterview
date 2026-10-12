@@ -215,8 +215,11 @@ lost real accepted resumption response recovery without replacing consent,
 unchanged Free/Pro access, secret minimization and mobile layout.
 
 This does not provide authentic Stripe-hosted/test-clock evidence or approve
-commercial/grace/refund/dispute rules. Ended-subscription recheckout, financial
-history partitioning, staffed support/privacy, operated recovery, paid deletion,
+commercial/grace/refund/dispute rules. Ended-subscription recheckout is outside
+this checkpoint and is subsequently implemented in
+[checkpoint 22](22-owned-ended-subscription-recheckout.md), not by this resumption
+command; historical renewal authority remains unchanged. Financial history
+partitioning, staffed support/privacy, operated recovery, paid deletion,
 vendor/merchant/legal approval and live mode remain gated.
 
 Provider references:
