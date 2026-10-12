@@ -64,12 +64,16 @@ test('runtime-only compiled release authenticates through HTTPS OIDC and retains
   assert.equal(before.user?.identity?.status, 'active');
   assert.equal((await browser.request('/api/profile', { name: 'Compiled member' }, 'PATCH')).status, 200);
   assert.equal((await browser.security()).identities.length, 1);
+  assert.equal((await f.db.prepare("SELECT attempts FROM identity_abuse_buckets WHERE scope='network'").get())?.attempts, 2);
   await stop!();
   await start();
   const after = await browser.bootstrap();
   assert.equal(after.user?.id, before.user?.id);
   assert.equal(after.user?.name, 'Compiled member');
   assert.equal(after.user?.identity?.verified, true);
+  assert.equal((await f.db.prepare("SELECT attempts FROM identity_abuse_buckets WHERE scope='network'").get())?.attempts, 2);
+  await f.begin(browser);
+  assert.equal((await f.db.prepare("SELECT attempts FROM identity_abuse_buckets WHERE scope='network'").get())?.attempts, 3);
   assert.equal((await browser.request('/api/auth/demo', {})).status, 404);
   assert.equal((await browser.request('/api/logout', {})).status, 200);
   assert.equal((await browser.bootstrap()).user, null);

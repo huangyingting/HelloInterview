@@ -131,6 +131,7 @@ test('managed mutations enforce session-bound CSRF, Origin, cookie uniqueness an
   const f = await fixture(t), { browser, data } = await login(f);
   const before = data.user?.name;
   assert.equal((await browser.request('/api/profile', { name: 'Wrong token' }, 'PATCH', { 'X-CSRF-Token': 'wrong' })).status, 403);
+  assert.equal((await browser.request('/api/profile', { name: 'Multibyte token' }, 'PATCH', { 'X-CSRF-Token': '\u00e9'.repeat(64) })).status, 403);
   assert.equal((await browser.request('/api/profile', { name: 'Wrong origin' }, 'PATCH', { Origin: 'https://attacker.fixture' })).status, 403);
   assert.equal((await browser.request('/api/profile', { name: 'Tossed cookie' }, 'PATCH', { Cookie: '__Host-studio_csrf=' + browser.csrf + '; __Host-studio_csrf=' + browser.csrf })).status, 403);
   assert.equal((await browser.bootstrap()).user?.name, before);

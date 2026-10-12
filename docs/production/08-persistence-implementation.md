@@ -31,6 +31,7 @@ none is served as a browser asset.
 | --- | --- |
 | `users`, `sessions` | Stable owners and opaque hashed sessions; owner/expiry indexes. Local email login is distinct from W04 `(issuer,subject)` authority; managed local-login email is null |
 | `managed_accounts`, `managed_identities`, `managed_sessions`, `auth_transactions`, `identity_security_events` | Migration 4 opt-in identity/contact ownership, account status/epoch, browser-bound one-use proof, safe session metadata and application security events; provider lifecycle is incomplete |
+| `identity_abuse_buckets` | Migration 5 atomic shared managed-authentication admission; pseudonymous HMAC fingerprints, bounded counters and database-clock windows, not credentials or grants |
 | `user_settings` | Small scalar preferences/demo plan fields, recognition, monotonic mutation revision. Demo plans are not financial facts |
 | `user_resources` | One owned row per read marker, bookmark, review item, activity day, enrollment, or watched resource; unique `(user_id, kind, resource)` and explicit order |
 | `targets`, `stories`, `attempts`, `quiz_attempts` | Independent owned records; unique `(user_id, id)`, JSONB object with matching ID, bounded payload, position, revision, timestamp |

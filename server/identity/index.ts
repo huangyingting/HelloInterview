@@ -7,6 +7,7 @@ import type { Database } from '../db/connection';
 import { StateRepository } from '../db/state-repository';
 import { HttpError } from '../http-error';
 import { IdentityBroker, providers, type IdentityProof, type IdentityTransport, type Provider } from './broker';
+import { IdentityLimits, networkAddress } from './limits';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const random = () => randomBytes(32).toString('hex');
@@ -31,7 +32,10 @@ function cookie(req: express.Request, name: string) {
   const value = values[0].slice(name.length + 1);
   return /^[a-f0-9]{64}$/.test(value) ? value : null;
 }
-function equal(a: string, b: string) { return a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b)); }
+function equal(a: string, b: string) {
+  const first = Buffer.from(a), second = Buffer.from(b);
+  return first.length === second.length && timingSafeEqual(first, second);
+}
 function provider(value: unknown): Provider {
   if (typeof value !== 'string' || !providers.includes(value as Provider)) throw new HttpError(400, 'Choose email, Google or GitHub sign-in.');
   return value as Provider;
@@ -44,10 +48,12 @@ function destination(value: unknown) {
 
 export class ManagedIdentity {
   private readonly broker: IdentityBroker;
+  private readonly limits: IdentityLimits;
   private readonly contexts = new WeakMap<User, Session>();
   constructor(private readonly db: Database, private readonly settings: IdentityConfig, private readonly origin: string, shutdown: AbortSignal, transport?: IdentityTransport) {
     if (db.dialect !== 'postgres') throw new Error('Managed identity requires migrated PostgreSQL.');
     this.broker = new IdentityBroker(settings, origin, shutdown, transport);
+    this.limits = new IdentityLimits(db, settings.clientSecret);
   }
   private async now() { return z.coerce.number().int().nonnegative().parse((await this.db.prepare(`SELECT ${clockSql} AS now`).get())?.now); }
   private async session(req: express.Request): Promise<Session | null> {
@@ -189,7 +195,17 @@ export class ManagedIdentity {
     await this.audit(userId, purpose, identityId);
     return { userId, identityId };
   }
-  register(app: express.Express, rateLimit: express.RequestHandler) {
+  register(app: express.Express) {
+    const rateLimit: express.RequestHandler = async (req, res, next) => {
+      if (!req.ip) throw new HttpError(503, 'The request address is unavailable. Sign-in was not admitted.');
+      await this.limits.enforce('network', networkAddress(req.ip), res);
+      next();
+    };
+    const accountLimit: express.RequestHandler = async (req, res, next) => {
+      const session = await this.requireSession(req);
+      await this.limits.enforce('account-security', session.id, res);
+      next();
+    };
     const browserError: express.ErrorRequestHandler = (error: unknown, _req, res, next) => {
       if (!(error instanceof HttpError)) return next(error);
       const code = error.status >= 500 ? 'provider_unavailable' : error.status === 409 ? 'identity_conflict' : error.status === 403 ? 'security_changed' : error.status === 429 ? 'rate_limited' : 'restart';
@@ -219,13 +235,14 @@ export class ManagedIdentity {
       this.cookies(res, issued);
       res.redirect(303, transaction.return_to);
     }, browserError);
-    app.post('/api/identity/reauth', rateLimit, async (req, res) => res.json({ url: await this.start(req, res, 'reauth') }));
-    app.post('/api/identity/link', rateLimit, async (req, res) => res.json({ url: await this.start(req, res, 'link') }));
+    app.post('/api/identity/reauth', rateLimit, accountLimit, async (req, res) => res.json({ url: await this.start(req, res, 'reauth') }));
+    app.post('/api/identity/link', rateLimit, accountLimit, async (req, res) => res.json({ url: await this.start(req, res, 'link') }));
     app.post('/api/identity/legacy-link', rateLimit, async (req, res) => {
       if (!this.settings.legacyLinkUntil || await this.now() >= this.settings.legacyLinkUntil) throw new HttpError(403, 'Legacy account migration is not available.');
       const parsed = z.object({ email: z.string().email().max(254), password: z.string().min(1).max(128), provider: z.enum(['email', 'google', 'github']), returnTo: z.string().optional() }).safeParse(req.body);
       if (!parsed.success) throw new HttpError(400, 'Enter a valid legacy email, password and sign-in provider.');
       const body = parsed.data;
+      await this.limits.enforce('legacy-account', body.email.toLowerCase(), res);
       const row = await this.db.prepare('SELECT u.id,u.password FROM users u LEFT JOIN managed_accounts a ON a.user_id=u.id WHERE u.email=? AND u.demo=0 AND a.user_id IS NULL').get(body.email.toLowerCase());
       const credential = z.string().regex(/^[a-f0-9]{32}:[a-f0-9]{128}$/).parse(row?.password ?? `${'0'.repeat(32)}:${'0'.repeat(128)}`);
       const [salt, stored] = credential.split(':');
@@ -252,18 +269,20 @@ export class ManagedIdentity {
         }), events, fresh: now - session.authenticated_at <= freshness,
       });
     });
-    app.delete('/api/identity/sessions/:id', async (req, res) => {
+    app.delete('/api/identity/sessions/:id', rateLimit, accountLimit, async (req, res) => {
+      const id = req.params.id;
+      if (typeof id !== 'string') throw new HttpError(400, 'Choose one session to revoke.');
       const session = await this.requireSession(req, true);
       await this.db.transaction(async () => {
         await this.db.prepare('SELECT id FROM users WHERE id=? FOR UPDATE').get(session.id);
         await this.requireSession(req, true);
-        const result = await this.db.prepare('DELETE FROM sessions s USING managed_sessions m WHERE m.token=s.token AND m.id=? AND s.user_id=?').run(req.params.id, session.id);
+        const result = await this.db.prepare('DELETE FROM sessions s USING managed_sessions m WHERE m.token=s.token AND m.id=? AND s.user_id=?').run(id, session.id);
         if (!result) throw new HttpError(404, 'Session not found.');
         await this.audit(session.id, 'session-revoked');
       });
       res.json({ ok: true });
     });
-    app.post('/api/identity/sessions/revoke-others', async (req, res) => {
+    app.post('/api/identity/sessions/revoke-others', rateLimit, accountLimit, async (req, res) => {
       const session = await this.requireSession(req, true);
       await this.db.transaction(async () => {
         await this.db.prepare('SELECT id FROM users WHERE id=? FOR UPDATE').get(session.id);
@@ -273,25 +292,27 @@ export class ManagedIdentity {
       });
       res.json({ ok: true });
     });
-    app.delete('/api/identity/methods/:id', async (req, res) => {
+    app.delete('/api/identity/methods/:id', rateLimit, accountLimit, async (req, res) => {
+      const id = req.params.id;
+      if (typeof id !== 'string') throw new HttpError(400, 'Choose one sign-in method to remove.');
       const session = await this.requireSession(req, true);
       await this.db.transaction(async () => {
         await this.db.prepare('SELECT id FROM users WHERE id=? FOR UPDATE').get(session.id);
         await this.requireSession(req, true);
         const identities = await this.db.prepare('SELECT id,verified,email FROM managed_identities WHERE user_id=?').all(session.id);
-        if (!identities.some(identity => identity.id === req.params.id)) throw new HttpError(404, 'Sign-in method not found.');
-        if (req.params.id === session.identity_id || !identities.some(identity => identity.id !== req.params.id && identity.verified === 1)) throw new HttpError(409, 'Keep another verified sign-in method and confirm with it before removing this one.');
+        if (!identities.some(identity => identity.id === id)) throw new HttpError(404, 'Sign-in method not found.');
+        if (id === session.identity_id || !identities.some(identity => identity.id !== id && identity.verified === 1)) throw new HttpError(409, 'Keep another verified sign-in method and confirm with it before removing this one.');
         const account = await this.db.prepare('SELECT contact_identity_id FROM managed_accounts WHERE user_id=?').get(session.id);
-        if (account?.contact_identity_id === req.params.id) {
+        if (account?.contact_identity_id === id) {
           const current = identities.find(identity => identity.id === session.identity_id);
           if (current?.verified !== 1 || typeof current.email !== 'string') throw new HttpError(409, 'Confirm with another verified contact method before removing your current contact source.');
           await this.db.prepare('UPDATE managed_accounts SET contact_identity_id=?,contact_email=?,contact_verified=1,session_epoch=session_epoch+1 WHERE user_id=?').run(session.identity_id, current.email, session.id);
           await this.db.prepare('DELETE FROM sessions WHERE user_id=? AND token<>?').run(session.id, session.token);
           await this.db.prepare('UPDATE managed_sessions SET epoch=epoch+1 WHERE token=?').run(session.token);
         }
-        await this.db.prepare('DELETE FROM sessions s USING managed_sessions m WHERE m.token=s.token AND m.identity_id=? AND s.user_id=?').run(req.params.id, session.id);
-        await this.db.prepare('DELETE FROM managed_identities WHERE id=? AND user_id=?').run(req.params.id, session.id);
-        await this.audit(session.id, 'identity-unlinked', req.params.id);
+        await this.db.prepare('DELETE FROM sessions s USING managed_sessions m WHERE m.token=s.token AND m.identity_id=? AND s.user_id=?').run(id, session.id);
+        await this.db.prepare('DELETE FROM managed_identities WHERE id=? AND user_id=?').run(id, session.id);
+        await this.audit(session.id, 'identity-unlinked', id);
       });
       res.json({ ok: true });
     });

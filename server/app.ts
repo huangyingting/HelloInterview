@@ -168,7 +168,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
       if (!['GET', 'HEAD'].includes(req.method) && ['/api/posts', '/api/comments'].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix))) throw new HttpError(503, 'Community contributions are read-only until production moderation is enabled.');
       next();
     });
-    identity.register(app, rateLimit);
+    identity.register(app);
   }
   app.get('/api/ready', async (_req, res) => {
     try {

@@ -195,6 +195,20 @@ export const migrations = [{
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `,
+}, {
+  version: 5,
+  name: 'shared-managed-authentication-admission',
+  sql: `
+    CREATE TABLE identity_abuse_buckets (
+      scope TEXT NOT NULL CHECK (scope IN ('network','legacy-account','account-security')),
+      fingerprint TEXT NOT NULL CHECK (fingerprint ~ '^[a-f0-9]{64}$'),
+      attempts INTEGER NOT NULL CHECK (attempts BETWEEN 1 AND 31),
+      started BIGINT NOT NULL CHECK (started >= 0),
+      expires BIGINT NOT NULL CHECK (expires > started),
+      PRIMARY KEY (scope,fingerprint)
+    );
+    CREATE INDEX identity_abuse_expiry ON identity_abuse_buckets(expires);
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

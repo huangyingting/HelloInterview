@@ -54,8 +54,8 @@ PKCE S256 and real broker verification semantics. Select a sandbox/private
 tenant only after D01 approval; review connections, email delivery, privacy
 region, pricing, subject stability and recovery behavior before provisioning.
 
-Build, apply migration **4** with `npm run db:migrate`, then deploy matching
-runtime/frontend/manifest/lockfile artifacts. Released migrations 1-3 are
+Build, apply migrations **4 and 5** with `npm run db:migrate`, then deploy matching
+runtime/frontend/manifest/lockfile artifacts. Released migrations 1-4 are
 unchanged. Selecting OIDC does not automatically import data or enable service
 mode. Do not switch back to local/demo mode as an identity-provider outage
 fallback: that is a different authority model.
@@ -160,6 +160,39 @@ managed owners at enqueue, before worker preparation and during locked
 finalization; a suspended operation cannot publish a result. System operations
 still require their feature handler's explicit eligibility policy.
 
+## Shared authentication admission
+
+Managed authentication no longer uses the process-local limiter. Migration 5
+stores atomic PostgreSQL admission buckets shared by every application replica
+and preserved through restart. The established **30 attempts per 15 minutes**
+budget applies across sign-in/callback, legacy proof and security mutations for
+each verified request network address. Linking, step-up and session/method
+revocation also share an account-security budget. Legacy credential proof adds
+the same budget for the normalized submitted email, including nonexistent
+accounts, so changing IPs does not reset targeted guessing protection.
+
+Addresses are canonicalized, including mapped IPv4 and equivalent IPv6 forms.
+Only the configured trusted edge can supply forwarded address authority; it
+must overwrite client-supplied forwarding headers. Missing/invalid network
+addresses cannot start authentication. Database errors do not trigger a
+memory-only or demo fallback. Existing locally valid sessions and ordinary
+reads do not depend on successful new-authentication admission.
+
+Buckets store domain-separated HMAC fingerprints, bounded counters and window
+times, never plaintext IPs/emails, cookies or passwords. The private OIDC client
+secret derives the internal fingerprint key; all replicas must use the same
+secret. Secret rotation intentionally starts new admission windows. These
+fingerprints remain **pseudonymous security data**, not anonymous data.
+Windows expire using the PostgreSQL clock; admission lazily deletes expired
+rows across scopes. Quiet-period physical deletion and approved retention
+still require operated maintenance in W12.
+
+The 31st concurrent attempt is denied atomically with a bounded `Retry-After`;
+excess counters saturate rather than overflow. Browser flows show rate-limit
+guidance; JSON mutations return explicit 429. No automatic write/exchange retry
+is introduced. This does not replace broker-native credential/recovery limits,
+bot challenges, public support/community controls or operational monitoring.
+
 ## Explicit legacy transition
 
 The deadline-gated transition proves an existing **PostgreSQL local** password
@@ -190,23 +223,30 @@ suspended durable-result publication.
 `tests/identity-browser.test.ts` uses **real HTTPS application and broker
 servers**, actual 303 redirects and Chromium's Secure/HttpOnly/Lax cookies.
 It covers profile CSRF, linking/unlinking, private-email recovery, mobile layout,
-restricted-account screens, safe errors,
-disabled gifts/community/comment forms. Ephemeral test certificates use
+restricted-account screens, safe errors and disabled gifts/community/comment
+forms. Ephemeral test certificates use
 OpenSSL; private keys are deleted with each owned fixture. No global TLS
 validation/DNS changes or redirect-interception substitute is used.
 
 `tests/identity-runtime.test.ts` checks the compiled release with runtime-only
 dependencies, a trusted fixture HTTPS gateway and actual default SDK transport,
-then restarts the process and verifies owned identity/session continuity.
+then restarts the process and verifies owned identity/session/admission continuity.
 These are synthetic engineering evidence, not proof of live delivery/consent.
+
+`tests/identity-limits.test.ts` verifies the exact 30-request threshold through
+80 concurrent attempts on separate PostgreSQL pools, restart continuity,
+scope/address isolation, expiration/pruning, canonical network aliases,
+replica HTTP enforcement, cross-IP legacy/security budgets, unthrottled sign-out
+and unavailable shared storage.
 
 **Still required before any public account beta:** approved tenant/connection
 verification semantics, hosted registration/verification/recovery delivery
 rehearsal, password/security-event signature verification and session-epoch
 invalidation, missed-event reconciliation, approved isolated SQLite transition,
-shared multi-replica abuse limits, security-change notifications, consent/terms
-and policy versions, privacy/support resolution, MFA/RBAC for staff, plus W06
+approved broker-native abuse/recovery controls, security-change notifications,
+consent/terms and policy versions, privacy/support resolution, MFA/RBAC for staff, plus W06
 production authorization and W13 integrated lifecycle/recovery evidence.
-The existing per-process authentication limiter is not a distributed abuse
-control. Hosted recovery alone does **not** invalidate Studio sessions after a
-password reset; this checkpoint must not be marketed as complete recovery.
+The default local/demo limiter remains process-local; managed authentication
+uses the shared admission boundary above. Hosted recovery alone does **not**
+invalidate Studio sessions after a password reset; this checkpoint must not be
+marketed as complete recovery.

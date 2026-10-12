@@ -104,7 +104,7 @@ for schema details, API revisions, rehearsal, and cutover safeguards.
 
 Managed identity has an opt-in **private-staging checkpoint** with hosted
 email/Google/GitHub sign-in, verified contact gates, explicit account linking,
-CSRF-protected opaque sessions and owner-scoped security settings. Local
+CSRF-protected opaque sessions, shared authentication budgets and owner-scoped security settings. Local
 authentication remains the default. Password-reset invalidation/reconciliation,
 approved tenants/delivery and service authorization are not complete. Managed
 mode disables demo purchases, gifts, external AI and community writing. See
