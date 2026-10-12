@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Database } from '../db/connection';
+import { assertDatabaseVersion } from '../db/migrations';
 import { HttpError } from '../http-error';
-import { digest, encodePayload } from '../jobs/schema';
+import { digest, encodePayload, readOperation, requestDigest, type Operation, type OperationRequest } from '../jobs/schema';
 import { monthlyUsageWindow, utcCostWindows } from './calendar';
 import { amount, budgetRowSchema, completionSchema, evidenceSchema, instant, releaseSchema,
   reservationRequestSchema, reservationRowSchema, usagePolicySchema, windowRowSchema,
@@ -14,12 +15,17 @@ const lineageSchema = z.object({ id: z.uuid(), owner_ref: z.uuid(), user_id: z.u
   anchor: z.coerce.number().pipe(instant), service_start: z.coerce.number().pipe(instant), service_end: z.coerce.number().pipe(instant) });
 const serviceSchema = z.object({ starts_at: z.coerce.number().pipe(instant), ends_at: z.coerce.number().pipe(instant), revoked: z.boolean() });
 const totalSchema = z.object({ reserved: z.coerce.number().pipe(amount), consumed: z.coerce.number().pipe(amount) });
+const bindingSchema = z.object({ reservation_id: z.uuid(), owner_ref: z.uuid(), operation_id: z.uuid(),
+  operation_scope: z.string(), operation_kind: z.literal('ai.evaluate'),
+  operation_request_hash: z.string().regex(/^[a-f0-9]{64}$/), job_id: z.uuid(),
+  generation: z.literal(0), created_at: z.date() });
 
 export class SandboxUsage {
   private constructor(private readonly db: Database, private readonly policy: UsagePolicy, private readonly policyHash: string) {}
   static async open(db: Database, input: UsagePolicy) {
     if (db.dialect !== 'postgres') throw new Error('Sandbox usage requires controlled PostgreSQL; local AI remains separate.');
     const policy = usagePolicySchema.parse(input), payload = encodePayload(policy), hash = digest(payload);
+    await assertDatabaseVersion(db);
     const usage = new SandboxUsage(db, policy, hash);
     await db.transaction(async () => {
       await usage.lockGlobal();
@@ -150,6 +156,90 @@ export class SandboxUsage {
     }
     return { window, budgets };
   }
+  private jobRequest(row: ReservationRow): OperationRequest {
+    return { principal: { type: 'user', id: row.owner_ref }, kind: 'ai.evaluate', key: `usage:${row.request_key}`,
+      resource: `usage:${row.id}`, retryMode: 'reconcile',
+      payload: { reservationId: row.id, authority: this.policy.id, requestHash: row.request_hash } };
+  }
+  private async binding(row: ReservationRow, required = false) {
+    const raw = await this.db.prepare('SELECT * FROM ai_usage_operations WHERE reservation_id=?').get(row.id);
+    if (!raw) {
+      if (required) throw new HttpError(409, 'This reservation has no bound native intent.');
+      return null;
+    }
+    const binding = bindingSchema.parse(raw), expected = this.jobRequest(row);
+    const saved = await this.db.prepare('SELECT * FROM durable_operations WHERE id=?').get(binding.operation_id);
+    if (!saved) throw new HttpError(409, 'The bound native operation is missing.');
+    const operation = readOperation(saved);
+    if (binding.owner_ref !== row.owner_ref || binding.operation_scope !== `user:${row.owner_ref}` ||
+      binding.created_at.getTime() < row.created_at.getTime() ||
+      binding.operation_request_hash !== requestDigest(binding.operation_scope, expected, encodePayload(expected.payload)) ||
+      saved.request_hash !== binding.operation_request_hash || saved.request_key !== expected.key ||
+      operation.kind !== expected.kind || operation.principal.type !== 'user' || operation.principal.id !== row.owner_ref ||
+      operation.ownerId !== row.user_id || operation.resource !== expected.resource || operation.retryMode !== 'reconcile' ||
+      encodePayload(operation.payload) !== encodePayload(expected.payload) || operation.jobId !== binding.job_id ||
+      operation.generation !== binding.generation || operation.completedAt !== null) {
+      throw new HttpError(409, 'The original reservation/native intent binding changed; reconcile rather than adopting another job.');
+    }
+    return operation;
+  }
+  private assertDatabase(db: Database) {
+    if (db !== this.db) throw new Error('Usage and native jobs must share the exact database adapter and transaction.');
+  }
+  private async assertUnbound(row: ReservationRow) {
+    if (await this.binding(row)) throw new HttpError(409, 'A bound native intent cannot use standalone dispatch or settlement; provider execution remains disabled.');
+  }
+  async bindJob(db: Database, input: ReservationRequest, create: (request: OperationRequest) => Promise<Operation>,
+    confirm: (operation: Operation, required: boolean) => Promise<void>) {
+    this.assertDatabase(db);
+    const request = reservationRequestSchema.parse(input);
+    return this.db.transaction(async () => {
+      const reservation = await this.reserve(request), { row } = await this.reservation(request.owner, reservation.id);
+      const previous = await this.binding(row);
+      if (previous) { await confirm(previous, false); return { reservation, operation: previous }; }
+      if (row.state !== 'reserved' || row.user_id !== request.owner) throw new HttpError(409, 'Only an owned undispatched reservation can receive its first native intent.');
+      await this.lockOwner(request.owner, request.authEpoch); await this.assertPaid(request.owner);
+      await this.assertDispatchWindow(row, (await this.integrity(row)).budgets);
+      const operation = await create(this.jobRequest(row));
+      await this.db.prepare(`INSERT INTO ai_usage_operations
+        (reservation_id,owner_ref,operation_id,operation_scope,operation_kind,operation_request_hash,job_id,generation)
+        VALUES(?,?,?,?,'ai.evaluate',?,?,?)`).run(row.id, row.owner_ref, operation.id, `user:${row.owner_ref}`,
+          requestDigest(`user:${row.owner_ref}`, this.jobRequest(row), encodePayload(this.jobRequest(row).payload)), operation.jobId, operation.generation);
+      await this.lockOwner(request.owner, request.authEpoch); await this.assertPaid(request.owner);
+      const current = (await this.reservation(request.owner, row.id)).row; this.sameRequest(current, row);
+      if (current.state !== 'reserved') throw new HttpError(409, 'Native intent admission changed its accounting state.');
+      await this.assertDispatchWindow(current, (await this.integrity(current)).budgets);
+      const bound = await this.binding(current, true);
+      if (!bound || bound.id !== operation.id) throw new HttpError(409, 'The native intent publication conflicts with its original binding.');
+      await confirm(bound, true);
+      await this.lockOwner(request.owner, request.authEpoch); await this.assertPaid(request.owner);
+      await this.assertDispatchWindow(current, (await this.integrity(current)).budgets);
+      return { reservation, operation: bound };
+    });
+  }
+  async cancelJob(db: Database, owner: string, id: string, evidence: z.input<typeof evidenceSchema>,
+    cancel: (operation: Operation) => Promise<void>) {
+    this.assertDatabase(db);
+    const release = releaseSchema.parse({ actualCostMicros: 0, evidence }), hash = digest(encodePayload({ state: 'released', release }));
+    return this.db.transaction(async () => {
+      await this.lockOwner(owner, undefined, true);
+      const { row } = await this.reservation(owner, id); await this.integrity(row);
+      const operation = await this.binding(row, true);
+      if (!operation) throw new HttpError(409, 'The bound native intent is missing.');
+      if (!['reserved', 'released'].includes(row.state) || row.dispatched_at !== null) {
+        throw new HttpError(409, 'Only known undispatched native intents can be cancelled at zero cost.');
+      }
+      if (row.state === 'released' && row.settlement_hash !== hash) throw new HttpError(409, 'The original native cancellation evidence cannot be replaced.');
+      await cancel(operation);
+      const before = (await this.reservation(owner, id)).row; this.sameRequest(before, row);
+      if (before.state !== row.state || before.settlement_hash !== row.settlement_hash || before.dispatched_at !== null) {
+        throw new HttpError(409, 'Native cancellation changed its captured accounting state.');
+      }
+      await this.binding(before, true);
+      if (row.state === 'reserved') await this.settle(row, 'released', 0, hash, null, release.evidence);
+      await this.binding((await this.reservation(owner, id)).row, true); await this.assertPolicy();
+    });
+  }
   async reserve(input: ReservationRequest) {
     const request = reservationRequestSchema.parse(input), hash = digest(encodePayload({ request, policyHash: this.policyHash }));
     return this.db.transaction(async () => {
@@ -159,7 +249,7 @@ export class SandboxUsage {
         if (existing.request_hash !== hash) throw new HttpError(409, 'This usage key already belongs to a different immutable input or consent.');
         const { row } = await this.reservation(request.owner, z.uuid().parse(existing.id));
         if (row.user_id !== request.owner) throw new HttpError(409, 'Retired usage authority cannot be adopted by a replacement account.');
-        await this.integrity(row);
+        await this.integrity(row); await this.binding(row);
         return { id: row.id, state: row.state };
       }
       const { row: window, now } = await this.window(request.owner), units = this.policy.costs[request.kind];
@@ -205,6 +295,7 @@ export class SandboxUsage {
     return this.db.transaction(async () => {
       await this.lockOwner(owner);
       const { row, request } = await this.reservation(owner, id), { budgets } = await this.integrity(row);
+      await this.assertUnbound(row);
       if (row.user_id !== owner) throw new HttpError(409, 'Retired usage cannot be dispatched.');
       await this.lockOwner(owner, request.authEpoch); await this.assertPaid(owner);
       if (row.state !== 'reserved') throw new HttpError(409, 'Dispatch was already recorded or resolved; never repeat an ambiguous provider call.');
@@ -227,6 +318,7 @@ export class SandboxUsage {
     return this.db.transaction(async () => {
       await this.lockOwner(owner, undefined, true);
       const { row } = await this.reservation(owner, id); await this.integrity(row);
+      await this.assertUnbound(row);
       if (row.state === 'unknown') return;
       if (row.state !== 'dispatched') throw new HttpError(409, 'Only a recorded dispatch can become ambiguous.');
       await this.db.prepare("UPDATE ai_usage_reservations SET state='unknown' WHERE id=?").run(id);
@@ -261,6 +353,7 @@ export class SandboxUsage {
     return this.db.transaction(async () => {
       await this.lockOwner(owner);
       const { row, request } = await this.reservation(owner, id);
+      await this.assertUnbound(row);
       if (row.user_id !== owner) throw new HttpError(409, 'Retired usage results cannot be published.');
       await this.integrity(row);
       if (row.state === 'consumed') {
@@ -281,6 +374,7 @@ export class SandboxUsage {
     return this.db.transaction(async () => {
       await this.lockOwner(owner, undefined, true);
       const { row } = await this.reservation(owner, id); await this.integrity(row);
+      await this.assertUnbound(row);
       if (row.state === 'released') {
         if (row.settlement_hash !== hash) throw new HttpError(409, 'The immutable usage release conflicts with its first resolution.');
         return;
@@ -302,7 +396,9 @@ export class SandboxUsage {
       for (const raw of rows.slice(0, limit)) {
         const { row, request } = await this.reservation(owner, z.uuid().parse(raw.id));
         const { window } = await this.integrity(row);
+        const operation = await this.binding(row);
         reservations.push({ id: row.id, kind: request.kind, state: row.state, units: row.units,
+          operationId: operation?.id ?? null,
           createdAt: row.created_at.toISOString(), window: { startsAt: new Date(window.starts_at).toISOString(),
             endsAt: new Date(window.ends_at).toISOString(), limit: window.unit_limit, reserved: window.reserved, consumed: window.consumed } });
       }

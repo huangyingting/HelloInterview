@@ -6,7 +6,9 @@ entitlements; this document owns the product experience and consumption rules.
 The [first W09 engineering checkpoint](23-sandbox-ai-usage-ledger.md) supplies an
 internal owned allowance/cost ledger with overlap-safe calendar windows and
 atomic settlement. It does not enable managed AI, approve the proposed values
-below, bind native provider jobs or supply real-provider consent.
+below or supply real-provider consent. The
+[native-intent checkpoint](24-owned-ai-native-intents.md) adds atomic queued
+accounting admission/cancellation, with provider dispatch explicitly denied.
 
 ## Product promise and success criteria
 

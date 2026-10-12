@@ -4,6 +4,8 @@ import type { PgBoss, JobWithMetadata } from 'pg-boss';
 import type { Database } from '../db/connection';
 import { HttpError } from '../http-error';
 import { Entitlements } from '../entitlements';
+import type { SandboxUsage, ReservationRequest } from '../usage';
+import { evidenceSchema } from '../usage/schema';
 import { startBoss } from './queue';
 import {
   claimDataSchema, deadLetterQueue, digest, encodePayload, eventSchema, identifier,
@@ -50,30 +52,74 @@ export class DurableJobs {
     if (row.status !== 'active' || row.contact_verified !== 1) return false;
     return kind !== 'ai.evaluate' || new Entitlements(this.db).allows(ownerId, 'ai.feedback.consume');
   }
+  private async assertAuthority(operation: Operation) {
+    if (operation.kind === 'ai.evaluate' && (operation.principal.type !== 'user' ||
+      await this.db.prepare('SELECT reservation_id FROM ai_usage_operations WHERE operation_id=?').get(operation.id)) ||
+      operation.principal.type === 'user' && !await this.ownerActive(operation.ownerId, operation.kind)) {
+      throw new TerminalJobFailure('not-eligible');
+    }
+  }
   async enqueue(input: OperationRequest): Promise<Operation> {
     this.assertOpen();
     const request = requestSchema.parse(input), payload = encodePayload(request.payload);
     if (request.kind === 'ai.evaluate' && request.principal.type !== 'user') throw new HttpError(403, 'AI operations require an owned user permission and cannot borrow system authority.');
-    const scope = `${request.principal.type}:${request.principal.id}`;
-    const hash = requestDigest(scope, request, payload);
     return this.db.transaction(async () => {
       if (request.principal.type === 'user') {
         await this.lockOwner(request.principal.id);
         if (!await this.ownerActive(request.principal.id, request.kind)) throw new HttpError(403, 'The current verified account and feature permission do not allow this provider operation.');
       }
-      const id = randomUUID(), jobId = randomUUID();
-      const inserted = await this.db.prepare(`INSERT INTO durable_operations
-        (id,scope,kind,owner_id,request_key,request_hash,resource,payload,retry_mode,job_id)
-        VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT (scope,kind,request_key) DO NOTHING RETURNING id`).get(
-        id, scope, request.kind, request.principal.type === 'user' ? request.principal.id : null,
-        request.key, hash, request.resource, payload, request.retryMode, jobId,
-      );
-      const row = await this.db.prepare('SELECT * FROM durable_operations WHERE scope=? AND kind=? AND request_key=?').get(scope, request.kind, request.key);
-      if (!row) throw new Error('A durable operation reservation is missing.');
-      if (row.request_hash !== hash) throw new HttpError(409, 'This operation key was already used with a different request.');
-      const operation = readOperation(row);
-      if (inserted) await this.send(operation);
-      return operation;
+      return this.createOperation(request, false, payload);
+    });
+  }
+  private async createOperation(request: OperationRequest, requireNew = false, payload = encodePayload(request.payload)): Promise<Operation> {
+    const scope = `${request.principal.type}:${request.principal.id}`;
+    const hash = requestDigest(scope, request, payload), id = randomUUID(), jobId = randomUUID();
+    const inserted = await this.db.prepare(`INSERT INTO durable_operations
+      (id,scope,kind,owner_id,request_key,request_hash,resource,payload,retry_mode,job_id)
+      VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT (scope,kind,request_key) DO NOTHING RETURNING id`).get(
+      id, scope, request.kind, request.principal.type === 'user' ? request.principal.id : null,
+      request.key, hash, request.resource, payload, request.retryMode, jobId,
+    );
+    if (requireNew && !inserted) throw new HttpError(409, 'A first reservation binding cannot adopt a previously unbound operation.');
+    const row = await this.db.prepare('SELECT * FROM durable_operations WHERE scope=? AND kind=? AND request_key=?').get(scope, request.kind, request.key);
+    if (!row) throw new Error('A durable operation reservation is missing.');
+    if (row.request_hash !== hash) throw new HttpError(409, 'This operation key was already used with a different request.');
+    const operation = readOperation(row);
+    if (inserted) await this.send(operation);
+    return operation;
+  }
+  async enqueueReservedAi(usage: SandboxUsage, input: ReservationRequest) {
+    this.assertOpen();
+    return usage.bindJob(this.db, input, request => this.createOperation(request, true), async (operation, required) => {
+      const [job] = await this.boss.findJobs<ClaimData>(queueNames['ai.evaluate'], { id: operation.jobId });
+      if (!job && required || job?.state === 'completed' || required && job?.state !== 'created') throw new LostJobClaim();
+      if (job) this.assertReservedJob(operation, job);
+    });
+  }
+  private assertReservedJob(operation: Operation, job: JobClaim) {
+    const data = claimDataSchema.parse(job.data);
+    if (data.operationId !== operation.id || data.generation !== operation.generation || job.id !== operation.jobId ||
+      job.name !== queueNames['ai.evaluate'] || job.retryLimit !== 0 ||
+      job.singletonKey !== digest(`${operation.kind}:${operation.resource}`)) throw new LostJobClaim();
+  }
+  async cancelReservedAi(usage: SandboxUsage, owner: string, id: string, evidence: z.input<typeof evidenceSchema>) {
+    this.assertOpen();
+    return usage.cancelJob(this.db, owner, id, evidence, async operation => {
+      const [job] = await this.boss.findJobs<ClaimData>(queueNames['ai.evaluate'], { id: operation.jobId });
+      if (job) {
+        this.assertReservedJob(operation, job);
+        if (job.state === 'completed') throw new LostJobClaim();
+        // Cancel the original undispatched intent, not a worker acknowledgment; attempt fences reject queued jobs.
+        if (!['cancelled', 'failed'].includes(job.state) &&
+          commandResponseSchema.parse(await this.boss.cancel(queueNames['ai.evaluate'], operation.jobId, { db: this.db })).affected !== 1) {
+          throw new LostJobClaim();
+        }
+      }
+      const [current] = await this.boss.findJobs<ClaimData>(queueNames['ai.evaluate'], { id: operation.jobId });
+      if (current) {
+        this.assertReservedJob(operation, current);
+        if (!['cancelled', 'failed'].includes(current.state)) throw new LostJobClaim();
+      }
     });
   }
   private async send(operation: Operation): Promise<void> {
@@ -163,8 +209,7 @@ export class DurableJobs {
     });
   }
   private async assertClaim(operation: Operation, claim: JobClaim, signal?: AbortSignal): Promise<void> {
-    if (operation.kind === 'ai.evaluate' && operation.principal.type !== 'user' ||
-        operation.principal.type === 'user' && !await this.ownerActive(operation.ownerId, operation.kind)) throw new TerminalJobFailure('not-eligible');
+    await this.assertAuthority(operation);
     const [current] = await this.boss.findJobs<ClaimData>(claim.name, { id: claim.id });
     const now = await this.db.prepare('SELECT clock_timestamp() AS now').get();
     const time = z.date().parse(now?.now).getTime();
@@ -189,6 +234,9 @@ export class DurableJobs {
       const row = await this.db.prepare('SELECT * FROM durable_operations WHERE id=? FOR UPDATE').get(z.uuid().parse(id));
       if (!row) throw new HttpError(404, 'Durable operation not found.');
       const previous = readOperation(row), state = await this.status(previous);
+      if (previous.kind === 'ai.evaluate' && await this.db.prepare('SELECT reservation_id FROM ai_usage_operations WHERE operation_id=?').get(previous.id)) {
+        throw new HttpError(409, 'Bound AI intents cannot use generic replay. Their original accounting and provider outcome require a reviewed native adapter.');
+      }
       if (!['failed', 'cancelled', 'missing'].includes(state)) throw new HttpError(409, 'Only terminal or missing operations can be replayed.');
       if (previous.retryMode === 'reconcile' && !providerReconciled) throw new HttpError(409, 'Reconcile the unknown provider outcome before explicitly acknowledging replay.');
       const jobId = randomUUID(), generation = previous.generation + 1;
@@ -218,8 +266,7 @@ export class DurableJobs {
           try {
             const operation = await this.operation(claimDataSchema.parse(claim.data).operationId);
             if (operation.jobId !== claim.id || operation.generation !== claim.data.generation || operation.kind !== kind) throw new LostJobClaim();
-            if (operation.kind === 'ai.evaluate' && operation.principal.type !== 'user' ||
-                operation.principal.type === 'user' && !await this.ownerActive(operation.ownerId, operation.kind)) throw new TerminalJobFailure('not-eligible');
+            await this.assertAuthority(operation);
             const mutation = await handler(operation, claim.signal);
             await this.finish(claim, db => mutation(db), claim.signal);
             return [{ id: claim.id, status: 'completed', output: { operationId: operation.id } }];

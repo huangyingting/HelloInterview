@@ -166,7 +166,10 @@ Paid deletion, authentic provider recovery and live commerce remain unavailable.
 The [AI usage-ledger foundation](docs/production/23-sandbox-ai-usage-ledger.md)
 adds internal atomic allowance/cost accounting and overlap-safe calendar windows,
 without enabling managed AI or changing local grading/tutoring.
-Controlled PostgreSQL deployments must apply **migration 17 and maintained queue
+The [native-intent checkpoint](docs/production/24-owned-ai-native-intents.md)
+atomically queues owned accounting intents and cancels known-undispatched work,
+with provider dispatch explicitly denied.
+Controlled PostgreSQL deployments must apply **migration 18 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 

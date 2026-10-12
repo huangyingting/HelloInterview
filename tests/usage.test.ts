@@ -5,7 +5,7 @@ import { SandboxUsage, sandboxUsagePolicy, type ReservationRequest, type UsagePo
 import { Entitlements, type GrantRequest } from '../server/entitlements';
 import { HttpError } from '../server/http-error';
 import { digest } from '../server/jobs/schema';
-import { DurableJobs, migrateJobs } from '../server/jobs';
+import { DurableJobs, TerminalJobFailure, LostJobClaim, migrateJobs } from '../server/jobs';
 import { openIdentityFixture } from './fixtures/identity';
 import { monthlyUsageWindow } from '../server/usage/calendar';
 import type { Database } from '../server/db/connection';
@@ -20,9 +20,9 @@ const proof = { actor: 'fixture-operator', reason: 'Synthetic sandbox usage cont
 const policy: UsagePolicy = { id: sandboxUsagePolicy, monthlyUnits: 5, costs: { tutor: 1, feedback: 2, mock: 2, project: 5 },
   dailyCostMicros: 1000, monthlyCostMicros: 10000, globalConcurrency: 2, ownerConcurrency: 1, maxQueueAgeMs: 300000 };
 const status = (expected: number) => (error: unknown) => error instanceof HttpError && error.status === expected;
-async function fixture(t: TestContext, input = policy, issue = true) {
+async function fixture(t: TestContext, input = policy, issue = true, ownCleanup = true) {
   const f = await openIdentityFixture({ OPENAI_API_KEY: 'synthetic-unused-key', OPENAI_BASE_URL: 'http://127.0.0.1:9/v1' });
-  t.after(() => f.close());
+  if (ownCleanup) t.after(() => f.close());
   const browser = f.browser();
   assert.equal((await f.complete(browser, await f.begin(browser))).status, 303);
   const owner = (await browser.bootstrap()).user?.id; assert.ok(owner);
@@ -55,6 +55,17 @@ async function otherOwner(f: Awaited<ReturnType<typeof fixture>>) {
   const owner = (await browser.bootstrap()).user?.id; assert.ok(owner);
   await f.entitlements.issue({ ...f.grant, owner, source: { ...f.grant.source, key: randomUUID() } });
   return { owner, epoch: Number((await f.db.prepare('SELECT session_epoch FROM managed_accounts WHERE user_id=?').get(owner))?.session_epoch) };
+}
+async function nativeFixture(t: TestContext, input = policy, issue = true) {
+  const f = await fixture(t, input, issue, false), queues: DurableJobs[] = [];
+  t.after(async () => { try { for (const jobs of queues) await jobs.close(); } finally { await f.close(); } });
+  await migrateJobs(f.db);
+  const openJobs = async (db = f.db, worker = false) => { const jobs = await DurableJobs.open(db, worker); queues.push(jobs); return jobs; };
+  const jobs = await openJobs();
+  assert.ok(f.config.databaseUrl);
+  const schema = new URL(f.config.databaseUrl).searchParams.get('options')?.match(/search_path=([a-z0-9_]+)/)?.[1];
+  assert.ok(schema);
+  return { ...f, jobs, openJobs, schema, nativeSchema: `${schema}_jobs` };
 }
 
 test('usage policies are explicit immutable trusted manifests, not silently changed limits or production AI authority', async t => {
@@ -383,4 +394,265 @@ test('compiled usage domain operates the same owned reservation and immutable po
       USAGE_FIXTURE_POLICY: JSON.stringify(policy), USAGE_FIXTURE_REQUEST: JSON.stringify(input) } });
   assert.deepEqual(JSON.parse(result.stdout), await f.usage.reserve(input));
   assert.equal((await f.usage.view(f.owner)).reservations.length, 1);
+});
+
+test('native intent admission atomically pins one reservation, operation, job and generation across replicas and restart', async t => {
+  const f = await nativeFixture(t), replica = await f.replica(), usage = await SandboxUsage.open(replica.db, policy);
+  const jobs = await f.openJobs(replica.db);
+  const input = f.request('project');
+  const results = await Promise.all([f.jobs.enqueueReservedAi(f.usage, input), jobs.enqueueReservedAi(usage, input),
+    f.jobs.enqueueReservedAi(f.usage, input)]);
+  assert.ok(results.every(result => result.reservation.id === results[0].reservation.id && result.operation.id === results[0].operation.id &&
+    result.operation.jobId === results[0].operation.jobId && result.operation.generation === 0));
+  const { operation, reservation } = results[0];
+  assert.equal(operation.retryMode, 'reconcile');
+  assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM ai_usage_operations').get())?.count, 1);
+  assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM durable_operations').get())?.count, 1);
+  assert.equal((await f.db.prepare(`SELECT count(*)::integer AS count FROM "${f.nativeSchema}".job WHERE name='ai-evaluate'`).get())?.count, 1);
+  assert.equal((await f.db.prepare('SELECT reserved,consumed FROM ai_usage_windows').get())?.reserved, 5);
+  assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM ai_usage_events').get())?.count, 1);
+  const before = await f.db.prepare('SELECT created_at FROM ai_usage_reservations WHERE id=?').get(reservation.id);
+  await f.jobs.close();
+  const restarted = await f.openJobs();
+  assert.deepEqual(await restarted.enqueueReservedAi(f.usage, input), results[0]);
+  assert.deepEqual(await f.db.prepare('SELECT created_at FROM ai_usage_reservations WHERE id=?').get(reservation.id), before);
+  await assert.rejects(jobs.enqueueReservedAi(f.usage, input), /exact database adapter/);
+  await assert.rejects(jobs.enqueueReservedAi(usage, { ...input, inputRevision: 2 }), status(409));
+  const view = await f.usage.view(f.owner);
+  assert.equal(view.providerEnabled, false); assert.equal(view.reservations[0].operationId, operation.id);
+  assert.ok(!JSON.stringify(view).includes(operation.jobId));
+});
+
+test('bound native intents do not enable provider authority, standalone dispatch or generic replay', async t => {
+  const f = await nativeFixture(t), input = f.request(), result = await f.jobs.enqueueReservedAi(f.usage, input);
+  assert.equal((await f.browser.bootstrap()).capabilities.ai, false);
+  assert.equal(await f.entitlements.allows(f.owner, 'ai.feedback.consume'), false);
+  await assert.rejects(f.jobs.enqueue({ principal: { type: 'user', id: f.owner }, kind: 'ai.evaluate',
+    key: randomUUID(), resource: 'fixture-input', payload: {}, retryMode: 'reconcile' }), status(403));
+  const claim = await f.jobs.claim('ai.evaluate'); assert.ok(claim);
+  const denied = (error: unknown) => error instanceof TerminalJobFailure && error.code === 'not-eligible';
+  await assert.rejects(f.jobs.assertCurrentClaim(claim), denied);
+  let published = false;
+  await assert.rejects(f.jobs.finish(claim, async () => { published = true; return {}; }), denied);
+  assert.equal(published, false);
+  await assert.rejects(f.usage.markDispatched(f.owner, result.reservation.id, proof), status(409));
+  await assert.rejects(f.usage.markUnknown(f.owner, result.reservation.id, proof), status(409));
+  await assert.rejects(f.usage.complete(f.owner, result.reservation.id,
+    { resultHash: digest('fixture'), actualCostMicros: 0, evidence: proof }, async () => { published = true; }), status(409));
+  await assert.rejects(f.usage.release(f.owner, result.reservation.id, { actualCostMicros: 0, evidence: proof }), status(409));
+  assert.equal(published, false);
+  await f.jobs.fail(claim);
+  await assert.rejects(f.jobs.replay(result.operation.id, proof.actor, proof.reason, true), status(409));
+  assert.equal((await f.jobs.operation(result.operation.id)).generation, 0);
+  await f.jobs.cancelReservedAi(f.usage, f.owner, result.reservation.id, proof);
+  assert.equal((await f.usage.view(f.owner)).reservations[0].state, 'released');
+  assert.equal((await f.db.prepare('SELECT consumed FROM ai_usage_windows').get())?.consumed, 0);
+});
+
+test('native admission rejects missing Pro, retired work and borrowing a previously unbound operation', async t => {
+  const f = await nativeFixture(t, policy, false), input = f.request();
+  await assert.rejects(f.jobs.enqueueReservedAi(f.usage, input), status(403));
+  assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM durable_operations').get())?.count, 0);
+  await f.entitlements.issue(f.grant);
+  const old = await f.usage.reserve(input);
+  await f.usage.release(f.owner, old.id, { actualCostMicros: 0, evidence: proof });
+  await assert.rejects(f.jobs.enqueueReservedAi(f.usage, input), status(409));
+  const request = f.request(), reservation = await f.usage.reserve(request);
+  const hash = String((await f.db.prepare('SELECT request_hash FROM ai_usage_reservations WHERE id=?').get(reservation.id))?.request_hash);
+  const expected = { principal: { type: 'user' as const, id: f.owner }, kind: 'ai.evaluate' as const, key: `usage:${request.key}`,
+    resource: `usage:${reservation.id}`, retryMode: 'reconcile' as const,
+    payload: { reservationId: reservation.id, authority: sandboxUsagePolicy, requestHash: hash } };
+  const { encodePayload, requestDigest } = await import('../server/jobs/schema');
+  await f.db.prepare(`INSERT INTO durable_operations(id,scope,kind,owner_id,request_key,request_hash,resource,payload,retry_mode,job_id)
+    VALUES(?,?,?,?,?,?,?,?,?,?)`).run(randomUUID(), `user:${f.owner}`, expected.kind, f.owner, expected.key,
+      requestDigest(`user:${f.owner}`, expected, encodePayload(expected.payload)), expected.resource, encodePayload(expected.payload), expected.retryMode, randomUUID());
+  await assert.rejects(f.jobs.enqueueReservedAi(f.usage, request), /cannot adopt/);
+  assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM ai_usage_operations').get())?.count, 0);
+});
+
+test('native admission rolls back actual queue SQL, accounting and binding on provider-independent errors or post-SQL fence movement', async t => {
+  for (const mode of ['queue-error', 'epoch', 'deadline', 'balance', 'payload', 'retry', 'binding-payload']) {
+    const f = await nativeFixture(t, { ...policy, maxQueueAgeMs: mode === 'deadline' ? 1000 : policy.maxQueueAgeMs });
+    const effect = mode === 'queue-error' ? "RAISE EXCEPTION 'Injected native insert failure';" :
+      mode === 'epoch' ? 'UPDATE managed_accounts SET session_epoch=session_epoch+1;' :
+      mode === 'deadline' ? 'PERFORM pg_sleep(1.1);' : mode === 'balance' ? 'UPDATE ai_usage_cost_budgets SET reserved=reserved+1;' :
+      mode === 'payload' ? `UPDATE "${f.nativeSchema}".job SET data=jsonb_set(data,'{generation}','1') WHERE id=NEW.id;` :
+      mode === 'binding-payload' ? '' :
+      `UPDATE "${f.nativeSchema}".job SET retry_limit=1 WHERE id=NEW.id;`;
+    await f.db.exec(`CREATE SEQUENCE native_insert_witness;
+      CREATE FUNCTION native_insert_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN IF NEW.name='ai-evaluate' THEN PERFORM nextval('native_insert_witness'); ${effect} END IF; RETURN NEW; END; $$;
+      CREATE TRIGGER native_insert_guard AFTER INSERT ON "${f.nativeSchema}".job FOR EACH ROW EXECUTE FUNCTION native_insert_guard();`);
+    if (mode === 'binding-payload') await f.db.exec(`CREATE SEQUENCE native_binding_witness;
+      CREATE FUNCTION native_binding_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN PERFORM nextval('native_binding_witness');
+      UPDATE "${f.nativeSchema}".job SET data=jsonb_set(data,'{generation}','1') WHERE id=NEW.job_id::uuid; RETURN NEW; END; $$;
+      CREATE TRIGGER native_binding_guard AFTER INSERT ON ai_usage_operations FOR EACH ROW EXECUTE FUNCTION native_binding_guard();`);
+    await assert.rejects(f.jobs.enqueueReservedAi(f.usage, f.request()),
+      mode === 'queue-error' ? /Injected native insert failure/ :
+        ['payload', 'retry', 'binding-payload'].includes(mode) ? (error: unknown) => error instanceof LostJobClaim : status(mode === 'epoch' ? 403 : 409));
+    assert.equal((await f.db.prepare('SELECT is_called FROM native_insert_witness').get())?.is_called, true);
+    if (mode === 'binding-payload') assert.equal((await f.db.prepare('SELECT is_called FROM native_binding_witness').get())?.is_called, true);
+    for (const table of ['ai_usage_reservations', 'ai_usage_windows', 'ai_usage_cost_budgets', 'ai_usage_events', 'ai_usage_operations', 'durable_operations']) {
+      assert.equal((await f.db.prepare(`SELECT count(*)::integer AS count FROM ${table}`).get())?.count, 0, `${mode}:${table}`);
+    }
+    assert.equal((await f.db.prepare(`SELECT count(*)::integer AS count FROM "${f.nativeSchema}".job WHERE name='ai-evaluate'`).get())?.count, 0);
+    assert.equal(Number((await f.db.prepare('SELECT session_epoch FROM managed_accounts WHERE user_id=?').get(f.owner))?.session_epoch), f.epoch);
+  }
+});
+
+test('native cancellation fences the actual job and releases both capacities once without requeueing exact request replay', async t => {
+  const f = await nativeFixture(t), input = f.request('project'), result = await f.jobs.enqueueReservedAi(f.usage, input);
+  const stranger = await otherOwner(f);
+  await assert.rejects(f.jobs.cancelReservedAi(f.usage, stranger.owner, result.reservation.id, proof), status(404));
+  await f.jobs.cancelReservedAi(f.usage, f.owner, result.reservation.id, proof);
+  await f.jobs.cancelReservedAi(f.usage, f.owner, result.reservation.id, proof);
+  await assert.rejects(f.jobs.cancelReservedAi(f.usage, f.owner, result.reservation.id, { ...proof, reason: 'Different cancellation evidence.' }), status(409));
+  assert.equal((await f.jobs.ownedStatus(f.owner, result.operation.id)).status, 'cancelled');
+  assert.equal(await f.jobs.claim('ai.evaluate'), undefined);
+  const replay = await f.jobs.enqueueReservedAi(f.usage, input);
+  assert.equal(replay.operation.id, result.operation.id); assert.equal(replay.reservation.state, 'released');
+  assert.equal((await f.db.prepare('SELECT reserved,consumed FROM ai_usage_windows').get())?.reserved, 0);
+  assert.ok((await f.db.prepare('SELECT reserved,consumed FROM ai_usage_cost_budgets').all()).every(row => Number(row.reserved) === 0 && Number(row.consumed) === 0));
+  assert.equal((await f.db.prepare("SELECT count(*)::integer AS count FROM ai_usage_events WHERE action='released'").get())?.count, 1);
+  await assert.rejects(f.jobs.replay(result.operation.id, proof.actor, proof.reason, true), status(409));
+  const next = await f.jobs.enqueueReservedAi(f.usage, f.request('project'));
+  assert.notEqual(next.operation.id, result.operation.id);
+});
+
+test('native cancellation rolls back actual cancellation SQL and settlement when native payload or original generation changes', async t => {
+  for (const mode of ['payload', 'generation', 'settlement', 'post-settlement']) {
+    const f = await nativeFixture(t), result = await f.jobs.enqueueReservedAi(f.usage, f.request());
+    const effect = mode === 'payload' ? `UPDATE "${f.nativeSchema}".job SET data=jsonb_set(data,'{generation}','1') WHERE id=NEW.id;` :
+      mode === 'generation' ? 'UPDATE durable_operations SET generation=generation+1;' : mode === 'post-settlement' ? '' :
+        "RAISE EXCEPTION 'Injected cancelled-native bookkeeping failure';";
+    await f.db.exec(`CREATE SEQUENCE native_cancel_witness;
+      CREATE FUNCTION native_cancel_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN IF NEW.state='cancelled' AND OLD.state<>'cancelled' THEN PERFORM nextval('native_cancel_witness'); ${effect} END IF; RETURN NEW; END; $$;
+      CREATE TRIGGER native_cancel_guard AFTER UPDATE ON "${f.nativeSchema}".job FOR EACH ROW EXECUTE FUNCTION native_cancel_guard();`);
+    if (mode === 'post-settlement') await f.db.exec(`CREATE SEQUENCE native_settle_witness;
+      CREATE FUNCTION native_settle_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN IF NEW.state='released' THEN PERFORM nextval('native_settle_witness');
+      UPDATE durable_operations SET generation=generation+1; END IF; RETURN NEW; END; $$;
+      CREATE TRIGGER native_settle_guard AFTER UPDATE ON ai_usage_reservations FOR EACH ROW EXECUTE FUNCTION native_settle_guard();`);
+    await assert.rejects(f.jobs.cancelReservedAi(f.usage, f.owner, result.reservation.id, proof),
+      mode === 'payload' ? (error: unknown) => error instanceof LostJobClaim :
+        ['generation', 'post-settlement'].includes(mode) ? status(409) : /bookkeeping failure/);
+    assert.equal((await f.db.prepare('SELECT is_called FROM native_cancel_witness').get())?.is_called, true);
+    if (mode === 'post-settlement') assert.equal((await f.db.prepare('SELECT is_called FROM native_settle_witness').get())?.is_called, true);
+    assert.equal((await f.jobs.ownedStatus(f.owner, result.operation.id)).status, 'created');
+    assert.equal((await f.usage.view(f.owner)).reservations[0].state, 'reserved');
+    assert.equal((await f.db.prepare('SELECT reserved FROM ai_usage_windows').get())?.reserved, 1);
+  }
+});
+
+test('native intent cleanup after restriction or deletion retains scoped authority and never publishes to another owner', async t => {
+  for (const mode of ['suspended', 'deleted', 'active-claim', 'expired-claim']) {
+    const f = await nativeFixture(t), result = await f.jobs.enqueueReservedAi(f.usage, f.request());
+    if (mode === 'suspended') await f.db.prepare("UPDATE managed_accounts SET status='suspended',session_epoch=session_epoch+1 WHERE user_id=?").run(f.owner);
+    if (mode === 'deleted') await f.db.prepare('DELETE FROM users WHERE id=?').run(f.owner);
+    if (['active-claim', 'expired-claim'].includes(mode)) {
+      assert.ok(await f.jobs.claim('ai.evaluate'));
+      if (mode === 'expired-claim') await f.db.exec(`UPDATE "${f.nativeSchema}".job
+        SET started_on=clock_timestamp()-interval '600 seconds',heartbeat_on=clock_timestamp()-interval '600 seconds'`);
+    }
+    await f.jobs.cancelReservedAi(f.usage, f.owner, result.reservation.id, proof);
+    assert.equal((await f.db.prepare('SELECT state FROM ai_usage_reservations WHERE id=?').get(result.reservation.id))?.state, 'released');
+    assert.equal((await f.db.prepare('SELECT reserved,consumed FROM ai_usage_windows').get())?.reserved, 0);
+    assert.equal((await f.jobs.operation(result.operation.id)).ownerId, mode === 'deleted' ? null : f.owner);
+    assert.equal((await f.db.prepare('SELECT owner_ref FROM ai_usage_operations').get())?.owner_ref, f.owner);
+  }
+});
+
+test('bound native scope constraints and readback reject cross-owner binding and native operation drift', async t => {
+  const f = await nativeFixture(t), result = await f.jobs.enqueueReservedAi(f.usage, f.request()), stranger = await otherOwner(f);
+  await assert.rejects(f.db.prepare('UPDATE ai_usage_operations SET owner_ref=?,operation_scope=?').run(stranger.owner, `user:${stranger.owner}`), /foreign key/);
+  await assert.rejects(f.db.exec('UPDATE ai_usage_operations SET generation=1'), /check constraint/);
+  await assert.rejects(f.db.exec("UPDATE ai_usage_operations SET operation_scope='system:fixture'"), /check constraint/);
+  await assert.rejects(f.db.exec("UPDATE durable_operations SET kind='privacy.process'"), /foreign key/);
+  await f.db.prepare('UPDATE durable_operations SET job_id=? WHERE id=?').run(randomUUID(), result.operation.id);
+  await assert.rejects(f.usage.view(f.owner), status(409));
+  await assert.rejects(f.jobs.cancelReservedAi(f.usage, f.owner, result.reservation.id, proof), status(409));
+  assert.equal((await f.db.prepare('SELECT state FROM ai_usage_reservations WHERE id=?').get(result.reservation.id))?.state, 'reserved');
+});
+
+test('compiled native intent binding uses one runtime-only transaction and remains unable to dispatch a provider', async t => {
+  const f = await nativeFixture(t), input = f.request(); assert.ok(f.config.databaseUrl);
+  const code = `import {SandboxUsage} from './dist-server/usage/index.js';
+    import {DurableJobs,postgresConnection} from './dist-server/jobs/index.js';
+    const db=postgresConnection(process.env.USAGE_FIXTURE_DATABASE); let jobs;
+    try{const usage=await SandboxUsage.open(db,JSON.parse(process.env.USAGE_FIXTURE_POLICY)); jobs=await DurableJobs.open(db);
+      const result=await jobs.enqueueReservedAi(usage,JSON.parse(process.env.USAGE_FIXTURE_REQUEST));
+      console.log(JSON.stringify({id:result.reservation.id,operationId:result.operation.id,generation:result.operation.generation}));}
+    finally{if(jobs)await jobs.close();await db.close();}`;
+  const result = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', code], { timeout: 15000,
+    env: { PATH: process.env.PATH, USAGE_FIXTURE_DATABASE: f.config.databaseUrl,
+      USAGE_FIXTURE_POLICY: JSON.stringify(policy), USAGE_FIXTURE_REQUEST: JSON.stringify(input) } });
+  const same = await f.jobs.enqueueReservedAi(f.usage, input);
+  assert.deepEqual(JSON.parse(result.stdout), { id: same.reservation.id, operationId: same.operation.id, generation: 0 });
+  assert.equal((await f.browser.bootstrap()).capabilities.ai, false);
+});
+
+test('bound native dispatch stays explicitly denied even when a legacy account path would normally allow local AI', async t => {
+  const f = await nativeFixture(t), result = await f.jobs.enqueueReservedAi(f.usage, f.request());
+  const claim = await f.jobs.claim('ai.evaluate'); assert.ok(claim);
+  await f.db.prepare('DELETE FROM managed_accounts WHERE user_id=?').run(f.owner);
+  await assert.rejects(f.jobs.assertCurrentClaim(claim), (error: unknown) => error instanceof TerminalJobFailure && error.code === 'not-eligible');
+  let called = false;
+  await assert.rejects(f.jobs.finish(claim, async () => { called = true; return {}; }), /not-eligible/);
+  assert.equal(called, false);
+  await f.jobs.cancelReservedAi(f.usage, f.owner, result.reservation.id, proof);
+  assert.equal((await f.db.prepare('SELECT state FROM ai_usage_reservations WHERE id=?').get(result.reservation.id))?.state, 'released');
+});
+
+test('native workers reject bound accounting intents before handler I/O and preserve held units until explicit cancellation', async t => {
+  const f = await nativeFixture(t), worker = await f.openJobs(f.db, true), result = await f.jobs.enqueueReservedAi(f.usage, f.request());
+  let called = false;
+  await worker.startWorkers({ 'ai.evaluate': async () => { called = true; return async () => ({}); } });
+  const deadline = Date.now() + 15000;
+  let terminal = false;
+  while (Date.now() < deadline) {
+    const current = await f.jobs.ownedStatus(f.owner, result.operation.id);
+    if (current.status === 'failed' || current.status === 'missing') { terminal = true; break; }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  assert.equal(terminal, true); assert.equal(called, false);
+  assert.equal((await f.usage.view(f.owner)).reservations[0].state, 'reserved');
+  await f.jobs.cancelReservedAi(f.usage, f.owner, result.reservation.id, proof);
+  assert.equal((await f.usage.view(f.owner)).reservations[0].state, 'released');
+});
+
+test('migration 18 preserves actual migration-17 usage, owned operation rows and immutable checksums without inventing a binding', async t => {
+  const f = await nativeFixture(t), input = f.request(), reservation = await f.usage.reserve(input);
+  await consume(f, f.request('feedback'));
+  await f.jobs.enqueue({ principal: { type: 'user', id: f.owner }, kind: 'notification.deliver', key: randomUUID(),
+    resource: 'fixture', payload: { version: 1 }, retryMode: 'idempotent' });
+  const schema = `native_upgrade_${randomUUID().replaceAll('-', '')}`, url = new URL(f.config.databaseUrl!);
+  url.searchParams.set('options', `-c search_path=${schema}`);
+  await f.db.exec(`CREATE SCHEMA "${schema}"`); const legacy = postgresConnection(url.href);
+  t.after(async () => { try { await legacy.exec(`DROP SCHEMA "${schema}" CASCADE`); } finally { await legacy.close(); } });
+  await legacy.exec('CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,name TEXT NOT NULL,checksum TEXT NOT NULL,applied_at TIMESTAMPTZ NOT NULL DEFAULT now())');
+  for (const migration of migrations.filter(migration => migration.version <= 17)) {
+    await legacy.exec(migration.sql);
+    await legacy.prepare('INSERT INTO schema_migrations(version,name,checksum) VALUES(?,?,?)')
+      .run(migration.version, migration.name, createHash('sha256').update(migration.sql).digest('hex'));
+  }
+  const tables = ['users', 'managed_identities', 'managed_accounts', 'entitlement_grants', 'entitlement_events', 'durable_operations',
+    'ai_usage_policies', 'ai_usage_lineages', 'ai_usage_windows', 'ai_usage_cost_budgets', 'ai_usage_reservations', 'ai_usage_budget_links', 'ai_usage_events'];
+  for (const table of tables) {
+    const columns = (await legacy.prepare('SELECT column_name FROM information_schema.columns WHERE table_schema=? AND table_name=? ORDER BY ordinal_position')
+      .all(schema, table)).map(row => String(row.column_name));
+    assert.ok(columns.length && columns.every(column => /^[a-z_][a-z0-9_]*$/.test(column)));
+    await legacy.exec(`INSERT INTO ${table}(${columns.join(',')}) SELECT ${columns.join(',')} FROM "${f.schema}".${table}`);
+  }
+  const before = await Promise.all(tables.map(table => legacy.prepare(`SELECT * FROM ${table} ORDER BY 1`).all()));
+  const applied = await legacy.prepare('SELECT version,checksum FROM schema_migrations ORDER BY version').all();
+  await assert.rejects(SandboxUsage.open(legacy, policy), /schema is incompatible/);
+  await migrateDatabase(legacy); await migrateDatabase(legacy); await assertDatabaseVersion(legacy);
+  assert.deepEqual(await Promise.all(tables.map(table => legacy.prepare(`SELECT * FROM ${table} ORDER BY 1`).all())), before);
+  assert.deepEqual(await legacy.prepare('SELECT version,checksum FROM schema_migrations WHERE version<=17 ORDER BY version').all(), applied);
+  assert.equal((await legacy.prepare('SELECT count(*)::integer AS count FROM ai_usage_operations').get())?.count, 0);
+  const usage = await SandboxUsage.open(legacy, policy);
+  assert.equal((await usage.reserve(input)).id, reservation.id);
+  assert.equal((await usage.view(f.owner)).reservations.find(row => row.id === reservation.id)?.operationId, null);
 });

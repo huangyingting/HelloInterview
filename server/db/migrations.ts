@@ -596,6 +596,23 @@ export const migrations = [{
       FOREIGN KEY(reservation_id,owner_ref) REFERENCES ai_usage_reservations(id,owner_ref)
     );
   `,
+}, {
+  version: 18,
+  name: 'owned-ai-reservation-native-intents',
+  sql: `
+    ALTER TABLE durable_operations ADD CONSTRAINT durable_operation_scoped_id UNIQUE(id,scope,kind);
+    CREATE TABLE ai_usage_operations (
+      reservation_id TEXT PRIMARY KEY, owner_ref TEXT NOT NULL,
+      operation_id TEXT NOT NULL UNIQUE, operation_scope TEXT NOT NULL,
+      operation_kind TEXT NOT NULL CHECK(operation_kind='ai.evaluate'),
+      operation_request_hash TEXT NOT NULL CHECK(operation_request_hash ~ '^[a-f0-9]{64}$'),
+      job_id TEXT NOT NULL UNIQUE, generation INTEGER NOT NULL CHECK(generation=0),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+      CHECK(operation_scope='user:'||owner_ref),
+      FOREIGN KEY(reservation_id,owner_ref) REFERENCES ai_usage_reservations(id,owner_ref),
+      FOREIGN KEY(operation_id,operation_scope,operation_kind) REFERENCES durable_operations(id,scope,kind)
+    );
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

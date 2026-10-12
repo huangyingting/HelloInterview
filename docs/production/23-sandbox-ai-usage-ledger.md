@@ -5,7 +5,10 @@ This supplies PostgreSQL allowance/cost reservations and settlement, independent
 of provider purchase, pricing, public consent, queue dispatch and customer UI.
 No endpoint, provider handler, operator grant/reconciliation CLI or new commercial
 allowance is enabled. Managed `ai.feedback.consume` and maintained managed AI
-jobs remain denied; local synchronous AI and the local study helper are unchanged.
+provider dispatch remains denied; local synchronous AI and the local study
+helper are unchanged. The [native-intent checkpoint](24-owned-ai-native-intents.md)
+now composes internal accounting admission/cancellation with the maintained
+queue, without supplying provider authority.
 
 ## Release and trusted boundary
 
@@ -198,7 +201,10 @@ history and explicit drift errors are exercised. Actual migration-16 identity/
 grant rows and checksums survive repeat migration 17. The compiled module works
 without development loaders, and runtime-only release evidence imports it.
 
-Next W09 work must bind reservations **atomically to native jobs**, add reviewed
+The [native-intent checkpoint](24-owned-ai-native-intents.md) binds reservations
+atomically to queued accounting intents and known-undispatched cancellation.
+Bound intents cannot use this module's standalone dispatch/settlement methods.
+It does not enable a native provider handler. Next W09 work must add reviewed
 provider consent and request UX, bounded prompts/output/token/rate/cost policy,
 private model/prompt/input provenance, kill switches/circuit breakers, result
 quality and immutable input checks, native claim/heartbeat fencing, truthful
