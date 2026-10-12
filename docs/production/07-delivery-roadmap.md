@@ -23,15 +23,19 @@ production feature. An open package can therefore contain a closed checkpoint.
 | W07 - Operated workers/delivery | [#8](https://github.com/huangyingting/HelloInterview/issues/8) | [#21 - Durable-job foundation](https://github.com/huangyingting/HelloInterview/issues/21) |
 | W08 - Authentic payment lifecycle | [#9](https://github.com/huangyingting/HelloInterview/issues/9) | [#22 - Sandbox billing/subscription lifecycle](https://github.com/huangyingting/HelloInterview/issues/22) |
 | W09 - Approved AI dispatch | [#10](https://github.com/huangyingting/HelloInterview/issues/10) | [#23 - Usage/native-intent/provenance foundation](https://github.com/huangyingting/HelloInterview/issues/23) |
-| W10 - Staff/support/privacy | [#11](https://github.com/huangyingting/HelloInterview/issues/11) | [#24 - Private member-support receipts](https://github.com/huangyingting/HelloInterview/issues/24) |
+| W10 - Staff/support/privacy | [#11](https://github.com/huangyingting/HelloInterview/issues/11) | [#24 - Private member-support receipts](https://github.com/huangyingting/HelloInterview/issues/24); [#28 - MFA staff account administration](https://github.com/huangyingting/HelloInterview/issues/28) |
 | W11 - Community lifecycle/moderation | [#12](https://github.com/huangyingting/HelloInterview/issues/12) | [#25 - Reads/local ownership/pagination](https://github.com/huangyingting/HelloInterview/issues/25); [#27 - Comment submission receipts](https://github.com/huangyingting/HelloInterview/issues/27) |
 | W12 - Reviewed/accessible product | [#13](https://github.com/huangyingting/HelloInterview/issues/13) | [#26 - Deferred/keyboard/address recovery](https://github.com/huangyingting/HelloInterview/issues/26) |
 | W13 - Integrated acceptance/launch | [#14](https://github.com/huangyingting/HelloInterview/issues/14) | Pending |
 
-The migration-25 comment-submission receipt checkpoint is tracked in
+The migration-26 staff-administration checkpoint is tracked in
+[#28](https://github.com/huangyingting/HelloInterview/issues/28), under W10.
+It completes the first staff MFA/RBAC/audit and account-restriction slice while
+keeping delivered support and comprehensive privacy/retention work open. The
+migration-25 comment-submission receipt checkpoint is tracked in
 [#27](https://github.com/huangyingting/HelloInterview/issues/27), under W11; it
 does not retroactively change the migration-24 checkpoint. After this bounded
-slice, prioritize the larger staff/privacy milestone
+staff slice, continue the larger support/privacy milestone
 [#11](https://github.com/huangyingting/HelloInterview/issues/11) and integrated
 acceptance [#14](https://github.com/huangyingting/HelloInterview/issues/14).
 Provider, commercial, customer-migration and public-launch approvals remain
@@ -51,7 +55,7 @@ explicit gates; issue creation or closure cannot supply them.
 | W06 | Entitlement engineering checkpoint implemented; issuing adapters and commercial authority pending W08/W10/W12 | Immutable owned source grants, terminal revocation, database-clock capability policy, API/worker admission and publication checks, separate content-only access, licensed project snapshots, expiry-aware UI and retained archives |
 | W08 | In progress; sandbox notifications, owned Checkout/recheckout, canonical funding/ledger, gated service authority, owned stop/resume cycles and restricted Portal checkpoints implemented | Pinned official Stripe SDK/API, signed durable evidence, stable owned financial keys, complete funding/adjustment traces, default-off calendar grants/scoped revocations, acknowledged exact-target renewal/recheckout with retained paid history and fresh restricted card-method/invoice sessions with URL-free audit; authentic provider evidence, commercial/grace policy, history partitioning/paid deletion and operated lifecycle remain |
 | W09 | In progress; internal usage-ledger, native-intent and saved-input provenance checkpoints implemented | Explicit immutable sandbox manifests, atomic replica unit/cost/native/private-input reservations, pinned operation/job/generation, owned source/model/prompt hashes, exact UTF-8 bounds, transactional raw-payload retirement, overlap-safe original-calendar windows, unknown holds and coupled cancellation/SQL settlement; actual managed provider dispatch, consent/UX, model/token/cost policy, operating reconciliation and approval remain |
-| W10 | In progress; owned member-support receipts checkpoint implemented | Private paginated request history, immutable replica-safe retry keys, current-session fences and shared write admission; truthful saved/not-delivered UI; staff MFA/RBAC/audit, operated helpdesk/email, comprehensive export/deletion and retention approvals remain |
+| W10 | In progress; member-support receipts and managed staff-administration checkpoints implemented | Private paginated member receipts plus explicit OIDC MFA staff proof, 12-hour/30-minute/fresh admission, expiring append-only roles, exact masked lookup, revision-fenced account suspension/reactivation, session revocation and immutable transactional audit; impersonation, operated helpdesk/email, comprehensive export/deletion and retention approvals remain |
 | W11 | In progress; private-safe reads, opaque addresses, local owner and comment-receipt checkpoints implemented | Minimized DTOs with server ownership, bounded feeds/search/discussions, exact legacy-ID routing, current-session/revision-fenced original-post/comment edits and atomic actor/key-bound comment creation recovery with bounded private history; managed writing remains denied, comment deletion/retention, broader ordered intents, moderation/report/appeal and publication gates remain |
 | W12 | In progress; deferred-screen, keyboard and malformed-address checkpoints implemented | Separated discovery graphs, fixed cold JavaScript budgets, explicit loading/failure/recovery, semantic ready-screen/skip focus, keyboard-safe mobile navigation, rapid Search and invalid-address recovery; reviewed offers, broad accessibility and operated serving remain |
 | W13 | Pending | Integrated provider lifecycle, load/recovery/security evidence and operating/launch gates |
@@ -131,7 +135,12 @@ privacy-consent/token/budget-policy composition remains.
 The [W10 member-support runbook](26-owned-support-receipts.md) records migration
 20, narrow owner-only receipts/history, retry-safe creation and shared support
 write admission. It enables no staff reply, external delivery or privacy
-completion; operated support and staff/privacy workflows remain.
+completion. The [W10 staff runbook](35-mfa-staff-account-administration.md)
+records migration 26, verified explicit OIDC MFA evidence, expiring append-only
+role grants, minimized exact account lookup, administrator-only revision-fenced
+status changes/session revocation and atomic immutable audit. It enables no
+impersonation, role UI, private preparation access, financial authority,
+helpdesk/email operation or comprehensive privacy completion.
 The [W11 community-read runbook](27-private-safe-community-reads.md) records
 migration 21, minimized public identities, query/viewer-bound cursor feeds and
 independent full-text detail across Community and global Search. It preserves

@@ -30,6 +30,7 @@ import { CommunityReads, communityActionSchema, communityIdentifier, communityDi
 import { communityKinds } from '../shared/community-routes';
 import { CommunityContributions } from './community-contributions';
 import { CommunitySubmissions } from './community-submissions';
+import { StaffAdministration } from './staff';
 function localSessionHash(req: express.Request) {
   const match = req.headers.cookie?.split(';').map(value => value.trim()).find(value => value.startsWith('studio_session='));
   const token = match?.slice('studio_session='.length);
@@ -82,6 +83,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   const identity = config.identity && config.publicOrigin ? new ManagedIdentity(db, config.identity, config.publicOrigin, shutdown, identityTransport, lifecycle) : null;
   const entitlements = identity ? new Entitlements(db) : null;
   const support = identity ? new SupportRequests(db, identity) : null;
+  const staff = identity ? new StaffAdministration(db, identity) : null;
   const connectedAi = identity ? null : config.ai;
   const app = express();
   app.disable('x-powered-by');
@@ -227,12 +229,14 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   });
   app.get('/api/bootstrap', async (req, res) => {
     const user = (await currentUser(req));
+    const staffRoles=staff&&user?.identity?await staff.roles(user.id):[];
     res.setHeader('Cache-Control', 'no-store');
     res.json({
       user, state: user && (!user.identity || user.identity.status === 'active') ? (await stateFor(user)) : emptyState(),
       capabilities: { ai: !!connectedAi, commerce: identity ? 'disabled' : 'demo', community: identity ? 'read-only' : 'local', aiModel: connectedAi?.model ?? null,
         ...(billing?.checkout ? { billing: { mode: 'sandbox', checkout: !!config.billing?.offers } } : {}),
-        ...(identity && entitlements ? { auth: { mode: 'managed', providers, legacyLink: !!config.identity?.legacyLinkUntil && config.identity.legacyLinkUntil > Date.now(), securityLifecycle: !!lifecycle }, access: await entitlements.view(user?.id ?? null) } : {}) },
+        ...(identity && entitlements ? { auth: { mode: 'managed', providers, legacyLink: !!config.identity?.legacyLinkUntil && config.identity.legacyLinkUntil > Date.now(), securityLifecycle: !!lifecycle }, access: await entitlements.view(user?.id ?? null) } : {}),
+        ...(staffRoles.length?{staff:{roles:staffRoles}}:{}) },
       ...(identity ? { csrf: await identity.csrf(req, res) } : {}),
     });
   });
@@ -1070,6 +1074,20 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     if (!query.success) throw new HttpError(400, 'Use only a single owned support cursor.');
     res.json(await support.history(user, query.data.cursor));
   });
+  if(staff&&identity){
+    app.get('/api/staff/session',async(req,res)=>{
+      const user=await requireUser(req);await identity.admitStaff(user,res);res.json(await staff.session(user));
+    });
+    app.get('/api/staff/accounts',async(req,res)=>{
+      const user=await requireUser(req);await identity.admitStaff(user,res);res.json(await staff.lookup(user,req.query));
+    });
+    app.patch('/api/staff/accounts/:id/status',async(req,res)=>{
+      const user=await requireUser(req);await identity.admitStaff(user,res);res.json(await staff.changeStatus(user,req.params.id,req.body));
+    });
+    app.get('/api/staff/audit',async(req,res)=>{
+      const user=await requireUser(req);await identity.admitStaff(user,res);res.json(await staff.history(user,req.query));
+    });
+  }
   app.use('/api', (_req, res) => res.status(404).json({ error: 'API endpoint not found.' }));
   return app;
 }

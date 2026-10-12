@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import type express from 'express';
 import { z } from 'zod';
-import type { User } from '../../shared/types';
+import type { StaffRole, User } from '../../shared/types';
 import type { IdentityConfig } from '../config';
 import type { Database } from '../db/connection';
 import { StateRepository } from '../db/state-repository';
@@ -22,6 +22,7 @@ const sessionSchema = z.object({
   id: z.string(), name: z.string(), contact_email: z.string().nullable(), contact_verified: z.number().int().min(0).max(1),
   status: statusSchema, epoch: z.number().int().nonnegative(), token: z.string(), session_id: z.string(),
   identity_id: z.string(), csrf_hash: z.string(), authenticated_at: z.coerce.number().int().nonnegative(),
+  mfa_at: z.coerce.number().int().nonnegative(),created_at:z.coerce.number().int().nonnegative(),last_used:z.coerce.number().int().nonnegative(),
 });
 type Session = z.infer<typeof sessionSchema>;
 const transactionSchema = z.object({
@@ -53,6 +54,7 @@ export class ManagedIdentity {
   private readonly broker: IdentityBroker;
   private readonly limits: IdentityLimits;
   private readonly contexts = new WeakMap<User, Session>();
+  private readonly requestLastUsed = new WeakMap<express.Request,{token:string;lastUsed:number}>();
   constructor(private readonly db: Database, private readonly settings: IdentityConfig, private readonly origin: string, shutdown: AbortSignal, transport?: IdentityTransport, private readonly lifecycle?: IdentityLifecycle) {
     if (db.dialect !== 'postgres') throw new Error('Managed identity requires migrated PostgreSQL.');
     this.broker = new IdentityBroker(settings, origin, shutdown, transport);
@@ -61,17 +63,20 @@ export class ManagedIdentity {
   private async now() { return z.coerce.number().int().nonnegative().parse((await this.db.prepare(`SELECT ${clockSql} AS now`).get())?.now); }
   private async session(req: express.Request): Promise<Session | null> {
     const raw = cookie(req, cookieNames.session);
-    if (!raw) return null;
+    if (!raw)return null;
     const row = await this.db.prepare(`
       SELECT u.id,u.name,a.contact_email,a.contact_verified,a.status,a.session_epoch AS epoch,
-        s.token,m.id AS session_id,m.identity_id,m.csrf_hash,m.authenticated_at
+        s.token,m.id AS session_id,m.identity_id,m.csrf_hash,m.authenticated_at,m.mfa_at,m.created_at,m.last_used
       FROM sessions s JOIN managed_sessions m ON m.token=s.token JOIN users u ON u.id=s.user_id
         JOIN managed_accounts a ON a.user_id=u.id JOIN managed_identities i ON i.id=m.identity_id AND i.user_id=u.id
       WHERE s.token=? AND s.expires>${clockSql} AND m.last_used>${clockSql}-?
         AND m.epoch=a.session_epoch AND i.available=1 AND m.authenticated_at>a.security_cutoff
     `).get(hash(raw), idle);
-    if (!row) return null;
-    const session = sessionSchema.parse(row);
+    if (!row)return null;
+    let session = sessionSchema.parse(row);
+    const first=this.requestLastUsed.get(req);
+    if(first?.token===session.token)session={...session,last_used:first.lastUsed};
+    else this.requestLastUsed.set(req,{token:session.token,lastUsed:session.last_used});
     await this.db.prepare(`UPDATE managed_sessions SET last_used=${clockSql} WHERE token=?`).run(session.token);
     return session;
   }
@@ -117,6 +122,30 @@ export class ManagedIdentity {
   async admitBilling(user: User, res: express.Response) {
     await this.limits.enforce('billing', user.id, res);
   }
+  async admitStaff(user: User, res: express.Response) {
+    await this.limits.enforce('account-security', user.id, res);
+  }
+  async assertStaff(user: User) {
+    const context = this.contexts.get(user);
+    if (!context) throw new HttpError(401,'Sign in again before using staff administration.');
+    await this.db.prepare('SELECT id FROM users WHERE id=? FOR UPDATE').get(user.id);
+    const row=await this.db.prepare(`
+      SELECT a.status FROM managed_accounts a JOIN sessions s ON s.user_id=a.user_id JOIN managed_sessions m ON m.token=s.token
+      WHERE a.user_id=? AND s.token=? AND a.status='active' AND a.contact_verified=1
+        AND a.session_epoch=m.epoch AND s.expires>${clockSql}
+        AND ?>${clockSql}-? AND m.created_at>${clockSql}-?
+        AND m.authenticated_at>${clockSql}-? AND m.mfa_at>${clockSql}-?
+      FOR UPDATE OF a,s,m
+    `).get(user.id,context.token,context.last_used,30*60000,12*60*60000,freshness,freshness);
+    if(!row)throw new HttpError(403,'Staff actions require an active account, verified MFA and a fresh sign-in. Confirm your identity again.');
+  }
+  async staffRoles(owner:string):Promise<StaffRole[]> {
+    const rows=await this.db.prepare(`SELECT role FROM (
+      SELECT DISTINCT ON (role) role,state,starts_at,ends_at FROM staff_role_events
+      WHERE user_id=? ORDER BY role,created_at DESC,id DESC
+    ) latest WHERE state='granted' AND starts_at<=clock_timestamp() AND ends_at>clock_timestamp() ORDER BY role`).all(owner);
+    return rows.map(row=>z.enum(['support-agent','moderator','content-editor','billing-operator','administrator']).parse(row.role));
+  }
   async csrf(req: express.Request, res: express.Response) {
     const session = await this.session(req);
     const value = cookie(req, cookieNames.csrf);
@@ -135,14 +164,14 @@ export class ManagedIdentity {
   private async audit(userId: string, action: string, identityId: string | null = null) {
     await this.db.prepare('INSERT INTO identity_security_events (id,user_id,action,identity_id) VALUES (?,?,?,?)').run(randomUUID(), userId, action, identityId);
   }
-  private async issue(userId: string, identityId: string, authenticatedAt: number) {
+  private async issue(userId: string, identityId: string, authenticatedAt: number, mfa: boolean) {
     const now = await this.now(), token = random(), csrf = random();
     const account = await this.db.prepare('SELECT session_epoch,status FROM managed_accounts WHERE user_id=?').get(userId);
     if (!account || !['active', 'pending-verification'].includes(String(account.status))) throw new HttpError(403, 'This account is not available. Contact support.');
     await this.db.prepare('DELETE FROM sessions WHERE user_id=? AND expires<=?').run(userId, now);
     await this.db.prepare('DELETE FROM sessions WHERE token IN (SELECT s.token FROM sessions s JOIN managed_sessions m ON m.token=s.token WHERE s.user_id=? ORDER BY m.created_at DESC,m.id DESC OFFSET 49)').run(userId);
     await this.db.prepare('INSERT INTO sessions (token,user_id,expires) VALUES (?,?,?)').run(hash(token), userId, now + lifetime);
-    await this.db.prepare('INSERT INTO managed_sessions (token,id,identity_id,epoch,csrf_hash,authenticated_at,created_at,last_used) VALUES (?,?,?,?,?,?,?,?)').run(hash(token), randomUUID(), identityId, Number(account.session_epoch), hash(csrf), authenticatedAt, now, now);
+    await this.db.prepare('INSERT INTO managed_sessions (token,id,identity_id,epoch,csrf_hash,authenticated_at,created_at,last_used,mfa_at) VALUES (?,?,?,?,?,?,?,?,?)').run(hash(token), randomUUID(), identityId, Number(account.session_epoch), hash(csrf), authenticatedAt, now, now, mfa ? authenticatedAt : 0);
     return { token, csrf };
   }
   private cookies(res: express.Response, issued: { token: string; csrf: string }) {
@@ -256,7 +285,7 @@ export class ManagedIdentity {
       const issued = await this.db.transaction(async () => {
         const result = await this.bind(proof, transaction.provider, transaction.purpose, transaction.user_id, transaction.legacy_credential_hash, transaction.session_hash ? { req, token: transaction.session_hash } : undefined, preceding, facts);
         if (preceding) await this.db.prepare('DELETE FROM sessions WHERE token=? AND user_id=?').run(preceding.token, preceding.id);
-        return this.issue(result.userId, result.identityId, proof.authenticatedAt);
+        return this.issue(result.userId, result.identityId, proof.authenticatedAt, proof.mfa);
       });
       this.cookies(res, issued);
       res.redirect(303, transaction.return_to);
@@ -283,15 +312,15 @@ export class ManagedIdentity {
         const row = identitySchema.parse(value);
         return { id: row.id, provider: row.provider, email: row.email, verified: row.verified === 1, available: row.available === 1, createdAt: row.created_at.toISOString(), current: row.id === session.identity_id };
       });
-      const sessions = await this.db.prepare('SELECT m.id,m.created_at,m.last_used,m.authenticated_at FROM managed_sessions m JOIN sessions s ON s.token=m.token WHERE s.user_id=? AND s.expires>? AND m.last_used>? AND m.epoch=? ORDER BY m.created_at DESC LIMIT 50').all(session.id, now, now - idle, session.epoch);
+      const sessions = await this.db.prepare('SELECT m.id,m.created_at,m.last_used,m.authenticated_at,m.mfa_at FROM managed_sessions m JOIN sessions s ON s.token=m.token WHERE s.user_id=? AND s.expires>? AND m.last_used>? AND m.epoch=? ORDER BY m.created_at DESC LIMIT 50').all(session.id, now, now - idle, session.epoch);
       const events = (await this.db.prepare('SELECT id,action,created_at FROM identity_security_events WHERE user_id=? ORDER BY created_at DESC,id LIMIT 20').all(session.id)).map(value => {
         const row = z.object({ id: z.string(), action: z.string(), created_at: z.date() }).parse(value);
         return { id: row.id, action: row.action, createdAt: row.created_at.toISOString() };
       });
       res.json({
         identities, sessions: sessions.map(value => {
-          const row = z.object({ id: z.string(), created_at: z.coerce.number(), last_used: z.coerce.number(), authenticated_at: z.coerce.number() }).parse(value);
-          return { id: row.id, createdAt: row.created_at, lastUsed: row.last_used, authenticatedAt: row.authenticated_at, current: row.id === session.session_id };
+          const row = z.object({ id: z.string(), created_at: z.coerce.number(), last_used: z.coerce.number(), authenticated_at: z.coerce.number(),mfa_at:z.coerce.number() }).parse(value);
+          return { id: row.id, createdAt: row.created_at, lastUsed: row.last_used, authenticatedAt: row.authenticated_at, mfa:row.mfa_at>0,current: row.id === session.session_id };
         }), events, fresh: now - session.authenticated_at <= freshness,
       });
     });

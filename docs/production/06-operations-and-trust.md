@@ -86,6 +86,17 @@ minimal immutable references without original comment text, bounded private
 history, actual-session fences and non-resurrection after removal. This is not
 retention approval, privacy export/deletion, moderation or managed writing.
 
+**Implemented managed staff-administration checkpoint (W10):** verified OIDC
+`amr` can establish explicit MFA evidence for a managed session; privileged
+staff admission additionally requires an active verified account, a current
+12-hour/30-minute staff session and authentication/MFA within ten minutes. The
+[staff runbook](35-mfa-staff-account-administration.md) records migration 26,
+time-bounded append-only roles, exact masked lookup, revision-fenced account
+status changes, epoch session revocation and transactional immutable audit. No
+role is granted by default. Impersonation, other-staff changes, direct billing
+or private-content authority, operated helpdesk delivery and comprehensive
+privacy export/deletion remain unavailable.
+
 ## Operating model
 
 Name accountable people before launch, even if one person initially fills

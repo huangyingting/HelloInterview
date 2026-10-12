@@ -64,6 +64,7 @@ service with defined recovery and support commitments.
 | [32 - Owned comment editing](32-owned-comment-editing.md) | Private author-only local text editing, viewer-derived ownership, parent/comment lock ordering, shared draft/conflict recovery and migration 23; no comment-deletion, managed-writing or retention approval | Community and full-stack |
 | [33 - Bounded discussion pages](33-bounded-discussion-pages.md) | Indexed 25/50-row, viewer/resource-bound live pages; explicit load/retry beyond 500, draft-safe concurrent creation/editing and migration 24; no frozen export, full-history search or managed-writing approval | Community and full-stack |
 | [34 - Owned comment submission receipts](34-owned-comment-submission-receipts.md) | Atomic actor/key/input-bound local creation, explicit lost-response check/same-key retry, non-resurrecting minimal receipts and bounded private history in migration 25; no managed-writing, retention/privacy-erasure or moderation approval | Community and full-stack |
+| [35 - MFA staff account administration](35-mfa-staff-account-administration.md) | Verified OIDC MFA and fresh staff admission, expiring append-only roles, exact masked lookup, revision-fenced account status/session revocation and immutable minimal audit in migration 26; no impersonation, delivered support or complete privacy lifecycle | Identity, operations and full-stack |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to

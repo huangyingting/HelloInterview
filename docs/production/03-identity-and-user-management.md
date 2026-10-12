@@ -199,9 +199,13 @@ Account security page:
 ## Staff user management
 
 The [owned support checkpoint](26-owned-support-receipts.md) provides narrowly
-scoped member receipts/history and shared support-write admission, including
-pending/restricted members with valid sessions. It adds no staff authority,
-external delivery, contact verification or completed privacy export/deletion.
+scoped member receipts/history and shared support-write admission. The
+[staff administration checkpoint](35-mfa-staff-account-administration.md)
+adds verified OIDC MFA evidence, expiring append-only role grants, exact masked
+account lookup, revision-fenced suspension/reactivation, session revocation and
+immutable minimal audit. It adds no impersonation, external support delivery,
+private preparation access, role-management UI or completed privacy
+export/deletion.
 
 | Role | Permitted actions | Explicit exclusions |
 | --- | --- | --- |
@@ -217,6 +221,13 @@ account restrictions, refunds, entitlement adjustments, identity recovery and
 replays require a reason and audit event. Destructive/high-value operations
 require a second approval according to finance/security thresholds approved
 before launch.
+
+The implemented role CLI is deliberately out-of-band and supports only
+time-bounded grants or append-only revocations. No role is granted by default.
+The first checkpoint exposes account lookup to support agents and
+administrators, but account suspension/reactivation only to administrators.
+Other declared roles have no account-administration authority yet. Staff cannot
+change their own status or another active staff account through this surface.
 
 Do not build impersonation for launch. A user can intentionally attach a
 specific report to a ticket; that gives scoped, logged support access to that

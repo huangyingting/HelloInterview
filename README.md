@@ -218,7 +218,12 @@ adds explicit local lost-response check/same-key retry, atomic duplicate-safe
 creation and bounded private history without retaining original text in the
 receipt ledger. Removed acknowledged comments are never recreated. Managed
 writing, retention approval and comprehensive privacy workflows remain open.
-Controlled PostgreSQL deployments must apply **migration 25 and maintained queue
+The [staff administration checkpoint](docs/production/35-mfa-staff-account-administration.md)
+adds verified OIDC MFA evidence, time-bounded role events, exact masked lookup,
+revision-fenced account suspension/reactivation, session revocation and immutable
+minimal audit. It does not add impersonation, helpdesk delivery or complete
+privacy export/deletion.
+Controlled PostgreSQL deployments must apply **migration 26 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 

@@ -17,6 +17,7 @@ const claimsSchema = z.looseObject({
   name: z.string().min(1).max(200).optional(),
   email: z.string().max(254).optional(),
   email_verified: z.boolean().optional(),
+  amr: z.array(z.string().min(1).max(50)).max(20).optional(),
 });
 export interface IdentityProof {
   issuer: string;
@@ -25,6 +26,7 @@ export interface IdentityProof {
   email: string | null;
   verified: boolean;
   authenticatedAt: number;
+  mfa: boolean;
 }
 
 export class IdentityBroker {
@@ -98,6 +100,7 @@ export class IdentityBroker {
       issuer: this.settings.issuer, subject: claims.sub,
       name: claims.name?.trim().slice(0, 60) || 'Studio member',
       email: email || null, verified: !!email && claims.email_verified === true, authenticatedAt: claims.auth_time * 1000,
+      mfa: claims.amr?.includes('mfa') === true,
     };
   }
 }

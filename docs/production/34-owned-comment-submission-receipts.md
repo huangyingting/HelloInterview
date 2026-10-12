@@ -7,7 +7,7 @@ actor-owned key and normalized input. Managed community writing remains denied.
 
 ## Deployment and storage
 
-Apply controlled **migration 25 and maintained queue migration** before starting
+Apply controlled **migration 26 and maintained queue migration** before starting
 this release. Migration 25 adds `community_comment_submissions`:
 
 ```text

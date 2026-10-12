@@ -8,7 +8,7 @@ Managed discussions remain read-only.
 ## Deployment and data preservation
 
 Migration 23 introduced this checkpoint; the current release requires
-**migration 25 and maintained queue migration**, including
+**migration 26 and maintained queue migration**, including
 [bounded discussion pages](33-bounded-discussion-pages.md) and
 [owned comment submission receipts](34-owned-comment-submission-receipts.md),
 before starting. Migrations 1-24 retain their published SQL, names and checksums.

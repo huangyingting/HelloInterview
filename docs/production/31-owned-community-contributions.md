@@ -8,7 +8,7 @@ read-only, including the new owner APIs. Illustrative examples are immutable.
 ## Deployment and storage
 
 Migration 22 introduced this checkpoint; the current release requires
-**migration 25 and maintained queue migration**, including
+**migration 26 and maintained queue migration**, including
 [owned comment editing](32-owned-comment-editing.md) and
 [bounded discussion pages](33-bounded-discussion-pages.md) and
 [owned comment submission receipts](34-owned-comment-submission-receipts.md),

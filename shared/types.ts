@@ -5,6 +5,7 @@ export type TrackId = 'system-design' | 'code' | 'low-level-design' | 'behaviora
 export type Difficulty = 'Easy' | 'Medium' | 'Hard';
 export type Level = 'Junior' | 'Mid-level' | 'Senior' | 'Staff' | 'Manager';
 export type CommunityKind = 'questions' | 'stories' | 'submissions' | 'discussion';
+export type StaffRole = 'support-agent' | 'moderator' | 'content-editor' | 'billing-operator' | 'administrator';
 
 export interface SupportReceipt {
   id: string;
@@ -355,6 +356,16 @@ export interface CommunityCommentSubmission {
   comment: Comment | null;
 }
 export interface CommunityCommentSubmissionHistory { submissions: CommunityCommentSubmission[]; nextCursor: string | null }
+export interface StaffAccount {
+  id:string;maskedEmail:string;status:'pending-verification'|'active'|'suspended'|'deletion-pending';
+  verified:boolean;revision:number;activeSessions:number;
+}
+export interface StaffAuditEvent {
+  id:string;actorRef:string;actorRole:StaffRole|null;targetRef:string;
+  action:'staff.role.granted'|'staff.role.revoked'|'account.suspended'|'account.reactivated';
+  reason:string;priorRevision:number|null;resultRevision:number|null;createdAt:string;
+}
+export interface StaffAuditPage {events:StaffAuditEvent[];nextCursor:string|null}
 export interface Bootstrap {
   csrf?: string;
   user: User | null;
@@ -367,11 +378,12 @@ export interface Bootstrap {
     community: 'local' | 'read-only';
     aiModel: string | null;
     auth?: { mode: 'managed'; providers: readonly ('email' | 'google' | 'github')[]; legacyLink: boolean; securityLifecycle: boolean };
+    staff?: {roles:StaffRole[]};
   };
 }
 export interface IdentitySecurity {
   identities: { id: string; provider: 'email' | 'google' | 'github'; email: string | null; verified: boolean; available: boolean; createdAt: string; current: boolean }[];
-  sessions: { id: string; createdAt: number; lastUsed: number; authenticatedAt: number; current: boolean }[];
+  sessions: { id: string; createdAt: number; lastUsed: number; authenticatedAt: number; mfa:boolean;current: boolean }[];
   events: { id: string; action: string; createdAt: string }[];
   fresh: boolean;
 }

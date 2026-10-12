@@ -6,6 +6,7 @@ import { openIdentityFixture } from './fixtures/identity';
 import { Entitlements } from '../server/entitlements';
 import type { Bootstrap } from '../shared/types';
 import { courses } from '../shared/public-catalog';
+import {appendStaffRole} from '../server/staff';
 
 async function fixture(t: TestContext, lifecycle = false) {
   const f = await openIdentityFixture({}, { lifecycle });
@@ -119,6 +120,37 @@ test('managed browser signs in, saves profile with CSRF, links/unlinks a fresh m
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Account access is restricted.' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Save profile' })).toHaveCount(0);
+});
+
+test('staff UI is deferred, capability-gated and applies an audited in-page suspension without dialogs',async t=>{
+  const f=await fixture(t),{page}=f;
+  f.setClaims({amr:['pwd','mfa']});
+  await page.goto(`${f.origin}/auth`);await page.getByRole('link',{name:'Continue with Google'}).click();
+  await expect(page.getByRole('heading',{name:'Sign-in and security.'})).toBeVisible();
+  await expect(page.getByRole('link',{name:'Staff operations'})).toHaveCount(0);
+  const bootstrap:Bootstrap=await page.evaluate(async()=>(await fetch('/api/bootstrap')).json()),owner=bootstrap.user?.id;assert.ok(owner);
+  await appendStaffRole(f.db,{userId:owner,role:'administrator',state:'granted',actorRef:'browser-fixture',
+    reason:'Grant browser administrator access for a bounded UI acceptance test.',endsAt:new Date(Date.now()+86400000).toISOString()});
+  const target=f.browser(),authorization=await f.begin(target);
+  await f.complete(target,authorization,{sub:'google-oauth2|browser-staff-target',email:'staff.target@example.invalid',amr:['pwd','mfa']});
+  const targetData=await target.bootstrap();assert.ok(targetData.user);
+  await page.reload();
+  await page.getByRole('link',{name:'Staff operations'}).click();
+  await expect(page.getByRole('heading',{name:'Account access, without impersonation.'})).toBeVisible();
+  await expect(page.getByText('Administrator.',{exact:false})).toBeVisible();
+  await page.getByLabel('Exact contact email').fill('staff.target@example.invalid');
+  await page.getByRole('button',{name:'Find account'}).click();
+  await expect(page.getByText('active',{exact:true})).toBeVisible();
+  await page.getByLabel('Required staff reason').fill('Suspend this synthetic account after a reviewed browser acceptance check.');
+  await page.getByRole('button',{name:'Suspend and revoke sessions'}).click();
+  await expect(page.getByText('Account suspended and sessions revoked.',{exact:true})).toBeVisible();
+  await expect(page.getByText('suspended',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'View recent staff audit'}).click();
+  await expect(page.getByText('account suspended',{exact:true})).toBeVisible();
+  await expect(page.getByText('Suspend this synthetic account after a reviewed browser acceptance check.',{exact:true})).toBeVisible();
+  await expect(page.locator('[role="dialog"]')).toHaveCount(0);
+  await page.setViewportSize({width:390,height:844});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
 });
 
 test('managed browser reads bounded private-safe community pages, independent details and body-only global matches without write authority',async t=>{

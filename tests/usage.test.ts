@@ -408,11 +408,13 @@ test('controlled migration 17 preserves actual migration-16 identity, entitlemen
       .all(schema, table)).map(row => String(row.column_name)); assert.ok(columns.every(column => /^[a-z_][a-z0-9_]*$/.test(column)));
     await legacy.exec(`INSERT INTO ${table}(${columns.join(',')}) SELECT ${columns.join(',')} FROM "${source}".${table}`);
   }
-  const grants = await legacy.prepare('SELECT * FROM entitlement_grants').all(), accounts = await legacy.prepare('SELECT * FROM managed_accounts').all();
+  const accountColumns=(await legacy.prepare('SELECT column_name FROM information_schema.columns WHERE table_schema=? AND table_name=? ORDER BY ordinal_position')
+    .all(schema,'managed_accounts')).map(row=>String(row.column_name));
+  const grants = await legacy.prepare('SELECT * FROM entitlement_grants').all(), accounts = await legacy.prepare(`SELECT ${accountColumns.join(',')} FROM managed_accounts`).all();
   const applied = await legacy.prepare('SELECT version,checksum FROM schema_migrations ORDER BY version').all();
   await migrateDatabase(legacy); await migrateDatabase(legacy); await assertDatabaseVersion(legacy);
   assert.deepEqual(await legacy.prepare('SELECT * FROM entitlement_grants').all(), grants);
-  assert.deepEqual(await legacy.prepare('SELECT * FROM managed_accounts').all(), accounts);
+  assert.deepEqual(await legacy.prepare(`SELECT ${accountColumns.join(',')} FROM managed_accounts`).all(), accounts);
   assert.deepEqual(await legacy.prepare('SELECT version,checksum FROM schema_migrations WHERE version<=16 ORDER BY version').all(), applied);
   assert.equal((await legacy.prepare('SELECT count(*)::integer AS count FROM ai_usage_reservations').get())?.count, 0);
 });
@@ -675,17 +677,19 @@ test('migration 18 preserves actual migration-17 usage, owned operation rows and
   }
   const tables = ['users', 'managed_identities', 'managed_accounts', 'entitlement_grants', 'entitlement_events', 'durable_operations',
     'ai_usage_policies', 'ai_usage_lineages', 'ai_usage_windows', 'ai_usage_cost_budgets', 'ai_usage_reservations', 'ai_usage_budget_links', 'ai_usage_events'];
+  const legacyColumns=new Map<string,string[]>();
   for (const table of tables) {
     const columns = (await legacy.prepare('SELECT column_name FROM information_schema.columns WHERE table_schema=? AND table_name=? ORDER BY ordinal_position')
       .all(schema, table)).map(row => String(row.column_name));
     assert.ok(columns.length && columns.every(column => /^[a-z_][a-z0-9_]*$/.test(column)));
+    legacyColumns.set(table,columns);
     await legacy.exec(`INSERT INTO ${table}(${columns.join(',')}) SELECT ${columns.join(',')} FROM "${f.schema}".${table}`);
   }
-  const before = await Promise.all(tables.map(table => legacy.prepare(`SELECT * FROM ${table} ORDER BY 1`).all()));
+  const before = await Promise.all(tables.map(table => legacy.prepare(`SELECT ${legacyColumns.get(table)!.join(',')} FROM ${table} ORDER BY 1`).all()));
   const applied = await legacy.prepare('SELECT version,checksum FROM schema_migrations ORDER BY version').all();
   await assert.rejects(SandboxUsage.open(legacy, policy), /schema is incompatible/);
   await migrateDatabase(legacy); await migrateDatabase(legacy); await assertDatabaseVersion(legacy);
-  assert.deepEqual(await Promise.all(tables.map(table => legacy.prepare(`SELECT * FROM ${table} ORDER BY 1`).all())), before);
+  assert.deepEqual(await Promise.all(tables.map(table => legacy.prepare(`SELECT ${legacyColumns.get(table)!.join(',')} FROM ${table} ORDER BY 1`).all())), before);
   assert.deepEqual(await legacy.prepare('SELECT version,checksum FROM schema_migrations WHERE version<=17 ORDER BY version').all(), applied);
   assert.equal((await legacy.prepare('SELECT count(*)::integer AS count FROM ai_usage_operations').get())?.count, 0);
   const usage = await SandboxUsage.open(legacy, policy);
@@ -935,17 +939,19 @@ test('migration 19 preserves actual migration-18 source, accounting, operation a
   const tables = ['users', 'managed_identities', 'managed_accounts', 'entitlement_grants', 'entitlement_events', 'attempts',
     'durable_operations', 'ai_usage_policies', 'ai_usage_lineages', 'ai_usage_windows', 'ai_usage_cost_budgets',
     'ai_usage_reservations', 'ai_usage_budget_links', 'ai_usage_events', 'ai_usage_operations'];
+  const legacyColumns=new Map<string,string[]>();
   for (const table of tables) {
     const columns = (await legacy.prepare('SELECT column_name FROM information_schema.columns WHERE table_schema=? AND table_name=? ORDER BY ordinal_position')
       .all(schema, table)).map(row => String(row.column_name));
     assert.ok(columns.length && columns.every(column => /^[a-z_][a-z0-9_]*$/.test(column)));
+    legacyColumns.set(table,columns);
     await legacy.exec(`INSERT INTO ${table}(${columns.join(',')}) SELECT ${columns.join(',')} FROM "${f.schema}".${table}`);
   }
-  const before = await Promise.all(tables.map(table => legacy.prepare(`SELECT * FROM ${table} ORDER BY 1`).all()));
+  const before = await Promise.all(tables.map(table => legacy.prepare(`SELECT ${legacyColumns.get(table)!.join(',')} FROM ${table} ORDER BY 1`).all()));
   const applied = await legacy.prepare('SELECT version,checksum FROM schema_migrations ORDER BY version').all();
   await assert.rejects(SandboxInputs.open(legacy, inputPolicy), /schema is incompatible/);
   await migrateDatabase(legacy); await migrateDatabase(legacy); await assertDatabaseVersion(legacy);
-  assert.deepEqual(await Promise.all(tables.map(table => legacy.prepare(`SELECT * FROM ${table} ORDER BY 1`).all())), before);
+  assert.deepEqual(await Promise.all(tables.map(table => legacy.prepare(`SELECT ${legacyColumns.get(table)!.join(',')} FROM ${table} ORDER BY 1`).all())), before);
   assert.deepEqual(await legacy.prepare('SELECT version,checksum FROM schema_migrations WHERE version<=18 ORDER BY version').all(), applied);
   assert.equal((await legacy.prepare('SELECT count(*)::integer AS count FROM ai_input_snapshots').get())?.count, 0);
   assert.equal((await legacy.prepare('SELECT value FROM attempts WHERE user_id=? AND id=?').get(f.owner, input.sourceId))?.value instanceof Object, true);

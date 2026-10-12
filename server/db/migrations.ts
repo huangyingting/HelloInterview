@@ -754,6 +754,44 @@ export const migrations = [{
     CREATE TRIGGER immutable_community_comment_submission BEFORE UPDATE ON community_comment_submissions
       FOR EACH ROW EXECUTE FUNCTION immutable_community_comment_submission();
   `,
+}, {
+  version:26,
+  name:'mfa-staff-account-administration',
+  sql:`
+    ALTER TABLE managed_sessions ADD COLUMN mfa_at BIGINT NOT NULL DEFAULT 0 CHECK (mfa_at >= 0);
+    ALTER TABLE managed_accounts ADD COLUMN admin_revision INTEGER NOT NULL DEFAULT 0 CHECK (admin_revision >= 0);
+    CREATE TABLE staff_role_events (
+      id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role TEXT NOT NULL CHECK (role IN ('support-agent','moderator','content-editor','billing-operator','administrator')),
+      state TEXT NOT NULL CHECK (state IN ('granted','revoked')),
+      actor_ref TEXT NOT NULL CHECK (actor_ref ~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$'),
+      reason TEXT NOT NULL CHECK (length(reason) BETWEEN 20 AND 500),
+      starts_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),ends_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+      CHECK ((state='granted' AND ends_at IS NOT NULL AND ends_at>starts_at AND ends_at<=starts_at+interval '90 days') OR
+        (state='revoked' AND ends_at IS NULL))
+    );
+    CREATE INDEX staff_role_events_owner ON staff_role_events(user_id,role,created_at DESC,id DESC);
+    CREATE TABLE staff_audit_events (
+      id TEXT PRIMARY KEY,actor_ref TEXT NOT NULL CHECK (actor_ref ~ '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$'),
+      actor_role TEXT CHECK (actor_role IS NULL OR actor_role IN ('support-agent','moderator','content-editor','billing-operator','administrator')),
+      target_ref TEXT NOT NULL CHECK (length(target_ref) BETWEEN 1 AND 200),
+      action TEXT NOT NULL CHECK (action IN ('staff.role.granted','staff.role.revoked','account.suspended','account.reactivated')),
+      reason TEXT NOT NULL CHECK (length(reason) BETWEEN 20 AND 500),
+      prior_revision INTEGER,result_revision INTEGER,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+      CHECK ((prior_revision IS NULL AND result_revision IS NULL) OR
+        (prior_revision IS NOT NULL AND prior_revision>=0 AND result_revision=prior_revision+1))
+    );
+    CREATE INDEX staff_audit_events_order ON staff_audit_events(created_at DESC,id DESC);
+    CREATE FUNCTION immutable_staff_record() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+      BEGIN RAISE EXCEPTION 'Staff role and audit records are append-only.'; END;
+    $$;
+    CREATE TRIGGER immutable_staff_role_event BEFORE UPDATE ON staff_role_events
+      FOR EACH ROW EXECUTE FUNCTION immutable_staff_record();
+    CREATE TRIGGER immutable_staff_audit_event BEFORE UPDATE ON staff_audit_events
+      FOR EACH ROW EXECUTE FUNCTION immutable_staff_record();
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }
