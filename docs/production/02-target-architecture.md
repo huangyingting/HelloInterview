@@ -19,7 +19,14 @@ DTO is retained as a transitional read projection, not a PostgreSQL account
 blob or browser-authoritative write. See the
 [implementation and cutover runbook](08-persistence-implementation.md).
 Managed identity, scoped/paginated response APIs, private artifact storage,
-financial facts, and durable jobs below remain later packages.
+and financial facts below remain later packages.
+
+**Implemented job checkpoint (W07):** `server/jobs/` integrates the maintained
+PostgreSQL queue with shared-transaction idempotency, verified-event inbox,
+transactional delivery, attempt/generation-fenced business completion, safe
+retry modes and audited maintenance replay. See the
+[job implementation runbook](11-jobs-implementation.md). Real provider handlers,
+staff authorization and worker composition remain the feature packages.
 
 ## Architecture decisions
 

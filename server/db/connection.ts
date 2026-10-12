@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
-import { Pool, type PoolClient } from 'pg';
+import { Pool, type PoolClient, type QueryResult } from 'pg';
 import { openDatabase } from '../database';
 
 export type DatabaseRow = Record<string, unknown>;
@@ -13,6 +13,7 @@ export interface Database {
   readonly dialect: 'sqlite' | 'postgres';
   prepare(sql: string): Statement;
   exec(sql: string): Promise<void>;
+  executeSql(sql: string, values?: unknown[]): Promise<{ rows: DatabaseRow[] }>;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   close(): Promise<void>;
 }
@@ -43,6 +44,7 @@ export function sqliteConnection(connection: DatabaseSync): Database {
       };
     },
     exec: sql => schedule(() => connection.exec(sql)),
+    executeSql: () => Promise.reject(new Error('Raw PostgreSQL queries require a PostgreSQL connection.')),
     transaction: operation => context.getStore() ? operation() : schedule(() => context.run(true, async () => {
       connection.exec('BEGIN IMMEDIATE');
       try {
@@ -65,21 +67,25 @@ export function postgresConnection(connectionString: string): Database {
   const context = new AsyncLocalStorage<PoolClient>();
   let closing: Promise<void> | undefined;
   pool.on('error', error => console.error('PostgreSQL idle connection failed:', error.name));
-  async function query(sql: string, values: SQLInputValue[] = []) {
+  async function query(sql: string, values: unknown[] = []) {
     const client = context.getStore();
     if (closing && !client) throw new Error('The database is closing.');
-    return (client ?? pool).query<DatabaseRow>(postgresParameters(sql), values);
+    const result: QueryResult<DatabaseRow> | QueryResult<DatabaseRow>[] = await (client ?? pool).query<DatabaseRow>(sql, values);
+    const final = Array.isArray(result) ? result.at(-1) : result;
+    if (!final) throw new Error('PostgreSQL returned no statement result.');
+    return final;
   }
   return {
     dialect: 'postgres',
     prepare(sql) {
       return {
-        get: async (...values) => (await query(sql, values)).rows[0],
-        all: async (...values) => (await query(sql, values)).rows,
-        run: async (...values) => (await query(sql, values)).rowCount ?? 0,
+        get: async (...values) => (await query(postgresParameters(sql), values)).rows[0],
+        all: async (...values) => (await query(postgresParameters(sql), values)).rows,
+        run: async (...values) => (await query(postgresParameters(sql), values)).rowCount ?? 0,
       };
     },
-    exec: async sql => { await query(sql); },
+    exec: async sql => { await query(postgresParameters(sql)); },
+    executeSql: async (sql, values = []) => ({ rows: (await query(sql, values)).rows }),
     async transaction(operation) {
       if (context.getStore()) return operation();
       if (closing) throw new Error('The database is closing.');

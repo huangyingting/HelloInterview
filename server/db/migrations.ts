@@ -114,6 +114,40 @@ export const migrations = [{
     );
     CREATE INDEX assessment_sessions_owner ON assessment_sessions(user_id,completed_at);
   `,
+}, {
+  version: 3,
+  name: 'durable-operation-boundaries',
+  sql: `
+    CREATE TABLE durable_operations (
+      id TEXT PRIMARY KEY, scope TEXT NOT NULL, kind TEXT NOT NULL,
+      owner_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      request_key TEXT NOT NULL, request_hash TEXT NOT NULL, resource TEXT NOT NULL,
+      payload TEXT NOT NULL CHECK (octet_length(payload) <= 262144),
+      retry_mode TEXT NOT NULL CHECK (retry_mode IN ('idempotent','reconcile')),
+      job_id TEXT NOT NULL UNIQUE,
+      generation INTEGER NOT NULL DEFAULT 0 CHECK (generation >= 0),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(), completed_at TIMESTAMPTZ,
+      receipt TEXT CHECK (octet_length(receipt) <= 16384),
+      UNIQUE (scope,kind,request_key),
+      CHECK ((completed_at IS NULL) = (receipt IS NULL))
+    );
+    CREATE INDEX durable_operations_owner ON durable_operations(owner_id,created_at DESC,id);
+    CREATE TABLE verified_event_inbox (
+      source TEXT NOT NULL, event_id TEXT NOT NULL, payload_hash TEXT NOT NULL,
+      payload TEXT NOT NULL CHECK (octet_length(payload) <= 262144),
+      operation_id TEXT NOT NULL UNIQUE REFERENCES durable_operations(id),
+      received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (source,event_id)
+    );
+    CREATE TABLE job_operator_events (
+      id TEXT PRIMARY KEY, operation_id TEXT NOT NULL REFERENCES durable_operations(id),
+      actor TEXT NOT NULL, reason TEXT NOT NULL,
+      previous_job_id TEXT NOT NULL, next_job_id TEXT NOT NULL,
+      generation INTEGER NOT NULL CHECK (generation > 0),
+      provider_reconciled INTEGER NOT NULL CHECK (provider_reconciled IN (0,1)),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

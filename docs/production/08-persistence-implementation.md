@@ -21,8 +21,9 @@ SQLite is for local use, not the proposed multi-replica production substrate.
 
 Application construction owns the connection and awaits disposal. Startup
 checks PostgreSQL migration history but never creates or modifies PostgreSQL
-schema. The production release contains both `dist-server/index.js` and
-`dist-server/db/cli.js`; neither is served as a browser asset.
+schema. The production release contains `dist-server/index.js`,
+`dist-server/db/cli.js`, and the reusable `dist-server/jobs/index.js` module;
+none is served as a browser asset.
 
 ## Current PostgreSQL schema
 
@@ -36,6 +37,7 @@ schema. The production release contains both `dist-server/index.js` and
 | `mock_sessions`, `custom_quizzes`, `study_plans`, `project_workspaces` | Independently persisted premium records with existing answer/file/order semantics |
 | `posts`, `votes`, `follows`, `comments`, `support`, `gifts` | Existing local workflows moved to PostgreSQL, with owner/relationship constraints and resource indexes |
 | `schema_migrations` | Release version, immutable migration name/checksum, application time |
+| `durable_operations`, `verified_event_inbox`, `job_operator_events` | W07 immutable operation input/idempotency, atomic verified-event delivery and replay accountability; separate maintained queue schema owns transport |
 | `legacy_imports`, `legacy_state_snapshots` | Import fingerprint/count report and original `legacy-v1` JSON bytes/checksum; historical snapshots are never entitlement authority |
 
 Record JSONB is a bounded **single-resource payload**, not a whole-account JSON
@@ -97,6 +99,13 @@ for immutable assessment snapshots and owned topic-session progress. The explici
 importer now validates and copies selected-owner quiz versions/progress as well;
 referenced content must be byte-identical, and no authentication sessions or
 demo entitlements are imported. Migration 1 remains unchanged.
+
+The [W07 durable-job checkpoint](11-jobs-implementation.md) adds application
+migration 3 and a separately maintained `<application_schema>_jobs` schema.
+`db:migrate` explicitly installs both boundaries; API startup never installs
+the queue. Application and queue migration transactions are separate, and a
+queue installation failure exits nonzero and must be resolved before promotion.
+Backups must include both schemas. Released migrations 1 and 2 are unchanged.
 
 Use a separately authorized migration credential, not a broadly privileged API
 credential. Run migrations once in the release/maintenance workflow, before

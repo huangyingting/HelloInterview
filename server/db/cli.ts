@@ -2,6 +2,7 @@ import { loadConfig } from '../config';
 import { postgresConnection } from './connection';
 import { migrateDatabase } from './migrations';
 import { applyLegacyImport, inspectLegacyImport } from './legacy-import';
+import { DurableJobs, migrateJobs } from '../jobs';
 
 async function main() {
   const [command, ...args] = process.argv.slice(2);
@@ -11,8 +12,40 @@ async function main() {
     const db = postgresConnection(config.databaseUrl);
     try {
       await migrateDatabase(db);
-      console.log('PostgreSQL migrations applied and checksums verified.');
+      await migrateJobs(db);
+      console.log('PostgreSQL migrations applied and checksums verified; durable queues installed for this release.');
     } finally { await db.close(); }
+    return;
+  }
+  if (command === 'jobs') {
+    const [operation, ...options] = args;
+    let id: string | undefined, actor: string | undefined, reason: string | undefined, reconciled = false;
+    if (operation === 'replay') {
+      id = options.shift();
+      for (let index = 0; index < options.length; index++) {
+        const flag = options[index];
+        if (flag === '--provider-reconciled' && !reconciled) { reconciled = true; continue; }
+        const value = options[++index];
+        if (!value || value.startsWith('--')) throw new Error('Every replay option requires a value.');
+        if (flag === '--actor' && !actor) actor = value;
+        else if (flag === '--reason' && !reason) reason = value;
+        else throw new Error('Invalid or duplicate replay option.');
+      }
+      if (!id || !actor || !reason) throw new Error('Replay requires an operation ID, --actor <operator-id>, and --reason <reconciliation-notes>.');
+    } else if (operation !== 'status' || options.length) throw new Error('Usage: jobs status | jobs replay <operation-id> --actor <operator-id> --reason <notes> [--provider-reconciled]');
+    const config = loadConfig();
+    if (!config.databaseUrl) throw new Error('DATABASE_URL is required for durable-job maintenance.');
+    const db = postgresConnection(config.databaseUrl);
+    let jobs: DurableJobs | undefined;
+    try {
+      jobs = await DurableJobs.open(db);
+      if (operation === 'replay') {
+        const replayed = await jobs.replay(id!, actor!, reason!, reconciled);
+        console.log(JSON.stringify({ id: replayed.id, jobId: replayed.jobId, generation: replayed.generation }, null, 2));
+      } else console.log(JSON.stringify({ operations: await jobs.inspect(), deadLetters: await jobs.deadLetters() }, null, 2));
+    } finally {
+      try { if (jobs) await jobs.close(); } finally { await db.close(); }
+    }
     return;
   }
   if (command === 'import') {
@@ -37,7 +70,7 @@ async function main() {
     console.log(JSON.stringify({ mode: approved ? 'applied' : 'dry-run', ...input.report }, null, 2));
     return;
   }
-  throw new Error('Usage: db migrate | db import --source <backup.sqlite> --user <approved-id> [--user <approved-id>] [--apply <dry-run-fingerprint>]');
+  throw new Error('Usage: db migrate | db import --source <backup.sqlite> --user <approved-id> [--apply <fingerprint>] | jobs status | jobs replay <operation-id> --actor <operator-id> --reason <notes> [--provider-reconciled]');
 }
 
 main().catch((error: unknown) => {

@@ -11,6 +11,12 @@ An isolated fixture rehearses authenticated encryption and PostgreSQL restore.
 See [the platform runbook](09-platform-implementation.md). This is not managed
 hosting, durable backups/PITR, on-call coverage, or satisfaction of the launch SLOs.
 
+**Implemented job checkpoint (W07):** durable transactional delivery, maintained
+PostgreSQL workers, fenced finalization, bounded retry modes, verified-event
+storage and audited maintenance replay are available. The
+[job runbook](11-jobs-implementation.md) distinguishes synthetic crash/recovery
+evidence from enabled email/payment/privacy handlers and operating approval.
+
 ## Operating model
 
 Name accountable people before launch, even if one person initially fills

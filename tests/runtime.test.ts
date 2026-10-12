@@ -26,6 +26,10 @@ test('the compiled release runs with runtime-only dependencies, loads .env, pers
   for (const dependency of ['tsx', 'vite', 'typescript', 'esbuild']) {
     await assert.rejects(stat(path.join(release, 'node_modules', dependency)), { code: 'ENOENT' });
   }
+  const jobModule = await promisify(execFile)(process.execPath, ['--input-type=module', '-e',
+    "const module = await import('./dist-server/jobs/index.js'); console.log(typeof module.DurableJobs, typeof module.postgresConnection);",
+  ], { cwd: release });
+  assert.equal(jobModule.stdout.trim(), 'function function');
   await assert.rejects(promisify(execFile)(process.execPath, ['dist-server/db/cli.js', 'migrate'], {
     cwd: release, env: { NODE_ENV: 'test' },
   }), error => {

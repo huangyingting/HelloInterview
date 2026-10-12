@@ -13,7 +13,8 @@ gates are not implicitly satisfied by a foundation change.
 | W02 | Persistence checkpoint implemented; real-data cutover pending D05 | Async SQLite/PostgreSQL boundary; controlled migrations; owned record tables; atomic writes and revision conflicts; explicit dry-run/reconciled import without demo or password authority; two-replica PostgreSQL tests |
 | W03 | Provider-neutral checkpoint implemented; managed deployment pending D04/D06 | Pinned CI and release artifacts; non-root/read-only container; migration-gated private staging; proxy/origin validation; fail-closed service mode; readiness/draining; private request telemetry; encrypted fixture dump/restore |
 | W05 | Content-delivery checkpoint implemented; editorial/service authority pending W06/W12 | Allowlisted browser discovery graph; private readers/briefs/media; version-pinned server quiz sessions/checks/reports; readable/exportable owned history; migration 2 and replica/bundle checks |
-| W04, W06-W13 | Pending | Managed identity, production entitlements, billing, jobs, AI budgets, account administration, support, moderation, and launch gates |
+| W07 | Durable-job checkpoint implemented; provider/worker composition pending W08-W10 | Maintained PostgreSQL queue, controlled schema/policies, atomic operation/inbox/outbox, fenced completion, safe retries, audited replay and actual worker-death recovery |
+| W04, W06, W08-W13 | Pending | Managed identity, production entitlements, billing, AI budgets, account administration, support, moderation, and launch gates |
 
 W01 preserves existing local accounts, SQLite schema, demo entitlements, API
 contracts, curriculum, and UI. `NODE_ENV=production` means built asset serving,
@@ -32,6 +33,9 @@ The [W05 content runbook](10-content-implementation.md) records the shipped
 public/private DTOs, immutable quiz snapshots, legacy limitations, and media
 delivery. Content flags/free access are unchanged; this is not editorial approval
 or production entitlement authority.
+The [W07 job runbook](11-jobs-implementation.md) records queue migration,
+idempotency, worker/replay contracts and recovery. It proceeds independently of
+vendor selection; no live handler, email delivery or provider purchase is implied.
 
 ## Delivery strategy
 
@@ -136,6 +140,7 @@ npm run test:runtime
 npm run test:ai
 npm run test:db
 npm run test:content
+npm run test:jobs
 npm run test:container
 npm test
 ```

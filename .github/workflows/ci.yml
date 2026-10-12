@@ -37,7 +37,7 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run build
       - run: npm run test:unit
-      - run: npx tsx --test tests/server.test.ts tests/runtime.test.ts tests/ai.test.ts tests/database.test.ts tests/content-boundary.test.ts
+      - run: npx tsx --test tests/server.test.ts tests/runtime.test.ts tests/ai.test.ts tests/database.test.ts tests/content-boundary.test.ts tests/jobs.test.ts
       - run: npx playwright install --with-deps chromium
       - run: npm test
       - run: npm run test:container

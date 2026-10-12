@@ -40,6 +40,7 @@ service with defined recovery and support commitments.
 | [08 - Persistence implementation](08-persistence-implementation.md) | Shipped storage boundaries, schema, revisions, explicit importer, and cutover runbook | Backend and operations |
 | [09 - Platform implementation](09-platform-implementation.md) | CI, container/staging boundaries, readiness, telemetry, promotion, and recovery rehearsal | Platform and operations |
 | [10 - Protected-content implementation](10-content-implementation.md) | Browser-safe discovery graph, authorized readers/media, versioned quiz sessions, legacy reports and rollout | Learning and backend |
+| [11 - Durable-job implementation](11-jobs-implementation.md) | Controlled maintained queue, inbox/outbox, idempotency, fenced workers, replay and crash/restore boundaries | Backend and operations |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to

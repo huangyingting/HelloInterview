@@ -148,6 +148,21 @@ local practice-completion record, not accreditation, hiring evidence, or proof
 of mastery. Videos are short original animated walkthroughs, not a substitute
 for the reference's video library.
 
+## Durable-job engineering foundation
+
+PostgreSQL deployments include a maintained `pg-boss` queue with transactional
+operation/inbox/outbox insertion, stable request idempotency, resource-scoped
+claims, safe retry modes, fenced result commits and audited maintenance replay.
+`npm run db:migrate` installs the queue explicitly; runtime queue clients never
+auto-migrate. `npm run jobs:status` shows private operational metadata without
+request bodies. The compiled release includes a reusable worker module.
+
+This is not enabled billing, email, privacy or AI delivery: those handlers and
+the operated worker composition belong to their feature packages. Local SQLite
+workflows are unchanged. See [the durable-job runbook](docs/production/11-jobs-implementation.md)
+for contracts, replay safeguards, retention and actual worker-death/restore
+coverage.
+
 ## Researched System Design flagship
 
 Open **Learn -> System Design -> Explore the course**, or browse
