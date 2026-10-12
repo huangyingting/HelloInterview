@@ -87,6 +87,16 @@ export function openDatabase(dataDir: string): DatabaseSync {
       CREATE INDEX IF NOT EXISTS posts_created_order ON posts(created_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS follows_owner ON follows(user_id,post_id);
       CREATE INDEX IF NOT EXISTS comments_resource_cursor ON comments(resource,created_at,id);
+      CREATE TABLE IF NOT EXISTS community_comment_submissions (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        request_id TEXT NOT NULL,comment_id TEXT NOT NULL UNIQUE,resource TEXT NOT NULL,
+        input_hash TEXT NOT NULL CHECK(length(input_hash)=64 AND input_hash NOT GLOB '*[^0-9a-f]*'),created_at TEXT NOT NULL,
+        PRIMARY KEY(user_id,request_id)
+      );
+      CREATE INDEX IF NOT EXISTS community_comment_submissions_owner ON community_comment_submissions(user_id,created_at DESC,request_id DESC);
+      CREATE INDEX IF NOT EXISTS community_comment_submissions_resource ON community_comment_submissions(user_id,resource,created_at DESC,request_id DESC);
+      CREATE TRIGGER IF NOT EXISTS immutable_community_comment_submission BEFORE UPDATE ON community_comment_submissions
+        BEGIN SELECT RAISE(ABORT,'Comment submission receipts are immutable.'); END;
     `);
     if (!hasCommunityRevisions) db.exec('INSERT OR IGNORE INTO community_post_revisions(post_id) SELECT id FROM posts');
     if (db.prepare('SELECT p.id FROM posts p LEFT JOIN community_post_revisions r ON r.post_id=p.id WHERE r.post_id IS NULL LIMIT 1').get())

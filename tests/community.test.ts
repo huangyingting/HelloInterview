@@ -8,6 +8,7 @@ import { once } from 'node:events';
 import { DatabaseSync } from 'node:sqlite';
 import { setTimeout as delay } from 'node:timers/promises';
 import { CommunityReads } from '../server/community';
+import { CommunitySubmissions } from '../server/community-submissions';
 import { localConnection, postgresConnection, type Database } from '../server/db/connection';
 import { assertDatabaseVersion, migrateDatabase, migrations } from '../server/db/migrations';
 import { HttpError } from '../server/http-error';
@@ -69,7 +70,7 @@ test('community URL helpers preserve exact bounded data and reject malformed or 
   assert.deepEqual(parseStudioAddress('/community/questions/literal%252F','').segments,['community','questions','literal%2F']);
 });
 
-test('migrations 21/22/23/24 preserve actual legacy posts, memberships, comments and immutable history while adding indexes and revisions',async t=>{
+test('migrations 21-25 preserve actual legacy posts, memberships, comments and immutable history while adding indexes, revisions and empty receipts',async t=>{
   const f=await fixture(t,'postgres'),post=await f.add();
   await f.db.prepare('INSERT INTO votes(post_id,user_id) VALUES(?,?)').run(post.id,f.owners[0]);
   await f.db.prepare('INSERT INTO follows(post_id,user_id) VALUES(?,?)').run(post.id,f.owners[1]);
@@ -101,6 +102,12 @@ test('migrations 21/22/23/24 preserve actual legacy posts, memberships, comments
   await legacy.exec(commentRevisions.sql);
   await legacy.prepare('INSERT INTO schema_migrations(version,name,checksum) VALUES(?,?,?)').run(commentRevisions.version,commentRevisions.name,createHash('sha256').update(commentRevisions.sql).digest('hex'));
   const history23=await legacy.prepare('SELECT version,name,checksum FROM schema_migrations ORDER BY version').all();
+  const discussionIndex=migrations.find(migration=>migration.version===24);assert.ok(discussionIndex);
+  await legacy.exec(discussionIndex.sql);
+  await legacy.prepare('INSERT INTO schema_migrations(version,name,checksum) VALUES(?,?,?)').run(discussionIndex.version,discussionIndex.name,createHash('sha256').update(discussionIndex.sql).digest('hex'));
+  const history24=await legacy.prepare('SELECT version,name,checksum FROM schema_migrations ORDER BY version').all();
+  await legacy.prepare('UPDATE posts SET title=title WHERE id=?').run(post.id);
+  await legacy.prepare('UPDATE comments SET body=body WHERE id=?').run(commentId);
   await assert.rejects(assertDatabaseVersion(legacy),/incompatible/);
   await migrateDatabase(legacy);await migrateDatabase(legacy);await assertDatabaseVersion(legacy);
   assert.deepEqual(await Promise.all(['posts','votes','follows','comments'].map(table=>legacy.prepare(`SELECT * FROM ${table} ORDER BY 1,2`).all())),before);
@@ -108,14 +115,16 @@ test('migrations 21/22/23/24 preserve actual legacy posts, memberships, comments
   assert.deepEqual(await legacy.prepare('SELECT version,name,checksum FROM schema_migrations WHERE version<=21 ORDER BY version').all(),history21);
   assert.deepEqual(await legacy.prepare('SELECT version,name,checksum FROM schema_migrations WHERE version<=22 ORDER BY version').all(),history22);
   assert.deepEqual(await legacy.prepare('SELECT version,name,checksum FROM schema_migrations WHERE version<=23 ORDER BY version').all(),history23);
-  assert.equal((await legacy.prepare('SELECT revision FROM community_comment_revisions WHERE comment_id=?').get(commentId))?.revision,0);
-  await legacy.prepare('UPDATE comments SET body=body WHERE id=?').run(commentId);
+  assert.deepEqual(await legacy.prepare('SELECT version,name,checksum FROM schema_migrations WHERE version<=24 ORDER BY version').all(),history24);
+  assert.deepEqual(await legacy.prepare('SELECT * FROM community_comment_submissions').all(),[]);
   assert.equal((await legacy.prepare('SELECT revision FROM community_comment_revisions WHERE comment_id=?').get(commentId))?.revision,1);
-  assert.equal((await legacy.prepare('SELECT revision FROM community_post_revisions WHERE post_id=?').get(post.id))?.revision,0);
-  await legacy.prepare('UPDATE posts SET title=? WHERE id=?').run('A controlled original title update',post.id);
+  await legacy.prepare('UPDATE comments SET body=body WHERE id=?').run(commentId);
+  assert.equal((await legacy.prepare('SELECT revision FROM community_comment_revisions WHERE comment_id=?').get(commentId))?.revision,2);
   assert.equal((await legacy.prepare('SELECT revision FROM community_post_revisions WHERE post_id=?').get(post.id))?.revision,1);
+  await legacy.prepare('UPDATE posts SET title=? WHERE id=?').run('A controlled original title update',post.id);
+  assert.equal((await legacy.prepare('SELECT revision FROM community_post_revisions WHERE post_id=?').get(post.id))?.revision,2);
   const indexes=await legacy.prepare('SELECT indexname FROM pg_indexes WHERE schemaname=?').all(schema);
-  for(const name of ['posts_owner_order','posts_created_order','follows_owner','comments_resource_cursor'])assert.ok(indexes.some(row=>row.indexname===name));
+  for(const name of ['posts_owner_order','posts_created_order','follows_owner','comments_resource_cursor','community_comment_submissions_owner','community_comment_submissions_resource'])assert.ok(indexes.some(row=>row.indexname===name));
   assert.equal((await new CommunityReads(legacy).detail(post.id,{kind:'questions'},f.owners[0])).isMine,true);
 });
 
@@ -186,7 +195,7 @@ for(const kind of ['post','comment'] as const)test(`a PostgreSQL owned ${kind} m
   }
 });
 
-test('PostgreSQL comment creation and editing serialize with owner deletion in either admitted order without restoring an orphan discussion',async t=>{
+test('PostgreSQL comment creation, durable submission and editing serialize with owner deletion in either admitted order without restoring an orphan discussion',async t=>{
   const f=await fixture(t,'postgres');
   let target='',waitingFor='',first:'comment'|'delete'='comment',enter=()=>{},competingEnter=()=>{},release=()=>{},gate=Promise.resolve();
   const db:Database={...f.db,prepare(sql){
@@ -210,13 +219,14 @@ test('PostgreSQL comment creation and editing serialize with owner deletion in e
   const other=await api('/api/auth/signup',{name:'Other comment author',email:`${randomUUID()}@example.invalid`,password:'fixture-password-123'});assert.equal(other.status,200);
   const otherOwner=(await other.json()).user.id;
   const otherCookie=other.headers.getSetCookie().map(value=>value.split(';')[0]).join('; ');
-  for(const operation of ['create','edit'] as const)for(first of ['comment','delete'] as const){
+  for(const operation of ['create','edit','submit'] as const)for(first of ['comment','delete'] as const){
     const post=await f.add({owner}),resource=`post/${post.id}`;
     const commentId=randomUUID();
     if(operation==='edit')await f.db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run(commentId,resource,otherOwner,'Other comment author','An original comment before the racing edit.','2026-01-01T00:00:00.000Z',null);
     const entered=new Promise<void>(resolve=>{enter=resolve;}),competingEntered=new Promise<void>(resolve=>{competingEnter=resolve;});
     gate=new Promise<void>(resolve=>{release=resolve;});target=post.id;waitingFor=post.id;
-    const comment=()=>operation==='create'?api('/api/comments',{resource,body:'An original comment racing with deletion.'},otherCookie)
+    const input={requestId:randomUUID(),resource,body:'A durable original comment racing with deletion.'};
+    const comment=()=>operation==='submit'?api('/api/comments/submissions',input,otherCookie):operation==='create'?api('/api/comments',{resource,body:'An original comment racing with deletion.'},otherCookie)
       :api('/api/comments/owned',{id:commentId,revision:0,body:'An owned comment edit racing with deletion.'},otherCookie,'PUT');
     const remove=()=>api('/api/posts/owned',{id:post.id,revision:0},cookie,'DELETE');
     const initial=first==='comment'?comment():remove();
@@ -230,7 +240,47 @@ test('PostgreSQL comment creation and editing serialize with owner deletion in e
       assert.equal((await competing).status,first==='comment'?200:404);
       assert.equal(await f.db.prepare('SELECT id FROM posts WHERE id=?').get(post.id),undefined);
       assert.deepEqual(await f.db.prepare('SELECT id FROM comments WHERE resource=?').all(resource),[]);
+      if(operation==='submit'){
+        const replay=await api('/api/comments/submissions',input,otherCookie);
+        assert.equal(replay.status,first==='comment'?200:404);
+        if(first==='comment')assert.equal((await replay.json()).comment,null);
+        assert.deepEqual(await f.db.prepare('SELECT id FROM comments WHERE resource=?').all(resource),[]);
+      }
     }finally{release();await Promise.allSettled([initial,...(competing?[competing]:[])]);}
+  }
+});
+
+test('PostgreSQL submission create, replay, receipt and history revalidate a revoked actual session after paused user admission for post and generic discussions',async t=>{
+  const f=await fixture(t,'postgres');
+  let paused=false,enter=()=>{},release=()=>{},gate=Promise.resolve();
+  const db:Database={...f.db,prepare(sql){
+    const statement=f.db.prepare(sql);
+    return {...statement,get:async(...values)=>{
+      if(paused&&sql==='SELECT id FROM users WHERE id=? FOR UPDATE'){paused=false;enter();await gate;}
+      return statement.get(...values);
+    }};
+  }};
+  const app=createApp(loadConfig({NODE_ENV:'production',DATA_DIR:f.directory,PORT:'0',LOG_REQUESTS:'false'}),db,new AbortController().signal);app.use(handleError);
+  const server=createServer(app);server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();assert.ok(address&&typeof address==='object');
+  t.after(async()=>{server.closeAllConnections();await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));});
+  const url=`http://127.0.0.1:${address.port}`,api=(route:string,body?:unknown,cookie='')=>fetch(`${url}${route}`,{method:body===undefined?'GET':'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+  for(const kind of ['post','generic'] as const)for(const operation of ['create','replay','receipt','history'] as const){
+    const login=await api('/api/auth/demo',{}),owner=(await login.json()).user.id,cookie=login.headers.getSetCookie().map(value=>value.split(';')[0]).join('; ');
+    const resource=kind==='post'?`post/${(await f.add({owner})).id}`:`lesson/admission-${randomUUID()}`;
+    const input={requestId:randomUUID(),resource,body:'Only an admitted current session can access this submission.'};
+    if(operation!=='create')assert.equal((await api('/api/comments/submissions',input,cookie)).status,200);
+    const count=operation==='create'?0:1;
+    const entered=new Promise<void>(resolve=>{enter=resolve;});gate=new Promise<void>(resolve=>{release=resolve;});paused=true;
+    const reading=operation==='receipt'?api(`/api/comments/submissions/receipt?${new URLSearchParams({requestId:input.requestId})}`,undefined,cookie)
+      :operation==='history'?api(`/api/comments/submissions?${new URLSearchParams({resource})}`,undefined,cookie)
+      :api('/api/comments/submissions',input,cookie);
+    try{
+      await Promise.race([entered,reading.then(response=>{throw new Error(`${kind}/${operation} returned ${response.status} before paused admission.`);})]);
+      assert.equal((await api('/api/logout',{},cookie)).status,200);
+      release();assert.equal((await reading).status,401,`${kind}/${operation}`);
+    }finally{release();await reading;}
+    assert.equal(Number((await f.db.prepare('SELECT COUNT(*) AS count FROM comments WHERE resource=?').get(resource))?.count),count);
+    assert.equal(Number((await f.db.prepare('SELECT COUNT(*) AS count FROM community_comment_submissions WHERE user_id=? AND request_id=?').get(owner,input.requestId))?.count),count);
   }
 });
 
@@ -276,6 +326,91 @@ test('a PostgreSQL comment edit waiting on a privileged row update reads the new
 });
 
 for(const dialect of ['sqlite','postgres'] as const){
+  test(`${dialect}: failed receipt insertion rolls back its comment/revision and original-key retry creates once`,async t=>{
+    const f=await fixture(t,dialect),resource=`lesson/rollback-${randomUUID()}`,user={id:f.owners[0],name:'Synthetic author'};
+    let fail=true;
+    const db:Database={...f.db,prepare(sql){
+      const statement=f.db.prepare(sql);
+      return {...statement,run:async(...values)=>{
+        if(fail&&sql.startsWith('INSERT INTO community_comment_submissions')){fail=false;throw new Error('Synthetic receipt insertion failure.');}
+        return statement.run(...values);
+      }};
+    }};
+    const service=new CommunitySubmissions(db),input={requestId:randomUUID(),resource,body:'A rolled-back comment must not survive without its receipt.'};
+    await assert.rejects(service.create(user,input,async()=>{}),/Synthetic receipt insertion failure/);
+    assert.deepEqual(await f.db.prepare('SELECT id FROM comments WHERE resource=?').all(resource),[]);
+    assert.deepEqual(await f.db.prepare('SELECT comment_id FROM community_comment_revisions').all(),[]);
+    assert.deepEqual(await f.db.prepare('SELECT request_id FROM community_comment_submissions').all(),[]);
+    const saved=await service.create(user,input,async()=>{}),replay=await service.create(user,input,async()=>{});
+    assert.deepEqual(replay,saved);
+    assert.equal(Number((await f.db.prepare('SELECT COUNT(*) AS count FROM comments WHERE resource=?').get(resource))?.count),1);
+    await f.db.prepare('UPDATE comments SET created_at=? WHERE id=?').run('2001-01-01T00:00:00.000Z',saved.receipt.commentId);
+    assert.equal((await service.read(user.id,{requestId:input.requestId},async()=>{})).comment,null);
+    await f.db.prepare('DELETE FROM users WHERE id=?').run(user.id);
+    assert.deepEqual(await f.db.prepare('SELECT request_id FROM community_comment_submissions').all(),[]);
+  });
+  test(`${dialect}: durable local comment submissions bind actor, key and original input without retaining text or recreating removed comments`,async t=>{
+    const f=await fixture(t,dialect),server=await startServer(loadConfig({NODE_ENV:'production',DATA_DIR:f.directory,...(f.url?{DATABASE_URL:f.url}:{}),PORT:'0',LOG_REQUESTS:'false'}));t.after(()=>server.close());
+    const api=async(route:string,body?:unknown,cookie='',method=body===undefined?'GET':'POST')=>fetch(`${server.url}${route}`,{method,headers:{Cookie:cookie,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+    const login=await api('/api/auth/demo',{}),owner=(await login.json()).user.id,cookie=login.headers.getSetCookie().map(value=>value.split(';')[0]).join('; ');
+    const other=await api('/api/auth/signup',{name:'Other receipt owner',email:`${randomUUID()}@example.invalid`,password:'fixture-password-123'}),otherCookie=other.headers.getSetCookie().map(value=>value.split(';')[0]).join('; ');
+    const post=await f.add({owner}),resource=`post/${post.id}`,input={requestId:randomUUID(),resource,body:'Original private receipt input must not be copied into the receipt ledger.',parentId:null};
+    const route='/api/comments/submissions',lookup=(requestId:string)=>`${route}/receipt?${new URLSearchParams({requestId})}`;
+    assert.equal((await api(route,input)).status,401);assert.equal((await api(lookup(input.requestId))).status,401);
+    const responses=await Promise.all(Array.from({length:5},()=>api(route,input,cookie)));
+    for(const response of responses)assert.equal(response.status,200);
+    const saved=await responses[0].json();for(const response of responses.slice(1))assert.deepEqual(await response.json(),saved);
+    assert.deepEqual(Object.keys(saved).sort(),['comment','receipt']);assert.deepEqual(Object.keys(saved.receipt).sort(),['commentId','createdAt','requestId','resource','status'].sort());
+    assert.equal(saved.receipt.status,'created');assert.equal(saved.receipt.commentId,saved.comment.id);assert.equal(saved.comment.isMine,true);
+    assert.ok(!JSON.stringify(saved).includes(owner));assert.ok(!Object.hasOwn(saved.receipt,'input_hash'));
+    const stored=await f.db.prepare('SELECT * FROM community_comment_submissions WHERE user_id=? AND request_id=?').get(owner,input.requestId);
+    assert.ok(stored);assert.ok(!JSON.stringify(stored).includes(input.body));assert.deepEqual(Object.keys(stored).sort(),['user_id','request_id','comment_id','resource','input_hash','created_at'].sort());
+    assert.equal(Number((await f.db.prepare('SELECT COUNT(*) AS count FROM comments WHERE resource=?').get(resource))?.count),1);
+    assert.deepEqual(await(await api(route,{...input,requestId:input.requestId.toUpperCase(),body:`  ${input.body}\n`},cookie)).json(),saved);
+    assert.equal((await api(lookup(input.requestId),undefined,otherCookie)).status,404);
+    for(const changed of [{body:'Different original content is not a retry.'},{resource:'lesson/elsewhere'},{parentId:saved.comment.id}]){
+      assert.equal((await api(route,{...input,...changed},cookie)).status,409);
+    }
+    for(const changed of [{owner},{author:'Forged'},{requestId:'bad-key'},{body:'\0invalid text'},{body:'\ud800invalid text'},{resource:'lesson/\ud800'},{parentId:false},{parentId:'\ud800'}])
+      assert.equal((await api(route,{...input,...changed},cookie)).status,400);
+    assert.equal((await api(lookup(input.requestId)+'&owner=forged',undefined,cookie)).status,400);
+    await assert.rejects(f.db.prepare('UPDATE community_comment_submissions SET input_hash=input_hash WHERE user_id=? AND request_id=?').run(owner,input.requestId),/immutable/);
+    const edited=await api('/api/comments/owned',{id:saved.comment.id,revision:0,body:'Current text can change; the submission fingerprint stays original.'},cookie,'PUT');assert.equal(edited.status,200);
+    const replay=await(await api(route,input,cookie)).json();assert.deepEqual(replay.receipt,saved.receipt);assert.equal(replay.comment.body,'Current text can change; the submission fingerprint stays original.');
+    const independent=await api(route,input,otherCookie);assert.equal(independent.status,200);assert.notEqual((await independent.json()).comment.id,saved.comment.id);
+    assert.equal((await api('/api/posts/owned',{id:post.id,revision:0},cookie,'DELETE')).status,200);
+    const unavailable=await(await api(route,input,cookie)).json();assert.deepEqual(unavailable,{receipt:saved.receipt,comment:null});
+    assert.deepEqual(await(await api(lookup(input.requestId),undefined,cookie)).json(),unavailable);
+    assert.deepEqual(await f.db.prepare('SELECT id FROM comments WHERE resource=?').all(resource),[]);
+    assert.equal((await api(route,{...input,requestId:randomUUID()},cookie)).status,404);
+    const history=await(await api(`${route}?${new URLSearchParams({resource})}`,undefined,cookie)).json();assert.deepEqual(history,{submissions:[unavailable],nextCursor:null});
+    const legacyResource='lesson/legacy-no-receipts';
+    for(let i=0;i<2;i++)assert.equal((await api('/api/comments',{resource:legacyResource,body:'Legacy no-key behavior remains compatible.'},cookie)).status,201);
+    assert.equal(Number((await f.db.prepare('SELECT COUNT(*) AS count FROM comments WHERE resource=?').get(legacyResource))?.count),2);
+    assert.deepEqual(await(await api(`${route}?${new URLSearchParams({resource:legacyResource})}`,undefined,cookie)).json(),{submissions:[],nextCursor:null});
+  });
+  test(`${dialect}: private comment submission histories are bounded, viewer/resource-bound and survive restart with minimal references`,async t=>{
+    const f=await fixture(t,dialect),config=loadConfig({NODE_ENV:'production',DATA_DIR:f.directory,...(f.url?{DATABASE_URL:f.url}:{}),PORT:'0',LOG_REQUESTS:'false'}),server=await startServer(config);t.after(()=>server.close());
+    const login=await fetch(`${server.url}/api/auth/demo`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}),cookie=login.headers.getSetCookie().map(value=>value.split(';')[0]).join('; '),owner=(await login.json()).user.id;
+    const headers={Cookie:cookie,'Content-Type':'application/json'},resource='lesson/receipt-history',keys:string[]=[];
+    for(let i=0;i<23;i++){
+      const requestId=randomUUID();keys.push(requestId);
+      const response=await fetch(`${server.url}/api/comments/submissions`,{method:'POST',headers,body:JSON.stringify({requestId,resource,body:`Original history input ${i}.`})});assert.equal(response.status,200);
+    }
+    const first=await(await fetch(`${server.url}/api/comments/submissions?${new URLSearchParams({resource})}`,{headers})).json();
+    assert.equal(first.submissions.length,10);assert.ok(first.nextCursor);assert.ok(!Buffer.from(first.nextCursor,'base64url').toString('utf8').includes(owner));
+    const ids=first.submissions.map((value:{receipt:{requestId:string}})=>value.receipt.requestId);let cursor=first.nextCursor,pages=1;
+    while(cursor){assert.ok(pages++<5);const page=await(await fetch(`${server.url}/api/comments/submissions?${new URLSearchParams({resource,cursor})}`,{headers})).json();assert.ok(page.submissions.length<=10);ids.push(...page.submissions.map((value:{receipt:{requestId:string}})=>value.receipt.requestId));cursor=page.nextCursor;}
+    assert.deepEqual([...ids].sort(),keys.sort());assert.equal(new Set(ids).size,23);
+    const invalidQueries:Record<string,string>[]=[{resource:'lesson/other',cursor:first.nextCursor},{resource,cursor:'%'},{resource,owner},{resource,limit:'100'}];
+    for(const query of invalidQueries)
+      assert.equal((await fetch(`${server.url}/api/comments/submissions?${new URLSearchParams(query)}`,{headers})).status,400);
+    await server.close();const restarted=await startServer(config);t.after(()=>restarted.close());
+    const retained=await fetch(`${restarted.url}/api/comments/submissions/receipt?${new URLSearchParams({requestId:keys[0]})}`,{headers});assert.equal(retained.status,200);assert.equal((await retained.json()).receipt.requestId,keys[0]);
+    await f.db.prepare('DELETE FROM sessions WHERE user_id=?').run(owner);
+    for(const route of [`/api/comments/submissions?${new URLSearchParams({resource})}`,`/api/comments/submissions/receipt?${new URLSearchParams({requestId:keys[0]})}`])
+      assert.equal((await fetch(`${restarted.url}${route}`,{headers})).status,401);
+  });
   test(`${dialect}: discussion pages cross the legacy ceiling with exact scoped cursors, bounded queries and minimized ownership`,async t=>{
     const f=await fixture(t,dialect),server=await startServer(loadConfig({NODE_ENV:'production',DATA_DIR:f.directory,...(f.url?{DATABASE_URL:f.url}:{}),PORT:'0',LOG_REQUESTS:'false'}));t.after(()=>server.close());
     const api=async(route:string,body?:unknown,cookie='')=>fetch(`${server.url}${route}`,{method:body===undefined?'GET':'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});

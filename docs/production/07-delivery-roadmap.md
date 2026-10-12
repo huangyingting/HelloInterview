@@ -24,14 +24,14 @@ production feature. An open package can therefore contain a closed checkpoint.
 | W08 - Authentic payment lifecycle | [#9](https://github.com/huangyingting/HelloInterview/issues/9) | [#22 - Sandbox billing/subscription lifecycle](https://github.com/huangyingting/HelloInterview/issues/22) |
 | W09 - Approved AI dispatch | [#10](https://github.com/huangyingting/HelloInterview/issues/10) | [#23 - Usage/native-intent/provenance foundation](https://github.com/huangyingting/HelloInterview/issues/23) |
 | W10 - Staff/support/privacy | [#11](https://github.com/huangyingting/HelloInterview/issues/11) | [#24 - Private member-support receipts](https://github.com/huangyingting/HelloInterview/issues/24) |
-| W11 - Community lifecycle/moderation | [#12](https://github.com/huangyingting/HelloInterview/issues/12) | [#25 - Reads/local ownership/pagination](https://github.com/huangyingting/HelloInterview/issues/25) |
+| W11 - Community lifecycle/moderation | [#12](https://github.com/huangyingting/HelloInterview/issues/12) | [#25 - Reads/local ownership/pagination](https://github.com/huangyingting/HelloInterview/issues/25); [#27 - Comment submission receipts](https://github.com/huangyingting/HelloInterview/issues/27) |
 | W12 - Reviewed/accessible product | [#13](https://github.com/huangyingting/HelloInterview/issues/13) | [#26 - Deferred/keyboard/address recovery](https://github.com/huangyingting/HelloInterview/issues/26) |
 | W13 - Integrated acceptance/launch | [#14](https://github.com/huangyingting/HelloInterview/issues/14) | Pending |
 
-The unpublished comment-submission receipt slice remains open in
-[#27](https://github.com/huangyingting/HelloInterview/issues/27), under W11.
-It is not included in the migration-24 community checkpoint. Finish this
-already-started slice, then prioritize the larger staff/privacy milestone
+The migration-25 comment-submission receipt checkpoint is tracked in
+[#27](https://github.com/huangyingting/HelloInterview/issues/27), under W11; it
+does not retroactively change the migration-24 checkpoint. After this bounded
+slice, prioritize the larger staff/privacy milestone
 [#11](https://github.com/huangyingting/HelloInterview/issues/11) and integrated
 acceptance [#14](https://github.com/huangyingting/HelloInterview/issues/14).
 Provider, commercial, customer-migration and public-launch approvals remain
@@ -52,7 +52,7 @@ explicit gates; issue creation or closure cannot supply them.
 | W08 | In progress; sandbox notifications, owned Checkout/recheckout, canonical funding/ledger, gated service authority, owned stop/resume cycles and restricted Portal checkpoints implemented | Pinned official Stripe SDK/API, signed durable evidence, stable owned financial keys, complete funding/adjustment traces, default-off calendar grants/scoped revocations, acknowledged exact-target renewal/recheckout with retained paid history and fresh restricted card-method/invoice sessions with URL-free audit; authentic provider evidence, commercial/grace policy, history partitioning/paid deletion and operated lifecycle remain |
 | W09 | In progress; internal usage-ledger, native-intent and saved-input provenance checkpoints implemented | Explicit immutable sandbox manifests, atomic replica unit/cost/native/private-input reservations, pinned operation/job/generation, owned source/model/prompt hashes, exact UTF-8 bounds, transactional raw-payload retirement, overlap-safe original-calendar windows, unknown holds and coupled cancellation/SQL settlement; actual managed provider dispatch, consent/UX, model/token/cost policy, operating reconciliation and approval remain |
 | W10 | In progress; owned member-support receipts checkpoint implemented | Private paginated request history, immutable replica-safe retry keys, current-session fences and shared write admission; truthful saved/not-delivered UI; staff MFA/RBAC/audit, operated helpdesk/email, comprehensive export/deletion and retention approvals remain |
-| W11 | In progress; private-safe reads, opaque addresses and local post/comment owner checkpoints implemented | Minimized DTOs with server ownership, bounded feeds/search, exact legacy-ID detail/discussions, local desired states and current-session/revision-fenced original-post edits/deletion and comment text edits; managed writing remains denied, comment deletion/retention, ordered/durable intents, moderation/report/appeal and publication gates remain |
+| W11 | In progress; private-safe reads, opaque addresses, local owner and comment-receipt checkpoints implemented | Minimized DTOs with server ownership, bounded feeds/search/discussions, exact legacy-ID routing, current-session/revision-fenced original-post/comment edits and atomic actor/key-bound comment creation recovery with bounded private history; managed writing remains denied, comment deletion/retention, broader ordered intents, moderation/report/appeal and publication gates remain |
 | W12 | In progress; deferred-screen, keyboard and malformed-address checkpoints implemented | Separated discovery graphs, fixed cold JavaScript budgets, explicit loading/failure/recovery, semantic ready-screen/skip focus, keyboard-safe mobile navigation, rapid Search and invalid-address recovery; reviewed offers, broad accessibility and operated serving remain |
 | W13 | Pending | Integrated provider lifecycle, load/recovery/security evidence and operating/launch gates |
 

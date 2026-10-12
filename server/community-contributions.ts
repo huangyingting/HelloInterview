@@ -17,6 +17,7 @@ const commentDto = z.strictObject({
   id: z.string(), resource: z.string(), author: z.string(), body: z.string(),
   createdAt: z.string(), parentId: z.string().nullable(), isMine: z.union([z.literal(0),z.literal(1)]).transform(value => value === 1),
 });
+export { commentProjection, commentDto };
 const commentPageQuery = z.strictObject({
   resource: z.string().max(205), limit: z.enum(['25','50']).transform(Number).default(50),
   cursor: z.string().max(4096).optional(),

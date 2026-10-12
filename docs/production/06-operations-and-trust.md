@@ -78,6 +78,14 @@ minimized query/viewer-bound cursors and draft-safe concurrent creation/editing.
 Loaded-row search, not full-history search or frozen export, is described
 explicitly. Managed writing and the publication/privacy operating gates remain.
 
+**Implemented local comment-submission receipt checkpoint (W11):** local
+creation can atomically bind one actor/key/normalized input and recover a lost
+response through explicit check or same-key retry. The
+[receipt runbook](34-owned-comment-submission-receipts.md) records migration 25,
+minimal immutable references without original comment text, bounded private
+history, actual-session fences and non-resurrection after removal. This is not
+retention approval, privacy export/deletion, moderation or managed writing.
+
 ## Operating model
 
 Name accountable people before launch, even if one person initially fills

@@ -736,6 +736,24 @@ export const migrations = [{
   version: 24,
   name: 'bounded-community-discussion-pages',
   sql: `CREATE INDEX comments_resource_cursor ON comments(resource,created_at,id);`,
+}, {
+  version:25,
+  name:'owned-local-comment-submission-receipts',
+  sql:`
+    CREATE TABLE community_comment_submissions (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      request_id TEXT NOT NULL,comment_id TEXT NOT NULL UNIQUE,resource TEXT NOT NULL,
+      input_hash TEXT NOT NULL CHECK(input_hash ~ '^[a-f0-9]{64}$'),created_at TEXT NOT NULL,
+      PRIMARY KEY(user_id,request_id)
+    );
+    CREATE INDEX community_comment_submissions_owner ON community_comment_submissions(user_id,created_at DESC,request_id DESC);
+    CREATE INDEX community_comment_submissions_resource ON community_comment_submissions(user_id,resource,created_at DESC,request_id DESC);
+    CREATE FUNCTION immutable_community_comment_submission() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+      BEGIN RAISE EXCEPTION 'Comment submission receipts are immutable.'; END;
+    $$;
+    CREATE TRIGGER immutable_community_comment_submission BEFORE UPDATE ON community_comment_submissions
+      FOR EACH ROW EXECUTE FUNCTION immutable_community_comment_submission();
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

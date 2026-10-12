@@ -1,4 +1,4 @@
-import { Bookmark, Check, MessageSquare, Send, X } from 'lucide-react';
+import { Bookmark, Check, MessageSquare } from 'lucide-react';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { request, useStudio } from './store';
 import type { Comment, CommunityCommentPage, ContentSection, SourceReference, UserState } from '../shared/types';
@@ -35,6 +35,12 @@ export function BookmarkButton({ resource }: { resource: string }) {
   return <button className={`icon-button ${saved ? 'active' : ''}`} aria-label={saved ? 'Remove bookmark' : 'Bookmark lesson'} aria-pressed={saved} disabled={pending} onClick={() => act(async () => setState(await request<UserState>('/api/progress', { key: resource, field: 'bookmarks', enabled: !saved })))}><Bookmark size={19} fill={saved ? 'currentColor' : 'none'} /></button>;
 }
 const CommentOwner = lazy(() => import('./pages/CommunityOwner').then(module => ({ default: module.CommentOwner })));
+const CommentComposer = lazy(() => import('./pages/CommunitySubmissions').then(module => ({ default: module.CommentComposer })));
+const SubmissionHistory = lazy(() => import('./pages/CommunitySubmissions').then(module => ({ default: module.CommentSubmissionHistory })));
+export function CommentSubmissionHistory({resource}:{resource?:string}) {
+  const [opened,setOpened]=useState(false);
+  return opened?<Suspense fallback={<p role="status">Loading submission history controls...</p>}><SubmissionHistory resource={resource}/></Suspense>:<button className="text-button" onClick={()=>setOpened(true)}>View comment submission history</button>;
+}
 function CommentTools({ comment, onSaved }: { comment: Comment; onSaved: (comment: Comment) => void }) {
   const [editing, setEditing] = useState(false);
   return editing ? <Suspense fallback={<p role="status">Loading your comment editor...</p>}><CommentOwner comment={comment} onSaved={onSaved} /></Suspense>
@@ -49,9 +55,9 @@ function appendComments(current: Comment[], incoming: Comment[]) {
   })];
 }
 export function Comments({ resource }: { resource: string }) {
-  const { data, act, notify, pending } = useStudio();
+  const { data } = useStudio();
   const scope = JSON.stringify([data.user?.id ?? null,resource]);
-  const [loaded, setLoaded] = useState<{ scope: string; comments?: Comment[]; nextCursor?: string | null; error?: string; loadingMore?: boolean; moreError?: string }>(), [body, setBody] = useState(''), [filter, setFilter] = useState(''), [reply, setReply] = useState<Comment | null>(null);
+  const [loaded, setLoaded] = useState<{ scope: string; comments?: Comment[]; nextCursor?: string | null; error?: string; loadingMore?: boolean; moreError?: string }>(), [filter, setFilter] = useState(''), [reply, setReply] = useState<Comment | null>(null);
   const reader = useRef<{ controller: AbortController; pending: boolean } | null>(null);
   const comments = loaded?.scope === scope ? loaded.comments ?? [] : [];
   const error = loaded?.scope === scope ? loaded.error ?? '' : '';
@@ -73,7 +79,7 @@ export function Comments({ resource }: { resource: string }) {
   useEffect(() => {
     const controller = new AbortController();
     reader.current = {controller,pending:false};
-    setBody(''); setReply(null); setFilter('');
+    setReply(null); setFilter('');
     void readFirst(controller);
     return () => controller.abort();
   }, [scope]);
@@ -92,7 +98,7 @@ export function Comments({ resource }: { resource: string }) {
   return <section className="comments" id="comments"><div className="section-heading"><h2><MessageSquare size={20} /> Discussion <span className="muted">{comments.length} loaded</span></h2>{comments.length > 3 && <input aria-label="Search comments" placeholder="Search loaded comments" value={filter} onChange={e => setFilter(e.target.value)} />}</div>
     {error && <><p role="alert" className="error-text">{error}</p><button className="button secondary small" onClick={()=>{const read=reader.current;if(read&&!read.controller.signal.aborted)void readFirst(read.controller);}}>Retry discussion</button></>}
     {reading && <p role="status">Loading the discussion...</p>}
-    {data.capabilities.community==='read-only' ? <p className="local-notice">Discussion is read-only until production moderation is enabled.</p> : data.user ? <form onSubmit={e => { e.preventDefault(); const read=reader.current; void act(async () => { const saved=await request<{id:string;comment:Comment}>('/api/comments', { resource, body, parentId: reply?.id }); if (!read || read.controller.signal.aborted) return; setLoaded(current=>current?.scope===scope&&current.comments?{...current,comments:appendComments(current.comments,[saved.comment])}:current); setBody(current=>current===body?'':current); setReply(current=>current?.id===reply?.id?null:current); notify('Comment added to the local discussion.'); }); }}>{reply && <div className="reply-label">Replying to {reply.author}<button type="button" className="icon-button" aria-label="Cancel reply" onClick={() => setReply(null)}><X size={14} /></button></div>}<textarea aria-label="Add a comment" placeholder="Share a question or an insight…" minLength={2} maxLength={3000} required value={body} onChange={e => setBody(e.target.value)} /><button className="button small" disabled={pending||reading||!!error}><Send size={15} /> Post comment</button></form> : <AuthPrompt message="Sign in to join this local discussion." />}
+    {data.capabilities.community==='read-only' ? <p className="local-notice">Discussion is read-only until production moderation is enabled.</p> : data.user ? <><Suspense fallback={<p role="status">Loading comment composer...</p>}><CommentComposer key={scope} resource={resource} disabled={reading||!!error} reply={reply} onCancelReply={()=>setReply(null)} onCreated={(comment,parentId)=>{setLoaded(current=>current?.scope===scope&&current.comments?{...current,comments:appendComments(current.comments,[comment])}:current);setReply(current=>current?.id===parentId?null:current);}}/></Suspense><CommentSubmissionHistory key={scope} resource={resource}/></> : <AuthPrompt message="Sign in to join this local discussion." />}
     {comments.map(comment => <article className={`comment ${comment.parentId ? 'reply' : ''}`} hidden={!`${comment.author} ${comment.body}`.toLowerCase().includes(filter.toLowerCase())} key={`${scope}:${comment.id}`}><span className="avatar small">{comment.author[0]}</span><div><strong>{comment.author}</strong><time>{new Date(comment.createdAt).toLocaleDateString()}</time><p>{comment.body}</p>{data.capabilities.community!=='read-only'&&<button className="text-button" onClick={() => setReply(comment)}>Reply</button>}{data.user&&comment.isMine&&data.capabilities.community!=='read-only'&&<CommentTools comment={comment} onSaved={saved=>setLoaded(current=>current?.scope===scope&&current.comments?{...current,comments:current.comments.map(row=>row.id===saved.id?saved:row)}:current)}/>}</div></article>)}
     {filter && !comments.some(comment=>`${comment.author} ${comment.body}`.toLowerCase().includes(filter.toLowerCase())) && <p className="muted">No loaded comments match this search.</p>}
     {pageState?.moreError && <p role="alert" className="error-text">Additional comments were not loaded: {pageState.moreError} Your loaded discussion and drafts are unchanged.</p>}

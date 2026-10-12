@@ -205,7 +205,7 @@ test('discussion pages expose older authors beyond 500 without losing drafts, du
   let pageHeld=false;
   // Keep both interception patterns installed while their responses are held.
   await page.route('**/api/comments/page?*',async route=>{if(pageHeld){await route.continue();return;}pageHeld=true;const response=await route.fetch();assert.equal(response.status(),200);assert.equal((await response.json()).comments.length,50);readyPage();await heldPage;await route.fulfill({response});});
-  await page.route('**/api/comments',async route=>{assert.equal(route.request().method(),'POST');const response=await route.fetch();assert.equal(response.status(),201);readyCreation();await heldCreation;await route.fulfill({response});});
+  await page.route('**/api/comments/submissions',async route=>{assert.equal(route.request().method(),'POST');const response=await route.fetch();assert.equal(response.status(),200);readyCreation();await heldCreation;await route.fulfill({response});});
   try{
     await page.getByRole('button',{name:'Load more comments',exact:true}).click();await pageReady;
     await expect(page.getByRole('button',{name:'Loading more comments...',exact:true})).toBeDisabled();
@@ -269,7 +269,7 @@ test('superseded discussion pages and admitted creation responses cannot overwri
     if(new URL(route.request().url()).searchParams.get('resource')!=='post/old-paged-discussion'){await route.continue();return;}
     const response=await route.fetch();assert.equal(response.status(),200);readyPage();await heldPage;await route.fulfill({response});
   });
-  await page.route('**/api/comments',async route=>{const response=await route.fetch();assert.equal(response.status(),201);readyCreation();await heldCreation;await route.fulfill({response});finishedCreation();},{times:1});
+  await page.route('**/api/comments/submissions',async route=>{const response=await route.fetch();assert.equal(response.status(),200);readyCreation();await heldCreation;await route.fulfill({response});finishedCreation();},{times:1});
   try{
     await page.getByRole('button',{name:'Load more comments',exact:true}).click();await pageReady;
     await page.getByLabel('Add a comment').fill('Creation belongs only to the old discussion.');
@@ -286,6 +286,119 @@ test('superseded discussion pages and admitted creation responses cannot overwri
     await expect(page.getByLabel('Add a comment')).toHaveValue('The new discussion draft must not be cleared.');
     assert.equal((await db.prepare('SELECT COUNT(*) AS count FROM comments WHERE resource=?').get('post/old-paged-discussion'))?.count,52);
   }finally{releasePage();releaseCreation();}
+});
+
+test('lost comment responses recover by checking or retrying the frozen key without clearing newer text, duplication or resurrection',async t=>{
+  const f=await fixture(t),{page}=f,db=localConnection(f.directory);t.after(()=>db.close());
+  const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);
+  const owner=(await login.json()).user.id,post='receipt-recovery-parent',resource=`post/${post}`;
+  await db.prepare('INSERT INTO posts VALUES(?,?,?,?,?,?,?,?,?,?,?,0)').run(post,'questions','A receipt recovery fixture','A complete original local question for lost comment responses.','Fixture Company','system-design','Senior','Global','Anonymous',owner,'2026-01-01T00:00:00.000Z');
+  await page.goto(`${f.url}${communityPostPath({kind:'questions',id:post})}`);
+  await expect(page.getByText('Start a thoughtful conversation. No comments yet.',{exact:true})).toBeVisible();
+  const composer=page.getByLabel('Add a comment'),postButton=page.getByRole('button',{name:'Post comment',exact:true});
+  async function loseCommittedResponse() {
+    await page.route('**/api/comments/submissions',async route=>{
+      if(route.request().method()!=='POST'){await route.continue();return;}
+      const response=await route.fetch();assert.equal(response.status(),200);await route.abort('failed');
+    },{times:1});
+  }
+  await loseCommittedResponse();
+  await composer.fill('A committed comment whose first response is lost.');
+  await postButton.click();
+  const recovery=page.getByRole('region',{name:'Comment submission recovery'});
+  await expect(recovery.getByRole('alert')).toContainText('Submission was not confirmed');
+  const firstReference=(await recovery.locator('code').first().textContent())!;assert.match(firstReference,/^[a-f0-9-]{36}$/);
+  assert.equal(Number((await db.prepare('SELECT COUNT(*) AS count FROM comments WHERE resource=?').get(resource))?.count),1);
+  await composer.fill('A newer independent draft must survive receipt checking.');
+  await recovery.getByRole('button',{name:'Check comment submission',exact:true}).click();
+  await expect(page.getByText('A committed comment whose first response is lost.',{exact:true})).toBeVisible();
+  await expect(composer).toHaveValue('A newer independent draft must survive receipt checking.');
+  await expect(recovery).toHaveCount(0);
+  assert.equal(Number((await db.prepare('SELECT COUNT(*) AS count FROM comments WHERE resource=?').get(resource))?.count),1);
+
+  await loseCommittedResponse();
+  await composer.fill('A second committed comment recovered by same-key retry.');
+  await postButton.click();
+  await expect(recovery.getByRole('alert')).toContainText('Submission was not confirmed');
+  const secondReference=(await recovery.locator('code').first().textContent())!;assert.notEqual(secondReference,firstReference);
+  await recovery.getByRole('button',{name:'Retry original comment submission',exact:true}).click();
+  await expect(page.getByText('A second committed comment recovered by same-key retry.',{exact:true})).toBeVisible();
+  assert.equal(Number((await db.prepare('SELECT COUNT(*) AS count FROM comments WHERE resource=?').get(resource))?.count),2);
+  assert.equal(Number((await db.prepare('SELECT COUNT(*) AS count FROM community_comment_submissions WHERE user_id=?').get(owner))?.count),2);
+
+  await loseCommittedResponse();
+  await composer.fill('A removed acknowledged comment must never be recreated.');
+  await postButton.click();
+  await expect(recovery.getByRole('alert')).toContainText('Submission was not confirmed');
+  const removedReference=(await recovery.locator('code').first().textContent())!;
+  const removed=await db.prepare('SELECT comment_id FROM community_comment_submissions WHERE request_id=?').get(removedReference);assert.equal(typeof removed?.comment_id,'string');
+  const removedId=String(removed!.comment_id);
+  await db.prepare('DELETE FROM comments WHERE id=?').run(removedId);
+  await recovery.getByRole('button',{name:'Check comment submission',exact:true}).click();
+  await expect(recovery.getByText('Created earlier; the comment is now unavailable. Retrying will not recreate it.',{exact:true})).toBeVisible();
+  await recovery.getByRole('button',{name:'Check comment submission',exact:true}).click();
+  assert.equal(await db.prepare('SELECT id FROM comments WHERE id=?').get(removedId),undefined);
+  await expect(recovery.getByRole('button',{name:'Start a separate comment submission',exact:true})).toBeDisabled();
+  await recovery.getByLabel('I understand a new submission does not cancel this request and could create an additional comment.').check();
+  await recovery.getByRole('button',{name:'Start a separate comment submission',exact:true}).click();
+  await expect(recovery).toHaveCount(0);
+  await expect(composer).toHaveValue('A removed acknowledged comment must never be recreated.');
+  await composer.fill('A deliberate separate comment after acknowledging the risk.');
+  await postButton.click();
+  await expect(page.getByText('A deliberate separate comment after acknowledging the risk.',{exact:true})).toBeVisible();
+  assert.equal(Number((await db.prepare('SELECT COUNT(*) AS count FROM comments WHERE resource=?').get(resource))?.count),3);
+  await page.setViewportSize({width:390,height:844});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('private comment submission history is opt-in, bounded, retryable and scoped across discussion, account and sign-out',async t=>{
+  const f=await fixture(t),{page}=f,db=localConnection(f.directory);t.after(()=>db.close());
+  const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);
+  const owner=(await login.json()).user.id,post='receipt-history-parent',resource=`post/${post}`,otherResource='lesson/receipt-history-other';
+  await db.prepare('INSERT INTO posts VALUES(?,?,?,?,?,?,?,?,?,?,?,0)').run(post,'questions','A private receipt history fixture','A complete original local question for private receipt history.','Fixture Company','system-design','Senior','Global','Anonymous',owner,'2026-01-01T00:00:00.000Z');
+  const created:string[]=[],references:string[]=[];
+  for(let index=0;index<12;index++){
+    const requestId=crypto.randomUUID(),response=await page.request.post(`${f.url}/api/comments/submissions`,{data:{requestId,resource,body:`Private current-resource submission ${index}.`}});
+    assert.equal(response.status(),200);created.push((await response.json()).receipt.commentId);references.push(requestId);
+  }
+  const other=await page.request.post(`${f.url}/api/comments/submissions`,{data:{requestId:crypto.randomUUID(),resource:otherResource,body:'A private account-wide submission from another resource.'}});assert.equal(other.status(),200);
+  await db.prepare('DELETE FROM comments WHERE id=?').run(created[0]);
+  await page.goto(`${f.url}${communityPostPath({kind:'questions',id:post})}`);
+  await expect(page.getByRole('heading',{name:'Your local comment submission history',exact:true})).toHaveCount(0);
+  await page.route('**/api/comments/submissions?*',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'Synthetic private history failure.'})}),{times:1});
+  await page.getByRole('button',{name:'View comment submission history',exact:true}).click();
+  const history=page.locator('.community-submission-history');
+  await expect(history.getByRole('alert')).toContainText('Synthetic private history failure.');
+  await history.getByRole('button',{name:'Retry submission history',exact:true}).click();
+  await expect(history.locator('article')).toHaveCount(10);
+  await expect(history).not.toContainText(otherResource);
+  await history.getByRole('button',{name:'Load more comment submissions',exact:true}).click();
+  await expect(history.locator('article')).toHaveCount(12);
+  await expect(history.getByText('Created earlier; now unavailable. No recreation occurred.',{exact:true})).toHaveCount(1);
+  await history.getByRole('button',{name:'My comment submissions',exact:true}).click();
+  await expect(history.getByRole('heading',{name:'Your local comment submission history',exact:true})).toHaveCount(0);
+  await history.getByRole('button',{name:'My comment submissions',exact:true}).click();
+  await expect(history.locator('article')).toHaveCount(10);
+
+  await page.goto(`${f.url}/account`);
+  await page.getByRole('button',{name:'View comment submission history',exact:true}).click();
+  const accountHistory=page.locator('.community-submission-history');
+  await expect(accountHistory.locator('article')).toHaveCount(10);
+  await expect(accountHistory.locator('article').filter({hasText:otherResource})).toBeVisible();
+  await page.setViewportSize({width:390,height:844});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
+  await page.setViewportSize({width:1280,height:900});
+  await page.getByRole('button',{name:'Sign out',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Great interviews start with a little practice.',exact:true})).toBeVisible();
+  await page.getByRole('link',{name:'Your Studio',exact:true}).click();
+  await page.getByRole('button',{name:'Try the local demo',exact:true}).click();
+  await page.locator('.sidebar-profile').click();
+  await page.getByRole('button',{name:'View comment submission history',exact:true}).click();
+  const otherActorHistory=page.locator('.community-submission-history');
+  await expect(otherActorHistory.getByText('No recorded submissions in this view. Legacy comments have no fabricated receipts.',{exact:true})).toBeVisible();
+  await expect(otherActorHistory).not.toContainText(references[0]);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
 test('local comment editing preserves conflict and lost-response drafts through closing, filtering and explicit saved-version adoption',async t=>{

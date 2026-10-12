@@ -100,7 +100,7 @@ function ContributionOwner(props: PostProps | CommentProps) {
       <button className="button secondary small" disabled={pending || loading || !saved && !error} onClick={() => void check()}>Check saved version</button>
       {current && <article className="panel"><h3>Current saved version</h3><p className="fine-print">Saved revision {current.revision}. Checking did not replace your draft.</p>{props.post && <strong>{values(current).title}</strong>}<p className="post-body">{values(current).body}</p><button className="button secondary small" disabled={pending} onClick={() => { install(current); publish(current); }}>Replace my draft with saved version</button></article>}
       {saved && props.post && <div role="group" aria-label="Delete original local post">
-        <h3>Delete this local contribution</h3><p>This permanently removes this post, its exact local discussion, votes and follows. It also discards your unsaved edit. This is not account or privacy deletion.</p>
+        <h3>Delete this local contribution</h3><p>This permanently removes this post, its exact local discussion, votes and follows. Minimal private submission references remain to prevent duplicate retries; they retain no original comment text. It also discards your unsaved edit. This is not account or privacy deletion.</p>
         <label className="checkbox-label"><input type="checkbox" checked={confirmed} disabled={pending} onChange={event => setConfirmed(event.target.checked)} /> I understand this deletes my post, its discussion, votes and follows.</label>
         <button className="button secondary small" disabled={pending || !confirmed} onClick={() => void remove()}><Trash2 size={15} /> Delete my local post</button>
       </div>}

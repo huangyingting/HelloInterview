@@ -213,7 +213,12 @@ replaces the shared UI's 500-comment ceiling with indexed, viewer/resource-bound
 pages and explicit load-more/retry controls. Open drafts survive paging and
 concurrent edits/creation; new comments appear immediately without duplication.
 Search explicitly filters loaded rows, not the complete history.
-Controlled PostgreSQL deployments must apply **migration 24 and maintained queue
+The [comment-submission receipt checkpoint](docs/production/34-owned-comment-submission-receipts.md)
+adds explicit local lost-response check/same-key retry, atomic duplicate-safe
+creation and bounded private history without retaining original text in the
+receipt ledger. Removed acknowledged comments are never recreated. Managed
+writing, retention approval and comprehensive privacy workflows remain open.
+Controlled PostgreSQL deployments must apply **migration 25 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 

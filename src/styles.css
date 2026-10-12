@@ -594,6 +594,7 @@ button:hover,a:hover { color: var(--accent); }
 .local-notice { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--muted); padding: 12px 15px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); margin-bottom: 22px; }
 .post-editor { margin-bottom: 25px; }
 .post-editor textarea { min-height: 170px; font-size: 12px; }
+.post-editor code, .community-submission-history code, .community-submission-history .post-body { overflow-wrap: anywhere; word-break: break-word; }
 .community-search { margin-top: 20px; }
 .community-filters { display: grid; grid-template-columns: repeat(5,1fr); gap: 14px; }
 .community-filters label { font-size: 10px; }

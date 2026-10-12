@@ -7,8 +7,10 @@ author editing remains available; managed writing remains denied.
 
 ## Deployment and preservation
 
-Apply controlled **migration 24 and maintained queue migration** before starting
-this release. Published migrations 1-23 retain their names, SQL and checksums.
+Migration 24 introduced this checkpoint. The current release requires controlled
+**migration 25 and maintained queue migration**, including
+[owned comment submission receipts](34-owned-comment-submission-receipts.md),
+before starting. Published migrations 1-24 retain their names, SQL and checksums.
 Migration 24 adds `comments_resource_cursor(resource,created_at,id)`; SQLite
 creates the equivalent index during its existing schema initialization.
 No comment body, author, date, resource, parent, existing positive revision,

@@ -349,6 +349,12 @@ export interface Comment {
 }
 export interface OwnedCommunityComment { comment: Comment; revision: number }
 export interface CommunityCommentPage { comments: Comment[]; limit: number; nextCursor: string | null }
+export interface CommunityCommentSubmissionInput { requestId: string; resource: string; body: string; parentId: string | null }
+export interface CommunityCommentSubmission {
+  receipt: { requestId: string; commentId: string; resource: string; createdAt: string; status: 'created' };
+  comment: Comment | null;
+}
+export interface CommunityCommentSubmissionHistory { submissions: CommunityCommentSubmission[]; nextCursor: string | null }
 export interface Bootstrap {
   csrf?: string;
   user: User | null;

@@ -8,9 +8,10 @@ Managed discussions remain read-only.
 ## Deployment and data preservation
 
 Migration 23 introduced this checkpoint; the current release requires
-**migration 24 and maintained queue migration**, including
-[bounded discussion pages](33-bounded-discussion-pages.md), before starting.
-Migrations 1-23 retain their published SQL, names and checksums.
+**migration 25 and maintained queue migration**, including
+[bounded discussion pages](33-bounded-discussion-pages.md) and
+[owned comment submission receipts](34-owned-comment-submission-receipts.md),
+before starting. Migrations 1-24 retain their published SQL, names and checksums.
 The exact-version startup check still rejects incompatible PostgreSQL history;
 it never migrates on a request. Follow the quiesced promotion/forward-fix/verified
 restore boundary in [runbook 31](31-owned-community-contributions.md), not a

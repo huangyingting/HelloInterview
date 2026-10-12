@@ -29,6 +29,7 @@ import { SupportRequests, supportContactSchema } from './support';
 import { CommunityReads, communityActionSchema, communityIdentifier, communityDiscussionResource as commentResource } from './community';
 import { communityKinds } from '../shared/community-routes';
 import { CommunityContributions } from './community-contributions';
+import { CommunitySubmissions } from './community-submissions';
 function localSessionHash(req: express.Request) {
   const match = req.headers.cookie?.split(';').map(value => value.trim()).find(value => value.startsWith('studio_session='));
   const token = match?.slice('studio_session='.length);
@@ -73,6 +74,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   const content = new ContentRepository(db);
   const community = new CommunityReads(db);
   const contributions = new CommunityContributions(db);
+  const submissions = new CommunitySubmissions(db);
   const communityPaths = ['/api/posts', '/api/community/post', '/api/comments'];
   if (config.identity && !config.publicOrigin) throw new Error('Managed identity requires a canonical application origin.');
   if (config.identity?.lifecycle && !lifecycle) throw new Error('Configured identity lifecycle must be opened before serving requests.');
@@ -205,7 +207,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     app.use('/api', async (req, res, next) => {
       if (!['GET', 'HEAD'].includes(req.method)) await identity.checkMutation(req);
       const user = await identity.user(req);
-      const publicRead = ['GET', 'HEAD'].includes(req.method) && !/^\/api\/(?:posts|comments)\/owned\/?$/.test(req.originalUrl.split('?')[0]) && ['/api/content/', ...communityPaths].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix));
+      const publicRead = ['GET', 'HEAD'].includes(req.method) && !/^\/api\/(?:(?:posts|comments)\/owned\/?$|comments\/submissions(?:\/|$))/.test(req.originalUrl.split('?')[0]) && ['/api/content/', ...communityPaths].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix));
       const accountRoute = ['/api/bootstrap', '/api/entitlements', '/api/logout', '/api/support', '/api/support/requests', '/api/profile', '/api/ready'].includes(req.originalUrl.split('?')[0]) || req.originalUrl.startsWith('/api/identity/');
       if (user?.identity?.status !== undefined && user.identity.status !== 'active' && !publicRead && !accountRoute) throw new HttpError(403, 'This account needs verified contact information or account review. Open Account or contact support.');
       if (['/api/auth/', '/api/plan', '/api/gift', '/api/profile/password'].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix))) throw new HttpError(404, 'Local authentication, demo commerce and local passwords are disabled for managed identity.');
@@ -949,6 +951,18 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   app.get('/api/comments/page', async (req, res) => {
     const user = await currentUser(req);
     res.json(await contributions.commentPage(req.query,user?.id ?? null));
+  });
+  app.post('/api/comments/submissions', async (req,res)=>{
+    const user=await requireLocalContributor(req);
+    res.json(await submissions.create(user,req.body,()=>assertLocalCommunitySession(req,user)));
+  });
+  app.get('/api/comments/submissions/receipt', async (req,res)=>{
+    const user=await requireLocalContributor(req);
+    res.json(await submissions.read(user.id,req.query,()=>assertLocalCommunitySession(req,user)));
+  });
+  app.get('/api/comments/submissions', async (req,res)=>{
+    const user=await requireLocalContributor(req);
+    res.json(await submissions.history(user.id,req.query,()=>assertLocalCommunitySession(req,user)));
   });
   app.get('/api/comments/owned', async (req, res) => {
     const user = await requireLocalContributor(req);
