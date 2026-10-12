@@ -33,6 +33,10 @@ export async function openBillingFixture(t: TestContext) {
   assert.ok(f.billing?.checkout); assert.ok(f.config.billing);
   const customers = new Map<string, Record<string, unknown>>(), sessions = new Map<string, Record<string, unknown>>();
   const subscriptions: Record<string, unknown>[] = [];
+  const invoices = new Map<string, Record<string, unknown>>(), events = new Map<string, Record<string, unknown>>();
+  const invoiceLines = new Map<string, Record<string, unknown>[]>(), invoicePayments = new Map<string, Record<string, unknown>[]>();
+  const pageSizes = new Map<string, number>();
+  const omitted = new Set<string>();
   const prices = new Map<string, Record<string, unknown>>();
   for (const [id, interval, amount] of [['price_SyntheticMonthly', 'month', 1900], ['price_SyntheticAnnual', 'year', 19000]] as const) {
     prices.set(id, { id, object: 'price', active: true, livemode: false, type: 'recurring', billing_scheme: 'per_unit',
@@ -51,16 +55,33 @@ export async function openBillingFixture(t: TestContext) {
     if (barrier) await barrier(req.path, req.method);
     if (req.path === failPath) return res.status(503).json({ error: { type: 'api_error', message: 'Synthetic sandbox provider outage.' } });
     if (req.path === '/v1/account') return res.json({ id: account, object: 'account' });
-    const list = (data: unknown[]) => ({ object: 'list', data, has_more: pagination === req.path, url: req.path });
+    const list = (values: Record<string, unknown>[]) => {
+      values = values.filter(value => !omitted.has(String(value.id)));
+      const after = typeof req.query.starting_after === 'string' ? req.query.starting_after : null;
+      const start = after ? values.findIndex(value => value.id === after) + 1 : 0, size = pageSizes.get(req.path) ?? 100;
+      return { object: 'list', data: values.slice(start, start + size), has_more: pagination === req.path || start + size < values.length, url: req.path };
+    };
     if (req.method === 'GET') {
       if (req.path === '/v1/customers/search') return res.json({ object: 'search_result',
         data: [...customers.values()], has_more: pagination === req.path });
       if (req.path === '/v1/checkout/sessions') return res.json(list([...sessions.values()].filter(session => session.customer === req.query.customer)));
       if (req.path === '/v1/subscriptions') return res.json(list(subscriptions));
+      if (req.path === '/v1/invoices') return res.json(list([...invoices.values()].filter(invoice =>
+        invoice.customer === req.query.customer && Number(invoice.created) >= Number(req.query['created[gte]'] ?? 0))));
+      if (req.path === '/v1/invoice_payments') return res.json(list(invoicePayments.get(String(req.query.invoice)) ?? []));
+      if (/^\/v1\/invoices\/[^/]+\/lines$/.test(req.path)) return res.json(list(invoiceLines.get(req.path.split('/')[3]) ?? []));
+      if (req.path === '/v1/subscription_items') {
+        const sub = subscriptions.find(sub => sub.id === req.query.subscription);
+        const items = z.object({ data: z.array(z.record(z.string(), z.unknown())) }).parse(sub?.items);
+        return res.json(list(items.data));
+      }
       const value = req.path.startsWith('/v1/customers/') ? customers.get(req.path.slice('/v1/customers/'.length)) :
         req.path.startsWith('/v1/prices/') ? prices.get(req.path.slice('/v1/prices/'.length)) :
         req.path === '/v1/products/prod_SyntheticCheckout' ? product :
-        req.path.startsWith('/v1/checkout/sessions/') ? sessions.get(req.path.slice('/v1/checkout/sessions/'.length)) : undefined;
+        req.path.startsWith('/v1/checkout/sessions/') ? sessions.get(req.path.slice('/v1/checkout/sessions/'.length)) :
+        req.path.startsWith('/v1/subscriptions/') ? subscriptions.find(sub => sub.id === req.path.slice('/v1/subscriptions/'.length)) :
+        req.path.startsWith('/v1/invoices/') ? invoices.get(req.path.slice('/v1/invoices/'.length)) :
+        req.path.startsWith('/v1/events/') ? events.get(req.path.slice('/v1/events/'.length)) : undefined;
       if (value) return res.json(value);
     }
     if (req.method === 'POST') {
@@ -102,9 +123,46 @@ export async function openBillingFixture(t: TestContext) {
       server.closeAllConnections(); await closed;
     }
   });
-  return { ...f, worker, client, customers, sessions, subscriptions, prices, product, requests, port: address.port,
+  return { ...f, worker, client, customers, sessions, subscriptions, prices, product, requests, invoices, invoiceLines, invoicePayments, events, port: address.port,
     barrier(value?: typeof barrier) { barrier = value; }, account(value: string) { account = value; },
     pagination(value: string) { pagination = value; }, outage(value: string) { failPath = value; },
+    pageSize(path: string, value: number) { pageSizes.set(path, value); },
+    omitFromLists(id: string) { omitted.add(id); },
+    async notify(kind: string, value: Record<string, unknown>, type: string) {
+      const event = { id: `evt_Synthetic${events.size + 1}`, object: 'event', api_version: stripeApiVersion, livemode: false,
+        type, created: Math.floor(Date.now() / 1000), data: { object: value }, pending_webhooks: 1, request: null };
+      assert.equal(value.object, kind); events.set(event.id, event);
+      const response = await f.browser().request('/api/webhooks/stripe', event, 'POST', {
+        'Stripe-Signature': client.webhooks.generateTestHeaderString({ payload: JSON.stringify(event), secret: sandboxSettings.STRIPE_TEST_WEBHOOK_SECRET }),
+      });
+      assert.equal(response.status, 200, await response.clone().text());
+      return event;
+    },
+    async settleCheckout() {
+      const attempt = await f.db.prepare('SELECT * FROM stripe_checkout_attempts WHERE session_id IS NOT NULL ORDER BY created_at DESC LIMIT 1').get();
+      assert.ok(attempt);
+      const session = sessions.get(String(attempt.session_id)); assert.ok(session);
+      const now = Math.floor(Date.now() / 1000), subId = `sub_Synthetic${subscriptions.length + 1}`, invoiceId = `in_Synthetic${invoices.size + 1}`;
+      Object.assign(session, { status: 'complete', payment_status: 'paid', subscription: subId, url: null });
+      const sub = { id: subId, object: 'subscription', customer: session.customer, livemode: false, status: 'active', cancel_at_period_end: false,
+        metadata: { studio_customer_ref: String(attempt.customer_ref), studio_checkout_ref: String(attempt.id) }, latest_invoice: invoiceId,
+        items: { object: 'list', has_more: false, data: [{ id: 'si_Synthetic1', object: 'subscription_item', subscription: subId,
+          price: { id: String(attempt.price_id), object: 'price', livemode: false }, quantity: 1, current_period_start: now, current_period_end: now + 30 * 86400 }] } };
+      const line = { id: `il_Synthetic${invoices.size + 1}`, object: 'line_item', invoice: invoiceId, livemode: false,
+        currency: 'usd', amount: 1900, quantity: 1, quantity_decimal: '1', subscription: subId, period: { start: now, end: now + 30 * 86400 },
+        parent: { type: 'subscription_item_details', subscription_item_details: { subscription: subId, subscription_item: 'si_Synthetic1', proration: false } },
+        pricing: { type: 'price_details', price_details: { price: String(attempt.price_id), product: 'prod_SyntheticCheckout' } } };
+      const payment = { id: `inpay_Synthetic${invoices.size + 1}`, object: 'invoice_payment', invoice: invoiceId, livemode: false,
+        currency: 'usd', status: 'paid', amount_paid: 1900, payment: { type: 'payment_intent', payment_intent: 'pi_SyntheticUnattested' } };
+      const invoice = { id: invoiceId, object: 'invoice', customer: session.customer, livemode: false, created: now, status: 'paid',
+        currency: 'usd', total: 1900, amount_paid: 1900, amount_remaining: 0, status_transitions: { paid_at: now },
+        parent: { type: 'subscription_details', subscription_details: { subscription: subId } },
+        lines: { object: 'list', has_more: false, data: [line] }, payments: { object: 'list', has_more: false, data: [payment] },
+        customer_email: 'private-fixture-contact@example.invalid', hosted_invoice_url: 'https://private.fixture/invoice',
+        confirmation_secret: { client_secret: 'private-fixture-client-secret' } };
+      subscriptions.push(sub); invoices.set(invoiceId, invoice); invoiceLines.set(invoiceId, [line]); invoicePayments.set(invoiceId, [payment]);
+      return { sub, invoice, line, payment };
+    },
     async login(browser = f.browser(), subject = 'auth0|checkout-fixture-owner') {
       assert.equal((await f.complete(browser, await f.begin(browser, 'email'), { sub: subject })).status, 303);
       const data = await browser.bootstrap(); assert.ok(data.user);
@@ -120,7 +178,7 @@ export async function openBillingFixture(t: TestContext) {
       const response = await browser.request('/api/billing'); assert.equal(response.status, 200);
       return response.json();
     },
-    async complete(kind: 'billing.customer' | 'billing.checkout' | 'billing.checkout.refresh') {
+    async complete(kind: 'billing.customer' | 'billing.checkout' | 'billing.checkout.refresh' | 'billing.customer.snapshot' | 'billing.reconcile') {
       const claim = await worker.jobs.claim(kind); assert.ok(claim, `Expected a ${kind} claim.`);
       await worker.runClaim(claim);
       return worker.jobs.operation(claim.data.operationId);

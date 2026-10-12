@@ -106,6 +106,7 @@ test('corrupt saved retry information blocks browser reservation instead of sile
     if (!data.user) throw new Error('A synthetic authenticated owner is required.');
     sessionStorage.setItem(`studio-sandbox-checkout:${data.user.id}`, '{"key":"unknown-outcome","offer":"pro_monthly"}');
   });
+
   await page.reload();
   await expect(page.getByRole('alert').first()).toContainText('saved sandbox request is invalid');
   await page.getByRole('checkbox', { name: /I understand this is sandbox-only/ }).check();
@@ -114,4 +115,34 @@ test('corrupt saved retry information blocks browser reservation instead of sile
   await expect(page.getByRole('button', { name: 'Prepare sandbox checkout' })).toBeDisabled();
   assert.equal(f.requests.filter(request => request.path === '/api/billing/checkouts').length, 0);
   assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM stripe_owned_customers').get())?.count, 0);
+});
+
+test('actual owned browser displays canonical invoice and cancellation observations without confusing them with paid access', { timeout: 60000 }, async t => {
+  const f = await fixture(t), { page } = f;
+  await page.getByRole('checkbox', { name: /I understand this is sandbox-only/ }).check();
+  await page.getByRole('button', { name: 'Prepare sandbox checkout' }).click();
+  await expect(page.getByRole('heading', { name: 'Your sandbox checkout' })).toBeVisible();
+  await f.complete('billing.customer'); await f.complete('billing.checkout');
+  await expect(page.getByRole('button', { name: 'Open hosted sandbox checkout' })).toBeVisible();
+  const facts = await f.settleCheckout();
+  const refreshing = page.waitForResponse(response => response.url().endsWith('/refresh') && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Refresh canonical session' }).click();
+  assert.equal((await refreshing).status(), 200);
+  await f.complete('billing.checkout.refresh');
+  await f.complete('billing.customer.snapshot'); await f.complete('billing.customer.snapshot');
+  await expect(page.getByText(/Observed invoice: paid/)).toBeVisible();
+  await expect(page.getByText(/Operator review required: payment attestation pending/)).toBeVisible();
+  await expect(page.getByText(/These amounts do not prove an eligible paid service period/)).toBeVisible();
+  facts.sub.cancel_at_period_end = true;
+  const requested = page.waitForResponse(response => response.url().endsWith('/api/billing/reconcile') && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Refresh canonical ledger' }).click();
+  assert.equal((await requested).status(), 202);
+  await f.complete('billing.customer.snapshot');
+  await expect(page.getByText(/Renewal is disabled/)).toBeVisible();
+  const data: Bootstrap = await page.evaluate(async () => (await fetch('/api/bootstrap')).json());
+  assert.equal(data.capabilities.access?.state, 'free'); assert.equal(data.capabilities.commerce, 'disabled');
+  const text = await page.locator('body').innerText();
+  for (const secret of ['cus_Synthetic', 'sub_Synthetic', 'private-fixture-client-secret', 'private-fixture-contact']) assert.ok(!text.includes(secret));
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
 });

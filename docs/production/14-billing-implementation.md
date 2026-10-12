@@ -5,8 +5,10 @@ approval.** This document covers authenticated sandbox notifications and
 read-only canonical reconciliation. The later
 [owned checkout checkpoint](15-owned-sandbox-checkout.md) adds customer and
 hosted test-session creation in separate owned workflows. The notification
-processor itself cannot create payments or issue/revoke entitlements; there is
-still no Portal, financial ledger, refund workflow or production commerce.
+processor itself cannot create payments or issue/revoke entitlements. The later
+[canonical ledger checkpoint](16-canonical-sandbox-ledger.md) records owned
+subscription/invoice/line/payment-reference observations, not attested payments.
+There is still no Portal, refund workflow or production commerce.
 
 ## Versions and configuration
 
@@ -33,9 +35,9 @@ separate owned checkpoint. Prefer a restricted
 test key granting only the account/event/object reads used by this processor. No secrets,
 provider account or webhook destination were provisioned by this change.
 
-Migration 8 introduced this boundary. The current owned-checkout release
-requires **migration 9** plus maintained queue migration before replicas.
-Startup never migrates; published migrations 1-8 are unchanged. Stored notification
+Migration 8 introduced this boundary. The current canonical-ledger release
+requires **migration 10** plus maintained queue migration before replicas.
+Startup never migrates; published migrations 1-9 are unchanged. Stored notification
 evidence makes removal of billing configuration or changing its provider account
 a startup error; restoration requires the matching configuration, not demo
 commerce or a silently disabled processor.
@@ -121,9 +123,9 @@ successful or deleted financial facts.
 These are **per-notification observations**, not a customer ledger, ordered
 projection or entitlement authority. Events for one customer may observe
 different instants, and no `event.created` ordering resolves that. Jobs are
-keyed per event at this stage. Future W08 customer reconciliation must establish
-owned mappings and serialize/fence customer aggregates **before** using these
-facts for commercial writes. A signed `invoice.paid`, current `active` status,
+keyed per event at this stage. The later canonical ledger establishes owned
+mappings and dirty-revision-fenced customer observations, not commercial write
+authority. A signed `invoice.paid`, current `active` status,
 nonzero amount, zero-dollar invoice, Checkout return URL or this observation's
 `paid` hint is not sufficient proof of an eligible paid service interval.
 
@@ -143,9 +145,10 @@ npm run billing:reconcile
 
 It exits nonzero if deferred, active or failed billing operations remain.
 Successful output explicitly identifies `notification-evidence-only` authority.
-The newer worker also processes owned customer/session intents and bounded open
-session sweeps, but does not discover missing events or reconcile customer
-subscription aggregates yet. It exits explicitly on processing failure; supervising it,
+The newer worker also processes owned customer/session intents, bounded open
+session sweeps and canonical owned ledger reads/repair sweeps. Combined output
+can identify `sandbox-ledger-observation-only`; payment/service-period attestation
+remains separate work. It exits explicitly on processing failure; supervising it,
 backoff/restarts and alerting remain operator responsibilities.
 
 Existing `jobs:status` and audited `jobs:replay` expose maintained queue state
@@ -170,8 +173,8 @@ production dependency and no development tooling.
 No real Stripe account, card, payment, refund, tenant or customer was involved.
 The remaining implementation order is:
 
-1. Extend the separately shipped owned customer/hosted-intent boundary with full
-   canonical customer/subscription/invoice/payment aggregate reconciliation.
+1. Extend the shipped canonical subscription/invoice/payment-reference
+   observations with complete payment/charge/refund/dispute attestation.
 2. Restricted Portal and security-invalid unknown-outcome recovery, with
    operated lifecycle evidence rather than only synthetic SDK fixtures.
 3. Verified invoice/payment/service-period ledger and atomic W06 source grants,

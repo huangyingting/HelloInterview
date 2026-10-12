@@ -19,16 +19,18 @@ export async function runBillingCommand(command: string, client?: Stripe) {
   try {
     await assertDatabaseVersion(db);
     billing = await BillingNotifications.open(db, config.billing, shutdown.signal, true, client, config.publicOrigin ?? undefined);
-    let completed = 0, owned = false, nextSweep = 0;
+    let completed = 0, owned = false, ledger = false, nextSweep = 0;
     while (!shutdown.signal.aborted) {
-      if (Date.now() >= nextSweep) { await billing.checkout?.enqueueSweep(); nextSweep = Date.now() + 60000; }
+      if (Date.now() >= nextSweep && (command === 'worker' || nextSweep === 0)) {
+        await billing.checkout?.enqueueSweep(); await billing.ledger.enqueueSweep(); nextSweep = Date.now() + 60000;
+      }
       let claim;
-      for (const kind of [...checkoutJobKinds, 'billing.reconcile'] as const) {
+      for (const kind of [...checkoutJobKinds, 'billing.reconcile', 'billing.customer.snapshot'] as const) {
         claim = await billing.jobs.claim(kind);
         if (claim) break;
       }
       if (claim) {
-        try { await billing.runClaim(claim, shutdown.signal); completed++; owned ||= claim.name !== 'billing-reconcile'; }
+        try { await billing.runClaim(claim, shutdown.signal); completed++; owned ||= claim.name !== 'billing-reconcile'; ledger ||= claim.name === 'billing-customer-snapshot'; }
         catch (error) {
           await billing.jobs.fail(claim, error instanceof TerminalJobFailure ? 'reconciliation-required' : 'handler-failed');
           if (shutdown.signal.aborted) return;
@@ -37,8 +39,10 @@ export async function runBillingCommand(command: string, client?: Stripe) {
       } else if (command === 'reconcile') {
         const row = await db.prepare("SELECT count(*)::integer AS pending FROM durable_operations WHERE kind LIKE 'billing.%' AND completed_at IS NULL").get();
         if (row?.pending !== 0) throw new Error('Sandbox billing reconciliation has deferred, active or failed operations. Inspect queue diagnostics; the pass is incomplete.');
+        const reviewRequired = await billing.ledger.reviewRequiredCustomers();
+        if (reviewRequired) console.warn(JSON.stringify({ event: 'billing.ledger.review-required', customers: reviewRequired, authority: 'sandbox-ledger-observation-only' }));
         console.log(JSON.stringify({ event: owned ? 'billing.sandbox.reconciled' : 'billing.notifications.reconciled', completed,
-          authority: owned ? 'sandbox-correlation-only' : 'notification-evidence-only' }));
+          authority: ledger ? 'sandbox-ledger-observation-only' : owned ? 'sandbox-correlation-only' : 'notification-evidence-only' }));
         return;
       } else {
         try { await delay(1000, undefined, { signal: shutdown.signal }); }

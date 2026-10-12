@@ -1,3 +1,5 @@
+import type { OwnedBillingLedgerView } from './billing-ledger';
+
 export const sandboxOffers = ['pro_monthly', 'pro_annual'] as const;
 export type SandboxOffer = typeof sandboxOffers[number];
 export interface SandboxCheckoutView {
@@ -15,5 +17,6 @@ export interface SandboxBillingView {
   enabled: boolean;
   customerReady: boolean;
   checkout: SandboxCheckoutView | null;
+  ledger: OwnedBillingLedgerView | null;
   accessAuthority: 'none';
 }

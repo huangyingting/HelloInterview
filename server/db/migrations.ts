@@ -342,6 +342,52 @@ export const migrations = [{
     CREATE TRIGGER retire_billing_customer BEFORE DELETE ON users
       FOR EACH ROW EXECUTE FUNCTION retire_billing_customer();
   `,
+}, {
+  version: 10,
+  name: 'owned-canonical-billing-observations',
+  sql: `
+    CREATE TABLE stripe_customer_ledger_state (
+      customer_ref TEXT PRIMARY KEY REFERENCES stripe_owned_customers(id),
+      requested_revision BIGINT NOT NULL DEFAULT 0 CHECK (requested_revision >= 0),
+      reconciled_revision BIGINT NOT NULL DEFAULT 0 CHECK (reconciled_revision >= 0 AND reconciled_revision <= requested_revision),
+      operation_id TEXT REFERENCES durable_operations(id),
+      observed_at TIMESTAMPTZ,
+      snapshot TEXT CHECK (octet_length(snapshot) <= 262144),
+      CHECK ((observed_at IS NULL) = (snapshot IS NULL))
+    );
+    CREATE TABLE stripe_ledger_notification_links (
+      account_id TEXT NOT NULL, event_id TEXT NOT NULL,
+      customer_ref TEXT NOT NULL REFERENCES stripe_owned_customers(id),
+      revision BIGINT NOT NULL CHECK (revision > 0),
+      PRIMARY KEY(account_id,event_id),
+      FOREIGN KEY(account_id,event_id) REFERENCES stripe_event_notifications(account_id,event_id)
+    );
+    CREATE INDEX stripe_ledger_notifications_revision ON stripe_ledger_notification_links(customer_ref,revision);
+    CREATE INDEX stripe_observed_customer ON stripe_event_notifications(account_id,((observation::jsonb)->>'customerId')) WHERE observation IS NOT NULL;
+    CREATE TABLE stripe_owned_subscription_ledger (
+      id TEXT PRIMARY KEY, customer_ref TEXT NOT NULL REFERENCES stripe_owned_customers(id),
+      account_id TEXT NOT NULL, subscription_id TEXT NOT NULL,
+      revision BIGINT NOT NULL CHECK (revision > 0),
+      status TEXT NOT NULL, payload TEXT NOT NULL CHECK (octet_length(payload) <= 16384),
+      UNIQUE(account_id,subscription_id)
+    );
+    CREATE TABLE stripe_owned_invoice_ledger (
+      id TEXT PRIMARY KEY, customer_ref TEXT NOT NULL REFERENCES stripe_owned_customers(id),
+      account_id TEXT NOT NULL, invoice_id TEXT NOT NULL,
+      revision BIGINT NOT NULL CHECK (revision > 0),
+      created_at_seconds BIGINT NOT NULL CHECK (created_at_seconds >= 0),
+      status TEXT NOT NULL, payload TEXT NOT NULL CHECK (octet_length(payload) <= 131072),
+      UNIQUE(account_id,invoice_id)
+    );
+    CREATE TABLE stripe_customer_ledger_snapshots (
+      customer_ref TEXT NOT NULL REFERENCES stripe_owned_customers(id),
+      revision BIGINT NOT NULL CHECK (revision > 0),
+      operation_id TEXT NOT NULL UNIQUE REFERENCES durable_operations(id),
+      observed_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+      fingerprint TEXT NOT NULL, payload TEXT NOT NULL CHECK (octet_length(payload) <= 262144),
+      PRIMARY KEY(customer_ref,revision)
+    );
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

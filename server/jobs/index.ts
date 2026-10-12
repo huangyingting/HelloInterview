@@ -136,6 +136,16 @@ export class DurableJobs {
     const operation = await this.operation(claimDataSchema.parse(claim.data).operationId);
     await this.assertClaim(operation, claim, signal);
   }
+  async heartbeat(claim: JobClaim, signal?: AbortSignal): Promise<void> {
+    await this.assertCurrentClaim(claim, signal);
+    if (commandResponseSchema.parse(await this.boss.touch(claim.name, claim)).affected !== 1) throw new LostJobClaim();
+    await this.assertCurrentClaim(claim, signal);
+  }
+  async systemStatus(principal: string, id: string) {
+    const row = await this.db.prepare('SELECT * FROM durable_operations WHERE scope=? AND id=?').get(`system:${identifier.parse(principal)}`, z.uuid().parse(id));
+    if (!row) throw new HttpError(404, 'System operation not found.');
+    return { status: await this.status(readOperation(row)) };
+  }
   async finish(claim: JobClaim, mutation: (db: Database, operation: Operation) => Promise<Payload>, signal?: AbortSignal): Promise<void> {
     const data = claimDataSchema.parse(claim.data);
     const observed = await this.operation(data.operationId);

@@ -45,11 +45,13 @@ export function SandboxBillingPage() {
     return () => controller.abort();
   }, [available, storageKey, load]);
   const processing = view?.checkout?.processing, state = view?.checkout?.state;
+  const ledgerProcessing = view?.ledger?.processing;
   useEffect(() => {
     const preparing = ['waiting-customer', 'queued'].includes(state ?? '');
     const reading = ['created', 'retry', 'active'].includes(processing ?? '');
-    if (!available || !view?.checkout || !preparing && !reading ||
-      ['failed', 'cancelled', 'missing'].includes(processing ?? '')) return;
+    const ledgerReading = ['created', 'retry', 'active'].includes(ledgerProcessing ?? '');
+    if (!available || !preparing && !reading && !ledgerReading ||
+      !ledgerReading && ['failed', 'cancelled', 'missing'].includes(processing ?? '')) return;
     const controller = new AbortController();
     let count = 0, timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
@@ -59,7 +61,7 @@ export function SandboxBillingPage() {
     };
     timer = setTimeout(poll, 2000);
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [available, view?.checkout?.id, state, processing, load]);
+  }, [available, view?.checkout?.id, state, processing, ledgerProcessing, load]);
   const action = (operation: () => Promise<void>) => act(async () => {
     setError('');
     try { await operation(); }
@@ -107,6 +109,24 @@ export function SandboxBillingPage() {
       })}>Open hosted sandbox checkout</button>}
       {['open', 'complete', 'expired'].includes(checkout.state) && <button className="button secondary" disabled={pending || !security?.fresh} onClick={() => refresh(checkout.id)}>Refresh canonical session</button>}
       {['waiting-customer', 'queued'].includes(checkout.state) && <p>Preparation requires the maintained billing worker. Polling is bounded; reload owned status if preparation takes longer.</p>}
+    </section>}
+    {view?.customerReady && <section className="panel">
+      <h2>Canonical sandbox ledger</h2>
+      <p>Subscription and invoice observations only. Payment references have not been attested against charges, refunds or disputes. No paid access is granted.</p>
+      <p>Last observation: {view.ledger?.observedAt ? new Date(view.ledger.observedAt).toLocaleString() : 'not yet available'}.
+        {' '}Processing: {view.ledger?.processing ?? 'not yet requested'}. {view.ledger?.stale && 'The last displayed snapshot is stale or a newer read is pending.'}</p>
+      {view.ledger?.reviewReasons.length ? <p role="status">Operator review required: {view.ledger.reviewReasons.map(reason => reason.replaceAll('-', ' ')).join(', ')}.</p> : null}
+      {['failed', 'cancelled', 'missing'].includes(view.ledger?.processing ?? '') && <p role="status">Canonical reconciliation is incomplete. An operator must inspect the queue before retrying; older records are not a fresh confirmation.</p>}
+      {view.ledger?.subscriptions.map(sub => <p key={sub.id}>Observed subscription: <strong>{sub.status.replaceAll('_', ' ')}</strong>.
+        {' '}{sub.nonrenewing ? 'Renewal is disabled.' : 'No cancellation-at-period-end flag observed.'}
+        {' '}{sub.currentPeriodEnd && `Reported item period end: ${new Date(sub.currentPeriodEnd).toLocaleString()}.`}</p>)}
+      {view.ledger?.invoices.map(invoice => <p key={invoice.id}>Observed invoice: <strong>{invoice.status}</strong>.
+        {' '}Total: {invoice.total} {invoice.currency.toUpperCase()} minor units; paid amount hint: {invoice.amountPaid}; remaining: {invoice.amountRemaining}.
+        {' '}These amounts do not prove an eligible paid service period.</p>)}
+      {view.ledger?.historyTruncated && <p>The displayed owned history is limited to 20 subscriptions and 20 invoices. Older retained records have not been deleted.</p>}
+      <button className="button secondary" disabled={pending || !security?.fresh} onClick={() => action(async () => {
+        await request('/api/billing/reconcile', {}); await load();
+      })}>Refresh canonical ledger</button>
     </section>}
     {view && !unresolved && <section className="panel">
       <h2>Start a sandbox intent</h2>

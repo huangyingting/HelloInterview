@@ -161,6 +161,9 @@ is needed to create, resume or manually refresh.
 incomplete billing operation, including new customer/checkout kinds.
 Correlation receipts/output identify `sandbox-correlation-only` authority.
 Notification receipts retain `notification-evidence-only`.
+The subsequent [canonical ledger checkpoint](16-canonical-sandbox-ledger.md)
+adds a durable customer snapshot child to mapping and completed sessions;
+combined maintenance can report `sandbox-ledger-observation-only`.
 
 Once a minute, maintenance enqueues read-only refreshes for at most one hundred
 eligible open mapped sessions, oldest observations first. It does not discover
@@ -193,8 +196,9 @@ recovery performs reads only. Actual Chromium journeys check hosted resume,
 forged returns, completion with no Pro, CSRF, responsive layout and retry-key
 preservation after an expired session plus an unknown new response.
 
-W08 remains in progress. Next implement the owned canonical customer/
-subscription/invoice/payment/service-period ledger and its reconciler, then
+W08 remains in progress. The subsequent canonical ledger checkpoint ships owned
+subscription/invoice/line/payment-reference observations, not financial proof.
+Next implement payment/service-period attestation, then
 approved W06 billing source grants, grace/refund/dispute rules, restricted Portal,
 missing-event/drift sweeps and operated lifecycle recovery. Financial retention,
 privacy/cancellation/support authority, commercial/tax/vendor decisions and

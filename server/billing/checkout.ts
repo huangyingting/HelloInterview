@@ -9,13 +9,14 @@ import { bindBillingReference } from './reference';
 import { checkoutOperationSchema, checkoutRequestSchema, checkoutRowSchema, customerRequestSchema, customerRowSchema, hostedCheckoutUrl, type CheckoutRow, type CustomerRow } from './checkout-schema';
 import type { StripeEvidence } from './provider';
 import { encodePayload } from '../jobs/schema';
+import type { SandboxBillingLedger } from './ledger';
 
 const clock = 'floor(extract(epoch from clock_timestamp())*1000)::bigint';
 const postWindowMs = 20 * 3600000, checkoutMarginMs = 31 * 60000;
 export const checkoutJobKinds = ['billing.customer', 'billing.checkout', 'billing.checkout.refresh'] as const;
 export class SandboxCheckout {
   constructor(private readonly db: Database, private readonly settings: BillingConfig, private readonly origin: string,
-    private readonly jobs: DurableJobs, private readonly provider: StripeEvidence) {}
+    private readonly jobs: DurableJobs, private readonly provider: StripeEvidence, private readonly ledger: SandboxBillingLedger) {}
   private async now() { return z.coerce.number().int().parse((await this.db.prepare(`SELECT ${clock} AS now`).get())?.now); }
   private async owner(owner: string, epoch?: number) {
     await this.db.prepare('SELECT id FROM users WHERE id=? FOR UPDATE').get(z.uuid().parse(owner));
@@ -82,14 +83,14 @@ export class SandboxCheckout {
     return this.db.transaction(async () => {
       await this.owner(owner);
       const customer = await this.customer(owner);
-      if (!customer) return { mode: 'sandbox', enabled: !!this.settings.offers, customerReady: false, checkout: null, accessAuthority: 'none' };
+      if (!customer) return { mode: 'sandbox', enabled: !!this.settings.offers, customerReady: false, checkout: null, ledger: null, accessAuthority: 'none' };
       const row = await this.db.prepare(`SELECT * FROM stripe_checkout_attempts WHERE customer_ref=?
         ORDER BY (state IN ('waiting-customer','queued','open','complete')) DESC,created_at DESC,id DESC LIMIT 1`).get(customer.id);
       const attempt = row ? checkoutRowSchema.parse(row) : null;
       if (attempt?.state === 'retired') throw new HttpError(403, 'This sandbox billing archive is retired.');
       const operationId = attempt?.refresh_operation_id ?? attempt?.operation_id ?? customer.operation_id;
       const operation = await this.jobs.ownedStatus(owner, operationId);
-      return { mode: 'sandbox', enabled: !!this.settings.offers, customerReady: customer.state === 'mapped', accessAuthority: 'none',
+      return { mode: 'sandbox', enabled: !!this.settings.offers, customerReady: customer.state === 'mapped', accessAuthority: 'none', ledger: await this.ledger.view(customer),
         checkout: attempt ? { id: attempt.id, requestKey: attempt.request_key, offer: attempt.offer_key, state: attempt.state, processing: operation.status,
           expiresAt: new Date(attempt.expires_at).toISOString(), paymentStatus: attempt.payment_status,
           quote: attempt.currency && attempt.unit_amount ? { currency: attempt.currency, unitAmount: attempt.unit_amount } : null } : null };
@@ -177,6 +178,7 @@ export class SandboxCheckout {
           if (!mapped) throw new TerminalJobFailure('invalid-result');
           const row = await this.db.prepare("SELECT * FROM stripe_checkout_attempts WHERE customer_ref=? AND state='waiting-customer'").get(customer.id);
           if (row) await this.enqueueCheckout(context.owner, mapped, checkoutRowSchema.parse(row));
+          await this.ledger.request(mapped.id);
           await this.owner(context.owner, customer.auth_epoch);
           return { customerMapped: true, authority: 'sandbox-correlation-only' };
         }, signal);
@@ -195,6 +197,7 @@ export class SandboxCheckout {
       const current = await this.attempt(customer, attempt.id);
       if (encodePayload(this.intent(current)) !== encodePayload(operation.payload)) throw new TerminalJobFailure('invalid-result');
       if (current.session_id && current.session_id !== facts.id ||
+        current.subscription_id && current.subscription_id !== facts.subscriptionId ||
         operation.kind === 'billing.checkout' && (current.operation_id !== operation.id || current.state !== 'queued')) throw new TerminalJobFailure('not-eligible');
       await this.jobs.finish(claim, async () => {
         if (current.state === 'retired' || ['complete', 'expired'].includes(current.state) && current.state !== facts.state) throw new TerminalJobFailure('reconciliation-required');
@@ -203,6 +206,7 @@ export class SandboxCheckout {
           .run(facts.state, facts.id, facts.subscriptionId, facts.paymentStatus, facts.url,
             creation?.currency ?? null, creation?.unitAmount ?? null, attempt.id);
         await this.owner(context.owner, operation.kind === 'billing.checkout' ? attempt.auth_epoch : undefined);
+        if (facts.state === 'complete') await this.ledger.request(customer.id);
         return { checkoutId: attempt.id, state: facts.state, authority: 'sandbox-correlation-only' };
       }, signal);
     });

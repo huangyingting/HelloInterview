@@ -45,6 +45,7 @@ service with defined recovery and support commitments.
 | [13 - Entitlement implementation](13-entitlements-implementation.md) | Immutable managed grants, server-clock capability authority, licensed archives and expiry-safe UI | Backend and product |
 | [14 - Billing notification implementation](14-billing-implementation.md) | Test-only signed durable notifications, minimized read-only canonical evidence, compiled worker and remaining commercial boundaries | Billing and operations |
 | [15 - Owned sandbox checkout](15-owned-sandbox-checkout.md) | Durable owned customer/session intents, immutable SDK idempotency, fresh resume/refresh, sandbox UI and unresolved financial lifecycle | Billing and full-stack |
+| [16 - Canonical sandbox ledger](16-canonical-sandbox-ledger.md) | Owned subscription/invoice/service-line/payment-reference observations, dirty-revision fencing, historical handoff, private UI and explicit no-grant financial holds | Billing and operations |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to

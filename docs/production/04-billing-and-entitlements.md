@@ -7,7 +7,10 @@ The [first W08 implementation checkpoint](14-billing-implementation.md) ships
 the signed sandbox notification/read-only evidence boundary. The
 [second checkpoint](15-owned-sandbox-checkout.md) adds durable owned customer
 and hosted test-session intents, stable idempotency and a fresh authenticated
-sandbox UI. Payment-derived entitlements, Portal and the financial lifecycle
+sandbox UI. The [third checkpoint](16-canonical-sandbox-ledger.md) adds owned
+canonical subscription/invoice/service-line/payment-reference observations,
+dirty-revision fencing and retained history, explicitly without payment
+attestation. Payment-derived entitlements, Portal and the financial lifecycle
 below remain unimplemented; this specification is not launch authorization.
 
 ## Launch offer and boundaries

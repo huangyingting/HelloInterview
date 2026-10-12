@@ -11,6 +11,7 @@ import { InvalidBillingNotification, notification, notificationSchema, stripeApi
 import { bindBillingReference } from './reference';
 import { SandboxCheckout } from './checkout';
 import { canonicalOriginSchema } from './checkout-schema';
+import { SandboxBillingLedger } from './ledger';
 
 export async function assertBillingConfiguration(db: Database, settings: BillingConfig | null) {
   if (db.dialect !== 'postgres') return;
@@ -23,13 +24,14 @@ export async function assertBillingConfiguration(db: Database, settings: Billing
 }
 export class BillingNotifications {
   private constructor(private readonly db: Database, private readonly settings: BillingConfig, readonly jobs: DurableJobs,
-    readonly provider: StripeEvidence, readonly checkout: SandboxCheckout | null) {}
+    readonly provider: StripeEvidence, readonly checkout: SandboxCheckout | null, readonly ledger: SandboxBillingLedger) {}
   static async open(db: Database, settings: BillingConfig, shutdown: AbortSignal, worker = false, client?: Stripe, origin?: string) {
     await assertBillingConfiguration(db, settings);
     if (settings.offers && !origin || origin && !canonicalOriginSchema.safeParse(origin).success) throw new Error('Owned sandbox checkout requires the canonical HTTPS application origin.');
     const provider = new StripeEvidence(settings, shutdown, client);
     const jobs = await DurableJobs.open(db, worker);
-    return new BillingNotifications(db, settings, jobs, provider, origin ? new SandboxCheckout(db, settings, origin, jobs, provider) : null);
+    const ledger = new SandboxBillingLedger(db, settings, jobs, provider);
+    return new BillingNotifications(db, settings, jobs, provider, origin ? new SandboxCheckout(db, settings, origin, jobs, provider, ledger) : null, ledger);
   }
   private source() { return `stripe:${this.settings.accountId}:sandbox`; }
   private resource(eventId: string) { return `stripe:${digest(`${this.settings.accountId}:${eventId}`)}`; }
@@ -80,6 +82,7 @@ export class BillingNotifications {
   }
   async runClaim(claim: JobClaim, signal?: AbortSignal) {
     const operation = await this.jobs.operation(claim.data.operationId);
+    if (operation.kind === 'billing.customer.snapshot') return this.ledger.runClaim(claim, signal);
     if (operation.kind !== 'billing.reconcile') {
       if (!this.checkout) throw new TerminalJobFailure('not-eligible');
       await this.checkout.runClaim(claim, signal);
@@ -89,14 +92,15 @@ export class BillingNotifications {
     if (operation.kind !== 'billing.reconcile' || operation.principal.type !== 'system' || operation.principal.id !== this.source() ||
       event.accountId !== this.settings.accountId || operation.resource !== this.resource(event.eventId)) throw new TerminalJobFailure('not-eligible');
     const observed = event.classification === 'supported' ? await this.provider.observe(event, signal) : null;
-    await this.jobs.finish(claim, async () => {
+    await this.ledger.withObservedCustomer(observed?.customerId ?? null, reference => this.jobs.finish(claim, async () => {
       const row = await this.db.prepare('SELECT operation_id,payload,state FROM stripe_event_notifications WHERE account_id=? AND event_id=? FOR UPDATE').get(event.accountId, event.eventId);
       if (!row || row.operation_id !== operation.id || row.payload !== encodePayload(event, 4096) || row.state !== 'accepted') throw new TerminalJobFailure('invalid-result');
       const state = observed ? 'observed' : 'ignored';
       await this.db.prepare('UPDATE stripe_event_notifications SET state=?,observation=?,observed_at=clock_timestamp() WHERE account_id=? AND event_id=?')
         .run(state, observed ? encodePayload(observed, 8192) : null, event.accountId, event.eventId);
+      if (reference) await this.ledger.request(reference);
       return { eventId: event.eventId, state, authority: 'notification-evidence-only' };
-    }, signal);
+    }, signal));
     if (!observed) console.warn(JSON.stringify({ event: 'billing.event.unsupported', type: event.eventType }));
   }
   close() { return this.jobs.close(); }

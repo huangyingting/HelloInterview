@@ -5,6 +5,7 @@ import { canonicalObjectSchema, notification, observationSchema, providerId, ref
 import { z } from 'zod';
 import { TerminalJobFailure } from '../jobs';
 import { checkoutSchema, customerSchema, hostedCheckoutUrl, priceSchema, type CheckoutRow } from './checkout-schema';
+import { readCanonicalLedger, type CanonicalRead, type LedgerReadInput } from './ledger-reader';
 
 const listSchema = z.looseObject({ object: z.literal('list'), has_more: z.boolean(), data: z.array(z.unknown()).max(100) });
 const subscriptionSchema = z.looseObject({
@@ -71,6 +72,18 @@ export class StripeEvidence {
       throw new Error('The canonical customer does not match its server-created ownership correlation.');
     }
     return customer;
+  }
+  async ledger(input: LedgerReadInput, checkpoint: () => Promise<void>, signal?: AbortSignal) {
+    let requests = 0;
+    const read: CanonicalRead = async request => {
+      if (++requests > 48) throw new TerminalJobFailure('reconciliation-required');
+      this.assertRunning(signal); await checkpoint();
+      const value = await request(); this.assertRunning(signal);
+      return value;
+    };
+    await read(() => this.account(signal));
+    this.customer(await read(() => this.client.customers.retrieve(input.customerId)), input.customerRef, input.customerId);
+    return readCanonicalLedger(this.client, input, read);
   }
   async createCustomer(reference: string, operationId: string, replayWindow: boolean, beforeMutation: () => Promise<void>, signal?: AbortSignal) {
     await this.account(signal);

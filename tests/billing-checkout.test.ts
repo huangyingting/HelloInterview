@@ -321,7 +321,7 @@ test('compiled reconciliation processes customer and checkout children, and a la
     const client = new Stripe(process.env.STRIPE_TEST_SECRET_KEY, { host: '127.0.0.1', port: ${f.port}, protocol: 'http',
       apiVersion: '${stripeApiVersion}', maxNetworkRetries: 0, timeout: 1000 }); await runBillingCommand('reconcile', client);`;
   const execute = promisify(execFile), result = await execute(process.execPath, ['--input-type=module', '-e', code], { env, timeout: 15000 });
-  assert.deepEqual(JSON.parse(result.stdout), { event: 'billing.sandbox.reconciled', completed: 2, authority: 'sandbox-correlation-only' });
+  assert.deepEqual(JSON.parse(result.stdout), { event: 'billing.sandbox.reconciled', completed: 3, authority: 'sandbox-ledger-observation-only' });
   assert.deepEqual((await f.view(browser)).checkout?.quote, { currency: 'usd', unitAmount: 19000 });
   Object.assign([...f.sessions.values()][0], { status: 'expired', url: null });
   const next = await execute(process.execPath, ['--input-type=module', '-e', code], { env, timeout: 15000 });

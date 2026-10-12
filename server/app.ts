@@ -229,6 +229,10 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
       }
     }
     app.get('/api/billing', async (req, res) => res.json(await billingAction(req, res, false, user => checkout.view(user.id))));
+    app.post('/api/billing/reconcile', async (req, res) => {
+      if (!z.strictObject({}).safeParse(req.body).success) throw new HttpError(400, 'Use an empty request body; customer and invoice references are server-owned.');
+      res.status(202).json(await billingAction(req, res, true, user => billing.ledger.refresh(user.id)));
+    });
     app.post('/api/billing/checkouts', async (req, res) => {
       const parsed = checkoutRequestSchema.safeParse(req.body);
       if (!parsed.success) throw new HttpError(400, 'Choose a sandbox offer and a UUID request key; provider IDs, amounts and redirect URLs are not accepted.');

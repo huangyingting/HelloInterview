@@ -132,9 +132,12 @@ idempotency and a dedicated test-only billing page. Completed sandbox sessions
 grant no premium access; production purchases, Portal and the financial lifecycle
 remain disabled. See
 [the billing notification runbook](docs/production/14-billing-implementation.md);
-[the owned checkout runbook](docs/production/15-owned-sandbox-checkout.md)
-records the new boundary. Controlled PostgreSQL deployments must apply
-**migration 9 and maintained queue migration** before this release.
+[the owned checkout runbook](docs/production/15-owned-sandbox-checkout.md).
+The [canonical sandbox ledger](docs/production/16-canonical-sandbox-ledger.md)
+adds owned subscription/invoice/service-line/payment-reference observations,
+dirty-revision reconciliation and retained history. Paid hints remain explicitly
+unattested and grant no access. Controlled PostgreSQL deployments must apply
+**migration 10 and maintained queue migration** before this release.
 
 | Area | Local functionality |
 | --- | --- |
