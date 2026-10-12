@@ -148,6 +148,53 @@ export const migrations = [{
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `,
+}, {
+  version: 4,
+  name: 'managed-identity-and-browser-sessions',
+  sql: `
+    ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
+    CREATE TABLE managed_accounts (
+      user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      status TEXT NOT NULL CHECK (status IN ('pending-verification','active','suspended','deletion-pending')),
+      contact_email TEXT, contact_identity_id TEXT,
+      contact_verified INTEGER NOT NULL DEFAULT 0 CHECK (contact_verified IN (0,1)),
+      session_epoch INTEGER NOT NULL DEFAULT 0 CHECK (session_epoch >= 0),
+      CHECK (status <> 'active' OR contact_verified=1),
+      CHECK (contact_verified=0 OR (contact_email IS NOT NULL AND contact_identity_id IS NOT NULL))
+    );
+    CREATE TABLE managed_identities (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      issuer TEXT NOT NULL, subject TEXT NOT NULL, provider TEXT NOT NULL CHECK (provider IN ('email','google','github')),
+      email TEXT, verified INTEGER NOT NULL CHECK (verified IN (0,1)),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (issuer,subject), UNIQUE (id,user_id)
+    );
+    ALTER TABLE managed_accounts ADD CONSTRAINT managed_contact_owner
+      FOREIGN KEY (contact_identity_id,user_id) REFERENCES managed_identities(id,user_id);
+    CREATE INDEX managed_identities_owner ON managed_identities(user_id,id);
+    CREATE TABLE managed_sessions (
+      token TEXT PRIMARY KEY REFERENCES sessions(token) ON DELETE CASCADE,
+      id TEXT NOT NULL UNIQUE, identity_id TEXT NOT NULL REFERENCES managed_identities(id) ON DELETE CASCADE,
+      epoch INTEGER NOT NULL CHECK (epoch >= 0), csrf_hash TEXT NOT NULL,
+      authenticated_at BIGINT NOT NULL, created_at BIGINT NOT NULL, last_used BIGINT NOT NULL
+    );
+    CREATE TABLE auth_transactions (
+      state_hash TEXT PRIMARY KEY, binding_hash TEXT NOT NULL, verifier TEXT NOT NULL, nonce TEXT NOT NULL,
+      provider TEXT NOT NULL CHECK (provider IN ('email','google','github')),
+      purpose TEXT NOT NULL CHECK (purpose IN ('login','reauth','link','legacy-link')),
+      user_id TEXT REFERENCES users(id) ON DELETE CASCADE, session_hash TEXT, legacy_credential_hash TEXT,
+      return_to TEXT NOT NULL, expires BIGINT NOT NULL, created_at BIGINT NOT NULL,
+      CHECK ((purpose='login') = (user_id IS NULL)),
+      CHECK ((purpose='legacy-link') = (legacy_credential_hash IS NOT NULL))
+    );
+    CREATE INDEX auth_transactions_expiry ON auth_transactions(expires);
+    CREATE INDEX auth_transactions_browser ON auth_transactions(binding_hash,expires);
+    CREATE TABLE identity_security_events (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      action TEXT NOT NULL, identity_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

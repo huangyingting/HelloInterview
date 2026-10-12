@@ -141,6 +141,7 @@ export interface User {
   name: string;
   email: string;
   demo: boolean;
+  identity?: { status: 'pending-verification' | 'active' | 'suspended' | 'deletion-pending'; verified: boolean };
 }
 export interface Target {
   id: string;
@@ -320,12 +321,20 @@ export interface Comment {
   parentId: string | null;
 }
 export interface Bootstrap {
+  csrf?: string;
   user: User | null;
   state: UserState;
   capabilities: {
     ai: boolean;
-    commerce: 'demo';
-    community: 'local';
+    commerce: 'demo' | 'disabled';
+    community: 'local' | 'read-only';
     aiModel: string | null;
+    auth?: { mode: 'managed'; providers: readonly ('email' | 'google' | 'github')[]; legacyLink: boolean };
   };
+}
+export interface IdentitySecurity {
+  identities: { id: string; provider: 'email' | 'google' | 'github'; email: string | null; verified: boolean; createdAt: string; current: boolean }[];
+  sessions: { id: string; createdAt: number; lastUsed: number; authenticatedAt: number; current: boolean }[];
+  events: { id: string; action: string; createdAt: string }[];
+  fresh: boolean;
 }

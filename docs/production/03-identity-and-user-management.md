@@ -1,7 +1,10 @@
 # 03 - Identity, accounts and user management
 
-**Status: proposed feature specification.** Addresses GAP-01, GAP-02 and GAP-10.
+**Status: feature specification with W04 implementation in progress.** Addresses GAP-01, GAP-02 and GAP-10.
 Architecture and storage conventions are defined in [02](02-target-architecture.md).
+The [identity engineering runbook](12-identity-implementation.md) records shipped
+opt-in authentication/session/linking boundaries and explicitly incomplete
+provider lifecycle, recovery, migration and launch gates.
 
 ## Product scope
 

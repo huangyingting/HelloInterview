@@ -37,12 +37,25 @@ export class DurableJobs {
   private assertOpen() {
     if (this.closing) throw new Error('Durable job processing is draining.');
   }
+  private async lockOwner(ownerId: string) {
+    await this.db.prepare('SELECT id FROM users WHERE id=? FOR UPDATE').get(ownerId);
+    await this.db.prepare('SELECT user_id FROM managed_accounts WHERE user_id=? FOR UPDATE').get(ownerId);
+  }
+  private async ownerActive(ownerId: string | null) {
+    if (ownerId === null) return false;
+    const row = await this.db.prepare('SELECT u.id,a.status FROM users u LEFT JOIN managed_accounts a ON a.user_id=u.id WHERE u.id=?').get(ownerId);
+    return !!row && (row.status === null || row.status === 'active');
+  }
   async enqueue(input: OperationRequest): Promise<Operation> {
     this.assertOpen();
     const request = requestSchema.parse(input), payload = encodePayload(request.payload);
     const scope = `${request.principal.type}:${request.principal.id}`;
     const hash = requestDigest(scope, request, payload);
     return this.db.transaction(async () => {
+      if (request.principal.type === 'user') {
+        await this.lockOwner(request.principal.id);
+        if (!await this.ownerActive(request.principal.id)) throw new HttpError(403, 'Only an active account can create a provider operation.');
+      }
       const id = randomUUID(), jobId = randomUUID();
       const inserted = await this.db.prepare(`INSERT INTO durable_operations
         (id,scope,kind,owner_id,request_key,request_hash,resource,payload,retry_mode,job_id)
@@ -115,7 +128,9 @@ export class DurableJobs {
   }
   async finish(claim: JobClaim, mutation: (db: Database, operation: Operation) => Promise<Payload>, signal?: AbortSignal): Promise<void> {
     const data = claimDataSchema.parse(claim.data);
+    const observed = await this.operation(data.operationId);
     await this.db.transaction(async () => {
+      if (observed.ownerId) await this.lockOwner(observed.ownerId);
       const row = await this.db.prepare('SELECT * FROM durable_operations WHERE id=? FOR UPDATE').get(data.operationId);
       if (!row) throw new LostJobClaim();
       const operation = readOperation(row);
@@ -128,7 +143,7 @@ export class DurableJobs {
     });
   }
   private async assertClaim(operation: Operation, claim: JobClaim, signal?: AbortSignal): Promise<void> {
-    if (operation.principal.type === 'user' && operation.ownerId === null) throw new TerminalJobFailure('not-eligible');
+    if (operation.principal.type === 'user' && !await this.ownerActive(operation.ownerId)) throw new TerminalJobFailure('not-eligible');
     const [current] = await this.boss.findJobs<ClaimData>(claim.name, { id: claim.id });
     const now = await this.db.prepare('SELECT clock_timestamp() AS now').get();
     const time = z.date().parse(now?.now).getTime();
@@ -182,7 +197,7 @@ export class DurableJobs {
           try {
             const operation = await this.operation(claimDataSchema.parse(claim.data).operationId);
             if (operation.jobId !== claim.id || operation.generation !== claim.data.generation || operation.kind !== kind) throw new LostJobClaim();
-            if (operation.principal.type === 'user' && operation.ownerId === null) throw new TerminalJobFailure('not-eligible');
+            if (operation.principal.type === 'user' && !await this.ownerActive(operation.ownerId)) throw new TerminalJobFailure('not-eligible');
             const mutation = await handler(operation, claim.signal);
             await this.finish(claim, db => mutation(db), claim.signal);
             return [{ id: claim.id, status: 'completed', output: { operationId: operation.id } }];

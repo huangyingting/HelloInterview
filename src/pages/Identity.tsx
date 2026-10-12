@@ -1,0 +1,129 @@
+import { useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Download, ShieldCheck } from 'lucide-react';
+import type { IdentitySecurity } from '../../shared/types';
+import { AuthPrompt, Badge, PageHeading } from '../components';
+import { request, useStudio } from '../store';
+
+const providers = ['email', 'google', 'github'] as const;
+type Provider = typeof providers[number];
+const labels = { email: 'Email', google: 'Google', github: 'GitHub' };
+const flowErrors: Record<string, string> = {
+  restart: 'Sign-in expired, was declined, or could not be verified. Start again in this browser. Your saved work is unchanged.',
+  provider_unavailable: 'The sign-in service is unavailable. Try again later; existing locally valid sessions are not replaced with demo access.',
+  identity_conflict: 'That sign-in method belongs to another account. No accounts were merged. Use its original account or contact support.',
+  security_changed: 'Your session or account security changed. Start again with your current sign-in method.',
+  rate_limited: 'Too many sign-in attempts. Finish an existing attempt or wait before trying again.',
+};
+
+export function ManagedAuthPage() {
+  const { data, act, pending } = useStudio(), [params] = useSearchParams();
+  const [legacy, setLegacy] = useState(false), [email, setEmail] = useState(''), [password, setPassword] = useState(''), [provider, setProvider] = useState<Provider>('email');
+  const error = flowErrors[params.get('error') ?? ''];
+  return <section className="auth-card">
+    <ShieldCheck size={28}/><h1>{data.user ? 'Your account security.' : 'Welcome to the Studio.'}</h1>
+    {error && <p role="alert">{error}</p>}
+    {data.user ? <>
+      <p>{data.user.identity?.status === 'active' ? `Signed in as ${data.user.name}.` : data.user.identity?.status === 'pending-verification' ? 'Add or verify a contact email before saving preparation or using member features.' : 'Account access is restricted. Open Account for support and sign-out options.'}</p>
+      <Link className="button" to="/account">Open Account</Link>
+    </> : <>
+      <p>Sign in or register through our hosted identity service. Passwords stay with that service, not the Studio.</p>
+      {providers.map(value => <p key={value}><a className="button secondary" href={`/auth/login?provider=${value}`}>Continue with {labels[value]}</a></p>)}
+      <p><a className="text-link" href="/auth/login?provider=email&signup=true">Create an email account</a></p>
+      <p className="fine-print">Email sign-in also opens hosted password recovery. Google and GitHub request identity, profile and email only, never repository access.</p>
+      {data.capabilities.auth?.legacyLink && <>
+        <button className="text-button" onClick={() => setLegacy(!legacy)}>Keep work from a previous local account</button>
+        {legacy && <form onSubmit={event => {
+          event.preventDefault();
+          void act(async () => {
+            const result = await request<{ url: string }>('/api/identity/legacy-link', { email, password, provider });
+            setPassword('');
+            window.location.assign(result.url);
+          });
+        }}>
+          <p>Prove your old Studio password, then authenticate a verified new sign-in method. Work keeps its original account ID. Old demo plans do not become paid subscriptions.</p>
+          <label>Previous Studio email<input required type="email" autoComplete="username" maxLength={254} value={email} onChange={event => setEmail(event.target.value)}/></label>
+          <label>Previous Studio password<input required type="password" autoComplete="current-password" maxLength={128} value={password} onChange={event => setPassword(event.target.value)}/></label>
+          <label>New sign-in method<select value={provider} onChange={event => {
+            const value = event.target.value;
+            if (value === 'email' || value === 'google' || value === 'github') setProvider(value);
+          }}>{providers.map(value => <option value={value} key={value}>{labels[value]}</option>)}</select></label>
+          <button className="button" disabled={pending}>Prove and connect my account</button>
+        </form>}
+      </>}
+      <p className="fine-print">Matching email addresses never merge accounts. To preserve a local archive, use the migration flow before creating a separate managed account.</p>
+    </>}
+  </section>;
+}
+
+export function ManagedAccountPage() {
+  const { data, act, refresh, pending, notify } = useStudio();
+  const status = data.user?.identity?.status;
+  const [name, setName] = useState(data.user?.name ?? ''), [security, setSecurity] = useState<IdentitySecurity | null>(null), [error, setError] = useState('');
+  const loadSecurity = async () => {
+    const result = await request<IdentitySecurity>('/api/identity/security');
+    setSecurity(result); setError('');
+  };
+  useEffect(() => {
+    if (status !== 'active' && status !== 'pending-verification') return;
+    const controller = new AbortController();
+    request<IdentitySecurity>('/api/identity/security', undefined, undefined, controller.signal)
+      .then(value => { if (!controller.signal.aborted) setSecurity(value); })
+      .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Account security could not be loaded.'); });
+    return () => controller.abort();
+  }, [status]);
+  if (!data.user) return <AuthPrompt/>;
+  if (status !== 'active' && status !== 'pending-verification') return <>
+    <PageHeading eyebrow="YOUR ACCOUNT" title="Account access is restricted." description="Product access is unavailable for this account. Email verification does not remove a suspension or deletion request."/>
+    <section className="panel"><p>Contact support for account review. You can sign out of this Studio session from navigation.</p><Link className="button secondary" to="/support">Contact support</Link></section>
+  </>;
+  const active = data.user.identity?.status === 'active';
+  const redirect = async (path: string, provider: Provider) => {
+    const result = await request<{ url: string }>(path, { provider });
+    window.location.assign(result.url);
+  };
+  return <>
+    <PageHeading eyebrow="YOUR ACCOUNT" title="Sign-in and security." description="Your identity settings are separate from your preparation archive and subscriptions."/>
+    {!active && <section className="panel"><h2>A verified contact email is needed</h2><p>{data.user.email ? `${data.user.email} has not been verified for product access.` : 'Your provider did not supply a verified contact address. No substitute address was invented.'} Connect a verified email or Google sign-in method below, or verify your address with your existing provider and sign in again.</p></section>}
+    <div className="account-grid">
+      <section className="panel"><h2>Profile</h2><p>{data.user.email || 'No contact email available'}</p><Badge tone={active ? 'green' : 'amber'}>{active ? 'Verified contact' : data.user.identity?.status ?? 'Verification required'}</Badge>
+        <form onSubmit={event => { event.preventDefault(); void act(async () => { await request('/api/profile', { name }, 'PATCH'); await refresh(); notify('Profile updated.'); }); }}>
+          <label>Display name<input required minLength={2} maxLength={60} autoComplete="name" value={name} onChange={event => setName(event.target.value)}/></label>
+          <button className="button small" disabled={pending}>Save profile</button>
+        </form>
+        <h3>Passwords and recovery</h3><p>Use hosted email sign-in for password recovery. Studio sign-out does not sign you out of Google or GitHub. Password-reset session invalidation is not enabled yet; this integration is for private staging only.</p>
+        {security?.identities.some(identity => identity.provider === 'email') ? <a className="text-link" href="/auth/login?provider=email">Open email sign-in and recovery</a> : <p>Recover a social account with its provider, or connect a verified email sign-in method below.</p>}
+      </section>
+      <section className="panel"><h2>Preparation data</h2><p>Payments and production premium grants are not enabled yet. Demo purchases and gifts cannot upgrade a managed account.</p>
+        <p>Export your saved preparation after confirming your identity within ten minutes. The current export is not yet a complete privacy-request export.</p>
+        <button className="button secondary small" disabled={pending || !active || !security?.fresh} onClick={() => act(async () => {
+          const value = await request<unknown>('/api/export');
+          const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }));
+          try { const link = document.createElement('a'); link.href = url; link.download = 'interview-studio-data.json'; link.click(); }
+          finally { URL.revokeObjectURL(url); }
+        })}><Download size={15}/> Export preparation data</button>
+      </section>
+    </div>
+    <section className="panel"><h2>Connected sign-in methods</h2>
+      {error && <><p role="alert">{error}</p><button className="button secondary small" disabled={pending} onClick={() => act(loadSecurity)}>Retry security settings</button></>}
+      {!security && !error && <p role="status">Loading sign-in and session information...</p>}
+      {security && <>
+        {!security.fresh && <p>Confirm an existing sign-in method before linking, unlinking, revoking sessions or exporting.</p>}
+        {security.identities.map(identity => <div className="panel" key={identity.id}>
+          <h3>{labels[identity.provider]} {identity.current && <Badge>Current method</Badge>}</h3><p>{identity.email || 'No contact address shared'} - {identity.verified ? 'Verified' : 'Unverified'}</p>
+          <button className="button secondary small" disabled={pending} onClick={() => act(() => redirect('/api/identity/reauth', identity.provider))}>Confirm with {labels[identity.provider]}</button>{' '}
+          <button className="text-button" disabled={pending || !security.fresh || identity.current || !security.identities.some(other => other.id !== identity.id && other.verified)} onClick={() => act(async () => { await request(`/api/identity/methods/${identity.id}`, undefined, 'DELETE'); await loadSecurity(); notify('Sign-in method removed; its Studio sessions were revoked.'); })}>Remove method</button>
+        </div>)}
+        <p>Connect another verified sign-in method. Each account is proved separately; email matching does not merge accounts.</p>
+        {providers.map(provider => <button className="button secondary small" key={provider} disabled={pending || !security.fresh} onClick={() => act(() => redirect('/api/identity/link', provider))}>Connect {labels[provider]}</button>)}
+      </>}
+    </section>
+    {security && <>
+      <section className="panel"><h2>Studio sessions</h2><p>Sessions expire after 30 days or seven days without use. No provider tokens, device fingerprints or precise locations are displayed or stored here.</p>
+        {security.sessions.map(session => <div className="panel" key={session.id}><strong>{session.current ? 'This session' : 'Other sign-in session'}</strong><p>Created {new Date(session.createdAt).toLocaleString()} - last used {new Date(session.lastUsed).toLocaleString()}</p>{!session.current && <button className="text-button" disabled={pending || !security.fresh} onClick={() => act(async () => { await request(`/api/identity/sessions/${session.id}`, undefined, 'DELETE'); await loadSecurity(); notify('Session revoked.'); })}>Revoke session</button>}</div>)}
+        <button className="button secondary small" disabled={pending || !security.fresh} onClick={() => act(async () => { await request('/api/identity/sessions/revoke-others', {}); await loadSecurity(); notify('Other Studio sessions were revoked.'); })}>Sign out other sessions</button>
+      </section>
+      <section className="panel"><h2>Recent security activity</h2>{security.events.map(event => <p key={event.id}>{event.action.replaceAll('-', ' ')} - {new Date(event.createdAt).toLocaleString()}</p>)}</section>
+    </>}
+  </>;
+}

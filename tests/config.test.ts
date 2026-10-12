@@ -19,6 +19,7 @@ test('configuration defaults preserve loopback, local data, cookies and optional
     port: 3000,
     cookieSecure: false,
     ai: null,
+    identity: null,
   });
 });
 
@@ -96,4 +97,29 @@ test('invalid settings fail explicitly without putting their values in the error
       }, `${setting} should reject ${JSON.stringify(value)}`);
     }
   }
+});
+
+test('managed identity requires an explicit HTTPS PostgreSQL deployment and immutable broker configuration', () => {
+  const env = {
+    DATABASE_URL: 'postgres://localhost/synthetic_fixture', PUBLIC_ORIGIN: 'https://studio.fixture', COOKIE_SECURE: 'true',
+    OIDC_ISSUER: 'https://broker.fixture/', OIDC_CLIENT_ID: 'synthetic-client', OIDC_CLIENT_SECRET: 'synthetic-secret',
+  };
+  const config = loadConfig(env);
+  assert.equal(config.identity?.issuer, 'https://broker.fixture/');
+  assert.equal(config.identity?.connections.github, 'github');
+  assert.equal(config.identity?.legacyLinkUntil, null);
+  assert.ok(Object.isFrozen(config.identity));
+  assert.ok(Object.isFrozen(config.identity?.connections));
+  for (const override of [
+    { DATABASE_URL: undefined }, { PUBLIC_ORIGIN: undefined }, { COOKIE_SECURE: 'false' },
+    { OIDC_ISSUER: 'http://broker.fixture/' }, { OIDC_ISSUER: 'https://broker.fixture/path' },
+    { OIDC_ISSUER: 'https://broker.fixture/?' }, { OIDC_ISSUER: 'https://broker.fixture/#' },
+    { OIDC_CLIENT_ID: '' }, { OIDC_CLIENT_SECRET: 'unsafe secret' }, { OIDC_CLIENT_SECRET: '' },
+    { OIDC_EXTRA_SETTING: 'unsupported' }, { OIDC_EMAIL_CONNECTION: 'unsafe connection' },
+    { OIDC_LEGACY_LINK_UNTIL: '2099-01-01T00:00:00Z' }, { OIDC_LEGACY_LINK_UNTIL: '2020-01-01T00:00:00Z' },
+  ]) assert.throws(() => loadConfig({ ...env, ...override }), ConfigurationError);
+  assert.throws(() => loadConfig({ OIDC_CLIENT_ID: 'synthetic-client' }), /OIDC_ISSUER/);
+  env.OIDC_CLIENT_SECRET = 'changed-secret';
+  assert.equal(config.identity?.clientSecret, 'synthetic-secret');
+  assert.ok(loadConfig({ ...env, OIDC_LEGACY_LINK_UNTIL: new Date(Date.now() + 86400000).toISOString() }).identity?.legacyLinkUntil);
 });

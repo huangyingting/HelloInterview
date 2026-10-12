@@ -19,8 +19,9 @@ The [production application blueprint](docs/production/README.md) reviews the
 current gaps and specifies the proposed architecture, social identity and account
 lifecycle, billing and entitlements, premium features, operations, and phased
 delivery plan. The [implementation progress](docs/production/07-delivery-roadmap.md#implementation-progress)
-records shipped foundations; identity, commerce, and the remaining service
-capabilities are still future work.
+records shipped foundations; optional managed-identity engineering is in
+progress, while identity lifecycle, commerce and remaining service capabilities
+are still launch blockers.
 
 ![Original Interview Studio landing page](docs/screenshots/01-landing.png)
 
@@ -100,6 +101,15 @@ See [the persistence implementation and migration runbook](docs/production/08-pe
 for schema details, API revisions, rehearsal, and cutover safeguards.
 
 ## What works
+
+Managed identity has an opt-in **private-staging checkpoint** with hosted
+email/Google/GitHub sign-in, verified contact gates, explicit account linking,
+CSRF-protected opaque sessions and owner-scoped security settings. Local
+authentication remains the default. Password-reset invalidation/reconciliation,
+approved tenants/delivery and service authorization are not complete. Managed
+mode disables demo purchases, gifts, external AI and community writing. See
+[the identity runbook](docs/production/12-identity-implementation.md) before any
+configuration; this does not authorize public accounts.
 
 | Area | Local functionality |
 | --- | --- |

@@ -1,6 +1,13 @@
 import { isIP } from 'node:net';
 import path from 'node:path';
 
+export interface IdentityConfig {
+  readonly issuer: string;
+  readonly clientId: string;
+  readonly clientSecret: string;
+  readonly connections: Readonly<{ email: string; google: string; github: string }>;
+  readonly legacyLinkUntil: number | null;
+}
 export interface ServerConfig {
   readonly environment: 'development' | 'test' | 'production';
   readonly appMode: 'local' | 'service';
@@ -15,6 +22,7 @@ export interface ServerConfig {
   readonly port: number;
   readonly cookieSecure: boolean;
   readonly ai: Readonly<{ apiKey: string; baseUrl: string; model: string }> | null;
+  readonly identity: Readonly<IdentityConfig> | null;
 }
 
 export class ConfigurationError extends Error {
@@ -31,7 +39,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
   }
   const appMode = env.APP_MODE ?? 'local';
   if (appMode !== 'local' && appMode !== 'service') throw new ConfigurationError('APP_MODE', 'must be local or service.');
-  if (appMode === 'service') throw new ConfigurationError('APP_MODE', 'service mode is not enabled in this release; managed identity and production authorization are still pending.');
+  if (appMode === 'service') throw new ConfigurationError('APP_MODE', 'service mode is not enabled in this release; managed identity lifecycle and production authorization are still pending.');
   const portText = env.PORT ?? '3000';
   if (!/^\d+$/.test(portText) || !Number.isSafeInteger(Number(portText)) || Number(portText) > 65535) {
     throw new ConfigurationError('PORT', 'must be an integer between 0 and 65535.');
@@ -90,6 +98,41 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
   }
   const model = env.OPENAI_MODEL?.trim() || 'gpt-4.1-mini';
   if (model.length > 200 || /[\x00-\x20\x7f]/.test(model)) throw new ConfigurationError('OPENAI_MODEL', 'must be a model identifier of at most 200 characters.');
+  let identity: Readonly<IdentityConfig> | null = null;
+  const identitySettings = ['OIDC_ISSUER', 'OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET', 'OIDC_EMAIL_CONNECTION', 'OIDC_GOOGLE_CONNECTION', 'OIDC_GITHUB_CONNECTION', 'OIDC_LEGACY_LINK_UNTIL'];
+  const providedIdentitySettings = Object.keys(env).filter(key => key.startsWith('OIDC_') && env[key] !== undefined);
+  if (providedIdentitySettings.length) {
+    if (providedIdentitySettings.some(key => !identitySettings.includes(key))) throw new ConfigurationError('OIDC configuration', 'contains an unsupported setting.');
+    let issuer: URL;
+    try {
+      const value = env.OIDC_ISSUER;
+      if (!value || /[\x00-\x20\x7f]/.test(value)) throw new Error('Invalid issuer.');
+      issuer = new URL(value);
+      if (issuer.protocol !== 'https:' || issuer.username || issuer.password || issuer.pathname !== '/' || issuer.search || issuer.hash || value.includes('?') || value.includes('#')) throw new Error('Invalid issuer.');
+    } catch { throw new ConfigurationError('OIDC_ISSUER', 'must be an HTTPS broker origin without credentials, a path, query or fragment.'); }
+    const clientId = env.OIDC_CLIENT_ID;
+    if (!clientId || !/^[A-Za-z0-9_-]{1,200}$/.test(clientId)) throw new ConfigurationError('OIDC_CLIENT_ID', 'must be a bounded broker client identifier.');
+    const clientSecret = env.OIDC_CLIENT_SECRET;
+    if (!clientSecret || clientSecret.length < 8 || clientSecret.length > 4096 || /[\x00-\x20\x7f]/.test(clientSecret)) throw new ConfigurationError('OIDC_CLIENT_SECRET', 'must be a nonempty confidential-client secret without whitespace.');
+    if (!databaseUrl) throw new ConfigurationError('DATABASE_URL', 'is required for managed identity.');
+    if (!publicOrigin?.startsWith('https://') || cookieSecure !== 'true') throw new ConfigurationError('PUBLIC_ORIGIN', 'and COOKIE_SECURE must enable a canonical HTTPS origin for managed identity.');
+    const connections = {
+      email: env.OIDC_EMAIL_CONNECTION ?? 'Username-Password-Authentication',
+      google: env.OIDC_GOOGLE_CONNECTION ?? 'google-oauth2',
+      github: env.OIDC_GITHUB_CONNECTION ?? 'github',
+    };
+    for (const [provider, value] of Object.entries(connections)) {
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(value)) throw new ConfigurationError(`OIDC_${provider.toUpperCase()}_CONNECTION`, 'must be a bounded broker connection identifier.');
+    }
+    let legacyLinkUntil: number | null = null;
+    if (env.OIDC_LEGACY_LINK_UNTIL !== undefined) {
+      legacyLinkUntil = Date.parse(env.OIDC_LEGACY_LINK_UNTIL);
+      if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(env.OIDC_LEGACY_LINK_UNTIL) || !Number.isFinite(legacyLinkUntil) || legacyLinkUntil <= Date.now() || legacyLinkUntil > Date.now() + 30 * 86400000) {
+        throw new ConfigurationError('OIDC_LEGACY_LINK_UNTIL', 'must be an explicit future UTC deadline within 30 days.');
+      }
+    }
+    identity = Object.freeze({ issuer: `${issuer.origin}/`, clientId, clientSecret, connections: Object.freeze(connections), legacyLinkUntil });
+  }
   const root = path.resolve(rootDir);
   return Object.freeze({
     environment,
@@ -105,5 +148,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
     port: Number(portText),
     cookieSecure: cookieSecure === 'true',
     ai: apiKey ? Object.freeze({ apiKey, baseUrl: baseUrl.href.replace(/\/+$/, ''), model }) : null,
+    identity,
   });
 }

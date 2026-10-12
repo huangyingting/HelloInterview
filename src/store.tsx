@@ -2,10 +2,12 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import type { Bootstrap, UserState } from '../shared/types';
 import { emptyState } from '../shared/domain';
 
+let csrfToken: string | undefined;
 export async function request<T>(url: string, data?: unknown, method?: string, signal?: AbortSignal): Promise<T> {
+  const verb = method || (data === undefined ? 'GET' : 'POST');
   const response = await fetch(url, {
-    method: method || (data === undefined ? 'GET' : 'POST'),
-    headers: data === undefined ? undefined : { 'Content-Type': 'application/json' },
+    method: verb,
+    headers: { ...(data === undefined ? {} : { 'Content-Type': 'application/json' }), ...(!['GET', 'HEAD'].includes(verb) && csrfToken ? { 'X-CSRF-Token': csrfToken } : {}) },
     body: data === undefined ? undefined : JSON.stringify(data),
     signal,
   });
@@ -14,6 +16,7 @@ export async function request<T>(url: string, data?: unknown, method?: string, s
     const message = payload && typeof payload === 'object' && 'error' in payload ? String(payload.error) : `Request failed (${response.status}).`;
     throw new Error(message);
   }
+  if (url === '/api/bootstrap') csrfToken = payload && typeof payload === 'object' && 'csrf' in payload && typeof payload.csrf === 'string' ? payload.csrf : undefined;
   return payload as T;
 }
 interface Store {

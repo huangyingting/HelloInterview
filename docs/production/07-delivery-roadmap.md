@@ -14,7 +14,8 @@ gates are not implicitly satisfied by a foundation change.
 | W03 | Provider-neutral checkpoint implemented; managed deployment pending D04/D06 | Pinned CI and release artifacts; non-root/read-only container; migration-gated private staging; proxy/origin validation; fail-closed service mode; readiness/draining; private request telemetry; encrypted fixture dump/restore |
 | W05 | Content-delivery checkpoint implemented; editorial/service authority pending W06/W12 | Allowlisted browser discovery graph; private readers/briefs/media; version-pinned server quiz sessions/checks/reports; readable/exportable owned history; migration 2 and replica/bundle checks |
 | W07 | Durable-job checkpoint implemented; provider/worker composition pending W08-W10 | Maintained PostgreSQL queue, controlled schema/policies, atomic operation/inbox/outbox, fenced completion, safe retries, audited replay and actual worker-death recovery |
-| W04, W06, W08-W13 | Pending | Managed identity, production entitlements, billing, AI budgets, account administration, support, moderation, and launch gates |
+| W04 | In progress; private-staging identity checkpoint implemented | Maintained OIDC verification, email/Google/GitHub reference connections, verified contact gates, secure sessions/CSRF, fresh linking and paired PostgreSQL legacy proof; provider lifecycle/reconciliation, delivery, shared abuse controls and imported-account recovery remain |
+| W06, W08-W13 | Pending | Production entitlements, billing, AI budgets, account administration, support, moderation, and launch gates |
 
 W01 preserves existing local accounts, SQLite schema, demo entitlements, API
 contracts, curriculum, and UI. `NODE_ENV=production` means built asset serving,
@@ -36,6 +37,10 @@ or production entitlement authority.
 The [W07 job runbook](11-jobs-implementation.md) records queue migration,
 idempotency, worker/replay contracts and recovery. It proceeds independently of
 vendor selection; no live handler, email delivery or provider purchase is implied.
+The [W04 identity runbook](12-identity-implementation.md) records its opt-in
+broker profile, migration 4, sessions/linking and remaining lifecycle gates.
+It does not authorize a tenant purchase, real-user account beta or password-reset
+recovery claim; service mode remains disabled.
 
 ## Delivery strategy
 

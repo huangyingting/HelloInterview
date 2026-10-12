@@ -81,6 +81,8 @@ export function AlgorithmLab({ kind }: { kind: string }) {
   </section>;
 }
 export function PremiumGate() {
+  const {data}=useStudio();
+  if(data.capabilities.commerce==='disabled')return <div className="premium-gate"><IconTile icon={LockKeyhole}/><h2>Production premium access is not enabled yet.</h2><p>Local demo purchases do not unlock managed-account access. Your existing preparation archive is unchanged.</p><Link className="button" to="/account">Open Account <ArrowRight size={16}/></Link></div>;
   return <div className="premium-gate"><IconTile icon={LockKeyhole}/><h2>A deeper practice opportunity.</h2><p>This original Studio exercise is part of the local premium demo. Activate a demo plan to explore it; no payment or card information is collected.</p><Link className="button" to="/pricing">Explore demo plans <ArrowRight size={16}/></Link></div>;
 }
 export function NotFound() {

@@ -111,6 +111,14 @@ Foreign operation IDs return `404`. No generic public job creation/status
 endpoint is exposed yet; W08-W10 must add feature-specific authorization and
 response contracts.
 
+Migration 4 adds managed account status. Owned-user operations now require an
+existing active account at enqueue, before worker preparation and at fenced
+finalization. Finalization locks owner/account before the operation, preserving
+the common owner-first lock order and preventing suspended/pending owners from
+publishing. Unmanaged local fixture accounts retain their previous eligibility;
+system operations still need explicit feature-handler eligibility. This is not
+replacement authorization for grants, quotas, consent or staff privilege.
+
 ## Verified events and outbox
 
 `ingestVerifiedEvent()` is an **internal post-verification interface**, not a
