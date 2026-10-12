@@ -99,6 +99,10 @@ Build before packaging and promote `dist/`, `dist-server/`, `package.json` and
 Every referenced script, CSS and other manifest asset must exist and be served
 as its original bytes, not an HTML SPA fallback. Runtime-only verification
 checks the complete manifest from a copied release without development tooling.
+CI explicitly includes hidden files for its allowlisted release paths so the
+`.vite/manifest.json` is not silently omitted by artifact upload. Environment
+and data directories remain outside those paths. Verification must inspect
+the actual downloadable archive as well as the pre-upload build directory.
 
 An already open browser can request an old hashed route chunk long after its
 initial page load. Do not overwrite/delete old hashed assets immediately during
