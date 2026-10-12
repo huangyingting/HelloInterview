@@ -42,6 +42,13 @@ test('runtime-only release retains identity after restart and operates canonical
   ]);
   await promisify(execFile)('npm', ['ci', '--omit=dev', '--no-audit', '--no-fund'], { cwd: release, timeout: 60000 });
   for (const dependency of ['tsx', 'typescript', 'vite', 'esbuild']) await assert.rejects(stat(join(release, 'node_modules', dependency)), { code: 'ENOENT' });
+  assert.ok((await stat(join(release, 'dist-server/billing/cli.js'))).isFile());
+  await assert.rejects(promisify(execFile)(process.execPath, ['dist-server/billing/cli.js', 'reconcile'], { cwd: release, env, timeout: 15000 }), error => {
+    assert.ok(error && typeof error === 'object' && 'code' in error && 'stderr' in error);
+    assert.equal(error.code, 1);
+    assert.match(String(error.stderr), /Billing notification maintenance failed/);
+    return true;
+  });
   async function start() {
     const child = spawn(process.execPath, ['dist-server/index.js'], {
       cwd: release, stdio: ['ignore', 'pipe', 'pipe'],

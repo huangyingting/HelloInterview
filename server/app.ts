@@ -19,6 +19,7 @@ import type { IdentityLifecycle } from './identity/lifecycle';
 import { Entitlements } from './entitlements';
 import { digest, encodePayload } from './jobs/schema';
 import type { Capability } from '../shared/access';
+import type { BillingNotifications } from './billing';
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new HttpError(400, 'Expected an object.');
   return value as Record<string, unknown>;
@@ -53,11 +54,12 @@ function sourceText(value: unknown): string {
   if (value.includes('\0')) throw new HttpError(400, 'Import text source files, not binary content.');
   return value;
 }
-export function createApp(config: ServerConfig, db: Database, shutdown: AbortSignal, draining: AbortSignal = shutdown, identityTransport?: IdentityTransport, lifecycle?: IdentityLifecycle): express.Express {
+export function createApp(config: ServerConfig, db: Database, shutdown: AbortSignal, draining: AbortSignal = shutdown, identityTransport?: IdentityTransport, lifecycle?: IdentityLifecycle, billing?: BillingNotifications): express.Express {
   const states = new StateRepository(db);
   const content = new ContentRepository(db);
   if (config.identity && !config.publicOrigin) throw new Error('Managed identity requires a canonical application origin.');
   if (config.identity?.lifecycle && !lifecycle) throw new Error('Configured identity lifecycle must be opened before serving requests.');
+  if (config.billing && !billing) throw new Error('Configured billing notifications must be opened before serving requests.');
   const identity = config.identity && config.publicOrigin ? new ManagedIdentity(db, config.identity, config.publicOrigin, shutdown, identityTransport, lifecycle) : null;
   const entitlements = identity ? new Entitlements(db) : null;
   const connectedAi = identity ? null : config.ai;
@@ -100,6 +102,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     else next();
   });
   lifecycle?.register(app);
+  billing?.register(app);
   app.use(express.json({ limit: '512kb' }));
 
   async function currentUser(req: express.Request): Promise<User | null> {

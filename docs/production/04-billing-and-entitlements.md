@@ -3,6 +3,10 @@
 **Status: proposed feature specification.** Addresses GAP-03 through GAP-05.
 This is a direct subscription business, not a marketplace or stored-value
 wallet. No application endpoint should ever receive a PAN or card security code.
+The [first W08 implementation checkpoint](14-billing-implementation.md) ships
+only sandbox signed notifications and read-only canonical evidence. Checkout,
+customer ownership, payment-derived entitlements and the financial lifecycle
+below remain unimplemented; this specification is not launch authorization.
 
 ## Launch offer and boundaries
 

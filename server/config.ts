@@ -9,6 +9,11 @@ export interface IdentityConfig {
   readonly legacyLinkUntil: number | null;
   readonly lifecycle: Readonly<{ origin: string; clientId: string; clientSecret: string; hookSecret: string }> | null;
 }
+export interface BillingConfig {
+  readonly accountId: string;
+  readonly secretKey: string;
+  readonly webhookSecret: string;
+}
 export interface ServerConfig {
   readonly environment: 'development' | 'test' | 'production';
   readonly appMode: 'local' | 'service';
@@ -24,6 +29,7 @@ export interface ServerConfig {
   readonly cookieSecure: boolean;
   readonly ai: Readonly<{ apiKey: string; baseUrl: string; model: string }> | null;
   readonly identity: Readonly<IdentityConfig> | null;
+  readonly billing: Readonly<BillingConfig> | null;
 }
 
 export class ConfigurationError extends Error {
@@ -151,6 +157,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
     }
     identity = Object.freeze({ issuer: `${issuer.origin}/`, clientId, clientSecret, connections: Object.freeze(connections), legacyLinkUntil, lifecycle });
   }
+  let billing: Readonly<BillingConfig> | null = null;
+  const billingSettings = ['STRIPE_TEST_ACCOUNT_ID', 'STRIPE_TEST_SECRET_KEY', 'STRIPE_TEST_WEBHOOK_SECRET'];
+  const providedBillingSettings = Object.keys(env).filter(key => key.startsWith('STRIPE_') && env[key] !== undefined);
+  if (providedBillingSettings.length) {
+    if (providedBillingSettings.some(key => !billingSettings.includes(key))) throw new ConfigurationError('Stripe configuration', 'contains an unsupported setting; live billing is not enabled.');
+    if (!identity || !databaseUrl || !publicOrigin?.startsWith('https://')) throw new ConfigurationError('Stripe configuration', 'requires managed identity, PostgreSQL and a canonical HTTPS origin.');
+    const accountId = env.STRIPE_TEST_ACCOUNT_ID, secretKey = env.STRIPE_TEST_SECRET_KEY, webhookSecret = env.STRIPE_TEST_WEBHOOK_SECRET;
+    if (!accountId || !/^acct_[A-Za-z0-9]{1,100}$/.test(accountId)) throw new ConfigurationError('STRIPE_TEST_ACCOUNT_ID', 'must be an explicit reference account identifier.');
+    if (!secretKey || !/^(?:sk|rk)_test_[A-Za-z0-9]{8,200}$/.test(secretKey)) throw new ConfigurationError('STRIPE_TEST_SECRET_KEY', 'must be a test-mode SDK key; live keys are refused.');
+    if (!webhookSecret || !/^whsec_[A-Za-z0-9]{8,200}$/.test(webhookSecret)) throw new ConfigurationError('STRIPE_TEST_WEBHOOK_SECRET', 'must be the private signing secret for the own-account snapshot endpoint.');
+    billing = Object.freeze({ accountId, secretKey, webhookSecret });
+  }
   const root = path.resolve(rootDir);
   return Object.freeze({
     environment,
@@ -167,5 +185,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
     cookieSecure: cookieSecure === 'true',
     ai: apiKey ? Object.freeze({ apiKey, baseUrl: baseUrl.href.replace(/\/+$/, ''), model }) : null,
     identity,
+    billing,
   });
 }

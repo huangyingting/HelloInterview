@@ -120,8 +120,15 @@ owned archives after expiry. The UI refreshes permissions at scheduled boundarie
 without trusting the browser's wall clock. Demo plans never authorize managed
 access. There is no public grant endpoint, paid checkout, approved subscription
 offer or external AI quota. See
-[the entitlement runbook](docs/production/13-entitlements-implementation.md);
-controlled PostgreSQL deployments must apply migration 7 before this release.
+[the entitlement runbook](docs/production/13-entitlements-implementation.md).
+
+A first **sandbox billing notification checkpoint** adds official Stripe SDK
+signature verification, minimized durable acceptance, read-only canonical
+observations and a compiled reconciliation worker. It refuses live keys/events
+and does not create customers, checkout sessions, payments or entitlements.
+Managed commerce remains disabled. See
+[the billing notification runbook](docs/production/14-billing-implementation.md);
+controlled PostgreSQL deployments must apply migration 8 before this release.
 
 | Area | Local functionality |
 | --- | --- |

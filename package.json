@@ -7,7 +7,7 @@
     "dev": "npm run content:metadata && tsx --env-file-if-exists=.env server/index.ts",
     "build": "npm run content:metadata && tsc --noEmit && vite build && npm run build:server",
     "content:metadata": "tsx scripts/generate-public-content.ts",
-    "build:server": "esbuild server/index.ts server/db/cli.ts server/jobs/index.ts server/identity/cli.ts --bundle --platform=node --target=node24 --format=esm --packages=external --outdir=dist-server --outbase=server && tsx scripts/copy-private-media.ts",
+    "build:server": "esbuild server/index.ts server/db/cli.ts server/jobs/index.ts server/identity/cli.ts server/billing/cli.ts --bundle --platform=node --target=node24 --format=esm --packages=external --outdir=dist-server --outbase=server && tsx scripts/copy-private-media.ts",
     "start": "NODE_ENV=production node --env-file-if-exists=.env dist-server/index.js",
     "test": "playwright test",
     "test:unit": "tsx --test tests/config.test.ts tests/domain.test.ts tests/premium.test.ts tests/content.test.ts tests/coding.test.ts tests/low-level-design.test.ts tests/access.test.ts",
@@ -20,6 +20,7 @@
     "test:identity": "npm run build && tsx --test tests/identity.test.ts tests/identity-limits.test.ts tests/identity-contract.test.ts tests/identity-lifecycle.test.ts tests/identity-runtime.test.ts",
     "test:identity-browser": "npm run build && tsx --test tests/identity-browser.test.ts",
     "test:entitlements": "npm run build && tsx --test tests/entitlements.test.ts",
+    "test:billing": "npm run build && tsx --test tests/billing.test.ts",
     "test:container": "tsx --test tests/container.test.ts",
     "db:migrate": "node --env-file-if-exists=.env dist-server/db/cli.js migrate",
     "db:import": "node --env-file-if-exists=.env dist-server/db/cli.js import",
@@ -27,6 +28,8 @@
     "jobs:replay": "node --env-file-if-exists=.env dist-server/db/cli.js jobs replay",
     "identity:reconcile": "node --env-file-if-exists=.env dist-server/identity/cli.js reconcile",
     "identity:worker": "node --env-file-if-exists=.env dist-server/identity/cli.js worker",
+    "billing:reconcile": "node --env-file-if-exists=.env dist-server/billing/cli.js reconcile",
+    "billing:worker": "node --env-file-if-exists=.env dist-server/billing/cli.js worker",
     "screenshots": "node scripts/capture-screenshots.mjs",
     "media": "node scripts/generate-media.mjs"
   },
@@ -39,6 +42,7 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.9.0",
+    "stripe": "23.0.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {

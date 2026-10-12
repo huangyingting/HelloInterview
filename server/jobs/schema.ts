@@ -36,6 +36,9 @@ export const eventSchema = z.strictObject({
   operation: requestSchema.omit({ principal: true, key: true }),
 });
 export type VerifiedEvent = z.infer<typeof eventSchema>;
+export class InvalidJobPayload extends Error {
+  constructor(message: string) { super(message); this.name = 'InvalidJobPayload'; }
+}
 
 function canonical(value: z.infer<typeof jsonSchema>): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
@@ -43,7 +46,7 @@ function canonical(value: z.infer<typeof jsonSchema>): string {
     return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
   }
   const encoded = JSON.stringify(value);
-  if (encoded === undefined) throw new Error('A job payload contains a non-JSON value.');
+  if (encoded === undefined) throw new InvalidJobPayload('A job payload contains a non-JSON value.');
   return encoded;
 }
 export function encodePayload(value: unknown, maxBytes = 262144): string {
@@ -51,20 +54,20 @@ export function encodePayload(value: unknown, maxBytes = 262144): string {
   let nodes = 0;
   while (pending.length) {
     const item = pending.pop()!;
-    if (++nodes > 16384 || item.depth > 24) throw new Error('A job payload exceeds the JSON complexity limit.');
+    if (++nodes > 16384 || item.depth > 24) throw new InvalidJobPayload('A job payload exceeds the JSON complexity limit.');
     if (item.value !== null && typeof item.value === 'object') {
       const prototype = Object.getPrototypeOf(item.value);
       if (Array.isArray(item.value) ? prototype !== Array.prototype : ![Object.prototype, null].includes(prototype)) {
-        throw new Error('A job payload must contain plain JSON values.');
+        throw new InvalidJobPayload('A job payload must contain plain JSON values.');
       }
       if (Object.keys(item.value).some(key => ['__proto__', 'constructor', 'prototype'].includes(key))) {
-        throw new Error('A job payload contains a prohibited object key.');
+        throw new InvalidJobPayload('A job payload contains a prohibited object key.');
       }
       for (const child of Object.values(item.value)) pending.push({ value: child, depth: item.depth + 1 });
     }
   }
   const encoded = canonical(payloadSchema.parse(value));
-  if (Buffer.byteLength(encoded) > maxBytes) throw new Error('A job payload exceeds its byte limit.');
+  if (Buffer.byteLength(encoded) > maxBytes) throw new InvalidJobPayload('A job payload exceeds its byte limit.');
   return encoded;
 }
 export function payloadFromBytes(bytes: string, maxBytes = 262144): Payload {

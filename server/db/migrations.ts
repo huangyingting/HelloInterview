@@ -263,6 +263,32 @@ export const migrations = [{
     CREATE TRIGGER retire_entitlement_sources BEFORE DELETE ON users
       FOR EACH ROW EXECUTE FUNCTION retire_entitlement_sources();
   `,
+}, {
+  version: 8,
+  name: 'sandbox-billing-notification-evidence',
+  sql: `
+    CREATE TABLE stripe_billing_reference (
+      singleton INTEGER PRIMARY KEY CHECK (singleton=1),
+      account_id TEXT NOT NULL, bound_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE TABLE stripe_event_notifications (
+      account_id TEXT NOT NULL, event_id TEXT NOT NULL,
+      event_type TEXT NOT NULL, object_id TEXT NOT NULL, object_kind TEXT NOT NULL,
+      operation_id TEXT NOT NULL UNIQUE REFERENCES durable_operations(id),
+      classification TEXT NOT NULL CHECK (classification IN ('supported','unsupported')),
+      state TEXT NOT NULL DEFAULT 'accepted' CHECK (state IN ('accepted','observed','ignored')),
+      payload TEXT NOT NULL CHECK (octet_length(payload) <= 4096),
+      observation TEXT CHECK (octet_length(observation) <= 8192),
+      accepted_at TIMESTAMPTZ NOT NULL DEFAULT now(), observed_at TIMESTAMPTZ,
+      PRIMARY KEY (account_id,event_id),
+      CHECK ((state='observed') = (observation IS NOT NULL)),
+      CHECK ((state='accepted') = (observed_at IS NULL)),
+      CHECK (state<>'ignored' OR classification='unsupported'),
+      CHECK (state<>'observed' OR classification='supported')
+    );
+    CREATE INDEX stripe_notification_backlog ON stripe_event_notifications(state,accepted_at);
+    CREATE INDEX stripe_notification_object ON stripe_event_notifications(account_id,object_kind,object_id);
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

@@ -20,6 +20,7 @@ test('configuration defaults preserve loopback, local data, cookies and optional
     cookieSecure: false,
     ai: null,
     identity: null,
+    billing: null,
   });
 });
 
@@ -139,4 +140,26 @@ test('identity lifecycle requires separate read-only machine credentials and a p
     { OIDC_MANAGEMENT_ORIGIN: 'https://broker.fixture/path' }, { OIDC_MANAGEMENT_CLIENT_ID: 'synthetic-client' },
     { OIDC_MANAGEMENT_CLIENT_SECRET: undefined }, { OIDC_PASSWORD_HOOK_SECRET: 'short' },
   ]) assert.throws(() => loadConfig({ ...env, ...override }), ConfigurationError);
+});
+
+test('sandbox billing is all-or-nothing, immutable, managed-only and cannot accept live or unknown settings', () => {
+  const env = {
+    DATABASE_URL: 'postgres://localhost/synthetic_fixture', PUBLIC_ORIGIN: 'https://studio.fixture', COOKIE_SECURE: 'true',
+    OIDC_ISSUER: 'https://broker.fixture/', OIDC_CLIENT_ID: 'synthetic-client', OIDC_CLIENT_SECRET: 'synthetic-secret',
+    STRIPE_TEST_ACCOUNT_ID: 'acct_SyntheticFixture', STRIPE_TEST_SECRET_KEY: 'rk_test_SyntheticFixtureOnly',
+    STRIPE_TEST_WEBHOOK_SECRET: 'whsec_SyntheticFixtureOnly',
+  };
+  const config = loadConfig(env);
+  assert.ok(Object.isFrozen(config.billing));
+  assert.equal(config.billing?.accountId, env.STRIPE_TEST_ACCOUNT_ID);
+  for (const override of [
+    { STRIPE_TEST_ACCOUNT_ID: undefined }, { STRIPE_TEST_ACCOUNT_ID: 'wrong' },
+    { STRIPE_TEST_SECRET_KEY: undefined }, { STRIPE_TEST_SECRET_KEY: 'sk_live_SyntheticFixtureOnly' },
+    { STRIPE_TEST_SECRET_KEY: 'rk_live_SyntheticFixtureOnly' },
+    { STRIPE_TEST_WEBHOOK_SECRET: undefined }, { STRIPE_TEST_WEBHOOK_SECRET: 'unsafe secret' },
+    { STRIPE_API_ORIGIN: 'https://foreign.fixture' }, { STRIPE_SECRET_KEY: 'unsupported' },
+  ]) assert.throws(() => loadConfig({ ...env, ...override }), ConfigurationError);
+  assert.throws(() => loadConfig({ STRIPE_TEST_ACCOUNT_ID: env.STRIPE_TEST_ACCOUNT_ID }), /requires managed identity/);
+  env.STRIPE_TEST_ACCOUNT_ID = 'acct_ChangedFixture';
+  assert.equal(config.billing?.accountId, 'acct_SyntheticFixture');
 });

@@ -42,6 +42,8 @@ service with defined recovery and support commitments.
 | [10 - Protected-content implementation](10-content-implementation.md) | Browser-safe discovery graph, authorized readers/media, versioned quiz sessions, legacy reports and rollout | Learning and backend |
 | [11 - Durable-job implementation](11-jobs-implementation.md) | Controlled maintained queue, inbox/outbox, idempotency, fenced workers, replay and crash/restore boundaries | Backend and operations |
 | [12 - Identity implementation](12-identity-implementation.md) | Opt-in hosted OIDC, verified contact authority, secure sessions/linking, paired legacy proof and incomplete lifecycle gates | Identity and operations |
+| [13 - Entitlement implementation](13-entitlements-implementation.md) | Immutable managed grants, server-clock capability authority, licensed archives and expiry-safe UI | Backend and product |
+| [14 - Billing notification implementation](14-billing-implementation.md) | Test-only signed durable notifications, minimized read-only canonical evidence, compiled worker and remaining commercial boundaries | Billing and operations |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to

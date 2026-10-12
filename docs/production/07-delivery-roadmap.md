@@ -16,7 +16,8 @@ gates are not implicitly satisfied by a foundation change.
 | W07 | Durable-job checkpoint implemented; provider/worker composition pending W08-W10 | Maintained PostgreSQL queue, controlled schema/policies, atomic operation/inbox/outbox, fenced completion, safe retries, audited replay and actual worker-death recovery |
 | W04 | In progress; private identity, shared admission and credential-lifecycle checkpoints implemented | Maintained OIDC verification, email/Google/GitHub reference connections, secure sessions/CSRF, fresh linking, paired PostgreSQL legacy proof, shared admission, signed reset revocation, read-only canonical security facts and compiled maintained-queue reconciliation; live delivery, operated alerts, notifications, broker-native abuse controls and imported-account recovery remain |
 | W06 | Entitlement engineering checkpoint implemented; issuing adapters and commercial authority pending W08/W10/W12 | Immutable owned source grants, terminal revocation, database-clock capability policy, API/worker admission and publication checks, separate content-only access, licensed project snapshots, expiry-aware UI and retained archives |
-| W08-W13 | Pending | Billing, AI budgets, account administration, support, moderation, and launch gates |
+| W08 | In progress; sandbox notification checkpoint implemented | Pinned official Stripe SDK/API, test-only raw signed ingestion, minimized durable inbox/outbox, read-only canonical observations and compiled maintained-queue worker; customer ownership, hosted checkout, payment-derived grants and commercial lifecycle remain |
+| W09-W13 | Pending | AI budgets, account administration, support, moderation, and launch gates |
 
 W01 preserves existing local accounts, SQLite schema, demo entitlements, API
 contracts, curriculum, and UI. `NODE_ENV=production` means built asset serving,
@@ -47,6 +48,10 @@ The [W06 entitlement runbook](13-entitlements-implementation.md) records
 migration 7, immutable source authority, capability policy, archival licensing,
 client expiry behavior and trusted issuing-adapter requirements. No checkout,
 approved price, staff grant endpoint or external AI allowance is implied.
+The [W08 notification runbook](14-billing-implementation.md) records migration 8,
+own-account sandbox signatures, minimized durable evidence, read-only canonical
+observations and compiled worker operation. This is not a payment ledger,
+customer mapping, subscription entitlement, hosted checkout or live-mode approval.
 
 ## Delivery strategy
 

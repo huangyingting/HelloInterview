@@ -7,6 +7,7 @@ import type { ServerConfig } from './config';
 import { localConnection, postgresConnection } from './db/connection';
 import { assertDatabaseVersion } from './db/migrations';
 import { IdentityLifecycle } from './identity/lifecycle';
+import { assertBillingConfiguration, BillingNotifications } from './billing';
 
 export interface Application {
   readonly app: express.Express;
@@ -31,6 +32,7 @@ export async function createApplication(config: ServerConfig): Promise<Applicati
   const draining = new AbortController();
   let vite: ViteDevServer | undefined;
   let lifecycle: IdentityLifecycle | undefined;
+  let billing: BillingNotifications | undefined;
   let closing: Promise<void> | undefined;
   function close(): Promise<void> {
     return closing ??= (async () => {
@@ -39,12 +41,15 @@ export async function createApplication(config: ServerConfig): Promise<Applicati
       try {
         await vite?.close();
       } finally {
-        try { await lifecycle?.close(); } finally { await db.close(); }
+        try { await billing?.close(); } finally {
+          try { await lifecycle?.close(); } finally { await db.close(); }
+        }
       }
     })();
   }
   try {
     await assertDatabaseVersion(db);
+    await assertBillingConfiguration(db, config.billing);
     if (db.dialect === 'postgres' && !config.identity && await db.prepare('SELECT 1 AS present WHERE EXISTS(SELECT 1 FROM entitlement_grants) OR EXISTS(SELECT 1 FROM entitlement_revocations)').get()) {
       throw new Error('Stored managed entitlements require managed identity configuration. Local demo access is not a production fallback.');
     }
@@ -52,7 +57,8 @@ export async function createApplication(config: ServerConfig): Promise<Applicati
       throw new Error('Stored identity security authority requires managed lifecycle configuration. Disabling it is not an authentication fallback.');
     }
     if (config.identity?.lifecycle) lifecycle = await IdentityLifecycle.open(db, config.identity, shutdown.signal);
-    const app = createApp(config, db, shutdown.signal, draining.signal, undefined, lifecycle);
+    if (config.billing) billing = await BillingNotifications.open(db, config.billing, shutdown.signal);
+    const app = createApp(config, db, shutdown.signal, draining.signal, undefined, lifecycle, billing);
     if (config.environment === 'production') {
       app.use(express.static(config.frontendDir));
       app.get('/{*path}', (_req, res) => res.sendFile(path.join(config.frontendDir, 'index.html')));
