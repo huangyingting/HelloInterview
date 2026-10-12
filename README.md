@@ -198,7 +198,12 @@ The [opaque-address checkpoint](docs/production/30-opaque-community-addresses.md
 preserves legacy post IDs through shared query-based detail links, exact local
 vote/follow/comment identities, and explicit malformed-address recovery.
 Existing routes remain compatible; managed community stays read-only.
-Controlled PostgreSQL deployments must apply **migration 21 and maintained queue
+The [owned-contribution checkpoint](docs/production/31-owned-community-contributions.md)
+adds local original-post editing/deletion with current-session ownership,
+revision conflicts, exact discussion removal and explicit in-page draft/
+lost-response recovery. Illustrative examples remain immutable; managed
+owner management is still disabled.
+Controlled PostgreSQL deployments must apply **migration 22 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 

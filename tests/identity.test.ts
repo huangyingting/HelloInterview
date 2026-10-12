@@ -80,6 +80,13 @@ test('opaque community detail stays a private-safe public read for inactive view
     assert.equal((await active.browser.request(route,{id,action:'vote',enabled:true})).status,503);
     assert.equal((await pending.request(route,{id,action:'vote',enabled:true})).status,403);
   }
+  assert.equal((await active.browser.request(`/api/posts/owned?${new URLSearchParams({id})}`)).status,503);
+  assert.equal((await pending.request(`/api/posts/owned?${new URLSearchParams({id})}`)).status,403);
+  for(const method of ['PUT','DELETE']){
+    const response=await active.browser.request('/api/posts/owned',{id,revision:0,title:'Managed changes remain denied',body:'Managed writing has not been approved for this release.'},method);
+    assert.equal(response.status,503,`${method}: ${await response.text()}`);
+    assert.equal((await pending.request('/api/posts/owned',{id,revision:0},method)).status,403);
+  }
   await f.db.prepare("UPDATE managed_accounts SET status='suspended' WHERE user_id=?").run(owner);
   assert.equal((await active.browser.request(`/api/community/post?${query}`)).status,200);
   assert.equal((await active.browser.request('/api/posts/actions',{id,action:'follow',enabled:true})).status,403);

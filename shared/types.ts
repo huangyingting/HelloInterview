@@ -329,6 +329,7 @@ export interface CommunityPost {
   followed: boolean;
   sample: boolean;
 }
+export interface OwnedCommunityPost { post: CommunityPost; revision: number }
 export interface CommunityFeed {
   posts: CommunityPost[];
   total: number;

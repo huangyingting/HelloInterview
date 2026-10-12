@@ -3,12 +3,16 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
+import { DatabaseSync } from 'node:sqlite';
 import { CommunityReads } from '../server/community';
 import { localConnection, postgresConnection, type Database } from '../server/db/connection';
 import { assertDatabaseVersion, migrateDatabase, migrations } from '../server/db/migrations';
 import { HttpError } from '../server/http-error';
 import { loadConfig } from '../server/config';
 import { startServer } from '../server/runtime';
+import { createApp, handleError } from '../server/app';
 import type { CommunityPost } from '../shared/types';
 import { communityFeedPath, communityPostApi, communityPostPath, parseStudioAddress } from '../shared/community-routes';
 
@@ -64,7 +68,7 @@ test('community URL helpers preserve exact bounded data and reject malformed or 
   assert.deepEqual(parseStudioAddress('/community/questions/literal%252F','').segments,['community','questions','literal%2F']);
 });
 
-test('migration 21 preserves actual migration-20 posts, memberships and immutable history while adding read indexes',async t=>{
+test('migrations 21/22 preserve actual legacy posts, memberships and immutable history while adding indexes and revisions',async t=>{
   const f=await fixture(t,'postgres'),post=await f.add();
   await f.db.prepare('INSERT INTO votes(post_id,user_id) VALUES(?,?)').run(post.id,f.owners[0]);
   await f.db.prepare('INSERT INTO follows(post_id,user_id) VALUES(?,?)').run(post.id,f.owners[1]);
@@ -82,16 +86,182 @@ test('migration 21 preserves actual migration-20 posts, memberships and immutabl
   for(const table of ['users','posts','votes','follows'])await legacy.exec(`INSERT INTO ${table} SELECT * FROM ${source.name}.${table}`);
   const before=await Promise.all(['posts','votes','follows'].map(table=>legacy.prepare(`SELECT * FROM ${table} ORDER BY 1,2`).all()));
   const history=await legacy.prepare('SELECT version,name,checksum FROM schema_migrations ORDER BY version').all();
+  const readIndexes=migrations.find(migration=>migration.version===21);assert.ok(readIndexes);
+  await legacy.exec(readIndexes.sql);
+  await legacy.prepare('INSERT INTO schema_migrations(version,name,checksum) VALUES(?,?,?)').run(readIndexes.version,readIndexes.name,createHash('sha256').update(readIndexes.sql).digest('hex'));
+  const history21=await legacy.prepare('SELECT version,name,checksum FROM schema_migrations ORDER BY version').all();
   await assert.rejects(assertDatabaseVersion(legacy),/incompatible/);
   await migrateDatabase(legacy);await migrateDatabase(legacy);await assertDatabaseVersion(legacy);
   assert.deepEqual(await Promise.all(['posts','votes','follows'].map(table=>legacy.prepare(`SELECT * FROM ${table} ORDER BY 1,2`).all())),before);
   assert.deepEqual(await legacy.prepare('SELECT version,name,checksum FROM schema_migrations WHERE version<=20 ORDER BY version').all(),history);
+  assert.deepEqual(await legacy.prepare('SELECT version,name,checksum FROM schema_migrations WHERE version<=21 ORDER BY version').all(),history21);
+  assert.equal((await legacy.prepare('SELECT revision FROM community_post_revisions WHERE post_id=?').get(post.id))?.revision,0);
+  await legacy.prepare('UPDATE posts SET title=? WHERE id=?').run('A controlled original title update',post.id);
+  assert.equal((await legacy.prepare('SELECT revision FROM community_post_revisions WHERE post_id=?').get(post.id))?.revision,1);
   const indexes=await legacy.prepare('SELECT indexname FROM pg_indexes WHERE schemaname=?').all(schema);
   for(const name of ['posts_owner_order','posts_created_order','follows_owner'])assert.ok(indexes.some(row=>row.indexname===name));
   assert.equal((await new CommunityReads(legacy).detail(post.id,{kind:'questions'},f.owners[0])).isMine,true);
 });
 
+test('SQLite upgrades the prior post schema without rewriting saved posts and initializes revisions only once',async t=>{
+  const f=await fixture(t,'sqlite'),post=await f.add({id:' exact/legacy SQLite '});
+  const before=await f.db.prepare('SELECT * FROM posts WHERE id=?').get(post.id);
+  const legacy=new DatabaseSync(path.join(f.directory,'studio.sqlite'));
+  try{legacy.exec('DROP TRIGGER initialize_community_post_revision; DROP TRIGGER advance_community_post_revision; DROP TABLE community_post_revisions;');}
+  finally{legacy.close();}
+  const upgraded=localConnection(f.directory);
+  try{
+    assert.deepEqual(await upgraded.prepare('SELECT * FROM posts WHERE id=?').get(post.id),before);
+    assert.equal((await upgraded.prepare('SELECT revision FROM community_post_revisions WHERE post_id=?').get(post.id))?.revision,0);
+    await upgraded.prepare('UPDATE posts SET title=title WHERE id=?').run(post.id);
+    assert.equal((await upgraded.prepare('SELECT revision FROM community_post_revisions WHERE post_id=?').get(post.id))?.revision,1);
+  }finally{await upgraded.close();}
+  const reopened=localConnection(f.directory);
+  try{assert.equal((await reopened.prepare('SELECT revision FROM community_post_revisions WHERE post_id=?').get(post.id))?.revision,1);}
+  finally{await reopened.close();}
+});
+
+test('a PostgreSQL owned mutation paused before admission cannot commit after the actual browser session is revoked',async t=>{
+  const f=await fixture(t,'postgres');
+  let paused=false,enter!:()=>void,release!:()=>void;
+  const entered=new Promise<void>(resolve=>{enter=resolve;}),gate=new Promise<void>(resolve=>{release=resolve;});
+  const db:Database={...f.db,prepare(sql){
+    const statement=f.db.prepare(sql);
+    return {...statement,get:async(...values)=>{
+      if(paused&&sql==='SELECT id FROM users WHERE id=? FOR UPDATE'){paused=false;enter();await gate;}
+      return statement.get(...values);
+    }};
+  }};
+  const app=createApp(loadConfig({NODE_ENV:'production',DATA_DIR:f.directory,PORT:'0',LOG_REQUESTS:'false'}),db,new AbortController().signal);app.use(handleError);
+  const server=createServer(app);server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();assert.ok(address&&typeof address==='object');
+  t.after(async()=>{server.closeAllConnections();await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));});
+  const url=`http://127.0.0.1:${address.port}`;
+  const login=await fetch(`${url}/api/auth/demo`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}),owner=(await login.json()).user.id,cookie=login.headers.getSetCookie().map(value=>value.split(';')[0]).join('; ');
+  const post=await f.add({owner});paused=true;
+  const updating=fetch(`${url}/api/posts/owned`,{method:'PUT',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({id:post.id,revision:0,title:'A revoked session must not edit',body:'An edit that should be rejected after session revocation.'})});
+  try {
+    await Promise.race([entered,updating.then(response=>{throw new Error(`Mutation returned ${response.status} before paused admission.`);})]);
+    assert.equal((await fetch(`${url}/api/logout`,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:'{}'})).status,200);
+    release();assert.equal((await updating).status,401);
+  } finally { release();await updating; }
+  assert.equal((await f.db.prepare('SELECT title FROM posts WHERE id=?').get(post.id))?.title,post.title);
+  assert.equal((await f.db.prepare('SELECT revision FROM community_post_revisions WHERE post_id=?').get(post.id))?.revision,0);
+});
+
+test('PostgreSQL comment creation serializes with owner deletion in either admitted order without restoring an orphan discussion',async t=>{
+  const f=await fixture(t,'postgres');
+  let target='',waitingFor='',first:'comment'|'delete'='comment',enter=()=>{},competingEnter=()=>{},release=()=>{},gate=Promise.resolve();
+  const db:Database={...f.db,prepare(sql){
+    const statement=f.db.prepare(sql);
+    return {...statement,get:async(...values)=>{
+      if(values[0]===waitingFor&&((first==='delete'&&sql==='SELECT id FROM posts WHERE id=? FOR UPDATE')||(first==='comment'&&sql.startsWith('SELECT kind FROM posts WHERE id=? AND author_id=? AND sample=0')))){
+        waitingFor='';competingEnter();
+      }
+      const row=await statement.get(...values);
+      if(values[0]===target&&((first==='comment'&&sql==='SELECT id FROM posts WHERE id=? FOR UPDATE')||(first==='delete'&&sql.startsWith('SELECT kind FROM posts WHERE id=? AND author_id=? AND sample=0')))){
+        target='';enter();await gate;
+      }
+      return row;
+    }};
+  }};
+  const app=createApp(loadConfig({NODE_ENV:'production',DATA_DIR:f.directory,PORT:'0',LOG_REQUESTS:'false'}),db,new AbortController().signal);app.use(handleError);
+  const server=createServer(app);server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address();assert.ok(address&&typeof address==='object');
+  t.after(async()=>{server.closeAllConnections();await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));});
+  const url=`http://127.0.0.1:${address.port}`,api=(route:string,body:unknown,cookie='',method='POST')=>fetch(`${url}${route}`,{method,headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const login=await api('/api/auth/demo',{}),owner=(await login.json()).user.id,cookie=login.headers.getSetCookie().map(value=>value.split(';')[0]).join('; ');
+  const other=await api('/api/auth/signup',{name:'Other comment author',email:`${randomUUID()}@example.invalid`,password:'fixture-password-123'});assert.equal(other.status,200);
+  const otherCookie=other.headers.getSetCookie().map(value=>value.split(';')[0]).join('; ');
+  for(first of ['comment','delete'] as const){
+    const post=await f.add({owner}),resource=`post/${post.id}`;
+    const entered=new Promise<void>(resolve=>{enter=resolve;}),competingEntered=new Promise<void>(resolve=>{competingEnter=resolve;});
+    gate=new Promise<void>(resolve=>{release=resolve;});target=post.id;waitingFor=post.id;
+    const comment=()=>api('/api/comments',{resource,body:'An original comment racing with deletion.'},otherCookie);
+    const remove=()=>api('/api/posts/owned',{id:post.id,revision:0},cookie,'DELETE');
+    const initial=first==='comment'?comment():remove();
+    let competing:Promise<Response>|undefined;
+    try{
+      await Promise.race([entered,initial.then(response=>{throw new Error(`First ${first} returned ${response.status} before locking the post.`);})]);
+      competing=first==='comment'?remove():comment();
+      await Promise.race([competingEntered,competing.then(response=>{throw new Error(`Competing request returned ${response.status} before attempting the post lock.`);})]);
+      release();
+      assert.equal((await initial).status,first==='comment'?201:200);
+      assert.equal((await competing).status,first==='comment'?200:404);
+      assert.equal(await f.db.prepare('SELECT id FROM posts WHERE id=?').get(post.id),undefined);
+      assert.deepEqual(await f.db.prepare('SELECT id FROM comments WHERE resource=?').all(resource),[]);
+    }finally{release();await Promise.allSettled([initial,...(competing?[competing]:[])]);}
+  }
+});
+
 for(const dialect of ['sqlite','postgres'] as const){
+  test(`${dialect}: missing revision data fails explicitly without changing posts or resetting prior revisions`,async t=>{
+    const f=await fixture(t,dialect),post=await f.add();
+    await f.db.prepare('UPDATE posts SET title=title WHERE id=?').run(post.id);
+    assert.equal((await f.db.prepare('SELECT revision FROM community_post_revisions WHERE post_id=?').get(post.id))?.revision,1);
+    if(dialect==='sqlite'){
+      const reopened=localConnection(f.directory);
+      try{assert.equal((await reopened.prepare('SELECT revision FROM community_post_revisions WHERE post_id=?').get(post.id))?.revision,1);}
+      finally{await reopened.close();}
+    }
+    await f.db.prepare('DELETE FROM community_post_revisions WHERE post_id=?').run(post.id);
+    await assert.rejects(f.db.prepare('UPDATE posts SET title=? WHERE id=?').run('This corrupt edit must not commit',post.id),/Missing community post revision/);
+    assert.equal((await f.db.prepare('SELECT title FROM posts WHERE id=?').get(post.id))?.title,post.title);
+    if(dialect==='sqlite')assert.throws(()=>localConnection(f.directory),/revision data is incomplete/);
+  });
+  test(`${dialect}: owned original contributions use revision-fenced edits and exact discussion deletion without exposing author IDs`,async t=>{
+    const f=await fixture(t,dialect),server=await startServer(loadConfig({NODE_ENV:'production',DATA_DIR:f.directory,...(f.url?{DATABASE_URL:f.url}:{}),PORT:'0',LOG_REQUESTS:'false'}));t.after(()=>server.close());
+    const api=async(route:string,body?:unknown,cookie='',method=body===undefined?'GET':'POST')=>fetch(`${server.url}${route}`,{method,headers:{Cookie:cookie,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+    const login=await api('/api/auth/demo',{}),owner=(await login.json()).user.id,cookie=login.headers.getSetCookie().map(value=>value.split(';')[0]).join('; ');
+    const other=await api('/api/auth/signup',{name:'Other local actor',email:`${randomUUID()}@example.invalid`,password:'fixture-password-123'}),otherCookie=other.headers.getSetCookie().map(value=>value.split(';')[0]).join('; ');
+    const saved=await f.add({id:' ./?#%\\ ',owner}),route=`/api/posts/owned?${new URLSearchParams({id:saved.id})}`;
+    const initial=await api(route,undefined,cookie);assert.equal(initial.status,200);
+    const snapshot=await initial.json();assert.equal(snapshot.revision,0);privateDto(snapshot.post,owner);assert.equal(snapshot.post.isMine,true);
+    assert.equal((await api(route)).status,401);assert.equal((await api(route,undefined,otherCookie)).status,404);
+    for(const suffix of ['&id=duplicate','&authorId=forged'])
+      assert.equal((await api(route+suffix,undefined,cookie)).status,400);
+    const draft={id:saved.id,revision:0,title:'Edited original contribution',body:'An updated original contribution explaining the complete reasoning.'};
+    assert.equal((await api('/api/posts/owned',draft,otherCookie,'PUT')).status,404);
+    const edited=await api('/api/posts/owned',draft,cookie,'PUT');assert.equal(edited.status,200);
+    const next=await edited.json();assert.equal(next.revision,1);assert.equal(next.post.title,draft.title);assert.equal(next.post.kind,saved.kind);assert.equal(next.post.track,saved.track);assert.equal(next.post.author,'Anonymous');
+    assert.deepEqual({...next.post,title:snapshot.post.title,body:snapshot.post.body},snapshot.post);
+    assert.equal((await api('/api/posts/owned',{...draft,title:'A stale draft must not win'},cookie,'PUT')).status,409);
+    assert.equal((await api('/api/posts/owned',{id:saved.id,revision:0},cookie,'DELETE')).status,409);
+    for(const extra of [{authorId:owner},{sample:false},{track:'code'},{kind:'stories'}])
+      assert.equal((await api('/api/posts/owned',{...draft,revision:1,...extra},cookie,'PUT')).status,400);
+    for(const revision of [-1,0.5,2147483648])
+      assert.equal((await api('/api/posts/owned',{...draft,revision},cookie,'PUT')).status,400);
+    for(const invalid of [{title:'bad\0title'},{body:'A body containing invalid\0stored text.'}])
+      assert.equal((await api('/api/posts/owned',{...draft,revision:1,...invalid},cookie,'PUT')).status,400);
+    const sample=await f.add({sample:true,owner}),sampleRoute=`/api/posts/owned?${new URLSearchParams({id:sample.id})}`;
+    assert.equal((await api(sampleRoute,undefined,cookie)).status,404);
+    assert.equal((await api('/api/posts/owned',{...draft,id:sample.id},cookie,'PUT')).status,404);
+    assert.equal((await api('/api/posts/owned',{id:sample.id,revision:0},cookie,'DELETE')).status,404);
+    const root=randomUUID(),outside=randomUUID(),resource=`post/${saved.id}`,otherResource='lesson/retained-original-fixture';
+    await f.db.prepare('INSERT INTO votes VALUES(?,?)').run(saved.id,owner);await f.db.prepare('INSERT INTO follows VALUES(?,?)').run(saved.id,f.owners[1]);
+    await f.db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run(root,resource,owner,'Synthetic author','Exact thread comment','2026-01-01T00:00:00.000Z',null);
+    await f.db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run(outside,otherResource,f.owners[1],'Synthetic author','Legacy cross-resource child must remain','2026-01-01T00:00:00.000Z',root);
+    assert.equal((await api('/api/posts/owned',{id:saved.id,revision:1},otherCookie,'DELETE')).status,404);
+    const deleted=await api('/api/posts/owned',{id:saved.id,revision:1},cookie,'DELETE');assert.equal(deleted.status,200);assert.deepEqual(await deleted.json(),{deleted:true});
+    for(const table of ['posts','community_post_revisions'])assert.equal(await f.db.prepare(`SELECT * FROM ${table} WHERE ${table==='posts'?'id':'post_id'}=?`).get(saved.id),undefined);
+    for(const table of ['votes','follows'])assert.deepEqual(await f.db.prepare(`SELECT * FROM ${table} WHERE post_id=?`).all(saved.id),[]);
+    assert.deepEqual(await f.db.prepare('SELECT * FROM comments WHERE resource=?').all(resource),[]);
+    const retained=await f.db.prepare('SELECT body,parent_id FROM comments WHERE id=?').get(outside);assert.equal(retained?.body,'Legacy cross-resource child must remain');assert.equal(retained?.parent_id,null);
+    assert.equal((await api('/api/comments',{resource,body:'A stale comment cannot recreate the deleted discussion.'},cookie)).status,404);
+    assert.equal((await api('/api/posts/owned',{id:saved.id,revision:1},cookie,'DELETE')).status,404);
+    const concurrent=await f.add({owner});
+    const results=await Promise.all(['First competing original edit','Second competing original edit'].map(title=>api('/api/posts/owned',{...draft,id:concurrent.id,title},cookie,'PUT')));
+    assert.deepEqual(results.map(response=>response.status).sort(),[200,409]);
+    assert.equal((await f.db.prepare('SELECT revision FROM community_post_revisions WHERE post_id=?').get(concurrent.id))?.revision,1);
+    const aba=await f.add({owner});
+    await f.db.prepare('UPDATE posts SET title=? WHERE id=?').run('An intervening original title',aba.id);
+    await f.db.prepare('UPDATE posts SET title=? WHERE id=?').run(aba.title,aba.id);
+    assert.equal((await api('/api/posts/owned',{...draft,id:aba.id},cookie,'PUT')).status,409);
+    assert.equal((await api('/api/posts/owned',{id:aba.id,revision:0},cookie,'DELETE')).status,409);
+    const exhausted=await f.add({owner});
+    await f.db.prepare('UPDATE community_post_revisions SET revision=? WHERE post_id=?').run(2147483647,exhausted.id);
+    assert.equal((await api('/api/posts/owned',{...draft,id:exhausted.id,revision:2147483647},cookie,'PUT')).status,409);
+    assert.equal((await f.db.prepare('SELECT title FROM posts WHERE id=?').get(exhausted.id))?.title,exhausted.title);
+    assert.equal((await api('/api/posts/owned',{id:exhausted.id,revision:2147483647},cookie,'DELETE')).status,200);
+  });
   test(`${dialect}: all public post DTOs omit account IDs and derive owned flags without revealing stored question names`,async t=>{
     const f=await fixture(t,dialect),[owner,other]=f.owners;
     const question=await f.add({author:'DO NOT PROJECT THIS QUESTION NAME'}),story=await f.add({kind:'stories',owner:other});

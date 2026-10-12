@@ -28,6 +28,12 @@ import { z } from 'zod';
 import { SupportRequests, supportContactSchema } from './support';
 import { CommunityReads, communityActionSchema, communityIdentifier } from './community';
 import { communityKinds } from '../shared/community-routes';
+import { CommunityContributions } from './community-contributions';
+function localSessionHash(req: express.Request) {
+  const match = req.headers.cookie?.split(';').map(value => value.trim()).find(value => value.startsWith('studio_session='));
+  const token = match?.slice('studio_session='.length);
+  return token && /^[a-f0-9]{64}$/.test(token) ? createHash('sha256').update(token).digest('hex') : null;
+}
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new HttpError(400, 'Expected an object.');
   return value as Record<string, unknown>;
@@ -74,6 +80,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   const states = new StateRepository(db);
   const content = new ContentRepository(db);
   const community = new CommunityReads(db);
+  const contributions = new CommunityContributions(db);
   const communityPaths = ['/api/posts', '/api/community/post', '/api/comments'];
   if (config.identity && !config.publicOrigin) throw new Error('Managed identity requires a canonical application origin.');
   if (config.identity?.lifecycle && !lifecycle) throw new Error('Configured identity lifecycle must be opened before serving requests.');
@@ -128,11 +135,9 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
 
   async function currentUser(req: express.Request): Promise<User | null> {
     if (identity) return identity.user(req);
-    const match = req.headers.cookie?.split(';').map(s => s.trim()).find(s => s.startsWith('studio_session='));
-    if (!match) return null;
-    const token = match.slice('studio_session='.length);
-    if (!/^[a-f0-9]{64}$/.test(token)) return null;
-    const row = (await db.prepare('SELECT u.id,u.name,u.email,u.demo FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token=? AND s.expires>?').get(createHash('sha256').update(token).digest('hex'), Date.now())) as { id: string; name: string; email: string; demo: number } | undefined;
+    const hash = localSessionHash(req);
+    if (!hash) return null;
+    const row = (await db.prepare('SELECT u.id,u.name,u.email,u.demo FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token=? AND s.expires>?').get(hash, Date.now())) as { id: string; name: string; email: string; demo: number } | undefined;
     return row ? { ...row, demo: !!row.demo } : null;
   }
   async function requireUser(req: express.Request): Promise<User> {
@@ -140,6 +145,16 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     if (!user) throw new HttpError(401, 'Sign in to save your progress.');
     if (user.identity && user.identity.status !== 'active') throw new HttpError(403, 'Verify a contact email before using saved preparation features. Manage your sign-in methods on the Account page.');
     return user;
+  }
+  async function assertLocalCommunitySession(req: express.Request, user: User) {
+    if (identity) throw new HttpError(503, 'Owned contribution management is disabled until production moderation is enabled.');
+    const hash = localSessionHash(req);
+    if (!hash || !await db.prepare(`SELECT token FROM sessions WHERE token=? AND user_id=? AND expires>?${db.dialect === 'postgres' ? ' FOR UPDATE' : ''}`).get(hash, user.id, Date.now()))
+      throw new HttpError(401, 'This session is no longer current. Sign in before managing your contribution.');
+  }
+  async function requireLocalContributor(req: express.Request) {
+    if (identity) throw new HttpError(503, 'Owned contribution management is disabled until production moderation is enabled.');
+    return requireUser(req);
   }
   async function assertAccess(user: User, capability: Capability) {
     if (entitlements) await entitlements.assert(user.id, capability);
@@ -198,7 +213,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     app.use('/api', async (req, res, next) => {
       if (!['GET', 'HEAD'].includes(req.method)) await identity.checkMutation(req);
       const user = await identity.user(req);
-      const publicRead = ['GET', 'HEAD'].includes(req.method) && ['/api/content/', ...communityPaths].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix));
+      const publicRead = ['GET', 'HEAD'].includes(req.method) && !/^\/api\/posts\/owned\/?$/.test(req.originalUrl.split('?')[0]) && ['/api/content/', ...communityPaths].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix));
       const accountRoute = ['/api/bootstrap', '/api/entitlements', '/api/logout', '/api/support', '/api/support/requests', '/api/profile', '/api/ready'].includes(req.originalUrl.split('?')[0]) || req.originalUrl.startsWith('/api/identity/');
       if (user?.identity?.status !== undefined && user.identity.status !== 'active' && !publicRead && !accountRoute) throw new HttpError(403, 'This account needs verified contact information or account review. Open Account or contact support.');
       if (['/api/auth/', '/api/plan', '/api/gift', '/api/profile/password'].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix))) throw new HttpError(404, 'Local authentication, demo commerce and local passwords are disabled for managed identity.');
@@ -911,6 +926,18 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
       else if (enabled && !exists) await db.prepare(`INSERT INTO ${table} VALUES (?,?)`).run(id, user.id);
     });
   }
+  app.get('/api/posts/owned', async (req, res) => {
+    const user = await requireLocalContributor(req);
+    res.json(await contributions.read(req.query, user.id));
+  });
+  app.put('/api/posts/owned', async (req, res) => {
+    const user = await requireLocalContributor(req);
+    res.json(await contributions.update(req.body, user.id, () => assertLocalCommunitySession(req, user)));
+  });
+  app.delete('/api/posts/owned', async (req, res) => {
+    const user = await requireLocalContributor(req);
+    res.json(await contributions.remove(req.body, user.id, () => assertLocalCommunitySession(req, user)));
+  });
   app.post('/api/posts/actions', async (req, res) => {
     const user = await requireUser(req), parsed = communityActionSchema.safeParse(req.body);
     if (!parsed.success) throw new HttpError(400, 'Provide a post identifier, vote or follow action, and a boolean desired state.');
@@ -930,9 +957,17 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     const user = (await requireUser(req)), body = record(req.body);
     const resource = commentResource(body.resource);
     const parentId = body.parentId ? text(body.parentId, 'Parent comment', 1, 80) : null;
-    if (parentId && !(await db.prepare('SELECT id FROM comments WHERE id=? AND resource=?').get(parentId, resource))) throw new HttpError(400, 'Reply must belong to this discussion.');
     const id = randomUUID();
-    await db.prepare('INSERT INTO comments VALUES (?,?,?,?,?,?,?)').run(id, resource, user.id, user.name, text(body.body, 'Comment', 2, 3000), new Date().toISOString(), parentId);
+    const comment = text(body.body, 'Comment', 2, 3000);
+    await db.transaction(async () => {
+      if (resource.startsWith('post/')) {
+        if (!await db.prepare(`SELECT id FROM users WHERE id=?${db.dialect === 'postgres' ? ' FOR UPDATE' : ''}`).get(user.id)) throw new HttpError(401, 'Sign in to join this discussion.');
+        await assertLocalCommunitySession(req, user);
+        if (!await db.prepare(`SELECT id FROM posts WHERE id=?${db.dialect === 'postgres' ? ' FOR UPDATE' : ''}`).get(resource.slice(5))) throw new HttpError(404, 'This post is no longer available for discussion.');
+      }
+      if (parentId && !(await db.prepare('SELECT id FROM comments WHERE id=? AND resource=?').get(parentId, resource))) throw new HttpError(400, 'Reply must belong to this discussion.');
+      await db.prepare('INSERT INTO comments VALUES (?,?,?,?,?,?,?)').run(id, resource, user.id, user.name, comment, new Date().toISOString(), parentId);
+    });
     res.status(201).json({ id });
   });
   app.post('/api/tutor', async (req, res) => {

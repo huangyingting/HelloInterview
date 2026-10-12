@@ -24,7 +24,9 @@ const clientId = 'synthetic-client', clientSecret = 'synthetic-client-secret';
 let browserNumber = 0;
 export function fixtureFetch(url: string, options: { method?: string; headers: Record<string, string>; body?: string | Uint8Array | URLSearchParams | null; signal?: AbortSignal; ca?: Buffer }): Promise<Response> {
   return new Promise((resolve, reject) => {
-    const request = (url.startsWith('https:') ? httpsRequest : httpRequest)(url, options, async response => {
+    const body = options.body instanceof URLSearchParams ? options.body.toString() : options.body;
+    const headers = { ...options.headers, ...(body == null ? {} : { 'Content-Length': String(Buffer.byteLength(body)) }) };
+    const request = (url.startsWith('https:') ? httpsRequest : httpRequest)(url, { ...options, headers }, async response => {
       try {
         const chunks: Uint8Array[] = [];
         for await (const chunk of response) chunks.push(Buffer.from(chunk));
@@ -35,7 +37,7 @@ export function fixtureFetch(url: string, options: { method?: string; headers: R
       } catch (error) { reject(error); }
     });
     request.on('error', reject);
-    request.end(options.body instanceof URLSearchParams ? options.body.toString() : options.body);
+    request.end(body);
   });
 }
 function key() {

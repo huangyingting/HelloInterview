@@ -55,6 +55,14 @@ compatibility and managed denial, semantic query navigation and HTTP 400
 document recovery. Ordered writes, historic comment repair, moderation and
 customer-migration approval remain separate.
 
+**Implemented local owner-contribution checkpoint (W11):** private owned
+snapshots, current-session/revision-fenced title/body edits, exact discussion
+deletion and serialized post-comment admission are available. The
+[owner runbook](31-owned-community-contributions.md) records migration 22 and
+in-page conflict/lost-response recovery without replay. Examples remain
+immutable and managed owner management stays denied; this is not immutable
+history, moderation operation, owner-managed comments or account/privacy deletion.
+
 ## Operating model
 
 Name accountable people before launch, even if one person initially fills
@@ -134,6 +142,10 @@ necessary billing messages are distinct from optional marketing consent.
 The current community supports useful local actions but cannot be opened for
 unmoderated public writing as-is. If moderation is not staffed, ship read-only
 editorial content and disable write APIs.
+Local original-post owner editing/deletion now follows the
+[revision-fenced owner protocol](31-owned-community-contributions.md).
+Public/managed writes and comment owner management remain separate work; local
+deletion is not the comprehensive privacy-erasure coordinator.
 
 Launch requirements:
 

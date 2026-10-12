@@ -19,7 +19,7 @@ gates are not implicitly satisfied by a foundation change.
 | W08 | In progress; sandbox notifications, owned Checkout/recheckout, canonical funding/ledger, gated service authority, owned stop/resume cycles and restricted Portal checkpoints implemented | Pinned official Stripe SDK/API, signed durable evidence, stable owned financial keys, complete funding/adjustment traces, default-off calendar grants/scoped revocations, acknowledged exact-target renewal/recheckout with retained paid history and fresh restricted card-method/invoice sessions with URL-free audit; authentic provider evidence, commercial/grace policy, history partitioning/paid deletion and operated lifecycle remain |
 | W09 | In progress; internal usage-ledger, native-intent and saved-input provenance checkpoints implemented | Explicit immutable sandbox manifests, atomic replica unit/cost/native/private-input reservations, pinned operation/job/generation, owned source/model/prompt hashes, exact UTF-8 bounds, transactional raw-payload retirement, overlap-safe original-calendar windows, unknown holds and coupled cancellation/SQL settlement; actual managed provider dispatch, consent/UX, model/token/cost policy, operating reconciliation and approval remain |
 | W10 | In progress; owned member-support receipts checkpoint implemented | Private paginated request history, immutable replica-safe retry keys, current-session fences and shared write admission; truthful saved/not-delivered UI; staff MFA/RBAC/audit, operated helpdesk/email, comprehensive export/deletion and retention approvals remain |
-| W11 | In progress; private-safe reads and opaque-address checkpoints implemented | Minimized public DTOs, bounded feeds/search, exact legacy-ID detail and discussions, actor-scoped local desired-state votes/follows; managed writing remains denied, ordered writes, owner edit/delete, moderation/report/appeal and publication gates remain |
+| W11 | In progress; private-safe reads, opaque addresses and local owner-contribution checkpoints implemented | Minimized public DTOs, bounded feeds/search, exact legacy-ID detail/discussions, local desired-state votes/follows and current-session/revision-fenced original-post edits/deletion; managed writing remains denied, owner-managed comments, ordered/durable intents, moderation/report/appeal and publication gates remain |
 | W12 | In progress; deferred-screen, keyboard and malformed-address checkpoints implemented | Separated discovery graphs, fixed cold JavaScript budgets, explicit loading/failure/recovery, semantic ready-screen/skip focus, keyboard-safe mobile navigation, rapid Search and invalid-address recovery; reviewed offers, broad accessibility and operated serving remain |
 | W13 | Pending | Integrated provider lifecycle, load/recovery/security evidence and operating/launch gates |
 
@@ -120,6 +120,12 @@ legacy-ID browser/API roundtrips, shared old/new route fences, local desired
 states and exact post discussions, malformed-document recovery, and semantic
 detail-query focus. It does not approve managed writing, ordered intent
 replay, ambiguous historic comment reassignment or customer migration.
+The [owned-contribution runbook](31-owned-community-contributions.md) records
+migration 22, private owner snapshots, title/body-only CAS edits, current-session
+admission and exact discussion deletion serialized with comment creation.
+Explicit in-page comparison/adoption and deletion preserve drafts after
+conflicts or lost responses without replay. Examples remain immutable; this
+enables no managed writing, immutable content history or privacy-deletion claim.
 
 ## Delivery strategy
 

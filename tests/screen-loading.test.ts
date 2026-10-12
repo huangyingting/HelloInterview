@@ -137,6 +137,119 @@ test('submission return links preserve legacy tracks, while semantic detail chan
   await expect(page.locator('.community-detail h1')).toHaveText('Legacy encoded question');
 });
 
+test('local owner editing preserves conflicting drafts and deletion is an explicit in-page action on the exact original post',async t=>{
+  const f=await fixture(t),{page}=f,db=localConnection(f.directory);t.after(()=>db.close());
+  const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);
+  const owner=(await login.json()).user.id,id=' owner/..?%#\\ ',resource=`post/${id}`;
+  await db.prepare('INSERT INTO posts VALUES(?,?,?,?,?,?,?,?,?,?,?,0)').run(id,'questions','Original owned local question','An original local question explaining the reasoning in full.','Fixture Company','system-design','Senior','Global','Anonymous',owner,'2026-01-01T00:00:00.000Z');
+  await page.goto(`${f.url}${communityPostPath({kind:'questions',id})}`);
+  await expect(page.locator('.community-detail h1')).toHaveText('Original owned local question');
+  await page.getByRole('button',{name:'Manage your post',exact:true}).click();
+  const editor=page.locator('#owned-contribution');
+  await expect(editor.getByLabel('Edit post title')).toHaveValue('Original owned local question');
+  await editor.getByLabel('Edit post title').fill('First saved local edit');
+  await editor.getByLabel('Edit post details').fill('An updated original local explanation with enough reasoning to be useful.');
+  await editor.getByRole('button',{name:'Save post changes',exact:true}).click();
+  await expect(page.locator('.community-detail h1')).toHaveText('First saved local edit');
+  await expect(editor.getByRole('button',{name:'Save post changes',exact:true})).toBeDisabled();
+  await editor.getByLabel('Edit post title').fill('A preserved unsaved local draft');
+  await db.prepare('UPDATE posts SET title=?,body=? WHERE id=?').run('A newer saved version','A concurrent original explanation with complete context and reasoning.',id);
+  await editor.getByRole('button',{name:'Save post changes',exact:true}).click();
+  await expect(editor.getByRole('alert')).toContainText('changed');
+  await expect(editor.getByLabel('Edit post title')).toHaveValue('A preserved unsaved local draft');
+  await editor.getByRole('button',{name:'Check saved version',exact:true}).click();
+  await expect(editor.getByRole('heading',{name:'Current saved version',exact:true})).toBeVisible();
+  await expect(editor.getByLabel('Edit post title')).toHaveValue('A preserved unsaved local draft');
+  await editor.getByRole('button',{name:'Replace my draft with saved version',exact:true}).click();
+  await expect(editor.getByLabel('Edit post title')).toHaveValue('A newer saved version');
+  await expect(editor.getByRole('button',{name:'Delete my local post',exact:true})).toBeDisabled();
+  await editor.getByLabel('I understand this deletes my post, its discussion, votes and follows.').check();
+  await editor.getByRole('button',{name:'Delete my local post',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Interview questions',exact:true})).toBeVisible();
+  assert.equal(await db.prepare('SELECT id FROM posts WHERE id=?').get(id),undefined);
+  assert.deepEqual(await db.prepare('SELECT id FROM comments WHERE resource=?').all(resource),[]);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  assert.equal(f.documents.length,1);
+});
+
+test('lost owner edit and deletion responses preserve drafts without replay or claiming an unconfirmed outcome',async t=>{
+  const f=await fixture(t),{page}=f,db=localConnection(f.directory);t.after(()=>db.close());
+  const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);
+  const owner=(await login.json()).user.id,id='lost-owner-response';
+  await db.prepare('INSERT INTO posts VALUES(?,?,?,?,?,?,?,?,?,?,?,0)').run(id,'stories','Original response-loss story','An original local story with complete reasoning and context.','Fixture Company','system-design','Senior','Global','Synthetic author',owner,'2026-01-01T00:00:00.000Z');
+  await page.goto(`${f.url}${communityPostPath({kind:'stories',id})}`);
+  await page.getByRole('button',{name:'Manage your post',exact:true}).click();
+  const editor=page.locator('#owned-contribution'),title=editor.getByLabel('Edit post title');
+  await expect(title).toHaveValue('Original response-loss story');await title.fill('A committed response-loss edit');
+  const dropped=new Set<string>();
+  await page.route('**/api/posts/owned',async route=>{
+    const method=route.request().method();
+    if(['PUT','DELETE'].includes(method)&&!dropped.has(method)){
+      dropped.add(method);const response=await route.fetch();assert.equal(response.status(),200);
+      await route.abort('failed');
+    }else await route.continue();
+  });
+  await editor.getByRole('button',{name:'Save post changes',exact:true}).click();
+  await expect(editor.getByRole('alert')).toContainText('Saving was not confirmed');
+  await expect(title).toHaveValue('A committed response-loss edit');
+  await expect(page.locator('.community-detail h1')).toHaveText('Original response-loss story');
+  assert.equal((await db.prepare('SELECT revision FROM community_post_revisions WHERE post_id=?').get(id))?.revision,1);
+  assert.equal(f.mutations.filter(path=>path==='/api/posts/owned').length,1);
+  await editor.getByRole('button',{name:'Check saved version',exact:true}).click();
+  await expect(editor.getByRole('heading',{name:'Current saved version',exact:true})).toBeVisible();
+  await expect(title).toHaveValue('A committed response-loss edit');
+  await editor.getByRole('button',{name:'Save post changes',exact:true}).click();
+  await expect(editor.getByRole('alert')).toContainText('changed');
+  await editor.getByRole('button',{name:'Replace my draft with saved version',exact:true}).click();
+  await expect(page.locator('.community-detail h1')).toHaveText('A committed response-loss edit');
+  await editor.getByLabel('I understand this deletes my post, its discussion, votes and follows.').check();
+  await editor.getByRole('button',{name:'Delete my local post',exact:true}).click();
+  await expect(editor.getByRole('alert')).toContainText('Deletion was not confirmed');
+  assert.equal(await db.prepare('SELECT id FROM posts WHERE id=?').get(id),undefined);
+  assert.equal(f.mutations.filter(path=>path==='/api/posts/owned').length,3);
+  await expect(page.locator('.community-detail h1')).toHaveText('A committed response-loss edit');
+  await editor.getByRole('button',{name:'Check saved version',exact:true}).click();
+  await expect(editor.getByRole('alert')).toContainText('unavailable');
+  await expect(title).toHaveValue('A committed response-loss edit');
+  await editor.getByRole('button',{name:'Delete my local post',exact:true}).click();
+  await expect(editor.getByRole('alert')).toContainText('Deletion was not confirmed');
+  await page.locator('main').getByRole('link',{name:'Preparation stories',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Preparation stories',exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'A committed response-loss edit',exact:true})).toHaveCount(0);
+  assert.equal(f.documents.length,1);
+});
+
+test('owner controls exclude strangers and examples, and a superseded private editor read cannot publish its old draft',async t=>{
+  const f=await fixture(t),{page}=f,db=localConnection(f.directory);t.after(()=>db.close());
+  const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);
+  const owner=(await login.json()).user.id;
+  for(const [id,title,author,sample] of [['first-owner','First original owner post',owner,0],['second-owner','Second original owner post',owner,0],['stranger-owner','Another account original post','another-account',0],['owned-example','An immutable owner example',owner,1]] as const)
+    await db.prepare('INSERT INTO posts VALUES(?,?,?,?,?,?,?,?,?,?,?,?)').run(id,'questions',title,'An original local question with complete context and reasoning.','Fixture Company','system-design','Senior','Global','Anonymous',author,'2026-01-01T00:00:00.000Z',sample);
+  for(const id of ['stranger-owner','owned-example']){
+    await page.goto(`${f.url}${communityPostPath({kind:'questions',id})}`);
+    await expect(page.locator('.community-detail h1')).toBeVisible();
+    await expect(page.getByRole('button',{name:'Manage your post',exact:true})).toHaveCount(0);
+  }
+  let entered!:()=>void,release!:()=>void;
+  const waiting=new Promise<void>(resolve=>{entered=resolve;}),gate=new Promise<void>(resolve=>{release=resolve;});
+  await page.route('**/api/posts/owned?*',async route=>{
+    if(new URL(route.request().url()).searchParams.get('id')!=='first-owner'){await route.continue();return;}
+    const response=await route.fetch();entered();await gate;
+    await route.fulfill({response});
+  });
+  await page.goto(`${f.url}${communityPostPath({kind:'questions',id:'first-owner'})}`);
+  try{
+    await page.getByRole('button',{name:'Manage your post',exact:true}).click();await waiting;
+    await page.evaluate(route=>{history.pushState(null,'',route);window.dispatchEvent(new PopStateEvent('popstate'));},communityPostPath({kind:'questions',id:'second-owner'}));
+    await expect(page.locator('.community-detail h1')).toHaveText('Second original owner post');
+    await expect(page.locator('#owned-contribution')).toHaveCount(0);
+    release();
+    await page.getByRole('button',{name:'Manage your post',exact:true}).click();
+    await expect(page.getByLabel('Edit post title')).toHaveValue('Second original owner post');
+    await expect(page.locator('#owned-contribution')).not.toContainText('First original owner post');
+  }finally{release();}
+});
+
 test('complete eager, landing and sign-in JavaScript graphs meet fixed raw/gzip budgets without deferred discovery modules', async t => {
   assert.deepEqual(navigationTracks, tracks.map(({ id, title, short, description, color }) => ({ id, title, short, description, color })));
   for (const [label, roots] of [

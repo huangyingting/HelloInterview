@@ -179,7 +179,10 @@ Before accepting a release, also verify the actual downloadable archive's
 hidden manifest and referenced assets as required by
 [runbook 28](28-deferred-screen-delivery.md).
 
-Owner editing/deletion, versioned/ordered write intents, abuse controls,
+Local original-post editing/deletion now uses the private revision-fenced
+protocol in [runbook 31](31-owned-community-contributions.md), requiring migration
+22; immutable examples and managed-writing denial remain.
+Owner-managed comments, durable/ordered write intents, abuse controls,
 moderation/reports/appeals, operated publication, historic comment repair,
 full accessibility/device/IME assessment and deployment/recovery evidence
 remain open. Real providers, customer migration and public launch still require

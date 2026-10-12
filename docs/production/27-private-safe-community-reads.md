@@ -7,8 +7,10 @@ moderation is enabled by a separate reviewed implementation.
 
 ## Deployment and compatibility
 
-Apply controlled **migration 21 and maintained queue migration** before starting
-this release:
+Migration 21 introduced this read checkpoint; the current release requires
+**migration 22 and maintained queue migration**, including the
+[local owner-contribution protocol](31-owned-community-contributions.md), before
+starting this release:
 
 ```sh
 npm run build
@@ -172,10 +174,13 @@ while all write controls remain unavailable. Local browsers preserve
 publishing/votes/follows/comments and load all 85 synthetic body-only search
 matches without using the old corpus endpoint.
 
+Local original-post revision-fenced owner editing/deletion is now implemented
+in [runbook 31](31-owned-community-contributions.md); actor-scoped desired-state
+votes/follows are implemented in [runbook 30](30-opaque-community-addresses.md).
 Still required before public writing: approved rules, staffed moderation,
-revision-fenced owner edit/delete, reports/review/appeals, notifications and
-audited staff permissions, anti-abuse controls, desired-state vote/follow
-mutations and truthful recognition accounting. Publication/access/moderation
+owner-managed comments, ordered/durable mutation receipts, reports/review/appeals,
+notifications and audited staff permissions, anti-abuse controls and truthful
+production recognition accounting. Publication/access/moderation
 state must be integrated consistently into every reader when those states are
 introduced; this checkpoint adds no such state. Unreviewed imported/local
 content is not automatically approved editorial content.

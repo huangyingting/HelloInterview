@@ -13,7 +13,8 @@ const querySchema = z.strictObject({
   scope: z.enum(['all','mine','following']).default('all'),
   limit: z.enum(['6','20','50']).transform(Number).default(6), cursor: z.string().max(2048).optional(),
 });
-const identifier = text(200).min(1);
+export const communityIdentifierSchema = text(200).min(1);
+const identifier = communityIdentifierSchema;
 export const communityActionSchema = z.strictObject({ id: identifier, action: z.enum(['vote','follow']), enabled: z.boolean() });
 export function communityIdentifier(value: unknown) {
   const parsed = identifier.safeParse(value);

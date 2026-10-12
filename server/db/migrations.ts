@@ -688,6 +688,28 @@ export const migrations = [{
     CREATE INDEX posts_created_order ON posts(created_at DESC,id DESC);
     CREATE INDEX follows_owner ON follows(user_id,post_id);
   `,
+}, {
+  version: 22,
+  name: 'owned-community-post-revisions',
+  sql: `
+    CREATE TABLE community_post_revisions (
+      post_id TEXT PRIMARY KEY REFERENCES posts(id) ON DELETE CASCADE,
+      revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0)
+    );
+    INSERT INTO community_post_revisions(post_id) SELECT id FROM posts;
+    CREATE FUNCTION maintain_community_post_revision() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+      BEGIN
+        IF TG_OP='INSERT' THEN INSERT INTO community_post_revisions(post_id) VALUES(NEW.id);
+        ELSE
+          UPDATE community_post_revisions SET revision=revision+1 WHERE post_id=NEW.id;
+          IF NOT FOUND THEN RAISE EXCEPTION 'Missing community post revision.'; END IF;
+        END IF;
+        RETURN NEW;
+      END;
+    $$;
+    CREATE TRIGGER maintain_community_post_revision AFTER INSERT OR UPDATE ON posts
+      FOR EACH ROW EXECUTE FUNCTION maintain_community_post_revision();
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

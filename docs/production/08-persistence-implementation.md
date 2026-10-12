@@ -38,6 +38,7 @@ none is served as a browser asset.
 | `completion_records`, `tutor_messages` | Owned certificate/message records rather than account-blob fields |
 | `mock_sessions`, `custom_quizzes`, `study_plans`, `project_workspaces` | Independently persisted premium records with existing answer/file/order semantics |
 | `posts`, `votes`, `follows`, `comments`, `support`, `gifts` | Existing local workflows moved to PostgreSQL, with owner/relationship constraints and resource indexes |
+| `community_post_revisions` | Migration 22 current post versions; every post update advances them, original twelve-column post/import shape is unchanged; not immutable content history or mutation receipts |
 | `schema_migrations` | Release version, immutable migration name/checksum, application time |
 | `durable_operations`, `verified_event_inbox`, `job_operator_events` | W07 immutable operation input/idempotency, atomic verified-event delivery and replay accountability; separate maintained queue schema owns transport |
 | `legacy_imports`, `legacy_state_snapshots` | Import fingerprint/count report and original `legacy-v1` JSON bytes/checksum; historical snapshots are never entitlement authority |

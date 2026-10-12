@@ -7,6 +7,7 @@ export function openDatabase(dataDir: string): DatabaseSync {
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const db = new DatabaseSync(path.join(dataDir, 'studio.sqlite'));
   try {
+    const hasCommunityRevisions = !!db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name='community_post_revisions'").get();
     db.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA foreign_keys = ON;
@@ -26,6 +27,18 @@ export function openDatabase(dataDir: string): DatabaseSync {
         company TEXT NOT NULL, track TEXT NOT NULL, level TEXT NOT NULL, region TEXT NOT NULL,
         author TEXT NOT NULL, author_id TEXT NOT NULL, created_at TEXT NOT NULL, sample INTEGER NOT NULL DEFAULT 0
       );
+      CREATE TABLE IF NOT EXISTS community_post_revisions (
+        post_id TEXT PRIMARY KEY NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+        revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0 AND revision <= 2147483647)
+      );
+      CREATE TRIGGER IF NOT EXISTS initialize_community_post_revision AFTER INSERT ON posts
+        BEGIN INSERT INTO community_post_revisions(post_id) VALUES(NEW.id); END;
+      CREATE TRIGGER IF NOT EXISTS advance_community_post_revision AFTER UPDATE ON posts
+        BEGIN
+          SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM community_post_revisions WHERE post_id=NEW.id)
+            THEN RAISE(ABORT,'Missing community post revision.') END;
+          UPDATE community_post_revisions SET revision=revision+1 WHERE post_id=NEW.id;
+        END;
       CREATE TABLE IF NOT EXISTS votes (
         post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -61,6 +74,9 @@ export function openDatabase(dataDir: string): DatabaseSync {
       CREATE INDEX IF NOT EXISTS posts_created_order ON posts(created_at DESC,id DESC);
       CREATE INDEX IF NOT EXISTS follows_owner ON follows(user_id,post_id);
     `);
+    if (!hasCommunityRevisions) db.exec('INSERT OR IGNORE INTO community_post_revisions(post_id) SELECT id FROM posts');
+    if (db.prepare('SELECT p.id FROM posts p LEFT JOIN community_post_revisions r ON r.post_id=p.id WHERE r.post_id IS NULL LIMIT 1').get())
+      throw new Error('Community post revision data is incomplete. Restore or reconcile the database before starting.');
     if (!db.prepare('SELECT id FROM posts LIMIT 1').get()) {
       const samples: [CommunityKind, string, string, string, string][] = [
         ['questions', 'Design a collaborative reading list', 'Practice prompt: a team saves articles, organizes them into lists, and sees updates across devices. Discuss sharing, pagination, and offline changes.', 'Meta', 'system-design'],
