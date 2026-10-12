@@ -41,6 +41,7 @@ export class StripeEvidence {
       case 'charge': value = await this.client.charges.retrieve(event.objectId); break;
       case 'refund': value = await this.client.refunds.retrieve(event.objectId); break;
       case 'dispute': value = await this.client.disputes.retrieve(event.objectId); break;
+      case 'credit_note': value = await this.client.creditNotes.retrieve(event.objectId); break;
       default: throw new Error('The billing object family is unsupported.');
     }
     this.assertRunning(signal);

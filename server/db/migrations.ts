@@ -388,6 +388,19 @@ export const migrations = [{
       PRIMARY KEY(customer_ref,revision)
     );
   `,
+}, {
+  version: 11,
+  name: 'owned-invoice-charge-correlations',
+  sql: `
+    CREATE TABLE stripe_invoice_charge_links (
+      account_id TEXT NOT NULL, charge_id TEXT NOT NULL, invoice_id TEXT NOT NULL,
+      customer_ref TEXT NOT NULL REFERENCES stripe_owned_customers(id),
+      first_revision BIGINT NOT NULL CHECK (first_revision > 0),
+      PRIMARY KEY(account_id,charge_id,invoice_id),
+      FOREIGN KEY(account_id,invoice_id) REFERENCES stripe_owned_invoice_ledger(account_id,invoice_id)
+    );
+    CREATE INDEX stripe_charge_customer ON stripe_invoice_charge_links(customer_ref,charge_id);
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

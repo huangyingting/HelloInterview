@@ -1,17 +1,19 @@
 import Stripe from 'stripe';
 import { z } from 'zod';
 import type { BillingReviewReason } from '../../shared/billing-ledger';
-import { TerminalJobFailure } from '../jobs';
 import { providerId, referenceId } from './schema';
 import { invoiceFactSchema, ledgerSnapshotSchema, money, seconds, subscriptionFactSchema, type LedgerSnapshot } from './ledger-schema';
+import { canonicalPages, canonicalPageSchema as pageSchema, consistent, type CanonicalRead } from './canonical-pages';
+import { CanonicalPayments } from './payment-reader';
+import { encodePayload } from '../jobs/schema';
+export type { CanonicalRead } from './canonical-pages';
 
 export interface LedgerReadInput {
   customerRef: string; customerId: string; since: number;
   attempts: { id: string; priceId: string; subscriptionId: string | null; state: string }[];
-  knownSubscriptions: string[]; invoiceTargets: string[]; paymentEvents: boolean;
+  knownSubscriptions: string[]; invoiceTargets: string[];
+  chargeTargets: string[]; creditTargets: string[]; knownChargeLinks: { chargeId: string; invoiceId: string }[];
 }
-export type CanonicalRead = <T>(request: () => PromiseLike<T>) => Promise<T>;
-const pageSchema = z.looseObject({ object: z.literal('list'), has_more: z.boolean(), data: z.array(z.unknown()).max(100) });
 const ref = z.union([providerId, z.looseObject({ id: providerId })]);
 const currency = z.string().regex(/^[a-z]{3}$/);
 const sdkQuantity = z.custom<Stripe.Decimal>(value => typeof value === 'object' && value !== null &&
@@ -53,26 +55,12 @@ const paymentSchema = z.looseObject({
   payment: z.looseObject({ type: z.enum(['charge', 'payment_intent', 'payment_record']),
     charge: ref.optional(), payment_intent: ref.optional(), payment_record: ref.optional() }),
 });
-function consistent(value: boolean) { if (!value) throw new TerminalJobFailure('reconciliation-required'); }
 const unique = (values: BillingReviewReason[]) => [...new Set(values)].sort();
 
 export async function readCanonicalLedger(client: Stripe, input: LedgerReadInput, read: CanonicalRead): Promise<LedgerSnapshot> {
-  async function pages(first: unknown, next: (cursor: string) => PromiseLike<unknown>) {
-    const results: unknown[] = [], ids = new Set<string>();
-    let value = first;
-    for (let count = 0; count < 5; count++) {
-      const page = pageSchema.parse(value);
-      consistent(!page.has_more || page.data.length > 0);
-      for (const row of page.data) {
-        const id = z.looseObject({ id: providerId }).parse(row).id;
-        consistent(!ids.has(id)); ids.add(id); results.push(row);
-      }
-      if (!page.has_more) return results;
-      consistent(count < 4);
-      value = await read(() => next(z.looseObject({ id: providerId }).parse(page.data.at(-1)).id));
-    }
-    throw new TerminalJobFailure('reconciliation-required');
-  }
+  const pages = (first: unknown, next: (cursor: string) => PromiseLike<unknown>) => canonicalPages(read, first, next);
+  const paymentsReader = new CanonicalPayments(client, input.customerId, read);
+  const financialTargets = await paymentsReader.targets(input.chargeTargets, input.creditTargets, input.knownChargeLinks);
   const subscriptions = await pages(await read(() => client.subscriptions.list({ customer: input.customerId, status: 'all', limit: 100 })),
     cursor => client.subscriptions.list({ customer: input.customerId, status: 'all', limit: 100, starting_after: cursor }));
   const subscriptionIds = new Set(subscriptions.map(value => subscriptionSchema.parse(value).id));
@@ -82,7 +70,7 @@ export async function readCanonicalLedger(client: Stripe, input: LedgerReadInput
   }
   consistent(subscriptions.length <= 500);
   const subscriptionFacts: LedgerSnapshot['subscriptions'] = [];
-  const targets = new Set(input.invoiceTargets);
+  const targets = new Set([...input.invoiceTargets, ...financialTargets.invoices]);
   for (const value of subscriptions) {
     const sub = subscriptionSchema.parse(value);
     consistent(referenceId(sub.customer) === input.customerId);
@@ -144,18 +132,35 @@ export async function readCanonicalLedger(client: Stripe, input: LedgerReadInput
       return { id: payment.id, status: payment.status, type: payment.payment.type, reference,
         amountPaid: payment.amount_paid, currency: payment.currency };
     });
-    if (invoice.status === 'paid' || invoice.amount_paid > 0 || payments.some(payment => payment.status === 'paid')) reasons.push('payment-attestation-pending');
-    invoiceFacts.push(invoiceFactSchema.parse({ id: invoice.id, subscriptionId, status: invoice.status, currency: invoice.currency, created: invoice.created,
+    const fact = invoiceFactSchema.parse({ id: invoice.id, subscriptionId, status: invoice.status, currency: invoice.currency, created: invoice.created,
       total: invoice.total, amountPaid: invoice.amount_paid, amountRemaining: invoice.amount_remaining, paidAt: invoice.status_transitions.paid_at,
-      lines, payments, reviewReasons: unique(reasons) }));
+      lines, payments, reviewReasons: unique(reasons) });
+    const funding = await paymentsReader.invoice(fact);
+    const current = invoiceSchema.parse(await read(() => client.invoices.retrieve(invoice.id)));
+    consistent(current.id === invoice.id && referenceId(current.customer) === input.customerId && current.status === invoice.status &&
+      current.currency === invoice.currency && current.total === invoice.total && current.amount_paid === invoice.amount_paid &&
+      current.amount_remaining === invoice.amount_remaining && current.status_transitions.paid_at === invoice.status_transitions.paid_at &&
+      referenceId(current.parent?.subscription_details?.subscription) === subscriptionId && current.created === invoice.created);
+    const finalPayments = await pages(current.payments ?? await read(() => client.invoicePayments.list({ invoice: invoice.id, limit: 100 })),
+      cursor => client.invoicePayments.list({ invoice: invoice.id, limit: 100, starting_after: cursor }));
+    const normalizedFinal = finalPayments.map(value => {
+      const payment = paymentSchema.parse(value), reference = referenceId(payment.payment[payment.payment.type]);
+      consistent(referenceId(payment.invoice) === invoice.id && payment.currency === invoice.currency && !!reference);
+      return { id: payment.id, status: payment.status, type: payment.payment.type, reference, amountPaid: payment.amount_paid, currency: payment.currency };
+    });
+    consistent(encodePayload({ payments: normalizedFinal.sort((a, b) => a.id.localeCompare(b.id)) }) ===
+      encodePayload({ payments: [...payments].sort((a, b) => a.id.localeCompare(b.id)) }));
+    fact.funding = funding;
+    fact.reviewReasons = unique([...reasons, ...funding.reviewReasons, 'commercial-policy-pending']);
+    invoiceFacts.push(fact);
   }
   for (const sub of subscriptionFacts) if (sub.latestInvoiceId) {
     consistent(invoiceFacts.some(invoice => invoice.id === sub.latestInvoiceId && invoice.subscriptionId === sub.id));
   }
   const reasons = [...subscriptionFacts.flatMap(sub => sub.reviewReasons), ...invoiceFacts.flatMap(invoice => invoice.reviewReasons)];
   if (subscriptionFacts.filter(sub => !['canceled', 'incomplete_expired'].includes(sub.status)).length > 1) reasons.push('duplicate-subscriptions');
-  if (input.paymentEvents) reasons.push('payment-lifecycle-unverified');
-  return ledgerSnapshotSchema.parse({ scope: 'recent-90-days-and-known-targets-v1', since: input.since,
+  if (financialTargets.unresolved.length) reasons.push('payment-lifecycle-unverified');
+  return ledgerSnapshotSchema.parse({ scope: 'recent-90-days-and-financial-targets-v2', since: input.since,
     subscriptions: subscriptionFacts.sort((a, b) => a.id.localeCompare(b.id)), invoices: invoiceFacts.sort((a, b) => a.id.localeCompare(b.id)),
     reviewReasons: unique(reasons) });
 }

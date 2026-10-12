@@ -112,7 +112,7 @@ export function SandboxBillingPage() {
     </section>}
     {view?.customerReady && <section className="panel">
       <h2>Canonical sandbox ledger</h2>
-      <p>Subscription and invoice observations only. Payment references have not been attested against charges, refunds or disputes. No paid access is granted.</p>
+      <p>Canonical sandbox financial observations only. A settled card-funding trace is not approved commercial or service-period authority. No paid access is granted.</p>
       <p>Last observation: {view.ledger?.observedAt ? new Date(view.ledger.observedAt).toLocaleString() : 'not yet available'}.
         {' '}Processing: {view.ledger?.processing ?? 'not yet requested'}. {view.ledger?.stale && 'The last displayed snapshot is stale or a newer read is pending.'}</p>
       {view.ledger?.reviewReasons.length ? <p role="status">Operator review required: {view.ledger.reviewReasons.map(reason => reason.replaceAll('-', ' ')).join(', ')}.</p> : null}
@@ -122,6 +122,8 @@ export function SandboxBillingPage() {
         {' '}{sub.currentPeriodEnd && `Reported item period end: ${new Date(sub.currentPeriodEnd).toLocaleString()}.`}</p>)}
       {view.ledger?.invoices.map(invoice => <p key={invoice.id}>Observed invoice: <strong>{invoice.status}</strong>.
         {' '}Total: {invoice.total} {invoice.currency.toUpperCase()} minor units; paid amount hint: {invoice.amountPaid}; remaining: {invoice.amountRemaining}.
+        {' '}{invoice.funding ? `Referenced card funding: ${invoice.funding.state.replaceAll('-', ' ')}; captured: ${invoice.funding.captured}; succeeded refunds: ${invoice.funding.refunded}.` : 'Payment evidence has not been evaluated.'}
+        {' '}{invoice.funding?.creditAdjusted && 'Issued credit adjustments require review.'}
         {' '}These amounts do not prove an eligible paid service period.</p>)}
       {view.ledger?.historyTruncated && <p>The displayed owned history is limited to 20 subscriptions and 20 invoices. Older retained records have not been deleted.</p>}
       <button className="button secondary" disabled={pending || !security?.fresh} onClick={() => action(async () => {

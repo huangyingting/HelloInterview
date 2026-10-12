@@ -4,7 +4,7 @@ import { digest, encodePayload } from '../jobs/schema';
 
 export const stripeApiVersion = '2026-09-30.endive' as const;
 export const providerId = z.string().regex(/^[A-Za-z][A-Za-z0-9_]{1,199}$/);
-export const objectKinds = ['checkout.session', 'subscription', 'invoice', 'charge', 'refund', 'dispute'] as const;
+export const objectKinds = ['checkout.session', 'subscription', 'invoice', 'charge', 'refund', 'dispute', 'credit_note'] as const;
 export type ObjectKind = typeof objectKinds[number];
 export class InvalidBillingNotification extends Error {
   constructor(message: string) { super(message); this.name = 'InvalidBillingNotification'; }
@@ -28,6 +28,9 @@ const eventObjects: Readonly<Record<string, ObjectKind>> = {
   'charge.dispute.created': 'dispute',
   'charge.dispute.updated': 'dispute',
   'charge.dispute.closed': 'dispute',
+  'credit_note.created': 'credit_note',
+  'credit_note.updated': 'credit_note',
+  'credit_note.voided': 'credit_note',
 } satisfies Partial<Record<Stripe.Event.Type, ObjectKind>>;
 const eventSchema = z.looseObject({
   id: providerId, object: z.literal('event'), type: z.string().regex(/^[a-z0-9_.]{1,200}$/),

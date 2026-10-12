@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { billingReviewReasons } from '../../shared/billing-ledger';
 import { providerId } from './schema';
+import { fundingEvidenceSchema } from './payment-schema';
 
 export const ledgerOperationSchema = z.strictObject({
   accountId: providerId, customerRef: z.uuid(), customerId: providerId, revision: z.number().int().positive().safe(),
@@ -32,10 +33,10 @@ export const invoiceFactSchema = z.strictObject({
     id: providerId, status: z.enum(['open', 'paid', 'canceled']), type: z.enum(['charge', 'payment_intent', 'payment_record']),
     reference: providerId, amountPaid: money.nonnegative().nullable(), currency,
   })).max(500),
-  reviewReasons: reasons,
+  reviewReasons: reasons, funding: fundingEvidenceSchema.nullable().optional().default(null),
 });
 export const ledgerSnapshotSchema = z.strictObject({
-  scope: z.literal('recent-90-days-and-known-targets-v1'), since: seconds,
+  scope: z.enum(['recent-90-days-and-known-targets-v1', 'recent-90-days-and-financial-targets-v2']), since: seconds,
   subscriptions: z.array(subscriptionFactSchema).max(500), invoices: z.array(invoiceFactSchema).max(500), reviewReasons: reasons,
 });
 export type LedgerSnapshot = z.infer<typeof ledgerSnapshotSchema>;

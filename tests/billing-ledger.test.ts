@@ -44,11 +44,12 @@ test('owned canonical subscriptions, inclusive service-line periods and payment 
   assert.equal(view.ledger?.processing, 'completed'); assert.equal(view.ledger?.stale, false);
   assert.equal(view.ledger?.authority, 'sandbox-ledger-observation-only');
   assert.equal(view.ledger?.subscriptions[0].status, 'active'); assert.equal(view.ledger?.invoices[0].status, 'paid');
-  assert.deepEqual(view.ledger?.reviewReasons, ['payment-attestation-pending']);
+  assert.deepEqual(view.ledger?.reviewReasons, ['commercial-policy-pending']);
+  assert.equal(view.ledger?.invoices[0].funding?.state, 'settled');
   const row = await f.db.prepare('SELECT payload FROM stripe_owned_invoice_ledger').get(); assert.ok(row);
   const invoice = JSON.parse(z.string().parse(row.payload));
   assert.equal(invoice.lines[0].periodEnd, f.facts.line.period.end, 'Do not silently turn an inclusive SDK period into an entitlement interval.');
-  assert.equal(invoice.payments[0].reference, 'pi_SyntheticUnattested');
+  assert.equal(invoice.payments[0].reference, f.facts.intent.id);
   const privateRows = JSON.stringify(await f.db.prepare('SELECT payload FROM stripe_customer_ledger_snapshots').all());
   for (const secret of ['private-fixture-contact', 'private-fixture-client-secret', 'https://private.fixture/invoice']) assert.ok(!privateRows.includes(secret));
   for (const secret of ['cus_Synthetic', 'sub_Synthetic', 'in_Synthetic', 'pi_Synthetic', 'studio_customer_ref']) assert.ok(!JSON.stringify(view).includes(secret));
@@ -77,7 +78,7 @@ test('complete bounded SDK pagination follows every invoice line and payment ref
   const data = JSON.parse(z.string().parse(saved.payload));
   assert.equal(data.lines.length, 250); assert.equal(data.payments.length, 250);
   assert.equal(f.requests.filter(request => request.path === `/v1/invoices/${invoice.id}/lines`).length, 2);
-  assert.equal(f.requests.filter(request => request.path === '/v1/invoice_payments').length, 2);
+  assert.equal(f.requests.filter(request => request.path === '/v1/invoice_payments').length, 10);
   assert.equal((await f.browser.request('/api/billing/reconcile', {})).status, 202);
   const claim = await f.worker.jobs.claim('billing.customer.snapshot'); assert.ok(claim);
   f.pagination('/v1/invoice_payments');
@@ -180,7 +181,7 @@ test('zero-value, out-of-band, trial, unexpected-price and duplicate subscriptio
   Object.assign(invoice, { payments: { object: 'list', has_more: false, data: [{ ...payment, payment: { type: 'payment_record', payment_record: 'pr_OutOfBand' } }] } });
   await drain(f);
   const view = await f.view(f.browser);
-  for (const reason of ['trial-not-supported', 'unexpected-price', 'duplicate-subscriptions', 'invoice-adjustment', 'payment-attestation-pending']) {
+  for (const reason of ['trial-not-supported', 'unexpected-price', 'duplicate-subscriptions', 'invoice-adjustment', 'unsupported-payment-funding']) {
     assert.ok(view.ledger?.reviewReasons.some(value => value === reason));
   }
   assert.equal((await f.browser.bootstrap()).capabilities.access?.state, 'free');
@@ -197,7 +198,7 @@ test('absence from a recent window never deletes historical invoices; absent kno
   assert.ok(f.requests.some(request => request.path === `/v1/subscriptions/${f.facts!.sub.id}`));
   assert.equal((await f.view(f.browser)).ledger?.subscriptions[0].status, 'canceled');
   assert.equal((await f.view(f.browser)).ledger?.invoices[0].status, 'paid');
-  assert.ok((await f.view(f.browser)).ledger?.reviewReasons.includes('payment-attestation-pending'));
+  assert.ok((await f.view(f.browser)).ledger?.reviewReasons.includes('commercial-policy-pending'));
   f.facts.sub.status = 'active';
   assert.equal((await f.browser.request('/api/billing/reconcile', {})).status, 202);
   const claim = await f.worker.jobs.claim('billing.customer.snapshot'); assert.ok(claim);

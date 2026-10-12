@@ -35,6 +35,8 @@ export async function openBillingFixture(t: TestContext) {
   const subscriptions: Record<string, unknown>[] = [];
   const invoices = new Map<string, Record<string, unknown>>(), events = new Map<string, Record<string, unknown>>();
   const invoiceLines = new Map<string, Record<string, unknown>[]>(), invoicePayments = new Map<string, Record<string, unknown>[]>();
+  const paymentIntents = new Map<string, Record<string, unknown>>(), charges = new Map<string, Record<string, unknown>>();
+  const refunds = new Map<string, Record<string, unknown>>(), disputes = new Map<string, Record<string, unknown>>(), credits = new Map<string, Record<string, unknown>>();
   const pageSizes = new Map<string, number>();
   const omitted = new Set<string>();
   const prices = new Map<string, Record<string, unknown>>();
@@ -68,7 +70,12 @@ export async function openBillingFixture(t: TestContext) {
       if (req.path === '/v1/subscriptions') return res.json(list(subscriptions));
       if (req.path === '/v1/invoices') return res.json(list([...invoices.values()].filter(invoice =>
         invoice.customer === req.query.customer && Number(invoice.created) >= Number(req.query['created[gte]'] ?? 0))));
-      if (req.path === '/v1/invoice_payments') return res.json(list(invoicePayments.get(String(req.query.invoice)) ?? []));
+      if (req.path === '/v1/invoice_payments') return res.json(list(req.query.invoice ? invoicePayments.get(String(req.query.invoice)) ?? [] :
+        [...invoicePayments.values()].flat().filter(value => z.object({ payment: z.object({ payment_intent: z.string().optional() }) }).parse(value).payment.payment_intent === req.query['payment[payment_intent]'])));
+      if (req.path === '/v1/charges') return res.json(list([...charges.values()].filter(value => value.payment_intent === req.query.payment_intent)));
+      if (req.path === '/v1/refunds') return res.json(list([...refunds.values()].filter(value => value.charge === req.query.charge)));
+      if (req.path === '/v1/disputes') return res.json(list([...disputes.values()].filter(value => value.charge === req.query.charge)));
+      if (req.path === '/v1/credit_notes') return res.json(list([...credits.values()].filter(value => value.invoice === req.query.invoice)));
       if (/^\/v1\/invoices\/[^/]+\/lines$/.test(req.path)) return res.json(list(invoiceLines.get(req.path.split('/')[3]) ?? []));
       if (req.path === '/v1/subscription_items') {
         const sub = subscriptions.find(sub => sub.id === req.query.subscription);
@@ -81,7 +88,12 @@ export async function openBillingFixture(t: TestContext) {
         req.path.startsWith('/v1/checkout/sessions/') ? sessions.get(req.path.slice('/v1/checkout/sessions/'.length)) :
         req.path.startsWith('/v1/subscriptions/') ? subscriptions.find(sub => sub.id === req.path.slice('/v1/subscriptions/'.length)) :
         req.path.startsWith('/v1/invoices/') ? invoices.get(req.path.slice('/v1/invoices/'.length)) :
-        req.path.startsWith('/v1/events/') ? events.get(req.path.slice('/v1/events/'.length)) : undefined;
+        req.path.startsWith('/v1/events/') ? events.get(req.path.slice('/v1/events/'.length)) :
+        req.path.startsWith('/v1/payment_intents/') ? paymentIntents.get(req.path.slice('/v1/payment_intents/'.length)) :
+        req.path.startsWith('/v1/charges/') ? charges.get(req.path.slice('/v1/charges/'.length)) :
+        req.path.startsWith('/v1/refunds/') ? refunds.get(req.path.slice('/v1/refunds/'.length)) :
+        req.path.startsWith('/v1/disputes/') ? disputes.get(req.path.slice('/v1/disputes/'.length)) :
+        req.path.startsWith('/v1/credit_notes/') ? credits.get(req.path.slice('/v1/credit_notes/'.length)) : undefined;
       if (value) return res.json(value);
     }
     if (req.method === 'POST') {
@@ -123,7 +135,8 @@ export async function openBillingFixture(t: TestContext) {
       server.closeAllConnections(); await closed;
     }
   });
-  return { ...f, worker, client, customers, sessions, subscriptions, prices, product, requests, invoices, invoiceLines, invoicePayments, events, port: address.port,
+  return { ...f, worker, client, customers, sessions, subscriptions, prices, product, requests, invoices, invoiceLines, invoicePayments, events,
+    paymentIntents, charges, refunds, disputes, credits, port: address.port,
     barrier(value?: typeof barrier) { barrier = value; }, account(value: string) { account = value; },
     pagination(value: string) { pagination = value; }, outage(value: string) { failPath = value; },
     pageSize(path: string, value: number) { pageSizes.set(path, value); },
@@ -153,15 +166,23 @@ export async function openBillingFixture(t: TestContext) {
         parent: { type: 'subscription_item_details', subscription_item_details: { subscription: subId, subscription_item: 'si_Synthetic1', proration: false } },
         pricing: { type: 'price_details', price_details: { price: String(attempt.price_id), product: 'prod_SyntheticCheckout' } } };
       const payment = { id: `inpay_Synthetic${invoices.size + 1}`, object: 'invoice_payment', invoice: invoiceId, livemode: false,
-        currency: 'usd', status: 'paid', amount_paid: 1900, payment: { type: 'payment_intent', payment_intent: 'pi_SyntheticUnattested' } };
+        currency: 'usd', status: 'paid', amount_paid: 1900, payment: { type: 'payment_intent', payment_intent: `pi_Synthetic${invoices.size + 1}` } };
       const invoice = { id: invoiceId, object: 'invoice', customer: session.customer, livemode: false, created: now, status: 'paid',
         currency: 'usd', total: 1900, amount_paid: 1900, amount_remaining: 0, status_transitions: { paid_at: now },
         parent: { type: 'subscription_details', subscription_details: { subscription: subId } },
         lines: { object: 'list', has_more: false, data: [line] }, payments: { object: 'list', has_more: false, data: [payment] },
         customer_email: 'private-fixture-contact@example.invalid', hosted_invoice_url: 'https://private.fixture/invoice',
         confirmation_secret: { client_secret: 'private-fixture-client-secret' } };
+      const charge = { id: `ch_Synthetic${charges.size + 1}`, object: 'charge', customer: session.customer, livemode: false, currency: 'usd',
+        payment_intent: payment.payment.payment_intent, amount: 1900, amount_captured: 1900, amount_refunded: 0,
+        status: 'succeeded', paid: true, captured: true, refunded: false, disputed: false, payment_method_details: { type: 'card' },
+        billing_details: { email: 'private-card-contact@example.invalid' }, receipt_url: 'https://private.fixture/receipt' };
+      const intent = { id: payment.payment.payment_intent, object: 'payment_intent', customer: session.customer, livemode: false,
+        currency: 'usd', status: 'succeeded', amount: 1900, amount_received: 1900, amount_capturable: 0, latest_charge: charge.id,
+        client_secret: 'private-payment-intent-secret' };
+      charges.set(charge.id, charge); paymentIntents.set(intent.id, intent);
       subscriptions.push(sub); invoices.set(invoiceId, invoice); invoiceLines.set(invoiceId, [line]); invoicePayments.set(invoiceId, [payment]);
-      return { sub, invoice, line, payment };
+      return { sub, invoice, line, payment, charge, intent };
     },
     async login(browser = f.browser(), subject = 'auth0|checkout-fixture-owner') {
       assert.equal((await f.complete(browser, await f.begin(browser, 'email'), { sub: subject })).status, 303);

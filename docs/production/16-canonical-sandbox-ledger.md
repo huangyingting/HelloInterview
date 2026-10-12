@@ -6,6 +6,11 @@ invoice, service-line and invoice-payment-reference observations using the
 pinned official SDK. It is **not payment attestation, a financial book of
 record, a billing entitlement adapter, cancellation or live commerce**.
 
+This document records the original third-checkpoint boundary. The subsequent
+[payment-evidence checkpoint](17-sandbox-payment-evidence.md) extends these
+reads with card funding and historical reversals/credits, requires migration 11
+and still grants no paid access. Use that runbook for the current release.
+
 ## Deploy and operate
 
 Apply **application migration 10 and the maintained queue migration** with the
@@ -172,8 +177,9 @@ publication SQL executed before lease/deletion rollback. Compiled maintenance
 processes the extra durable child; actual Chromium displays paid/cancellation
 observations with no Pro or private provider/contact details.
 
-W08 remains in progress: canonical charge/PaymentIntent/refund/dispute and
-credit-note attestations; eligible paid service-period policy; immutable billing
+The [subsequent checkpoint](17-sandbox-payment-evidence.md) implements canonical
+charge/PaymentIntent/refund/dispute/credit-note traces. W08 still requires
+eligible paid service-period policy; immutable billing
 grants and revocations; approved grace/refund/dispute policy; restricted Portal
 and cancellation; partitioned large-history reconciliation; financial retention
 and privacy/support operations; authentic operated sandbox and live approval.

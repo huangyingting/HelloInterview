@@ -10,8 +10,11 @@ and hosted test-session intents, stable idempotency and a fresh authenticated
 sandbox UI. The [third checkpoint](16-canonical-sandbox-ledger.md) adds owned
 canonical subscription/invoice/service-line/payment-reference observations,
 dirty-revision fencing and retained history, explicitly without payment
-attestation. Payment-derived entitlements, Portal and the financial lifecycle
-below remain unimplemented; this specification is not launch authorization.
+attestation. The [fourth checkpoint](17-sandbox-payment-evidence.md) adds narrow
+canonical card funding, complete allocations and historical refund/dispute/
+credit-note traces, without service-period or commercial authority.
+Payment-derived entitlements, Portal and the operated financial lifecycle below
+remain unimplemented; this specification is not launch authorization.
 
 ## Launch offer and boundaries
 
@@ -222,6 +225,7 @@ version; below is the required conceptual coverage:
 | `invoice.finalization_failed` | Alert billing operations; surface location/tax/payment blockers appropriately |
 | Refund lifecycle / `charge.refunded` | Reconcile actual refund status and affected service interval |
 | Dispute creation/update/closure | Open case, apply/release scoped holds, follow finance process |
+| Credit-note creation/update/void | Reconcile canonical invoice adjustment and approved eligibility policy; never equate a credit note with a succeeded cash refund |
 
 Initially enable only payment methods whose lifecycle is covered. If a delayed
 method is not ready, disable it in checkout rather than displaying instant

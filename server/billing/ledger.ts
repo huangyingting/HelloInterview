@@ -123,12 +123,17 @@ export class SandboxBillingLedger {
         ON n.account_id=l.account_id AND n.event_id=l.event_id WHERE l.customer_ref=? AND l.revision<=?`).all(customer.id, input.revision);
       const observations = notifications.map(row => observationSchema.parse(JSON.parse(z.string().parse(row.observation))));
       const targets = [...new Set(observations.filter(row => row.objectKind === 'invoice').map(row => row.objectId))];
+      const chargeTargets = [...new Set(observations.flatMap(row => row.objectKind === 'charge' ? [row.objectId] :
+        ['refund', 'dispute'].includes(row.objectKind) && row.chargeId ? [row.chargeId] : []))];
+      const creditTargets = [...new Set(observations.filter(row => row.objectKind === 'credit_note').map(row => row.objectId))];
+      const knownChargeLinks = (await this.db.prepare('SELECT charge_id,invoice_id FROM stripe_invoice_charge_links WHERE customer_ref=?').all(customer.id))
+        .map(row => ({ chargeId: providerId.parse(row.charge_id), invoiceId: providerId.parse(row.invoice_id) }));
       const knownSubscriptions = [...new Set([...known.map(row => providerId.parse(row.subscription_id)), ...attempts.flatMap(row => row.subscription_id ? [row.subscription_id] : [])])];
-      if (targets.length > 500 || knownSubscriptions.length > 500 || attempts.length > 500) throw new TerminalJobFailure('reconciliation-required');
+      if ([targets.length, knownSubscriptions.length, attempts.length, chargeTargets.length, creditTargets.length, knownChargeLinks.length].some(count => count > 500)) throw new TerminalJobFailure('reconciliation-required');
       const clock = await this.db.prepare('SELECT floor(extract(epoch from clock_timestamp()))::bigint AS now').get();
       return { customer, since: Math.max(0, z.coerce.number().int().safe().parse(clock?.now) - 90 * 86400), attempts: attempts.map(row => ({
         id: row.id, priceId: row.price_id, subscriptionId: row.subscription_id, state: row.state,
-      })), knownSubscriptions, invoiceTargets: targets, paymentEvents: observations.some(row => ['charge', 'refund', 'dispute'].includes(row.objectKind)) };
+      })), knownSubscriptions, invoiceTargets: targets, chargeTargets, creditTargets, knownChargeLinks };
     });
     if (!context) return;
     const snapshot = await this.provider.ledger({ ...context, customerRef: context.customer.id, customerId: input.customerId },
@@ -165,13 +170,44 @@ export class SandboxBillingLedger {
         .run(randomUUID(), customer.id, this.settings.accountId, sub.id, revision, sub.status, encodePayload(sub, 16384));
     }
     for (const invoice of snapshot.invoices) {
-      const previous = await this.db.prepare('SELECT customer_ref,status,created_at_seconds FROM stripe_owned_invoice_ledger WHERE account_id=? AND invoice_id=?')
+      const previous = await this.db.prepare('SELECT customer_ref,status,created_at_seconds,payload FROM stripe_owned_invoice_ledger WHERE account_id=? AND invoice_id=?')
         .get(this.settings.accountId, invoice.id);
       if (previous && (previous.customer_ref !== customer.id || Number(previous.created_at_seconds) !== invoice.created ||
         ['paid', 'void'].includes(z.string().parse(previous.status)) && previous.status !== invoice.status)) throw new TerminalJobFailure('reconciliation-required');
+      if (previous) {
+        const old = invoiceFactSchema.parse(JSON.parse(z.string().parse(previous.payload))).funding;
+        if (old && invoice.funding?.currency !== old.currency) throw new TerminalJobFailure('reconciliation-required');
+        for (const charge of old?.charges ?? []) {
+          const current = invoice.funding?.charges.find(value => value.id === charge.id);
+          if (charge.capturedAmount > 0 && (!current || current.currency !== charge.currency || current.intentId !== charge.intentId ||
+            current.amount !== charge.amount || current.method !== charge.method ||
+            current.capturedAmount < charge.capturedAmount)) throw new TerminalJobFailure('reconciliation-required');
+          for (const refund of charge.refunds.filter(refund => refund.status === 'succeeded')) {
+            const next = current?.refunds.find(value => value.id === refund.id);
+            if (!next || next.status !== 'succeeded' || next.amount !== refund.amount) throw new TerminalJobFailure('reconciliation-required');
+          }
+          for (const dispute of charge.disputes) {
+            const next = current?.disputes.find(value => value.id === dispute.id);
+            if (!next || next.amount !== dispute.amount || ['won', 'lost', 'prevented'].includes(dispute.status) && next.status !== dispute.status) {
+              throw new TerminalJobFailure('reconciliation-required');
+            }
+          }
+        }
+        for (const credit of old?.credits ?? []) {
+          const next = invoice.funding?.credits.find(value => value.id === credit.id);
+          if (!next || next.amount !== credit.amount || credit.status === 'void' && next.status !== 'void') throw new TerminalJobFailure('reconciliation-required');
+        }
+      }
       await this.db.prepare(`INSERT INTO stripe_owned_invoice_ledger (id,customer_ref,account_id,invoice_id,revision,created_at_seconds,status,payload)
         VALUES (?,?,?,?,?,?,?,?) ON CONFLICT (account_id,invoice_id) DO UPDATE SET revision=excluded.revision,status=excluded.status,payload=excluded.payload`)
         .run(randomUUID(), customer.id, this.settings.accountId, invoice.id, revision, invoice.created, invoice.status, encodePayload(invoice, 131072));
+      for (const charge of invoice.funding?.charges ?? []) {
+        await this.db.prepare(`INSERT INTO stripe_invoice_charge_links (account_id,charge_id,invoice_id,customer_ref,first_revision)
+          VALUES (?,?,?,?,?) ON CONFLICT (account_id,charge_id,invoice_id) DO NOTHING`).run(this.settings.accountId, charge.id, invoice.id, customer.id, revision);
+        const link = await this.db.prepare('SELECT customer_ref FROM stripe_invoice_charge_links WHERE account_id=? AND charge_id=? AND invoice_id=?')
+          .get(this.settings.accountId, charge.id, invoice.id);
+        if (link?.customer_ref !== customer.id) throw new TerminalJobFailure('reconciliation-required');
+      }
     }
   }
   async view(customer: CustomerRow): Promise<OwnedBillingLedgerView | null> {
@@ -196,7 +232,9 @@ export class SandboxBillingLedger {
       invoices: invoices.slice(0, 20).map(row => {
         const invoice = invoiceFactSchema.parse(JSON.parse(z.string().parse(row.payload)));
         return { id: z.uuid().parse(row.id), status: invoice.status, currency: invoice.currency, total: invoice.total, amountPaid: invoice.amountPaid,
-          amountRemaining: invoice.amountRemaining, paidAt: timestamp(invoice.paidAt) };
+          amountRemaining: invoice.amountRemaining, paidAt: timestamp(invoice.paidAt),
+          funding: invoice.funding ? { state: invoice.funding.state, captured: invoice.funding.captured, refunded: invoice.funding.refunded,
+            creditAdjusted: invoice.funding.credits.some(credit => credit.status === 'issued') } : null };
       }), historyTruncated: subscriptions.length > 20 || invoices.length > 20 };
   }
   async reviewRequiredCustomers() {

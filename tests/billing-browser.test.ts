@@ -131,7 +131,8 @@ test('actual owned browser displays canonical invoice and cancellation observati
   await f.complete('billing.checkout.refresh');
   await f.complete('billing.customer.snapshot'); await f.complete('billing.customer.snapshot');
   await expect(page.getByText(/Observed invoice: paid/)).toBeVisible();
-  await expect(page.getByText(/Operator review required: payment attestation pending/)).toBeVisible();
+  await expect(page.getByText(/Operator review required: commercial policy pending/)).toBeVisible();
+  await expect(page.getByText(/Referenced card funding: settled/)).toBeVisible();
   await expect(page.getByText(/These amounts do not prove an eligible paid service period/)).toBeVisible();
   facts.sub.cancel_at_period_end = true;
   const requested = page.waitForResponse(response => response.url().endsWith('/api/billing/reconcile') && response.request().method() === 'POST');
@@ -139,10 +140,18 @@ test('actual owned browser displays canonical invoice and cancellation observati
   assert.equal((await requested).status(), 202);
   await f.complete('billing.customer.snapshot');
   await expect(page.getByText(/Renewal is disabled/)).toBeVisible();
+  const refund = { id: 're_SyntheticBrowser', object: 'refund', charge: facts.charge.id, payment_intent: facts.intent.id,
+    customer: facts.charge.customer, currency: 'usd', amount: 500, status: 'succeeded' };
+  f.refunds.set(refund.id, refund); facts.charge.amount_refunded = 500;
+  await f.notify('refund', refund, 'refund.updated'); await f.complete('billing.reconcile'); await f.complete('billing.customer.snapshot');
+  await page.reload();
+  await expect(page.getByText(/Referenced card funding: partially refunded; captured: 1900; succeeded refunds: 500/)).toBeVisible();
+  await expect(page.getByText(/Operator review required: commercial policy pending, payment refunded/)).toBeVisible();
   const data: Bootstrap = await page.evaluate(async () => (await fetch('/api/bootstrap')).json());
   assert.equal(data.capabilities.access?.state, 'free'); assert.equal(data.capabilities.commerce, 'disabled');
   const text = await page.locator('body').innerText();
-  for (const secret of ['cus_Synthetic', 'sub_Synthetic', 'private-fixture-client-secret', 'private-fixture-contact']) assert.ok(!text.includes(secret));
+  for (const secret of ['cus_Synthetic', 'sub_Synthetic', 'pi_Synthetic', 'ch_Synthetic', 're_Synthetic',
+    'private-fixture-client-secret', 'private-fixture-contact', 'private-card-contact']) assert.ok(!text.includes(secret));
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
 });

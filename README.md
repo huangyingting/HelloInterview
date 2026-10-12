@@ -135,9 +135,13 @@ remain disabled. See
 [the owned checkout runbook](docs/production/15-owned-sandbox-checkout.md).
 The [canonical sandbox ledger](docs/production/16-canonical-sandbox-ledger.md)
 adds owned subscription/invoice/service-line/payment-reference observations,
-dirty-revision reconciliation and retained history. Paid hints remain explicitly
-unattested and grant no access. Controlled PostgreSQL deployments must apply
-**migration 10 and maintained queue migration** before this release.
+dirty-revision reconciliation and retained history. The
+[sandbox payment-evidence checkpoint](docs/production/17-sandbox-payment-evidence.md)
+traces owned card funding, complete allocations, refunds, disputes and credit
+notes, including older targeted invoices. Settled funding is not an eligible
+service period or commercial authority and grants no access. Controlled
+PostgreSQL deployments must apply **migration 11 and maintained queue migration**
+before this release.
 
 | Area | Local functionality |
 | --- | --- |
