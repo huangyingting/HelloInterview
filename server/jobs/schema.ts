@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
-export const jobKinds = ['billing.reconcile', 'billing.customer', 'billing.checkout', 'billing.checkout.refresh', 'billing.customer.snapshot', 'notification.deliver', 'ai.evaluate', 'privacy.process', 'identity.reconcile'] as const;
+export const jobKinds = ['billing.reconcile', 'billing.customer', 'billing.checkout', 'billing.checkout.refresh', 'billing.subscription.cancel', 'billing.customer.snapshot', 'notification.deliver', 'ai.evaluate', 'privacy.process', 'identity.reconcile'] as const;
 export const queueNames = {
   'billing.reconcile': 'billing-reconcile',
   'billing.customer': 'billing-customer',
   'billing.checkout': 'billing-checkout',
   'billing.checkout.refresh': 'billing-checkout-refresh',
+  'billing.subscription.cancel': 'billing-subscription-cancel',
   'billing.customer.snapshot': 'billing-customer-snapshot',
   'notification.deliver': 'notification-deliver',
   'ai.evaluate': 'ai-evaluate',

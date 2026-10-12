@@ -48,6 +48,7 @@ service with defined recovery and support commitments.
 | [16 - Canonical sandbox ledger](16-canonical-sandbox-ledger.md) | Owned subscription/invoice/service-line/payment-reference observations, dirty-revision fencing, historical handoff, private UI and explicit no-grant financial holds | Billing and operations |
 | [17 - Sandbox payment evidence](17-sandbox-payment-evidence.md) | Linked card funding, complete allocations, historical refunds/disputes/credits, consistency and terminal guards, legacy compatibility and no commercial/service-period authority | Billing and operations |
 | [18 - Sandbox service authority](18-sandbox-service-authority.md) | Default-off versioned calendar eligibility, immutable invoice-scoped grants and terminal adjustments, policy continuity, expiry-safe owned UI and unresolved commercial gates | Billing and full-stack |
+| [19 - Owned sandbox cancellation](19-owned-sandbox-cancellation.md) | Fresh owned stop-renewal requests, bounded stable provider writes, unknown-outcome recovery, atomic confirmation and unchanged paid access; Portal/live/deletion gates | Billing and operations |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to

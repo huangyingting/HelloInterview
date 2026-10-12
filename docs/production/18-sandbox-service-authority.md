@@ -216,8 +216,12 @@ route case additionally verifies denied new premium content/mock admission and
 retains the owner's existing mock archive. Existing observation-only billing
 journeys remain separate regression cases.
 
+The subsequent [owned cancellation checkpoint](19-owned-sandbox-cancellation.md)
+adds durable sandbox stop-renewal requests without shortening existing paid
+intervals or revoking their source.
+
 Next W08 boundaries are authentic provider lifecycle/period evidence, approved
-commercial/grace/refund/dispute policy, restricted Portal/cancellation, partitioned
+commercial/grace/refund/dispute policy, restricted Portal/resumption, partitioned
 history, retained financial privacy/support and operated recovery. W09 AI
 reservations/budgets, W10 staff/privacy controls, W12 reviewed offers/content and
 W13 operated launch evidence remain required. No real provider accounts, cards,

@@ -37,7 +37,7 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run build
       - run: npm run test:unit
-      - run: npx tsx --test tests/server.test.ts tests/runtime.test.ts tests/ai.test.ts tests/database.test.ts tests/content-boundary.test.ts tests/jobs.test.ts tests/identity.test.ts tests/identity-limits.test.ts tests/identity-contract.test.ts tests/identity-lifecycle.test.ts tests/identity-runtime.test.ts tests/entitlements.test.ts tests/billing.test.ts tests/billing-checkout.test.ts tests/billing-ledger.test.ts tests/billing-payments.test.ts tests/billing-service.test.ts
+      - run: npx tsx --test tests/server.test.ts tests/runtime.test.ts tests/ai.test.ts tests/database.test.ts tests/content-boundary.test.ts tests/jobs.test.ts tests/identity.test.ts tests/identity-limits.test.ts tests/identity-contract.test.ts tests/identity-lifecycle.test.ts tests/identity-runtime.test.ts tests/entitlements.test.ts tests/billing.test.ts tests/billing-checkout.test.ts tests/billing-ledger.test.ts tests/billing-payments.test.ts tests/billing-service.test.ts tests/billing-cancellation.test.ts
       - run: npx playwright install --with-deps chromium
       - run: npx tsx --test tests/identity-browser.test.ts tests/billing-browser.test.ts
       - run: npm test

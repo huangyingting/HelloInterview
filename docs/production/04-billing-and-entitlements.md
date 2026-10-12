@@ -17,6 +17,9 @@ credit-note traces, without service-period or commercial authority. The
 sandbox calendar eligibility and immutable invoice-scoped issuing/revoking
 adapters. Its deliberately strict partial-refund/dispute/credit retirement
 policy is not approval or implementation of the commercial policies below.
+The [sixth checkpoint](19-owned-sandbox-cancellation.md) adds owned durable
+sandbox stop-renewal requests and canonical confirmation without a refund or
+immediate access loss. Portal, resumption and paid deletion are still unresolved.
 Live payment-derived entitlements, Portal and the operated financial lifecycle
 remain unimplemented; this specification is not launch authorization.
 

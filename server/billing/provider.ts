@@ -12,6 +12,14 @@ const subscriptionSchema = z.looseObject({
   id: providerId, object: z.literal('subscription'), customer: providerId, livemode: z.literal(false),
   status: z.enum(['active', 'canceled', 'incomplete', 'incomplete_expired', 'past_due', 'paused', 'trialing', 'unpaid']),
 });
+const renewalSchema = subscriptionSchema.extend({
+  cancel_at_period_end: z.boolean(), cancel_at: z.number().int().nonnegative().nullable(),
+  schedule: z.null(), pending_update: z.null(),
+  metadata: z.looseObject({ studio_customer_ref: z.uuid(), studio_checkout_ref: z.uuid() }),
+  items: z.looseObject({ has_more: z.literal(false), data: z.array(z.looseObject({
+    subscription: providerId, quantity: z.literal(1), price: z.looseObject({ id: providerId }),
+  })).length(1) }),
+});
 export class StripeEvidence {
   private readonly client: Stripe;
   constructor(private readonly settings: BillingConfig, private readonly shutdown: AbortSignal, client?: Stripe) {
@@ -103,6 +111,40 @@ export class StripeEvidence {
     const customer = this.customer(await this.client.customers.retrieve(id), reference, id);
     this.assertRunning(signal);
     return customer.id;
+  }
+  async stopRenewal(attempt: CheckoutRow, customerId: string, operationId: string, replayWindow: boolean,
+    beforeMutation: () => Promise<void>, checkpoint: () => Promise<void>, signal?: AbortSignal): Promise<'nonrenewing' | 'ended'> {
+    let requests = 0;
+    const read: CanonicalRead = async action => {
+      if (++requests > 6) throw new TerminalJobFailure('reconciliation-required');
+      this.assertRunning(signal); await checkpoint();
+      const result = await action(); this.assertRunning(signal); return result;
+    };
+    await read(() => this.account(signal));
+    this.customer(await read(() => this.client.customers.retrieve(customerId)), attempt.customer_ref, customerId);
+    const subscriptionId = attempt.subscription_id;
+    if (!subscriptionId) throw new TerminalJobFailure('not-eligible');
+    const validate = (value: unknown) => {
+      const sub = renewalSchema.parse(value), item = sub.items.data[0];
+      if (sub.id !== subscriptionId || sub.customer !== customerId || sub.metadata.studio_customer_ref !== attempt.customer_ref ||
+        sub.metadata.studio_checkout_ref !== attempt.id || item.subscription !== sub.id || item.price.id !== attempt.price_id) {
+        throw new TerminalJobFailure('reconciliation-required');
+      }
+      return sub;
+    };
+    const initial = validate(await read(() => this.client.subscriptions.retrieve(subscriptionId)));
+    if (!initial.cancel_at_period_end && !['canceled', 'incomplete_expired'].includes(initial.status)) {
+      if (!replayWindow || initial.cancel_at !== null || !['active', 'past_due', 'unpaid', 'paused'].includes(initial.status)) throw new TerminalJobFailure('reconciliation-required');
+      validate(await read(async () => {
+        await beforeMutation(); this.assertRunning(signal);
+        return this.client.subscriptions.update(initial.id,
+          { cancel_at_period_end: true, proration_behavior: 'none' }, { idempotencyKey: operationId });
+      }));
+    }
+    const current = validate(await read(() => this.client.subscriptions.retrieve(initial.id)));
+    if (['canceled', 'incomplete_expired'].includes(current.status)) return 'ended';
+    if (!current.cancel_at_period_end) throw new TerminalJobFailure('reconciliation-required');
+    return 'nonrenewing';
   }
   private session(value: unknown, attempt: CheckoutRow, customerId: string, origin: string, checkLineItems = false) {
     const session = checkoutSchema.parse(value);

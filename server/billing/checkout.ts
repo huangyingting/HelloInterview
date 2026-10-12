@@ -10,10 +10,14 @@ import { checkoutOperationSchema, checkoutRequestSchema, checkoutRowSchema, cust
 import type { StripeEvidence } from './provider';
 import { encodePayload } from '../jobs/schema';
 import type { SandboxBillingLedger } from './ledger';
+import { ledgerStateSchema, subscriptionFactSchema } from './ledger-schema';
+import { cancellationOperationSchema, cancellationRowSchema, type CancellationRow } from './cancellation-schema';
+import { sandboxRenewalAuthority } from '../../shared/billing-ledger';
+import { assertSandboxAccessConfiguration } from './service';
 
 const clock = 'floor(extract(epoch from clock_timestamp())*1000)::bigint';
 const postWindowMs = 20 * 3600000, checkoutMarginMs = 31 * 60000;
-export const checkoutJobKinds = ['billing.customer', 'billing.checkout', 'billing.checkout.refresh'] as const;
+export const checkoutJobKinds = ['billing.customer', 'billing.checkout', 'billing.checkout.refresh', 'billing.subscription.cancel'] as const;
 export class SandboxCheckout {
   constructor(private readonly db: Database, private readonly settings: BillingConfig, private readonly origin: string,
     private readonly jobs: DurableJobs, private readonly provider: StripeEvidence, private readonly ledger: SandboxBillingLedger) {}
@@ -124,6 +128,96 @@ export class SandboxCheckout {
       return { accepted: true };
     });
   }
+  private cancellationIntent(row: Pick<CancellationRow, 'id' | 'customer_ref' | 'subscription_ref' | 'attempt_id' | 'auth_epoch'>, subscriptionId: string, priceId: string) {
+    return { policy: sandboxRenewalAuthority, id: row.id, customerRef: row.customer_ref, subscriptionRef: row.subscription_ref,
+      subscriptionId, attemptId: row.attempt_id, priceId, authEpoch: row.auth_epoch };
+  }
+  async cancelRenewal(owner: string, id: string) {
+    return this.db.transaction(async () => {
+      const epoch = await this.owner(owner), customer = await this.customer(owner);
+      if (!customer || customer.state !== 'mapped') throw new HttpError(404, 'Owned sandbox subscription not found.');
+      await assertSandboxAccessConfiguration(this.db, this.settings);
+      const stateRow = await this.db.prepare('SELECT * FROM stripe_customer_ledger_state WHERE customer_ref=? FOR UPDATE').get(customer.id);
+      const subRow = await this.db.prepare('SELECT subscription_id,payload FROM stripe_owned_subscription_ledger WHERE id=? AND customer_ref=? AND account_id=? FOR UPDATE')
+        .get(z.uuid().parse(id), customer.id, this.settings.accountId);
+      if (!subRow) throw new HttpError(404, 'Owned sandbox subscription not found.');
+      const previous = await this.db.prepare('SELECT * FROM stripe_subscription_cancellations WHERE subscription_ref=? FOR UPDATE').get(id);
+      const old = previous ? cancellationRowSchema.parse(previous) : null;
+      if (old && old.customer_ref !== customer.id) throw new HttpError(409, 'Stored cancellation ownership conflicts; operator reconciliation is required.');
+      if (old?.state === 'queued') {
+        const status = await this.jobs.ownedStatus(owner, old.operation_id);
+        if (old.auth_epoch !== epoch || !['created', 'active', 'retry'].includes(status.status)) {
+          throw new HttpError(409, 'This cancellation needs operator reconciliation; its unknown external outcome cannot be replaced.');
+        }
+        return { id: old.id, accepted: true };
+      }
+      const state = stateRow ? ledgerStateSchema.parse(stateRow) : null, now = await this.now();
+      if (!state?.observed_at || state.requested_revision !== state.reconciled_revision ||
+        now - state.observed_at.getTime() >= 300000) throw new HttpError(409, 'Refresh the owned canonical ledger before stopping sandbox renewal.');
+      const sub = subscriptionFactSchema.parse(JSON.parse(z.string().parse(subRow.payload)));
+      if (sub.id !== subRow.subscription_id || !sub.attemptId) throw new HttpError(409, 'This subscription lacks its owned completed Checkout correlation.');
+      if (old) {
+        if (!sub.cancelAtPeriodEnd && !['canceled', 'incomplete_expired'].includes(sub.status)) {
+          throw new HttpError(409, 'The earlier cancellation differs from current provider state. Operator reconciliation is required; resumption is not implemented.');
+        }
+        return { id: old.id, accepted: true };
+      }
+      const attempt = await this.attempt(customer, sub.attemptId);
+      if (attempt.state !== 'complete' || attempt.subscription_id !== sub.id) throw new HttpError(409, 'Refresh the owned completed Checkout before stopping renewal.');
+      const request = { id: randomUUID(), customer_ref: customer.id, subscription_ref: id, attempt_id: attempt.id, auth_epoch: epoch };
+      const operation = await this.jobs.enqueue({ principal: { type: 'user', id: owner }, kind: 'billing.subscription.cancel',
+        key: `cancel:${request.id}`, resource: `sandbox-customer:${customer.id}`,
+        payload: this.cancellationIntent(request, sub.id, attempt.price_id), retryMode: 'idempotent' });
+      await this.db.prepare(`INSERT INTO stripe_subscription_cancellations
+        (id,policy_version,customer_ref,subscription_ref,attempt_id,auth_epoch,operation_id,state) VALUES (?,?,?,?,?,?,?,'queued')`)
+        .run(request.id, sandboxRenewalAuthority, customer.id, id, attempt.id, epoch, operation.id);
+      await this.owner(owner, epoch);
+      return { id: request.id, accepted: true };
+    });
+  }
+  private async cancellationContext(operation: Operation, expected: 'queued' | 'confirmed' = 'queued') {
+    if (operation.kind !== 'billing.subscription.cancel' || operation.principal.type !== 'user' || !operation.ownerId) throw new TerminalJobFailure('not-eligible');
+    const input = cancellationOperationSchema.parse(operation.payload), owner = operation.ownerId;
+    return this.db.transaction(async () => {
+      await this.owner(owner, input.authEpoch);
+      const customer = await this.customer(owner, input.customerRef);
+      if (!customer || customer.state !== 'mapped' || !customer.customer_id || operation.resource !== `sandbox-customer:${customer.id}`) throw new TerminalJobFailure('not-eligible');
+      await assertSandboxAccessConfiguration(this.db, this.settings);
+      const row = cancellationRowSchema.parse(await this.db.prepare('SELECT * FROM stripe_subscription_cancellations WHERE id=? AND customer_ref=? FOR UPDATE').get(input.id, customer.id));
+      const sub = await this.db.prepare('SELECT subscription_id FROM stripe_owned_subscription_ledger WHERE id=? AND customer_ref=? AND account_id=?')
+        .get(row.subscription_ref, customer.id, this.settings.accountId);
+      const attempt = await this.attempt(customer, row.attempt_id);
+      if (!sub || row.state !== expected || row.operation_id !== operation.id ||
+        attempt.state !== 'complete' || attempt.subscription_id !== sub.subscription_id ||
+        encodePayload(this.cancellationIntent(row, z.string().parse(sub.subscription_id), attempt.price_id)) !== encodePayload(input)) throw new TerminalJobFailure('not-eligible');
+      return { owner, customer, attempt, input, now: await this.now() };
+    });
+  }
+  private async runCancellation(claim: JobClaim, operation: Operation, signal?: AbortSignal) {
+    const context = await this.cancellationContext(operation), customerId = context.customer.customer_id;
+    if (!customerId) throw new TerminalJobFailure('not-eligible');
+    const age = context.now - Date.parse(operation.createdAt);
+    const beforeMutation = async () => {
+      const current = await this.cancellationContext(operation);
+      if (current.customer.customer_id !== customerId) throw new TerminalJobFailure('not-eligible');
+      await this.jobs.assertCurrentClaim(claim, signal);
+      const elapsed = current.now - Date.parse(operation.createdAt);
+      if (elapsed < 0 || elapsed >= postWindowMs) throw new TerminalJobFailure('reconciliation-required');
+    };
+    const result = await this.provider.stopRenewal(context.attempt, customerId, operation.id, age >= 0 && age < postWindowMs,
+      beforeMutation, () => this.jobs.heartbeat(claim, signal), signal);
+    await this.db.transaction(async () => {
+      const current = await this.cancellationContext(operation);
+      if (current.customer.customer_id !== customerId) throw new TerminalJobFailure('not-eligible');
+      await this.jobs.finish(claim, async () => {
+        await this.db.prepare("UPDATE stripe_subscription_cancellations SET state='confirmed',confirmed_at=clock_timestamp(),result=? WHERE id=?")
+          .run(result, context.input.id);
+        await this.ledger.request(current.customer.id);
+        await this.cancellationContext(operation, 'confirmed');
+        return { cancellationId: context.input.id, result, authority: sandboxRenewalAuthority };
+      }, signal);
+    });
+  }
   async enqueueSweep() {
     const rows = await this.db.prepare(`SELECT a.id,c.user_id FROM stripe_checkout_attempts a JOIN stripe_owned_customers c ON c.id=a.customer_ref
       JOIN managed_accounts m ON m.user_id=c.user_id WHERE c.account_id=? AND c.state='mapped' AND a.state='open'
@@ -156,6 +250,7 @@ export class SandboxCheckout {
     const operation = await this.jobs.operation(claim.data.operationId);
     if (!checkoutJobKinds.some(kind => kind === operation.kind)) throw new TerminalJobFailure('not-eligible');
     await this.jobs.assertCurrentClaim(claim, signal);
+    if (operation.kind === 'billing.subscription.cancel') return this.runCancellation(claim, operation, signal);
     const context = await this.context(operation);
     const beforeMutation = async () => {
       const current = await this.context(operation);

@@ -118,6 +118,12 @@ export async function openBillingFixture(t: TestContext, overrides: NodeJS.Proce
           line_items: list([{ quantity: 1, currency: 'usd', price: { id: price } }]) };
         sessions.set(id, session); responses.set(`${req.path}:${key}`, structuredClone(session)); return res.json(session);
       }
+      if (req.path.startsWith('/v1/subscriptions/')) {
+        z.strictObject({ cancel_at_period_end: z.literal('true'), proration_behavior: z.literal('none') }).parse(req.body);
+        const sub = subscriptions.find(sub => sub.id === req.path.slice('/v1/subscriptions/'.length)); assert.ok(sub);
+        sub.cancel_at_period_end = true;
+        responses.set(`${req.path}:${key}`, structuredClone(sub)); return res.json(sub);
+      }
     }
     res.status(404).json({ error: { type: 'invalid_request_error', message: 'Synthetic provider object is missing.' } });
   });
@@ -162,6 +168,7 @@ export async function openBillingFixture(t: TestContext, overrides: NodeJS.Proce
       const until = Math.floor(end.getTime() / 1000), amount = z.coerce.number().int().positive().parse(attempt.unit_amount);
       Object.assign(session, { status: 'complete', payment_status: 'paid', subscription: subId, url: null });
       const sub = { id: subId, object: 'subscription', customer: session.customer, livemode: false, status: 'active', cancel_at_period_end: false,
+        cancel_at: null, schedule: null, pending_update: null,
         metadata: { studio_customer_ref: String(attempt.customer_ref), studio_checkout_ref: String(attempt.id) }, latest_invoice: invoiceId,
         billing_cycle_anchor: now, billing_cycle_anchor_config: null,
         items: { object: 'list', has_more: false, data: [{ id: 'si_Synthetic1', object: 'subscription_item', subscription: subId,
@@ -205,7 +212,7 @@ export async function openBillingFixture(t: TestContext, overrides: NodeJS.Proce
       const response = await browser.request('/api/billing'); assert.equal(response.status, 200);
       return response.json();
     },
-    async complete(kind: 'billing.customer' | 'billing.checkout' | 'billing.checkout.refresh' | 'billing.customer.snapshot' | 'billing.reconcile') {
+    async complete(kind: 'billing.customer' | 'billing.checkout' | 'billing.checkout.refresh' | 'billing.subscription.cancel' | 'billing.customer.snapshot' | 'billing.reconcile') {
       const claim = await worker.jobs.claim(kind); assert.ok(claim, `Expected a ${kind} claim.`);
       await worker.runClaim(claim);
       return worker.jobs.operation(claim.data.operationId);

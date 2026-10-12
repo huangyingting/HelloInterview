@@ -238,6 +238,11 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
       if (!parsed.success) throw new HttpError(400, 'Choose a sandbox offer and a UUID request key; provider IDs, amounts and redirect URLs are not accepted.');
       res.status(202).json(await billingAction(req, res, true, user => checkout.reserve(user.id, parsed.data)));
     });
+    app.post('/api/billing/subscriptions/:id/cancel', async (req, res) => {
+      const id = z.uuid().safeParse(req.params.id);
+      if (!id.success || !z.strictObject({}).safeParse(req.body).success) throw new HttpError(400, 'Use an owned subscription ID and an empty body; this stops sandbox renewal only.');
+      res.status(202).json(await billingAction(req, res, true, user => checkout.cancelRenewal(user.id, id.data)));
+    });
     for (const action of ['open', 'refresh'] as const) app.post(`/api/billing/checkouts/:id/${action}`, async (req, res) => {
       const id = z.uuid().safeParse(req.params.id);
       if (!id.success || !z.strictObject({}).safeParse(req.body).success) throw new HttpError(400, 'Use an owned checkout ID and an empty request body.');

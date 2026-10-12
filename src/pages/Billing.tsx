@@ -51,13 +51,14 @@ export function SandboxBillingPage() {
   }, [available, storageKey, load]);
   const processing = view?.checkout?.processing, state = view?.checkout?.state;
   const ledgerProcessing = view?.ledger?.processing;
+  const cancellationReading = view?.ledger?.subscriptions.some(sub => ['created', 'retry', 'active'].includes(sub.cancellation?.processing ?? '')) ?? false;
   const sandboxAccess = !!view && view.accessAuthority !== 'none';
   useEffect(() => {
     const preparing = ['waiting-customer', 'queued'].includes(state ?? '');
     const reading = ['created', 'retry', 'active'].includes(processing ?? '');
     const ledgerReading = ['created', 'retry', 'active'].includes(ledgerProcessing ?? '');
-    if (!available || !preparing && !reading && !ledgerReading ||
-      !ledgerReading && ['failed', 'cancelled', 'missing'].includes(processing ?? '')) return;
+    if (!available || !preparing && !reading && !ledgerReading && !cancellationReading ||
+      !ledgerReading && !cancellationReading && ['failed', 'cancelled', 'missing'].includes(processing ?? '')) return;
     const controller = new AbortController();
     let count = 0, timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
@@ -67,7 +68,7 @@ export function SandboxBillingPage() {
     };
     timer = setTimeout(poll, 2000);
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [available, view?.checkout?.id, state, processing, ledgerProcessing, load]);
+  }, [available, view?.checkout?.id, state, processing, ledgerProcessing, cancellationReading, load]);
   const action = (operation: () => Promise<void>) => act(async () => {
     setError('');
     try { await operation(); }
@@ -132,7 +133,19 @@ export function SandboxBillingPage() {
       {['failed', 'cancelled', 'missing'].includes(view.ledger?.processing ?? '') && <p role="status">Canonical reconciliation is incomplete. An operator must inspect the queue before retrying; older records are not a fresh confirmation.</p>}
       {view.ledger?.subscriptions.map(sub => <p key={sub.id}>Observed subscription: <strong>{sub.status.replaceAll('_', ' ')}</strong>.
         {' '}{sub.nonrenewing ? 'Renewal is disabled.' : 'No cancellation-at-period-end flag observed.'}
-        {' '}{sub.currentPeriodEnd && `Reported item period end: ${new Date(sub.currentPeriodEnd).toLocaleString()}.`}</p>)}
+        {' '}{sub.currentPeriodEnd && `Reported item period end: ${new Date(sub.currentPeriodEnd).toLocaleString()}.`}
+        {' '}{sub.cancellation && <>Sandbox cancellation: <strong>{sub.cancellation.state}</strong>; processing: {sub.cancellation.processing}.
+          {' '}{sub.cancellation.state === 'queued' && 'A requested cancellation is not confirmation. The maintained worker must verify provider state.'}
+          {' '}{sub.cancellation.confirmedAt && `Last verified ${new Date(sub.cancellation.confirmedAt).toLocaleString()}: ${sub.cancellation.result}.`}
+          {' '}{['failed', 'cancelled', 'missing'].includes(sub.cancellation.processing) && 'An operator must reconcile the unknown external outcome; do not replace this intent.'}
+          {' '}{sub.cancellation.state === 'confirmed' && !sub.nonrenewing && !view.ledger?.stale && !['canceled', 'incomplete_expired'].includes(sub.status) &&
+            'Current renewal state differs from the earlier confirmation. Operator review is required; resumption is not implemented.'}</>}
+        {' '}{!sub.nonrenewing && !sub.cancellation && ['active', 'past_due', 'unpaid', 'paused'].includes(sub.status) &&
+          <button className="button secondary small" disabled={pending || !security?.fresh || view.ledger?.stale} onClick={() => action(async () => {
+            await request(`/api/billing/subscriptions/${sub.id}/cancel`, {}); await load();
+          })}>Stop sandbox renewal</button>}</p>)}
+      {!!view.ledger?.subscriptions.length && <p>Stopping sandbox renewal does not refund money, end paid access immediately or erase saved work.
+        Current access comes from eligible invoice intervals and account policy, not the cancellation request. Portal and resumption remain unavailable.</p>}
       {view.ledger?.invoices.map(invoice => <p key={invoice.id}>Observed invoice: <strong>{invoice.status}</strong>.
         {' '}Total: {invoice.total} {invoice.currency.toUpperCase()} minor units; paid amount hint: {invoice.amountPaid}; remaining: {invoice.amountRemaining}.
         {' '}{invoice.funding ? `Referenced card funding: ${invoice.funding.state.replaceAll('-', ' ')}; captured: ${invoice.funding.captured}; succeeded refunds: ${invoice.funding.refunded}.` : 'Payment evidence has not been evaluated.'}

@@ -196,13 +196,16 @@ recovery performs reads only. Actual Chromium journeys check hosted resume,
 forged returns, completion with no Pro, CSRF, responsive layout and retry-key
 preservation after an expired session plus an unknown new response.
 
-W08 remains in progress. The subsequent canonical ledger checkpoint ships owned
-subscription/invoice/line/payment-reference observations, not financial proof.
-Next implement payment/service-period attestation, then
-approved W06 billing source grants, grace/refund/dispute rules, restricted Portal,
-missing-event/drift sweeps and operated lifecycle recovery. Financial retention,
-privacy/cancellation/support authority, commercial/tax/vendor decisions and
-explicit live/public launch approval remain gates.
+W08 remains in progress. Subsequent checkpoints add
+[canonical ledger observations](16-canonical-sandbox-ledger.md),
+[card-funding/adjustment evidence](17-sandbox-payment-evidence.md),
+[default-off sandbox service grants](18-sandbox-service-authority.md) and
+[owned sandbox stop-renewal commands](19-owned-sandbox-cancellation.md).
+These are private engineering boundaries, not commercial approval.
+Approved commercial/grace/refund/dispute rules, restricted Portal/resumption,
+missing-event/drift sweeps and operated lifecycle recovery remain. Financial
+retention, paid deletion/privacy/support authority, commercial/tax/vendor
+decisions and explicit live/public launch approval remain gates.
 
 Sources: [Stripe idempotent requests](https://docs.stripe.com/api/idempotent_requests),
 [hosted subscription Checkout](https://docs.stripe.com/payments/checkout/build-subscriptions),

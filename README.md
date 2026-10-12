@@ -144,9 +144,14 @@ or commercial authority. The default-off
 adds an explicit versioned opt-in for verified calendar service intervals,
 immutable expiring Pro grants and invoice-scoped terminal reversal handling.
 Without that policy, billing still grants no access; test access never enables
-live commerce or external AI. Controlled PostgreSQL deployments must apply
-**migration 12 and maintained queue migration** before this release and preserve
-the configured policy when retained service evidence exists.
+live commerce or external AI. The
+[owned sandbox cancellation checkpoint](docs/production/19-owned-sandbox-cancellation.md)
+adds fresh authenticated, retry-safe stop-renewal requests and canonical
+confirmation without refunding payment, shortening paid access or erasing saved
+work. Portal, resumption and paid account-deletion integration remain unavailable.
+Controlled PostgreSQL deployments must apply **migration 13 and maintained queue
+migration** before this release and preserve the configured service policy when
+retained evidence exists.
 
 | Area | Local functionality |
 | --- | --- |

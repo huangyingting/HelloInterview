@@ -205,3 +205,48 @@ test('explicit sandbox service proof refreshes actual browser permissions, then 
   const data: Bootstrap = await page.evaluate(async () => (await fetch('/api/bootstrap')).json());
   assert.equal(data.capabilities.access?.state, 'free'); assert.equal(data.capabilities.commerce, 'disabled');
 });
+
+test('actual owned browser recovers an unknown cancellation response without replacing the intent, confirms renewal stopped and retains paid access', { timeout: 60000 }, async t => {
+  const f = await fixture(t, true), { page } = f;
+  await page.getByRole('checkbox', { name: /I understand this is sandbox-only/ }).check();
+  await page.getByRole('button', { name: 'Prepare sandbox checkout' }).click();
+  await expect(page.getByRole('heading', { name: 'Your sandbox checkout' })).toBeVisible();
+  await f.complete('billing.customer'); await f.complete('billing.checkout');
+  await expect(page.getByRole('button', { name: 'Open hosted sandbox checkout' })).toBeVisible();
+  const facts = await f.settleCheckout();
+  const refreshing = page.waitForResponse(response => response.url().endsWith('/refresh') && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Refresh canonical session' }).click(); assert.equal((await refreshing).status(), 200);
+  await f.complete('billing.checkout.refresh'); await f.complete('billing.customer.snapshot'); await f.complete('billing.customer.snapshot');
+  await expect(page.getByText(/Sandbox service access: granted/)).toBeVisible();
+  const grant = await f.db.prepare('SELECT id,ends_at,request_hash FROM entitlement_grants').get();
+  const pattern = '**/api/billing/subscriptions/*/cancel';
+  await page.route(pattern, async route => {
+    const source = new URL(route.request().url()), target = new URL(source); target.hostname = '127.0.0.1';
+    const accepted = await route.fetch({ url: target.href, headers: { ...route.request().headers(), host: source.host } });
+    assert.equal(accepted.status(), 202); await route.abort('failed');
+  });
+  await page.getByRole('button', { name: 'Stop sandbox renewal' }).click();
+  await expect(page.getByRole('alert').first()).toContainText(/fetch|network/i);
+  const intent = await f.db.prepare('SELECT id FROM stripe_subscription_cancellations').get(); assert.ok(intent);
+  assert.equal(facts.sub.cancel_at_period_end, false);
+  await page.unroute(pattern);
+  const accepted = page.waitForResponse(response => response.url().endsWith('/cancel') && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Stop sandbox renewal' }).click(); assert.equal((await accepted).status(), 202);
+  await expect(page.getByText(/Sandbox cancellation: queued/)).toBeVisible();
+  assert.deepEqual(await f.db.prepare('SELECT id FROM stripe_subscription_cancellations').get(), intent);
+  assert.equal((await f.db.prepare("SELECT count(*)::integer AS count FROM durable_operations WHERE kind='billing.subscription.cancel'").get())?.count, 1);
+  await f.complete('billing.subscription.cancel'); await f.complete('billing.customer.snapshot');
+  await expect(page.getByText(/Sandbox cancellation: confirmed/)).toBeVisible();
+  await expect(page.getByText(/Renewal is disabled/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Stop sandbox renewal' })).toHaveCount(0);
+  assert.deepEqual(await f.db.prepare('SELECT id,ends_at,request_hash FROM entitlement_grants').get(), grant);
+  await page.getByRole('link', { name: 'Premium Studio', exact: true }).first().click();
+  await expect(page.getByText('Pro access active', { exact: true })).toBeVisible();
+  await page.goBack(); await expect(page.getByText(/Sandbox cancellation: confirmed/)).toBeVisible();
+  const final: Bootstrap = await page.evaluate(async () => (await fetch('/api/bootstrap')).json());
+  assert.equal(final.capabilities.access?.state, 'pro'); assert.equal(final.capabilities.commerce, 'disabled');
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+  const text = await page.locator('body').innerText();
+  for (const secret of ['cus_Synthetic', 'sub_Synthetic', 'price_Synthetic', 'studio_customer_ref', 'authEpoch']) assert.ok(!text.includes(secret));
+});

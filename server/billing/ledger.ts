@@ -12,6 +12,7 @@ import type { StripeEvidence } from './provider';
 import { observationSchema, providerId } from './schema';
 import { assertSandboxAccessConfiguration, SandboxBillingAccess } from './service';
 import { serviceEvidenceSchema } from './service-policy';
+import { sandboxRenewalAuthority } from '../../shared/billing-ledger';
 
 const pending = ['created', 'active', 'retry'];
 const timestamp = (value: number | null) => value === null ? null : new Date(value * 1000).toISOString();
@@ -234,7 +235,10 @@ export class SandboxBillingLedger {
     if (!row) return null;
     const state = ledgerStateSchema.parse(row);
     const snapshot = state.snapshot ? ledgerSnapshotSchema.parse(JSON.parse(state.snapshot)) : null;
-    const subscriptions = await this.db.prepare('SELECT id,payload FROM stripe_owned_subscription_ledger WHERE customer_ref=? ORDER BY revision DESC,id LIMIT 21').all(customer.id);
+    const subscriptions = await this.db.prepare(`SELECT s.id,s.payload,c.id AS cancellation_id,c.policy_version,c.state AS cancellation_state,
+      c.operation_id AS cancellation_operation,c.confirmed_at,c.result AS cancellation_result FROM stripe_owned_subscription_ledger s
+      LEFT JOIN stripe_subscription_cancellations c ON c.subscription_ref=s.id AND c.customer_ref=s.customer_ref
+      WHERE s.customer_ref=? ORDER BY s.revision DESC,s.id LIMIT 21`).all(customer.id);
     const invoices = await this.db.prepare(`SELECT i.id,i.payload,s.payload AS service FROM stripe_owned_invoice_ledger i
       LEFT JOIN stripe_invoice_service_evidence s ON s.account_id=i.account_id AND s.invoice_id=i.invoice_id AND s.customer_ref=i.customer_ref
       WHERE i.customer_ref=? ORDER BY i.created_at_seconds DESC,i.id LIMIT 21`).all(customer.id);
@@ -245,11 +249,16 @@ export class SandboxBillingLedger {
     return { authority: this.settings.accessPolicy ?? 'sandbox-ledger-observation-only', processing: state.operation_id ? (await this.jobs.systemStatus(this.source(), state.operation_id)).status : 'missing',
       stale: state.requested_revision !== state.reconciled_revision || !state.observed_at || Date.now() - state.observed_at.getTime() >= 300000,
       observedAt: state.observed_at?.toISOString() ?? null, reviewReasons,
-      subscriptions: subscriptions.slice(0, 20).map(row => {
+      subscriptions: await Promise.all(subscriptions.slice(0, 20).map(async row => {
         const sub = subscriptionFactSchema.parse(JSON.parse(z.string().parse(row.payload)));
         return { id: z.uuid().parse(row.id), status: sub.status, nonrenewing: sub.cancelAtPeriodEnd,
-          currentPeriodEnd: sub.items.length === 1 ? timestamp(sub.items[0].periodEnd) : null };
-      }),
+          currentPeriodEnd: sub.items.length === 1 ? timestamp(sub.items[0].periodEnd) : null,
+          cancellation: row.cancellation_id ? { id: z.uuid().parse(row.cancellation_id), policy: z.literal(sandboxRenewalAuthority).parse(row.policy_version),
+            state: z.enum(['queued', 'confirmed']).parse(row.cancellation_state),
+            processing: (await this.jobs.ownedStatus(z.uuid().parse(customer.user_id), z.uuid().parse(row.cancellation_operation))).status,
+            confirmedAt: row.confirmed_at === null ? null : z.date().parse(row.confirmed_at).toISOString(),
+            result: z.enum(['nonrenewing', 'ended']).nullable().parse(row.cancellation_result) } : null };
+      })),
       invoices: invoices.slice(0, 20).map(row => {
         const invoice = invoiceFactSchema.parse(JSON.parse(z.string().parse(row.payload)));
         const service = row.service ? serviceEvidenceSchema.parse(JSON.parse(z.string().parse(row.service))) : null;

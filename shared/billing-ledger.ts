@@ -9,6 +9,15 @@ export type BillingReviewReason = typeof billingReviewReasons[number];
 export const fundingStates = ['unpaid', 'review-required', 'settled', 'partially-refunded', 'refunded', 'disputed'] as const;
 export type FundingState = typeof fundingStates[number];
 export const sandboxServicePolicy = 'sandbox-card-service-v1' as const;
+export const sandboxRenewalAuthority = 'sandbox-renewal-control-v1' as const;
+export interface SandboxCancellationView {
+  id: string;
+  policy: typeof sandboxRenewalAuthority;
+  state: 'queued' | 'confirmed';
+  processing: string;
+  confirmedAt: string | null;
+  result: 'nonrenewing' | 'ended' | null;
+}
 export const serviceReviewReasons = [
   'checkout-unverified', 'subscription-unverified', 'invoice-unsupported', 'funding-ineligible',
   'line-unsupported', 'price-or-amount-mismatch', 'calendar-period-unsupported', 'provider-review',
@@ -28,7 +37,7 @@ export interface OwnedBillingLedgerView {
   stale: boolean;
   observedAt: string | null;
   reviewReasons: BillingReviewReason[];
-  subscriptions: { id: string; status: string; nonrenewing: boolean; currentPeriodEnd: string | null }[];
+  subscriptions: { id: string; status: string; nonrenewing: boolean; currentPeriodEnd: string | null; cancellation: SandboxCancellationView | null }[];
   invoices: { id: string; status: string; currency: string; total: number; amountPaid: number; amountRemaining: number; paidAt: string | null;
     funding: { state: FundingState; captured: number; refunded: number; creditAdjusted: boolean } | null;
     service: SandboxServiceView | null }[];

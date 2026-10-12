@@ -416,6 +416,26 @@ export const migrations = [{
     );
     CREATE INDEX stripe_service_customer ON stripe_invoice_service_evidence(customer_ref);
   `,
+}, {
+  version: 13,
+  name: 'owned-sandbox-renewal-control',
+  sql: `
+    CREATE TABLE stripe_subscription_cancellations (
+      id TEXT PRIMARY KEY,
+      policy_version TEXT NOT NULL CHECK (policy_version='sandbox-renewal-control-v1'),
+      customer_ref TEXT NOT NULL REFERENCES stripe_owned_customers(id),
+      subscription_ref TEXT NOT NULL UNIQUE REFERENCES stripe_owned_subscription_ledger(id),
+      attempt_id TEXT NOT NULL REFERENCES stripe_checkout_attempts(id),
+      auth_epoch BIGINT NOT NULL CHECK (auth_epoch >= 0),
+      operation_id TEXT NOT NULL UNIQUE REFERENCES durable_operations(id),
+      state TEXT NOT NULL CHECK (state IN ('queued','confirmed')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+      confirmed_at TIMESTAMPTZ, result TEXT CHECK (result IN ('nonrenewing','ended')),
+      CHECK ((state='confirmed') = (confirmed_at IS NOT NULL)),
+      CHECK ((state='confirmed') = (result IS NOT NULL))
+    );
+    CREATE INDEX stripe_cancellation_customer ON stripe_subscription_cancellations(customer_ref);
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }
