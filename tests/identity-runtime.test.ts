@@ -46,7 +46,7 @@ test('runtime-only release retains identity after restart and operates canonical
   await assert.rejects(promisify(execFile)(process.execPath, ['dist-server/billing/cli.js', 'reconcile'], { cwd: release, env, timeout: 15000 }), error => {
     assert.ok(error && typeof error === 'object' && 'code' in error && 'stderr' in error);
     assert.equal(error.code, 1);
-    assert.match(String(error.stderr), /Billing notification maintenance failed/);
+    assert.match(String(error.stderr), /Sandbox billing maintenance failed/);
     return true;
   });
   async function start() {

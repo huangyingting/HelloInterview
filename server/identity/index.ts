@@ -101,6 +101,9 @@ export class ManagedIdentity {
     `).get(user.id, context.token, idle, Number(fresh), freshness);
     if (!row || !['active', ...(allowPending ? ['pending-verification'] : [])].includes(String(row.status))) throw new HttpError(403, 'Your account session or verification changed. Sign in again; your saved work is unchanged.');
   }
+  async admitBilling(user: User, res: express.Response) {
+    await this.limits.enforce('billing', user.id, res);
+  }
   async csrf(req: express.Request, res: express.Response) {
     const session = await this.session(req);
     const value = cookie(req, cookieNames.csrf);

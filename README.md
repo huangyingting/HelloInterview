@@ -125,10 +125,16 @@ offer or external AI quota. See
 A first **sandbox billing notification checkpoint** adds official Stripe SDK
 signature verification, minimized durable acceptance, read-only canonical
 observations and a compiled reconciliation worker. It refuses live keys/events
-and does not create customers, checkout sessions, payments or entitlements.
-Managed commerce remains disabled. See
+and does not derive entitlements from notification hints. A second **owned
+sandbox checkout checkpoint** adds durable server-created customer/session
+correlations, fresh authenticated reservation/resume/refresh, stable external
+idempotency and a dedicated test-only billing page. Completed sandbox sessions
+grant no premium access; production purchases, Portal and the financial lifecycle
+remain disabled. See
 [the billing notification runbook](docs/production/14-billing-implementation.md);
-controlled PostgreSQL deployments must apply migration 8 before this release.
+[the owned checkout runbook](docs/production/15-owned-sandbox-checkout.md)
+records the new boundary. Controlled PostgreSQL deployments must apply
+**migration 9 and maintained queue migration** before this release.
 
 | Area | Local functionality |
 | --- | --- |

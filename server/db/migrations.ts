@@ -289,6 +289,59 @@ export const migrations = [{
     CREATE INDEX stripe_notification_backlog ON stripe_event_notifications(state,accepted_at);
     CREATE INDEX stripe_notification_object ON stripe_event_notifications(account_id,object_kind,object_id);
   `,
+}, {
+  version: 9,
+  name: 'owned-sandbox-checkout-intents',
+  sql: `
+    ALTER TABLE identity_abuse_buckets DROP CONSTRAINT identity_abuse_buckets_scope_check;
+    ALTER TABLE identity_abuse_buckets ADD CONSTRAINT identity_abuse_buckets_scope_check
+      CHECK (scope IN ('network','legacy-account','account-security','billing'));
+    CREATE TABLE stripe_owned_customers (
+      id TEXT PRIMARY KEY, account_id TEXT NOT NULL,
+      user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      customer_id TEXT, state TEXT NOT NULL CHECK (state IN ('reserved','mapped','retired')),
+      auth_epoch BIGINT NOT NULL CHECK (auth_epoch >= 0),
+      operation_id TEXT NOT NULL UNIQUE REFERENCES durable_operations(id),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+      UNIQUE (account_id,user_id), UNIQUE (account_id,customer_id),
+      CHECK (state<>'mapped' OR customer_id IS NOT NULL),
+      CHECK ((state='retired') = (user_id IS NULL))
+    );
+    CREATE TABLE stripe_checkout_attempts (
+      id TEXT PRIMARY KEY, customer_ref TEXT NOT NULL REFERENCES stripe_owned_customers(id),
+      request_key TEXT NOT NULL, offer_key TEXT NOT NULL CHECK (offer_key IN ('pro_monthly','pro_annual')),
+      price_id TEXT NOT NULL, origin TEXT NOT NULL, auth_epoch BIGINT NOT NULL CHECK (auth_epoch >= 0),
+      state TEXT NOT NULL CHECK (state IN ('waiting-customer','queued','open','complete','expired','retired')),
+      operation_id TEXT UNIQUE REFERENCES durable_operations(id),
+      refresh_operation_id TEXT REFERENCES durable_operations(id),
+      session_id TEXT UNIQUE, subscription_id TEXT, payment_status TEXT,
+      hosted_url TEXT CHECK (octet_length(hosted_url) <= 8192),
+      currency TEXT, unit_amount BIGINT CHECK (unit_amount > 0),
+      expires_at BIGINT NOT NULL CHECK (expires_at > 0),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(), observed_at TIMESTAMPTZ,
+      UNIQUE (customer_ref,request_key),
+      CHECK ((currency IS NULL) = (unit_amount IS NULL)),
+      CHECK (currency IS NULL OR currency='usd'),
+      CHECK (payment_status IS NULL OR payment_status IN ('paid','unpaid','no_payment_required')),
+      CHECK (state<>'waiting-customer' OR operation_id IS NULL),
+      CHECK (state NOT IN ('queued','open','complete','expired') OR operation_id IS NOT NULL),
+      CHECK (state NOT IN ('open','complete','expired') OR session_id IS NOT NULL),
+      CHECK ((state='open') = (hosted_url IS NOT NULL))
+    );
+    CREATE UNIQUE INDEX stripe_one_unresolved_checkout ON stripe_checkout_attempts(customer_ref)
+      WHERE state IN ('waiting-customer','queued','open','complete');
+    CREATE INDEX stripe_checkout_refresh ON stripe_checkout_attempts(state,observed_at);
+    CREATE FUNCTION retire_billing_customer() RETURNS trigger LANGUAGE plpgsql AS $billing$
+    BEGIN
+      UPDATE stripe_checkout_attempts SET state='retired',hosted_url=NULL
+        WHERE customer_ref IN (SELECT id FROM stripe_owned_customers WHERE user_id=OLD.id);
+      UPDATE stripe_owned_customers SET state='retired',user_id=NULL WHERE user_id=OLD.id;
+      RETURN OLD;
+    END
+    $billing$;
+    CREATE TRIGGER retire_billing_customer BEFORE DELETE ON users
+      FOR EACH ROW EXECUTE FUNCTION retire_billing_customer();
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

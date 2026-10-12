@@ -17,6 +17,7 @@ import { ProjectsPage } from './pages/Projects';
 import { CustomQuizPage } from './pages/CustomQuiz';
 import { CaseLibrary, CaseReader } from './pages/Cases';
 import { CodingLibrary, CodingReader } from './pages/Coding';
+import { SandboxBillingPage } from './pages/Billing';
 
 export function App() {
   const {data,loading,error,refresh,act,toast}=useStudio(),location=useLocation(),navigate=useNavigate();
@@ -61,6 +62,7 @@ export function App() {
   else if(segments[0]==='search')content=<SearchPage/>;
   else if(segments[0]==='tutor')content=<TutorPage/>;
   else if(['profile','account','settings'].includes(segments[0]))content=<AccountPage/>;
+  else if(segments[0]==='billing')content=<SandboxBillingPage key={data.user?.id}/>;
   else if(segments[0]==='pricing'||segments[0]==='premium'){
     if(segments[1]==='studio')content=<PremiumStudio/>;
     else if(segments[1]==='mock')content=<MockPage id={segments[2]} key={path}/>;

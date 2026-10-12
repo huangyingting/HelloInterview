@@ -20,6 +20,9 @@ import { Entitlements } from './entitlements';
 import { digest, encodePayload } from './jobs/schema';
 import type { Capability } from '../shared/access';
 import type { BillingNotifications } from './billing';
+import { checkoutRequestSchema } from './billing/checkout-schema';
+import { TerminalJobFailure } from './jobs';
+import { z } from 'zod';
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new HttpError(400, 'Expected an object.');
   return value as Record<string, unknown>;
@@ -201,11 +204,42 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     res.json({
       user, state: user && (!user.identity || user.identity.status === 'active') ? (await stateFor(user)) : emptyState(),
       capabilities: { ai: !!connectedAi, commerce: identity ? 'disabled' : 'demo', community: identity ? 'read-only' : 'local', aiModel: connectedAi?.model ?? null,
+        ...(billing?.checkout ? { billing: { mode: 'sandbox', checkout: !!config.billing?.offers } } : {}),
         ...(identity && entitlements ? { auth: { mode: 'managed', providers, legacyLink: !!config.identity?.legacyLinkUntil && config.identity.legacyLinkUntil > Date.now(), securityLifecycle: !!lifecycle }, access: await entitlements.view(user?.id ?? null) } : {}) },
       ...(identity ? { csrf: await identity.csrf(req, res) } : {}),
     });
   });
   if (entitlements) app.get('/api/entitlements', async (req, res) => res.json(await entitlements.view((await currentUser(req))?.id ?? null)));
+  if (billing?.checkout && identity) {
+    const checkout = billing.checkout;
+    const billingIdentity = identity;
+    async function billingAction<T>(req: express.Request, res: express.Response, mutation: boolean, action: (user: User) => Promise<T>) {
+      const user = await requireUser(req);
+      if (mutation) await billingIdentity.admitBilling(user, res);
+      try {
+        return await db.transaction(async () => {
+          await billingIdentity.assertWritable(user, mutation);
+          const result = await action(user);
+          await billingIdentity.assertWritable(user, mutation);
+          return result;
+        });
+      } catch (error) {
+        if (error instanceof TerminalJobFailure && error.code === 'not-eligible') throw new HttpError(403, 'Your verified account or security proof changed. Sign in again before using sandbox billing.');
+        throw error;
+      }
+    }
+    app.get('/api/billing', async (req, res) => res.json(await billingAction(req, res, false, user => checkout.view(user.id))));
+    app.post('/api/billing/checkouts', async (req, res) => {
+      const parsed = checkoutRequestSchema.safeParse(req.body);
+      if (!parsed.success) throw new HttpError(400, 'Choose a sandbox offer and a UUID request key; provider IDs, amounts and redirect URLs are not accepted.');
+      res.status(202).json(await billingAction(req, res, true, user => checkout.reserve(user.id, parsed.data)));
+    });
+    for (const action of ['open', 'refresh'] as const) app.post(`/api/billing/checkouts/:id/${action}`, async (req, res) => {
+      const id = z.uuid().safeParse(req.params.id);
+      if (!id.success || !z.strictObject({}).safeParse(req.body).success) throw new HttpError(400, 'Use an owned checkout ID and an empty request body.');
+      res.json(await billingAction<{ url: string } | { accepted: boolean }>(req, res, true, user => checkout[action](user.id, id.data)));
+    });
+  }
   if (!identity) {
   app.post('/api/auth/demo', rateLimit, async (_req, res) => {
     const id = randomUUID();

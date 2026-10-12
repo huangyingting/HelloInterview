@@ -8,6 +8,9 @@ import { DurableJobs, TerminalJobFailure, type JobClaim } from '../jobs';
 import { digest, encodePayload, InvalidJobPayload } from '../jobs/schema';
 import { StripeEvidence } from './provider';
 import { InvalidBillingNotification, notification, notificationSchema, stripeApiVersion, type Notification } from './schema';
+import { bindBillingReference } from './reference';
+import { SandboxCheckout } from './checkout';
+import { canonicalOriginSchema } from './checkout-schema';
 
 export async function assertBillingConfiguration(db: Database, settings: BillingConfig | null) {
   if (db.dialect !== 'postgres') return;
@@ -19,11 +22,14 @@ export async function assertBillingConfiguration(db: Database, settings: Billing
   }
 }
 export class BillingNotifications {
-  private constructor(private readonly db: Database, private readonly settings: BillingConfig, readonly jobs: DurableJobs, readonly provider: StripeEvidence) {}
-  static async open(db: Database, settings: BillingConfig, shutdown: AbortSignal, worker = false, client?: Stripe) {
+  private constructor(private readonly db: Database, private readonly settings: BillingConfig, readonly jobs: DurableJobs,
+    readonly provider: StripeEvidence, readonly checkout: SandboxCheckout | null) {}
+  static async open(db: Database, settings: BillingConfig, shutdown: AbortSignal, worker = false, client?: Stripe, origin?: string) {
     await assertBillingConfiguration(db, settings);
+    if (settings.offers && !origin || origin && !canonicalOriginSchema.safeParse(origin).success) throw new Error('Owned sandbox checkout requires the canonical HTTPS application origin.');
     const provider = new StripeEvidence(settings, shutdown, client);
-    return new BillingNotifications(db, settings, await DurableJobs.open(db, worker), provider);
+    const jobs = await DurableJobs.open(db, worker);
+    return new BillingNotifications(db, settings, jobs, provider, origin ? new SandboxCheckout(db, settings, origin, jobs, provider) : null);
   }
   private source() { return `stripe:${this.settings.accountId}:sandbox`; }
   private resource(eventId: string) { return `stripe:${digest(`${this.settings.accountId}:${eventId}`)}`; }
@@ -56,9 +62,7 @@ export class BillingNotifications {
         throw error;
       }
       const accepted = await this.db.transaction(async () => {
-        await this.db.prepare('INSERT INTO stripe_billing_reference (singleton,account_id) VALUES (1,?) ON CONFLICT DO NOTHING').run(this.settings.accountId);
-        const reference = await this.db.prepare('SELECT account_id FROM stripe_billing_reference WHERE singleton=1').get();
-        if (!reference || reference.account_id !== this.settings.accountId) throw new HttpError(409, 'This application database is bound to a different sandbox billing account.');
+        await bindBillingReference(this.db, this.settings.accountId);
         const result = await this.jobs.ingestVerifiedEvent({
           source: this.source(), eventId: event.eventId, payload: event,
           operation: { kind: 'billing.reconcile', resource: this.resource(event.eventId), payload: event, retryMode: 'idempotent' },
@@ -75,7 +79,13 @@ export class BillingNotifications {
     });
   }
   async runClaim(claim: JobClaim, signal?: AbortSignal) {
-    const operation = await this.jobs.operation(claim.data.operationId), event = notificationSchema.parse(operation.payload);
+    const operation = await this.jobs.operation(claim.data.operationId);
+    if (operation.kind !== 'billing.reconcile') {
+      if (!this.checkout) throw new TerminalJobFailure('not-eligible');
+      await this.checkout.runClaim(claim, signal);
+      return;
+    }
+    const event = notificationSchema.parse(operation.payload);
     if (operation.kind !== 'billing.reconcile' || operation.principal.type !== 'system' || operation.principal.id !== this.source() ||
       event.accountId !== this.settings.accountId || operation.resource !== this.resource(event.eventId)) throw new TerminalJobFailure('not-eligible');
     const observed = event.classification === 'supported' ? await this.provider.observe(event, signal) : null;

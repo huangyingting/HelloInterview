@@ -1,10 +1,12 @@
 # 14 - Sandbox billing notification foundation
 
 **Status: first W08 engineering checkpoint, not a payment integration or launch
-approval.** The reversible Stripe reference accepts authenticated sandbox
-notifications and operates read-only canonical reconciliation. It cannot create
-customers, Checkout/Portal sessions, charges, subscriptions or refunds; it
-cannot issue or revoke entitlements. Managed commerce remains disabled.
+approval.** This document covers authenticated sandbox notifications and
+read-only canonical reconciliation. The later
+[owned checkout checkpoint](15-owned-sandbox-checkout.md) adds customer and
+hosted test-session creation in separate owned workflows. The notification
+processor itself cannot create payments or issue/revoke entitlements; there is
+still no Portal, financial ledger, refund workflow or production commerce.
 
 ## Versions and configuration
 
@@ -25,13 +27,15 @@ Configuration is optional, immutable and all-or-nothing:
 
 Managed identity, PostgreSQL and a canonical HTTPS origin are prerequisites.
 Unknown `STRIPE_` settings are refused. There is no configurable provider proxy,
-live-mode switch, approved offer or public issuing endpoint. Prefer a restricted
-test key granting only the account/event/object reads used here. No secrets,
+live-mode switch, commercially approved offer or public issuing endpoint.
+The optional `STRIPE_TEST_OFFERS` and worker mutation permissions belong to the
+separate owned checkpoint. Prefer a restricted
+test key granting only the account/event/object reads used by this processor. No secrets,
 provider account or webhook destination were provisioned by this change.
 
-For deployment, apply the existing controlled application **migration 8** and
-maintained queue migration before starting replicas. Startup never migrates.
-Published migrations 1-8 are immutable after this release. Stored notification
+Migration 8 introduced this boundary. The current owned-checkout release
+requires **migration 9** plus maintained queue migration before replicas.
+Startup never migrates; published migrations 1-8 are unchanged. Stored notification
 evidence makes removal of billing configuration or changing its provider account
 a startup error; restoration requires the matching configuration, not demo
 commerce or a silently disabled processor.
@@ -82,8 +86,9 @@ header, keys and provider tokens are not persisted or logged.
 
 Migration 8 does not attach evidence to a member. Email and arbitrary provider
 metadata cannot establish ownership. There is no customer mapping or member
-billing DTO in this checkpoint. Financial references remain private operational
-data, not public or user-owned resources. Financial/privacy retention and
+billing DTO in migration 8; migration 9 adds those separate owned surfaces.
+Notification financial references remain private operational data.
+Financial/privacy retention and
 deletion rules must be approved before real-customer use; no scheduled cleanup
 silently removes unresolved evidence.
 
@@ -138,8 +143,9 @@ npm run billing:reconcile
 
 It exits nonzero if deferred, active or failed billing operations remain.
 Successful output explicitly identifies `notification-evidence-only` authority.
-The worker does not discover missing events or periodically reconcile customer
-subscriptions yet. It exits explicitly on processing failure; supervising it,
+The newer worker also processes owned customer/session intents and bounded open
+session sweeps, but does not discover missing events or reconcile customer
+subscription aggregates yet. It exits explicitly on processing failure; supervising it,
 backoff/restarts and alerting remain operator responsibilities.
 
 Existing `jobs:status` and audited `jobs:replay` expose maintained queue state
@@ -164,10 +170,10 @@ production dependency and no development tooling.
 No real Stripe account, card, payment, refund, tenant or customer was involved.
 The remaining implementation order is:
 
-1. Durable server-created customer/checkout correlation, stable external
-   idempotency, one nonterminal subscription, and approved sandbox offer fixtures.
-2. Hosted Checkout/Portal, duplicate-session/provider-outcome recovery, owned
-   return/status UI and full customer-aggregate reconciliation.
+1. Extend the separately shipped owned customer/hosted-intent boundary with full
+   canonical customer/subscription/invoice/payment aggregate reconciliation.
+2. Restricted Portal and security-invalid unknown-outcome recovery, with
+   operated lifecycle evidence rather than only synthetic SDK fixtures.
 3. Verified invoice/payment/service-period ledger and atomic W06 source grants,
    terminal refund revocations, scoped dispute holds and approved fixed grace.
 4. Missing-event sweeps/drift repair, notification deduplication, operated

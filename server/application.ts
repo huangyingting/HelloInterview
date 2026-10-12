@@ -57,7 +57,7 @@ export async function createApplication(config: ServerConfig): Promise<Applicati
       throw new Error('Stored identity security authority requires managed lifecycle configuration. Disabling it is not an authentication fallback.');
     }
     if (config.identity?.lifecycle) lifecycle = await IdentityLifecycle.open(db, config.identity, shutdown.signal);
-    if (config.billing) billing = await BillingNotifications.open(db, config.billing, shutdown.signal);
+    if (config.billing) billing = await BillingNotifications.open(db, config.billing, shutdown.signal, false, undefined, config.publicOrigin ?? undefined);
     const app = createApp(config, db, shutdown.signal, draining.signal, undefined, lifecycle, billing);
     if (config.environment === 'production') {
       app.use(express.static(config.frontendDir));

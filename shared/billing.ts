@@ -1,0 +1,19 @@
+export const sandboxOffers = ['pro_monthly', 'pro_annual'] as const;
+export type SandboxOffer = typeof sandboxOffers[number];
+export interface SandboxCheckoutView {
+  id: string;
+  requestKey: string;
+  offer: SandboxOffer;
+  state: 'waiting-customer' | 'queued' | 'open' | 'complete' | 'expired';
+  processing: string;
+  expiresAt: string;
+  quote: { currency: string; unitAmount: number } | null;
+  paymentStatus: string | null;
+}
+export interface SandboxBillingView {
+  mode: 'sandbox';
+  enabled: boolean;
+  customerReady: boolean;
+  checkout: SandboxCheckoutView | null;
+  accessAuthority: 'none';
+}

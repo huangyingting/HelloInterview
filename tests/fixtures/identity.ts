@@ -203,7 +203,7 @@ export async function openIdentityFixture(env: NodeJS.ProcessEnv = {}, options: 
       };
       const lifecycle = config.identity?.lifecycle ? await IdentityLifecycle.open(connection, config.identity, shutdown.signal, transport) : undefined;
       if (lifecycle) cleanup.push(() => lifecycle.close());
-      const billing = config.billing ? await BillingNotifications.open(connection, config.billing, shutdown.signal) : undefined;
+      const billing = config.billing ? await BillingNotifications.open(connection, config.billing, shutdown.signal, false, undefined, config.publicOrigin ?? undefined) : undefined;
       if (billing) cleanup.push(() => billing.close());
       const app = createApp(config, connection, shutdown.signal, shutdown.signal, transport, lifecycle, billing);
       app.use(express.static(config.frontendDir));

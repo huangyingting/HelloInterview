@@ -7,7 +7,7 @@ import { HttpError } from '../http-error';
 
 const windowMs = 900000, maximum = 30;
 const clock = 'floor(extract(epoch from clock_timestamp())*1000)::bigint';
-const scopes = ['network', 'legacy-account', 'account-security'] as const;
+const scopes = ['network', 'legacy-account', 'account-security', 'billing'] as const;
 type Scope = typeof scopes[number];
 const decisionSchema = z.object({
   attempts: z.number().int().min(1).max(maximum + 1),

@@ -98,7 +98,8 @@ export function ManagedAccountPage() {
       </section>
       <section className="panel"><h2>Current access</h2><p>Server-verified access: <strong>{data.capabilities.access?.features.some(feature => proCapabilities.includes(feature.key) && feature.reason === 'unavailable') ? 'refresh unavailable' : data.capabilities.access?.state ?? 'unavailable'}</strong>. Content-only grants do not include premium practice, progress, projects or tutor work.</p>
         {data.capabilities.access?.nextChangeAt && <p>Next scheduled access change: {new Date(data.capabilities.access.nextChangeAt).toLocaleString()}.</p>}
-        <p>Payments and subscriptions are not connected. Demo purchases and gifts cannot upgrade a managed account; an access grant is not proof of payment.</p><h3>Preparation data</h3>
+        <p>Production payments and subscriptions remain disabled. Demo purchases and gifts cannot upgrade a managed account; an access grant is not proof of payment.</p>
+        {data.capabilities.billing && <p><Link className="text-link" to="/billing">Open private sandbox billing</Link> - hosted test sessions do not grant premium access.</p>}<h3>Preparation data</h3>
         <p>Export your saved preparation after confirming your identity within ten minutes. The current export is not yet a complete privacy-request export.</p>
         <button className="button secondary small" disabled={pending || !active || !security?.fresh} onClick={() => act(async () => {
           const value = await request<unknown>('/api/export');

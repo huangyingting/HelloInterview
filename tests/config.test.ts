@@ -151,6 +151,7 @@ test('sandbox billing is all-or-nothing, immutable, managed-only and cannot acce
   };
   const config = loadConfig(env);
   assert.ok(Object.isFrozen(config.billing));
+  assert.equal(config.billing?.offers, null);
   assert.equal(config.billing?.accountId, env.STRIPE_TEST_ACCOUNT_ID);
   for (const override of [
     { STRIPE_TEST_ACCOUNT_ID: undefined }, { STRIPE_TEST_ACCOUNT_ID: 'wrong' },
@@ -162,4 +163,11 @@ test('sandbox billing is all-or-nothing, immutable, managed-only and cannot acce
   assert.throws(() => loadConfig({ STRIPE_TEST_ACCOUNT_ID: env.STRIPE_TEST_ACCOUNT_ID }), /requires managed identity/);
   env.STRIPE_TEST_ACCOUNT_ID = 'acct_ChangedFixture';
   assert.equal(config.billing?.accountId, 'acct_SyntheticFixture');
+  const configured = loadConfig({ ...env, STRIPE_TEST_OFFERS: '{"pro_monthly":"price_SyntheticMonthly","pro_annual":"price_SyntheticAnnual"}' });
+  assert.ok(Object.isFrozen(configured.billing?.offers));
+  for (const offers of ['{', '{}', '[]', '{"pro_monthly":"price_Same","pro_annual":"price_Same"}',
+    '{"pro_monthly":"client-value","pro_annual":"price_Annual"}',
+    '{"pro_monthly":"price_Monthly","pro_annual":"price_Annual","return_url":"https://foreign.fixture"}']) {
+    assert.throws(() => loadConfig({ ...env, STRIPE_TEST_OFFERS: offers }), ConfigurationError);
+  }
 });

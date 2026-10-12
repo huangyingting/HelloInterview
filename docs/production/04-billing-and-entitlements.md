@@ -4,8 +4,10 @@
 This is a direct subscription business, not a marketplace or stored-value
 wallet. No application endpoint should ever receive a PAN or card security code.
 The [first W08 implementation checkpoint](14-billing-implementation.md) ships
-only sandbox signed notifications and read-only canonical evidence. Checkout,
-customer ownership, payment-derived entitlements and the financial lifecycle
+the signed sandbox notification/read-only evidence boundary. The
+[second checkpoint](15-owned-sandbox-checkout.md) adds durable owned customer
+and hosted test-session intents, stable idempotency and a fresh authenticated
+sandbox UI. Payment-derived entitlements, Portal and the financial lifecycle
 below remain unimplemented; this specification is not launch authorization.
 
 ## Launch offer and boundaries

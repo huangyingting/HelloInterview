@@ -131,6 +131,11 @@ export class DurableJobs {
     if (claim) claimDataSchema.parse(claim.data);
     return claim;
   }
+  async assertCurrentClaim(claim: JobClaim, signal?: AbortSignal): Promise<void> {
+    this.assertOpen();
+    const operation = await this.operation(claimDataSchema.parse(claim.data).operationId);
+    await this.assertClaim(operation, claim, signal);
+  }
   async finish(claim: JobClaim, mutation: (db: Database, operation: Operation) => Promise<Payload>, signal?: AbortSignal): Promise<void> {
     const data = claimDataSchema.parse(claim.data);
     const observed = await this.operation(data.operationId);

@@ -329,6 +329,7 @@ export interface Bootstrap {
   state: UserState;
   capabilities: {
     access?: AccessView;
+    billing?: { mode: 'sandbox'; checkout: boolean };
     ai: boolean;
     commerce: 'demo' | 'disabled';
     community: 'local' | 'read-only';
