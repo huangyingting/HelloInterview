@@ -823,6 +823,49 @@ test('built browser runner enforces bounded non-authoritative execution and reco
   assert.deepEqual(external,[]);
 });
 
+test('coarse-pointer critical flows keep sampled controls at 44 CSS pixels without overlap',async t=>{
+  const f=await fixture(t),context=await f.browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+  t.after(()=>context.close());
+  const page=await context.newPage();
+  const selector=`button,a.button,.nav-link,.nav-group,.sidebar-bottom-links>a,.topbar-actions>a,.shell-footer a,
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),select,textarea,summary,
+    .checkbox-label,label:has(>input[type="checkbox"]),label:has(>input[type="radio"])`;
+  async function inspect(label:string) {
+    const controls=await page.locator(selector).evaluateAll(elements=>elements.filter(element=>{
+      const style=getComputedStyle(element),rect=element.getBoundingClientRect();
+      return style.visibility!=='hidden'&&style.display!=='none'&&rect.width>0&&rect.height>0;
+    }).map((element,index)=>{
+      const rect=element.getBoundingClientRect();
+      return {index,tag:element.tagName.toLowerCase(),name:element.getAttribute('aria-label')||
+        element.textContent?.trim().replace(/\s+/g,' ').slice(0,80)||'',x:rect.x,y:rect.y,width:rect.width,height:rect.height};
+    }));
+    assert.deepEqual(controls.filter(control=>control.width<43.5||control.height<43.5),[],`${label}: undersized controls`);
+    const overlaps:string[]=[];
+    for(let left=0;left<controls.length;left++)for(let right=left+1;right<controls.length;right++){
+      const a=controls[left],b=controls[right],width=Math.min(a.x+a.width,b.x+b.width)-Math.max(a.x,b.x);
+      const height=Math.min(a.y+a.height,b.y+b.height)-Math.max(a.y,b.y);
+      if(width>1&&height>1)overlaps.push(`${a.tag}:${a.name} overlaps ${b.tag}:${b.name}`);
+    }
+    assert.deepEqual(overlaps,[],`${label}: overlapping controls`);
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,`${label}: horizontal overflow`);
+  }
+  await page.goto(`${f.url}/auth`);
+  await expect(page.getByRole('heading',{name:'Welcome back.',exact:true})).toBeVisible();
+  await inspect('public auth');
+  const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);
+  for(const [route,text] of [
+    ['/dashboard','Good to see you, Alex.'],
+    ['/practice/ai-coding/task-board','Start practice'],
+    ['/community/questions','Interview questions'],
+    ['/account','A few things about you.'],
+    ['/support','What’s getting in your way?'],
+  ] as const){
+    await page.goto(`${f.url}${route}`);
+    await expect(page.locator('main')).toContainText(text);
+    await inspect(route);
+  }
+});
+
 test('cold real-browser landing and sign-in request exactly their static dependency closures', async t => {
   const f = await fixture(t);
   for (const [route, module, heading] of [

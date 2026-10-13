@@ -1416,3 +1416,29 @@ button:hover,a:hover { color: var(--accent); }
   .plan-task { padding: 18px; gap: 12px; }
   .mock-transcript summary { flex-wrap: wrap; }
 }
+@media (pointer: coarse) {
+  button,.button,.nav-link,.nav-group,summary {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),select,textarea {
+    min-height: 44px;
+  }
+  .app .button { min-width: 44px; min-height: 44px; }
+  .button.small { min-height: 44px; padding-block: 10px; }
+  .icon-button { width: 44px; height: 44px; min-width: 44px; }
+  .tabs>button,.pagination>button { min-width: 44px; min-height: 44px; }
+  .pagination>button { width: 44px; height: 44px; }
+  .sidebar-bottom-links>*,.topbar-actions>a,.shell-footer a,.back-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .checkbox-label,label:has(>input[type="checkbox"]),label:has(>input[type="radio"]) {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  input[type="checkbox"],input[type="radio"] { width: 20px; height: 20px; }
+}

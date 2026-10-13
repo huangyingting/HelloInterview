@@ -389,6 +389,11 @@ Meet WCAG 2.2 AA for critical flows: keyboard navigation, focus visibility/order
 form labels/errors, contrast, reduced motion, zoom, responsive layouts, captions
 and screen-reader announcements. Payment/auth redirects should return focus
 and context. Source editors, diagrams and drag actions need keyboard alternatives.
+The implemented [coarse-pointer checkpoint](48-coarse-pointer-touch-targets.md)
+uses 44 CSS-pixel targets for application controls and label hit areas in
+compiled sampled flows while explicitly exempting inline prose links. This is
+engineering evidence only; physical-device, screen-reader, contrast, zoom and
+complete conformance review remain required.
 
 Maintain mobile usability for reading, planning, account and checkout flows.
 Do not promise full desktop code-editing ergonomics on a narrow phone viewport.

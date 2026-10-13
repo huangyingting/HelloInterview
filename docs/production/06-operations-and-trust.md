@@ -66,6 +66,16 @@ renderer-memory boundary and disable-rather-than-overclaim fallback. D10
 frontend/security acceptance, broader browser/device evidence and launch
 approval remain open.
 
+**Implemented coarse-pointer checkpoint (W12):** controls, application
+navigation, tabs, pagination and form fields receive 44 CSS-pixel minimum
+targets under `pointer: coarse`; checkbox/radio labels expose a matching hit
+area while inline prose links remain exempt. Production-built mobile Chromium
+checks sampled auth, shell, learning, community, account and support screens
+for dimensions, overlap and horizontal overflow. The
+[touch-target runbook](48-coarse-pointer-touch-targets.md) records scope and
+rollback. Physical-device, alternate-engine, assistive-technology, contrast,
+zoom and complete WCAG approval remain open.
+
 **Implemented local owner-contribution checkpoint (W11):** private owned
 snapshots, current-session/revision-fenced title/body edits, exact discussion
 deletion and serialized post-comment admission are available. The

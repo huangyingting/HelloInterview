@@ -78,7 +78,11 @@ old hashed assets across releases. These are not deployed performance SLAs.
 Keyboard navigation also has a focusable skip target, readiness-aware screen
 focus, dismissible mobile navigation and reliable rapid Search input; see the
 [keyboard-navigation boundaries](docs/production/29-keyboard-screen-navigation.md).
-This is not a complete accessibility assessment.
+Coarse-pointer devices receive 44 CSS-pixel actionable controls across sampled
+authentication, shell, learning, community, account and support flows without
+changing compact fine-pointer layouts; see the
+[touch-target boundaries](docs/production/48-coarse-pointer-touch-targets.md).
+This is not a complete accessibility assessment or real-device approval.
 
 **This is a production-format runtime, not a production-ready paid service.**
 Local accounts, demo plans, and the existing service limitations remain.
@@ -282,6 +286,17 @@ adds one bounded, deterministic, versioned suggestion to each new report plus
 MFA/role-gated confirm/reject evidence. Suggestions never hide content, change
 report state, restrict an account or leave the staff queue; no AI provider or
 user-history score is used.
+The [bounded browser-runner checkpoint](docs/production/47-bounded-browser-example-runner.md)
+adds exact client-side request/result budgets, a private worker reply protocol,
+fail-closed parent validation and deterministic cleanup. Visible examples remain
+non-authoritative, and the browser is not represented as a reliable memory
+sandbox.
+The [coarse-pointer checkpoint](docs/production/48-coarse-pointer-touch-targets.md)
+adds 44 CSS-pixel control geometry under `pointer: coarse`, enlarged
+checkbox/radio label hit areas and production-built checks for undersized,
+overlapping or horizontally overflowing targets across sampled critical flows.
+It is not broad WCAG, assistive-technology, contrast or physical-device
+approval.
 Controlled PostgreSQL deployments must apply **migration 37 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
