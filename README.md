@@ -89,6 +89,9 @@ Compiled local authentication, account and support forms also expose stable
 instruction associations, preserve native invalid focus without issuing
 requests, and announce rejected credentials and locally saved support outcomes;
 see the [form-semantics boundaries](docs/production/50-critical-form-semantics.md).
+Reduced-motion preferences suppress shared animations, transitions and smooth
+scrolling while retaining visible static loading and explicit algorithm steps;
+see the [reduced-motion boundaries](docs/production/51-reduced-motion-critical-flows.md).
 This is not a complete accessibility assessment or real-device/browser approval.
 
 **This is a production-format runtime, not a production-ready paid service.**
@@ -316,6 +319,12 @@ and support forms, verifies native invalid focus and zero invalid-submit API
 requests, and checks live rejected-login and local-support outcomes. It is not
 a complete form inventory or hosted identity/payment, assistive-technology,
 IME, localization or launch approval.
+The [reduced-motion checkpoint](docs/production/51-reduced-motion-critical-flows.md)
+disables shared CSS animation/transitions/smooth scrolling, keeps startup and
+deferred loading status visible, and stops algorithm auto-play while retaining
+manual steps. Dynamic preference changes are exercised in compiled Chromium;
+complete vestibular/media, alternate-engine and physical-device review remain
+open.
 Controlled PostgreSQL deployments must apply **migration 37 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.

@@ -1093,6 +1093,76 @@ test('critical forms expose names, associated instructions, native invalid focus
   await expect(page.getByRole('status')).toContainText('No external delivery occurred.');
 });
 
+test('reduced motion suppresses automatic movement while preserving visible status and manual progress',async t=>{
+  const f=await fixture(t),context=await f.browser.newContext({viewport:{width:1280,height:900},reducedMotion:'reduce'});
+  t.after(()=>context.close());
+  const page=await context.newPage();
+  async function inspect(label:string) {
+    const violations=await page.locator('body').evaluate(body=>{
+      const helper={
+        seconds(value:string){return value.split(',').some(part=>Number.parseFloat(part)>0);},
+        visible(element:Element){const rect=element.getBoundingClientRect(),style=getComputedStyle(element);return rect.width>0&&rect.height>0&&style.display!=='none'&&style.visibility!=='hidden';},
+      };
+      return Array.from(body.querySelectorAll('*')).filter(element=>helper.visible(element)).flatMap(element=>{
+        const failures:string[]=[];
+        for(const pseudo of [null,'::before','::after'] as const){
+          const style=getComputedStyle(element,pseudo),name=`${element.tagName.toLowerCase()}${pseudo??''}`;
+          if(style.animationName!=='none'||helper.seconds(style.animationDuration))failures.push(`${name}:animation=${style.animationName}/${style.animationDuration}`);
+          if(helper.seconds(style.transitionDuration))failures.push(`${name}:transition=${style.transitionDuration}`);
+          if(style.scrollBehavior==='smooth')failures.push(`${name}:scroll=smooth`);
+        }
+        return failures;
+      });
+    });
+    assert.deepEqual(violations,[],`${label}: reduced-motion violations`);
+  }
+  let releaseBoot!:()=>void;
+  const bootGate=new Promise<void>(resolve=>{releaseBoot=resolve;});
+  t.after(()=>releaseBoot());
+  await page.route('**/api/bootstrap',async route=>{await bootGate;await route.continue();});
+  await page.goto(`${f.url}/auth`);
+  await expect(page.locator('.boot-screen')).toContainText('Opening your Studio');
+  const indicator=await page.locator('.loading-bar').evaluate(element=>{
+    const bar=element.getBoundingClientRect(),style=getComputedStyle(element,'::after');
+    return {animation:style.animationName,left:Number.parseFloat(style.left),width:Number.parseFloat(style.width),barWidth:bar.width};
+  });
+  assert.equal(indicator.animation,'none');
+  assert.ok(indicator.left>=0&&indicator.left+indicator.width<=indicator.barWidth,`static loading indicator outside track: ${JSON.stringify(indicator)}`);
+  await inspect('boot');
+  releaseBoot();
+  await expect(page.getByRole('heading',{name:'Welcome back.',exact:true})).toBeVisible();
+  await inspect('auth');
+  const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);
+  await page.goto(`${f.url}/dashboard`);
+  await expect(page.getByRole('heading',{name:'Good to see you, Alex.',exact:true})).toBeVisible();
+  await inspect('dashboard');
+  await page.goto(`${f.url}/learn`);
+  let release!:()=>void;
+  const gate=new Promise<void>(resolve=>{release=resolve;});
+  t.after(()=>release());
+  await page.route(`**/${manifest['src/pages/Quiz.tsx'].file}`,async route=>{await gate;await route.continue();});
+  await page.getByRole('link',{name:'Quizzes',exact:true}).click();
+  const loading=page.getByRole('status',{name:'Loading screen'});
+  await expect(loading).toBeVisible();
+  await inspect('loading');
+  release();
+  await expect(page.getByRole('heading',{name:'Check what you know.',exact:true})).toBeVisible();
+  await page.goto(`${f.url}/learn/code/two-pointers`);
+  await expect(page.getByText('Reduced motion is on. Use Step to advance manually.',{exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Play',exact:true})).toHaveCount(0);
+  await expect(page.getByText('Step 1 of 3',{exact:true})).toBeVisible();
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  await page.getByRole('button',{name:'Play',exact:true}).click();
+  await expect(page.getByText('Step 2 of 3',{exact:true})).toBeVisible({timeout:2000});
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await expect(page.getByText('Reduced motion is on. Use Step to advance manually.',{exact:true})).toBeVisible();
+  await page.waitForTimeout(1000);
+  await expect(page.getByText('Step 2 of 3',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Step',exact:true}).click();
+  await expect(page.getByText('Step 3 of 3',{exact:true})).toBeVisible();
+  await inspect('algorithm lab');
+});
+
 test('cold real-browser landing and sign-in request exactly their static dependency closures', async t => {
   const f = await fixture(t);
   for (const [route, module, heading] of [

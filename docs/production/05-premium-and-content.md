@@ -405,6 +405,11 @@ zero API requests for invalid submissions, a live rejected-login alert and an
 explicit local-only support success status. Coverage is currently bounded to
 compiled local auth, account and support forms; managed identity, payment,
 editor, staff/moderation and complete assistive-technology review remain.
+The implemented [reduced-motion checkpoint](51-reduced-motion-critical-flows.md)
+suppresses shared CSS motion, preserves static loading/status and replaces
+algorithm auto-play with explicit steps while the preference is active. It does
+not complete vestibular, flashing, video/audio, canvas/diagram, third-party
+hosted-page or physical-device review.
 
 Maintain mobile usability for reading, planning, account and checkout flows.
 Do not promise full desktop code-editing ergonomics on a narrow phone viewport.

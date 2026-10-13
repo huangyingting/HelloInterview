@@ -96,6 +96,16 @@ the contract and rollback boundary. Complete managed identity/payment, staff,
 community/editor, screen-reader/IME, localization and launch approval remain
 open.
 
+**Implemented reduced-motion checkpoint (W12):** the shared compiled stylesheet
+suppresses animations, transitions and smooth scrolling while preserving a
+visible static startup indicator and deferred loading status. The algorithm
+playground observes preference changes, stops auto-play and retains reset/manual
+step controls. The
+[reduced-motion runbook](51-reduced-motion-critical-flows.md) records the
+computed-style and dynamic-preference acceptance. Complete vestibular/media,
+alternate-engine, physical-device, hosted-provider and launch approval remain
+open.
+
 **Implemented local owner-contribution checkpoint (W11):** private owned
 snapshots, current-session/revision-fenced title/body edits, exact discussion
 deletion and serialized post-comment admission are available. The

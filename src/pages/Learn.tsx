@@ -53,9 +53,20 @@ export function LessonPage({ trackId, lessonId }: { trackId: string; lessonId: s
 }
 
 type Step = { cells: number[]; active: number[]; done: number[]; note: string; label: string };
+function useReducedMotion() {
+  const query='(prefers-reduced-motion: reduce)';
+  const [reduced,setReduced]=useState(()=>typeof window!=='undefined'&&window.matchMedia(query).matches);
+  useEffect(()=>{
+    const media=window.matchMedia(query),update=()=>setReduced(media.matches);
+    update();media.addEventListener('change',update);
+    return()=>media.removeEventListener('change',update);
+  },[]);
+  return reduced;
+}
 export function AlgorithmLab({ kind }: { kind: string }) {
   const [raw,setRaw]=useState(kind==='sliding-window'?'2, 1, 5, 1, 3, 2':'1, 3, 4, 6, 8, 10, 13'),[target,setTarget]=useState(kind==='binary-search'?8:kind==='sliding-window'?3:17);
   const [step,setStep]=useState(0),[playing,setPlaying]=useState(false),[error,setError]=useState('');
+  const reducedMotion=useReducedMotion();
   const graph=kind==='graph-search',dp=kind==='dynamic-programming';
   const steps=useMemo(()=>{
     if(graph){const adjacency=[[1,2],[3],[3,4],[5],[5],[]];const visited=new Set([0]);const queue=[0];const result:Step[]=[];while(queue.length){const current=queue.shift()!;result.push({cells:[0,1,2,3,4,5],active:[current],done:[...visited],label:`Visit node ${String.fromCharCode(65+current)}`,note:`BFS explores the closest remaining node. Queue: ${queue.map(n=>String.fromCharCode(65+n)).join(', ')||'empty'}.`});for(const neighbor of adjacency[current])if(!visited.has(neighbor)){visited.add(neighbor);queue.push(neighbor);}}return result;}
@@ -71,11 +82,12 @@ export function AlgorithmLab({ kind }: { kind: string }) {
     return result;
   },[raw,target,kind,graph,dp]);
   useEffect(()=>{setStep(0);setPlaying(false);setError(steps.length?'':dp?'Use a whole Fibonacci index from 2 to 12.':'Use 2–20 finite numbers, sorted for pointer/search lessons. Window size must be a valid whole number.');},[steps,dp]);
-  useEffect(()=>{if(!playing)return;const timer=setInterval(()=>setStep(current=>{if(current>=steps.length-1){setPlaying(false);return current;}return current+1;}),850);return()=>clearInterval(timer);},[playing,steps.length]);
+  useEffect(()=>{if(reducedMotion)setPlaying(false);},[reducedMotion]);
+  useEffect(()=>{if(!playing||reducedMotion)return;const timer=setInterval(()=>setStep(current=>{if(current>=steps.length-1){setPlaying(false);return current;}return current+1;}),850);return()=>clearInterval(timer);},[playing,reducedMotion,steps.length]);
   const current=steps[Math.min(step,steps.length-1)];
   return <section className="algorithm-lab"><div className="section-heading"><div><span className="eyebrow">WATCH THE REASONING</span><h3>{graph?'Breadth-first search':dp?'Dynamic programming':kind==='binary-search'?'Binary search':kind==='sliding-window'?'Sliding window':'Two pointers'} playground</h3></div><Badge tone="green">Interactive</Badge></div>
     {!graph&&<div className="algorithm-inputs">{!dp&&<label>Values<input aria-label="Algorithm values" value={raw} maxLength={200} onChange={e=>setRaw(e.target.value)}/></label>}<label>{dp?'Fibonacci index':kind==='sliding-window'?'Window size':'Target'}<input aria-label="Algorithm target" type="number" min={dp?2:undefined} max={dp?12:undefined} value={target} onChange={e=>setTarget(Number(e.target.value))}/></label></div>}
     {error?<p className="error-text" role="alert">{error}</p>:current&&<><div className={`algorithm-cells ${graph?'graph-cells':''}`}>{current.cells.map((v,i)=><div className={`${current.active.includes(i)?'active':''} ${current.done.includes(i)?'visited':''}`} key={i}><small>{graph?'node':i}</small><strong>{graph?String.fromCharCode(65+v):v}</strong>{current.active.includes(i)&&<span>↑</span>}</div>)}</div><div className="algorithm-explanation" aria-live="polite"><strong>{current.label}</strong><p>{current.note}</p></div></>}
-    <div className="algorithm-controls"><button className="icon-button" aria-label="Reset visualization" onClick={()=>{setStep(0);setPlaying(false);}}><RotateCcw size={17}/></button><button className="button small" disabled={!steps.length||step===steps.length-1&&!playing} onClick={()=>setPlaying(!playing)}>{playing?<Pause size={15}/>:<Play size={15}/>} {playing?'Pause':'Play'}</button><button className="button secondary small" disabled={!steps.length||step>=steps.length-1} onClick={()=>setStep(i=>i+1)}><SkipForward size={15}/> Step</button><span>Step {steps.length?step+1:0} of {steps.length}</span></div>
+    <div className="algorithm-controls"><button className="icon-button" aria-label="Reset visualization" onClick={()=>{setStep(0);setPlaying(false);}}><RotateCcw size={17}/></button>{reducedMotion?<span className="fine-print">Reduced motion is on. Use Step to advance manually.</span>:<button className="button small" disabled={!steps.length||step===steps.length-1&&!playing} onClick={()=>setPlaying(!playing)}>{playing?<Pause size={15}/>:<Play size={15}/>} {playing?'Pause':'Play'}</button>}<button className="button secondary small" disabled={!steps.length||step>=steps.length-1} onClick={()=>setStep(i=>i+1)}><SkipForward size={15}/> Step</button><span>Step {steps.length?step+1:0} of {steps.length}</span></div>
   </section>;
 }
