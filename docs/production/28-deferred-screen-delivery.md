@@ -114,9 +114,12 @@ Promote HTML and its asset set atomically. Define appropriate HTML revalidation
 and immutable-asset caching/compression policies at the approved serving layer.
 Keep rollback artifacts available and rehearse old-tab/new-release navigation.
 These are operating requirements, **not infrastructure provisioned by this
-checkpoint**. Single-directory local serving cannot promise multi-release
-asset retention. A manual reload normally selects current HTML but does not
-repair an incomplete deployment or a still-unavailable serving layer.
+checkpoint**. The later
+[retained-asset checkpoint](53-retained-frontend-assets.md) can compose current
+assets with explicitly mounted prior release asset directories on one runtime,
+but does not provision or prove shared CDN/load-balancer/multi-replica
+retention. A manual reload normally selects current HTML but does not repair an
+incomplete deployment or a still-unavailable serving layer.
 
 ## Evidence and remaining gates
 

@@ -115,6 +115,15 @@ focus/current/progress geometry and rejects author opt-outs. The
 the exact evidence and exclusions. Complete low-vision/magnifier, content-state,
 alternate-engine, physical-device and launch approval remain open.
 
+**Implemented retained-frontend-asset checkpoint (W12):** production runtime
+serves current immutable `/assets/*` first, then explicitly configured prior
+release asset directories, while current HTML stays authoritative and missing
+assets return an asset-shaped 404. Startup validates every retained directory.
+The [retained-asset runbook](53-retained-frontend-assets.md) records deployment
+composition and rollback boundaries. Actual CDN/load-balancer operation,
+retention duration, multi-replica rehearsal, field telemetry and launch
+approval remain open.
+
 **Implemented local owner-contribution checkpoint (W11):** private owned
 snapshots, current-session/revision-fenced title/body edits, exact discussion
 deletion and serialized post-comment admission are available. The

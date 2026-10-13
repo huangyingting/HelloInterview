@@ -24,6 +24,7 @@ export interface ServerConfig {
   readonly appMode: 'local' | 'service';
   readonly rootDir: string;
   readonly frontendDir: string;
+  readonly retainedFrontendDirs: readonly string[];
   readonly dataDir: string;
   readonly databaseUrl: string | null;
   readonly publicOrigin: string | null;
@@ -195,11 +196,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
       portalConfiguration: portalConfiguration ?? null });
   }
   const root = path.resolve(rootDir);
+  const frontendDir = path.join(root, 'dist');
+  const retainedFrontendDirs=(env.RETAINED_FRONTEND_DIRS??'').split(path.delimiter).filter(Boolean).map(value=>path.resolve(root,value));
+  if(new Set(retainedFrontendDirs).size!==retainedFrontendDirs.length||retainedFrontendDirs.includes(frontendDir)){
+    throw new ConfigurationError('RETAINED_FRONTEND_DIRS','must contain distinct prior release directories and must not include the current dist directory.');
+  }
   return Object.freeze({
     environment,
     appMode,
     rootDir: root,
-    frontendDir: path.join(root, 'dist'),
+    frontendDir,
+    retainedFrontendDirs:Object.freeze(retainedFrontendDirs),
     dataDir: path.resolve(root, dataDir),
     databaseUrl,
     publicOrigin,

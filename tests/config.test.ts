@@ -10,6 +10,7 @@ test('configuration defaults preserve loopback, local data, cookies and optional
     appMode: 'local',
     rootDir: '/tmp/studio-config-fixture',
     frontendDir: '/tmp/studio-config-fixture/dist',
+    retainedFrontendDirs: [],
     dataDir: '/tmp/studio-config-fixture/data',
     databaseUrl: null,
     publicOrigin: null,
@@ -34,6 +35,8 @@ test('configuration resolves paths and accepts explicit runtime settings and IPv
   assert.equal(loadConfig({ DATA_DIR: '/tmp/studio-absolute-data' }).dataDir, '/tmp/studio-absolute-data');
   assert.equal(loadConfig({ HOST: 'localhost', PORT: '65535' }).port, 65535);
   assert.equal(loadConfig({ HOST: 'studio.internal' }).host, 'studio.internal');
+  assert.deepEqual(loadConfig({RETAINED_FRONTEND_DIRS:`release-a${path.delimiter}/tmp/release-b`},'/srv/studio').retainedFrontendDirs,['/srv/studio/release-a','/tmp/release-b']);
+  assert.throws(()=>loadConfig({RETAINED_FRONTEND_DIRS:`dist${path.delimiter}dist`},'/srv/studio'),/RETAINED_FRONTEND_DIRS/);
 });
 
 test('optional AI configuration normalizes the endpoint without leaking it to client capabilities', () => {

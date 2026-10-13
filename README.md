@@ -96,6 +96,10 @@ Compiled critical flows are also checked at 320 CSS pixels with WCAG text-
 spacing overrides, while forced-colors mode uses system colors for focus,
 current state and progress; see the
 [resilient-visual-mode boundaries](docs/production/52-reflow-text-spacing-forced-colors.md).
+Production runtime can additionally mount prior release `assets` directories
+behind current assets so old tabs can request hashed chunks without receiving
+SPA HTML; see the
+[retained-asset boundaries](docs/production/53-retained-frontend-assets.md).
 This is not a complete accessibility assessment or real-device/browser approval.
 
 **This is a production-format runtime, not a production-ready paid service.**

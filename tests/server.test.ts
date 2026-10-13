@@ -3,7 +3,7 @@ import { test, type TestContext } from 'node:test';
 import { createServer, request as httpRequest, type Server } from 'node:http';
 import { once } from 'node:events';
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { createApplication } from '../server/application';
@@ -66,6 +66,10 @@ test('production runtime serves built assets, SPA routes and unchanged API error
   const script = await fetch(`${runtime.url}${asset}`);
   assert.equal(script.status, 200);
   assert.match(script.headers.get('content-type')!, /javascript/);
+  assert.match(script.headers.get('cache-control')??'',/immutable/);
+  const missingAsset=await fetch(`${runtime.url}/assets/missing-release-chunk.js`);
+  assert.equal(missingAsset.status,404);assert.match(missingAsset.headers.get('content-type')??'',/text\/plain/);
+  assert.equal(await missingAsset.text(),'Asset not found.');
   const bootstrap = await api<Bootstrap>(runtime.url, '/api/bootstrap');
   assert.equal(bootstrap.response.headers.get('cache-control'), 'no-store');
   assert.equal(bootstrap.value.user, null);
@@ -85,6 +89,25 @@ test('production runtime serves built assets, SPA routes and unchanged API error
     const invalid=await fetch(`${runtime.url}${route}`,{headers:{Accept:'text/html'}});
     assert.equal(invalid.status,400);assert.match(invalid.headers.get('content-type') ?? '',/json/);assert.deepEqual(await invalid.json(),{error:'Invalid address encoding.'});
   }
+});
+
+test('production runtime serves explicitly retained hashed assets behind current assets',async t=>{
+  const root=await temporaryDirectory(t),retained=path.join(root,'previous');
+  await mkdir(path.join(retained,'assets'),{recursive:true});
+  await writeFile(path.join(retained,'assets','old-route-deadbeef.js'),'export const retained=true;');
+  await writeFile(path.join(retained,'assets',path.basename((await readFile('dist/index.html','utf8')).match(/src="([^"]+\.js)"/)![1])),'stale current collision');
+  const runtime=await startServer(config(await temporaryDirectory(t),{RETAINED_FRONTEND_DIRS:retained}));
+  t.after(()=>runtime.close());
+  const old=await fetch(`${runtime.url}/assets/old-route-deadbeef.js`);
+  assert.equal(old.status,200);assert.equal(await old.text(),'export const retained=true;');assert.match(old.headers.get('cache-control')??'',/immutable/);
+  const currentPath=(await readFile('dist/index.html','utf8')).match(/src="([^"]+\.js)"/)![1];
+  const current=await fetch(`${runtime.url}${currentPath}`);
+  assert.notEqual(await current.text(),'stale current collision');
+});
+
+test('production startup rejects a missing retained frontend release',async t=>{
+  const directory=await temporaryDirectory(t);
+  await assert.rejects(()=>createApplication(config(directory,{RETAINED_FRONTEND_DIRS:'/missing/studio-release'})),/Retained frontend assets are missing/);
 });
 
 test('independent application instances isolate accounts and configuration while persisting saved state', async t => {
