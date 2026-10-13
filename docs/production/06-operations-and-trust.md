@@ -106,6 +106,15 @@ computed-style and dynamic-preference acceptance. Complete vestibular/media,
 alternate-engine, physical-device, hosted-provider and launch approval remain
 open.
 
+**Implemented reflow/text-spacing/forced-colors checkpoint (W12):** compiled
+auth, dashboard, practice, community, account and support flows are checked at
+320 CSS pixels under WCAG spacing overrides for page overflow, clipped direct
+text and offscreen controls. Forced-colors acceptance uses system-color
+focus/current/progress geometry and rejects author opt-outs. The
+[resilient-visual-mode runbook](52-reflow-text-spacing-forced-colors.md) records
+the exact evidence and exclusions. Complete low-vision/magnifier, content-state,
+alternate-engine, physical-device and launch approval remain open.
+
 **Implemented local owner-contribution checkpoint (W11):** private owned
 snapshots, current-session/revision-fenced title/body edits, exact discussion
 deletion and serialized post-comment admission are available. The

@@ -92,6 +92,10 @@ see the [form-semantics boundaries](docs/production/50-critical-form-semantics.m
 Reduced-motion preferences suppress shared animations, transitions and smooth
 scrolling while retaining visible static loading and explicit algorithm steps;
 see the [reduced-motion boundaries](docs/production/51-reduced-motion-critical-flows.md).
+Compiled critical flows are also checked at 320 CSS pixels with WCAG text-
+spacing overrides, while forced-colors mode uses system colors for focus,
+current state and progress; see the
+[resilient-visual-mode boundaries](docs/production/52-reflow-text-spacing-forced-colors.md).
 This is not a complete accessibility assessment or real-device/browser approval.
 
 **This is a production-format runtime, not a production-ready paid service.**
@@ -324,6 +328,12 @@ disables shared CSS animation/transitions/smooth scrolling, keeps startup and
 deferred loading status visible, and stops algorithm auto-play while retaining
 manual steps. Dynamic preference changes are exercised in compiled Chromium;
 complete vestibular/media, alternate-engine and physical-device review remain
+open.
+The [reflow/text-spacing/forced-colors checkpoint](docs/production/52-reflow-text-spacing-forced-colors.md)
+checks compiled critical flows at 320 CSS pixels with WCAG spacing overrides
+and rejects page overflow, clipped direct text and offscreen controls. System-
+color focus/current/progress rules are exercised in forced-colors Chromium;
+complete low-vision, magnifier, content-state and cross-platform review remain
 open.
 Controlled PostgreSQL deployments must apply **migration 37 and maintained queue
 migration** before this release and preserve the configured service policy when

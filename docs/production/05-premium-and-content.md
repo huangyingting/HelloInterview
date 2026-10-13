@@ -410,6 +410,11 @@ suppresses shared CSS motion, preserves static loading/status and replaces
 algorithm auto-play with explicit steps while the preference is active. It does
 not complete vestibular, flashing, video/audio, canvas/diagram, third-party
 hosted-page or physical-device review.
+The implemented [reflow/text-spacing/forced-colors checkpoint](52-reflow-text-spacing-forced-colors.md)
+checks 320 CSS-pixel compiled layouts under WCAG spacing overrides and adds
+system-color focus/current/progress indicators. It does not replace native zoom,
+screen-magnifier, full content/media/editor, hosted-provider, alternate-engine
+or physical-device review.
 
 Maintain mobile usability for reading, planning, account and checkout flows.
 Do not promise full desktop code-editing ergonomics on a narrow phone viewport.

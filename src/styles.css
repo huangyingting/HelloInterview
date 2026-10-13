@@ -1335,6 +1335,12 @@ button:hover,a:hover { color: var(--accent); }
   *,*:before,*:after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
   .loading-bar:after { left: 35px; }
 }
+@media (forced-colors: active) {
+  :focus-visible { outline-color: Highlight; }
+  .loading-bar,.progress { border: 1px solid CanvasText; }
+  .loading-bar:after,.progress>span { background: Highlight; }
+  .nav-link.active,.tabs>button.active,[aria-current="page"] { outline: 2px solid Highlight; outline-offset: -2px; }
+}
 
 .premium-cards { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; margin-bottom: 30px; }
 .premium-library { margin: 26px 0; padding: 26px; }

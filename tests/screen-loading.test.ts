@@ -1163,6 +1163,95 @@ test('reduced motion suppresses automatic movement while preserving visible stat
   await inspect('algorithm lab');
 });
 
+test('critical flows reflow with WCAG text spacing and retain forced-colors state and focus',async t=>{
+  const f=await fixture(t);
+  const spacing=`
+    html *:not(svg):not(svg *) {
+      line-height: 1.5 !important;
+      letter-spacing: .12em !important;
+      word-spacing: .16em !important;
+    }
+    p { margin-bottom: 2em !important; }
+  `;
+  async function inspectReflow(page:Page,label:string) {
+    await page.addStyleTag({content:spacing});
+    const result=await page.locator('body').evaluate(body=>{
+      const documentWidth=document.documentElement.scrollWidth,viewportWidth=document.documentElement.clientWidth;
+      const clipped=Array.from(body.querySelectorAll<HTMLElement>('*')).flatMap(element=>{
+        const style=getComputedStyle(element),rect=element.getBoundingClientRect();
+        if(style.display==='none'||style.visibility==='hidden'||rect.width===0||rect.height===0)return [];
+        const direct=Array.from(element.childNodes).some(node=>node.nodeType===Node.TEXT_NODE&&node.textContent?.trim());
+        if(!direct)return [];
+        const horizontal=['hidden','clip'].includes(style.overflowX)&&element.scrollWidth>element.clientWidth+1;
+        const vertical=['hidden','clip'].includes(style.overflowY)&&element.scrollHeight>element.clientHeight+1;
+        return horizontal||vertical?[`${element.tagName.toLowerCase()}.${element.className}:${element.clientWidth}x${element.clientHeight}/${element.scrollWidth}x${element.scrollHeight}`]:[];
+      });
+      const offscreen=Array.from(body.querySelectorAll<HTMLElement>('button,a[href],input,select,textarea,summary')).flatMap(element=>{
+        const style=getComputedStyle(element),rect=element.getBoundingClientRect();
+        if(style.display==='none'||style.visibility==='hidden'||rect.width===0||rect.height===0)return [];
+        return rect.left<-1||rect.right>window.innerWidth+1?[`${element.tagName.toLowerCase()}:${Math.round(rect.left)}-${Math.round(rect.right)}`]:[];
+      });
+      return {documentWidth,viewportWidth,clipped,offscreen};
+    });
+    assert.ok(result.documentWidth<=result.viewportWidth+1,`${label}: horizontal overflow ${result.documentWidth}/${result.viewportWidth}`);
+    assert.deepEqual(result.clipped,[],`${label}: clipped direct text`);
+    assert.deepEqual(result.offscreen,[],`${label}: offscreen controls`);
+  }
+  const reflow=await f.browser.newContext({viewport:{width:320,height:800}});
+  try{
+    const page=await reflow.newPage();
+    await page.goto(`${f.url}/auth`);
+    await expect(page.getByRole('heading',{name:'Welcome back.',exact:true})).toBeVisible();
+    await inspectReflow(page,'auth');
+    const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);
+    for(const [route,text] of [
+      ['/dashboard','Good to see you, Alex.'],
+      ['/practice/ai-coding/task-board','Start practice'],
+      ['/community/questions','Interview questions'],
+      ['/account','A few things about you.'],
+      ['/support','What’s getting in your way?'],
+    ] as const){
+      await page.goto(`${f.url}${route}`);
+      await expect(page.locator('main')).toContainText(text);
+      await inspectReflow(page,route);
+    }
+  }finally{await reflow.close();}
+  const forced=await f.browser.newContext({viewport:{width:1280,height:900},forcedColors:'active'});
+  try{
+    const page=await forced.newPage();
+    await page.goto(`${f.url}/auth`);
+    await expect(page.getByRole('heading',{name:'Welcome back.',exact:true})).toBeVisible();
+    await page.getByRole('button',{name:'Password recovery availability'}).click();
+    await expect(page.getByRole('alert')).toBeVisible();
+    const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);
+    await page.goto(`${f.url}/dashboard`);
+    await expect(page.getByRole('link',{name:'Your dashboard'})).toHaveAttribute('aria-current','page');
+    await page.goto(`${f.url}/learn/system-design`);
+    await expect(page.getByRole('heading',{name:'System Design',exact:true})).toBeVisible();
+    const forcedResult=await page.locator('body').evaluate(body=>{
+      const disabled=Array.from(body.querySelectorAll<HTMLElement>('*')).filter(element=>getComputedStyle(element).forcedColorAdjust==='none').map(element=>element.tagName.toLowerCase());
+      const progress=body.querySelector<HTMLElement>('.progress'),fill=progress?.querySelector<HTMLElement>('span');
+      return {
+        disabled,
+        progressBorder:progress?Number.parseFloat(getComputedStyle(progress).borderTopWidth):0,
+        progressFill:fill?getComputedStyle(fill).backgroundColor:'',
+      };
+    });
+    assert.deepEqual(forcedResult.disabled,[]);
+    assert.ok(forcedResult.progressBorder>=1);
+    assert.notEqual(forcedResult.progressFill,'rgba(0, 0, 0, 0)');
+    await page.keyboard.press('Tab');
+    const focus=await page.evaluate(()=>{
+      const element=document.activeElement as HTMLElement|null,style=element?getComputedStyle(element):null;
+      return {tag:element?.tagName.toLowerCase()??'',outline:style?.outlineStyle??'',width:Number.parseFloat(style?.outlineWidth??'0'),color:style?.outlineColor??''};
+    });
+    assert.ok(focus.tag);
+    assert.equal(focus.outline,'solid');
+    assert.ok(focus.width>=2,`forced-colors focus width ${focus.width}`);
+    assert.notEqual(focus.color,'rgba(0, 0, 0, 0)');
+  }finally{await forced.close();}
+});
+
 test('cold real-browser landing and sign-in request exactly their static dependency closures', async t => {
   const f = await fixture(t);
   for (const [route, module, heading] of [
