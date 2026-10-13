@@ -1435,6 +1435,7 @@ button:hover,a:hover { color: var(--accent); }
     min-height: 44px;
   }
   .app .button { min-width: 44px; min-height: 44px; }
+  .vote-column { min-width: 44px; }
   .button.small { min-height: 44px; padding-block: 10px; }
   .icon-button { width: 44px; height: 44px; min-width: 44px; }
   .tabs>button,.pagination>button { min-width: 44px; min-height: 44px; }
