@@ -50,7 +50,7 @@ export class IdentityBrowser {
   readonly ip = `198.18.${Math.floor(++browserNumber / 250)}.${browserNumber % 250 + 1}`;
   csrf: string | undefined;
   constructor(readonly address: string, readonly host: string, readonly ca: Buffer) {}
-  async request(path: string, data?: unknown, method?: string, extra: Record<string, string> = {}) {
+  async request(path: string, data?: unknown, method?: string, extra: Record<string, string> = {}, signal?: AbortSignal) {
     const response = await fixtureFetch(`${this.address}${path}`, {
       method: method ?? (data === undefined ? 'GET' : 'POST'),
       headers: {
@@ -58,7 +58,7 @@ export class IdentityBrowser {
         Cookie: [...this.cookies].map(([name, value]) => `${name}=${value}`).join('; '),
         ...(data === undefined ? {} : { 'Content-Type': 'application/json' }),
         ...(this.csrf ? { 'X-CSRF-Token': this.csrf } : {}), ...extra,
-      }, body: data === undefined ? undefined : JSON.stringify(data), ca: this.ca,
+      }, body: data === undefined ? undefined : JSON.stringify(data), ca: this.ca, signal,
     });
     for (const value of response.headers.getSetCookie()) {
       const [entry] = value.split(';'), split = entry.indexOf('='), name = entry.slice(0, split), content = entry.slice(split + 1);

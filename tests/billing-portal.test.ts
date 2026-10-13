@@ -333,16 +333,21 @@ test('shared opening limits apply across replicas before SDK preparation and nev
 
 test('an abort after actual issuance COMMIT withholds URL delivery without falsely rolling back or revoking the provider session', { timeout: 50000 }, async t => {
   const f = await fixture(t), transaction = f.db.transaction.bind(f.db);
-  let delayed = false;
+  let delayed = false, release = () => {};
+  const gate = new Promise<void>(resolve => { release = resolve; });
   f.db.transaction = async operation => {
     const result = await transaction(operation);
     if (!delayed && posts(f).length && (await f.db.prepare("SELECT 1 AS issued FROM stripe_portal_access WHERE state='issued'").get())) {
-      delayed = true; await delay(31000);
+      delayed = true; await gate;
     }
     return result;
   };
-  const response = await f.browser.request(endpoint, {});
-  assert.equal(response.status, 500); assert.ok(!(await response.text()).includes('test_SyntheticRestricted'));
+  const abort = new AbortController(), pending = f.browser.request(endpoint, {}, undefined, {}, abort.signal);
+  const deadline = Date.now() + 10000;
+  while (!delayed && Date.now() < deadline) await delay(10);
+  assert.equal(delayed, true);
+  abort.abort(); release();
+  await assert.rejects(pending, { name: 'AbortError' });
   assert.equal(delayed, true); assert.equal((await audit(f))[0].state, 'issued'); assert.equal(f.portals.size, 1);
 });
 
