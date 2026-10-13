@@ -158,6 +158,14 @@ test('staff UI is deferred, capability-gated and applies an audited in-page susp
   const supportBody='A private browser support request that needs one reviewed in-app response.';
   const savedSupport=await target.request('/api/support',{key:randomUUID(),email:'staff.target@example.invalid',body:supportBody});
   assert.equal(savedSupport.status,200);const supportReceipt=await savedSupport.json();
+  const reportedPost=randomUUID(),reportTitle='Reported managed browser contribution';
+  await f.db.prepare(`INSERT INTO posts(id,kind,title,body,company,track,level,region,author,author_id,created_at,sample)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,0)`).run(reportedPost,'discussion',reportTitle,
+    'A synthetic managed contribution used to verify reviewed hide and restore behavior.','Fixture Company','system-design',
+    'Senior','Global','Managed contributor',targetData.user.id,new Date().toISOString());
+  const savedReport=await target.request('/api/community/reports',{requestId:randomUUID(),targetType:'post',targetId:reportedPost,
+    category:'harassment',details:'This synthetic report describes a specific policy concern for browser moderation review.'});
+  assert.equal(savedReport.status,201);
   await page.reload();
   await page.getByRole('link',{name:'Staff operations'}).click();
   await expect(page.getByRole('heading',{name:'Account access, without impersonation.'})).toBeVisible();
@@ -176,6 +184,22 @@ test('staff UI is deferred, capability-gated and applies an audited in-page susp
   const ownerHistory=await ownerSupport.json(),ownerTicket=ownerHistory.tickets.find((value:{id:string})=>value.id===supportReceipt.id);
   assert.equal(ownerTicket.handlingStatus,'pending');assert.equal(ownerTicket.replies[0].body,reply);
   assert.ok(!JSON.stringify(ownerTicket).includes(owner));
+  await page.getByRole('button',{name:'Load moderation queue'}).click();
+  const moderationCard=page.getByRole('heading',{name:reportTitle,exact:true}).locator('..');
+  await expect(moderationCard).toBeVisible();
+  await moderationCard.getByLabel('Required moderation reason').fill('Claim this report for a bounded reviewed browser moderation check.');
+  await moderationCard.getByRole('button',{name:'Claim report'}).click();
+  await expect(moderationCard.getByText('Assigned to you',{exact:false})).toBeVisible();
+  await moderationCard.getByLabel('Required moderation reason').fill('Hide this synthetic contribution after reviewing the reported policy concern.');
+  await moderationCard.getByRole('button',{name:'Hide contribution'}).click();
+  await expect(moderationCard.getByText('currently hidden',{exact:false})).toBeVisible();
+  assert.equal((await target.request(`/api/community/posts/${reportedPost}?kind=discussion`)).status,404);
+  await moderationCard.getByLabel('Required moderation reason').fill('Restore this synthetic contribution after a second review reversed the hide decision.');
+  await moderationCard.getByRole('button',{name:'Restore contribution'}).click();
+  await expect(moderationCard.getByText('currently visible',{exact:false})).toBeVisible();
+  assert.equal((await target.request(`/api/community/posts/${reportedPost}?kind=discussion`)).status,200);
+  assert.deepEqual((await f.db.prepare('SELECT action FROM community_moderation_events WHERE report_id=? ORDER BY created_at,id')
+    .all((await savedReport.json()).id)).map(row=>row.action),['claim','hide','restore']);
   await page.getByLabel('Exact contact email').fill('staff.target@example.invalid');
   await page.getByRole('button',{name:'Find account'}).click();
   await expect(page.getByText('active',{exact:true})).toBeVisible();
@@ -226,7 +250,7 @@ test('managed browser reads bounded private-safe community pages, independent de
   await page.getByRole('link',{name:'View details'}).click();
   assert.equal(new URL(page.url()).searchParams.get('id'),firstId);
   await expect(page.locator('.post-body')).toContainText('body-only-community-needle');
-  await expect(page.getByRole('button',{name:'0 local reports',exact:true})).toBeDisabled();
+  await expect(page.getByRole('button',{name:'0 upvotes',exact:true})).toBeDisabled();
   await expect(page.getByLabel('Add a comment')).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Manage your post',exact:true})).toHaveCount(0);
   await f.db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run('managed-owner-comment',`post/${firstId}`,owner,'Synthetic managed commenter','An owned managed comment must stay read-only.','2026-01-01T00:00:00.000Z',null);

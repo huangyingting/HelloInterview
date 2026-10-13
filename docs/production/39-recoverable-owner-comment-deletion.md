@@ -147,6 +147,8 @@ approved account/privacy lifecycle removes or lawfully retains it.
   private receipt keys.
 - Managed community writing remains read-only.
 
-Still required for W11: approved retention policy, reports, staffed moderation,
-moderation actions, appeals, shared abuse controls and explicit managed-writing
-or read-only launch approval.
+The later [moderation checkpoint](40-mfa-community-reports-moderation.md)
+supplies authenticated reports and reviewed hide/restore mechanics. Still
+required for W11: approved retention policy, appeals, staffed moderation,
+author/reporter notices, shared abuse controls and explicit managed-writing or
+read-only launch approval.

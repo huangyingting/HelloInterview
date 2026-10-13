@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
@@ -67,8 +68,8 @@ test('community cards and global search address exact opaque records instead of 
     await expect(page.locator('.community-detail h1')).toHaveText(`Opaque conversation ${index}`);
     assert.equal(new URL(page.url()).searchParams.get('id'),id);
     await expect(page.locator('.post-body')).toContainText(`opaque-address-needle ${index}`);
-    await page.getByRole('button',{name:'0 local reports',exact:true}).click();
-    await expect(page.getByRole('button',{name:'1 local reports',exact:true})).toHaveAttribute('aria-pressed','true');
+    await page.getByRole('button',{name:'0 upvotes',exact:true}).click();
+    await expect(page.getByRole('button',{name:'1 upvotes',exact:true})).toHaveAttribute('aria-pressed','true');
     await page.getByRole('button',{name:'Follow',exact:true}).click();
     await expect(page.getByRole('button',{name:'Following',exact:true})).toHaveAttribute('aria-pressed','true');
     await page.getByLabel('Add a comment').fill(`Exact conversation comment ${index}.`);
@@ -170,6 +171,52 @@ test('local owner editing preserves conflicting drafts and deletion is an explic
   assert.deepEqual(await db.prepare('SELECT id FROM comments WHERE resource=?').all(resource),[]);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   assert.equal(f.documents.length,1);
+});
+
+test('community reporting and hidden-comment controls stay in-page and preserve an exact private report receipt',async t=>{
+  const f=await fixture(t),{page}=f,db=localConnection(f.directory);t.after(()=>db.close());
+  const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);
+  const owner=(await login.json()).user.id,post=randomUUID(),hiddenPost=randomUUID(),comment=randomUUID(),resource=`post/${post}`;
+  await db.prepare('INSERT INTO posts VALUES(?,?,?,?,?,?,?,?,?,?,?,0)').run(post,'discussion','Reportable local contribution',
+    'A local contribution with enough context for the reporting acceptance workflow.','Fixture Company','system-design',
+    'Senior','Global','Synthetic author',owner,'2026-01-01T00:00:00.000Z');
+  await db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run(comment,resource,owner,'Synthetic author',
+    'A comment hidden by reviewed moderation.','2026-01-02T00:00:00.000Z',null);
+  await db.prepare('INSERT INTO posts VALUES(?,?,?,?,?,?,?,?,?,?,?,0)').run(hiddenPost,'discussion','Owner-deletable hidden post',
+    'A hidden local post retained only for its owner deletion workflow.','Fixture Company','system-design',
+    'Senior','Global','Synthetic author',owner,'2026-01-03T00:00:00.000Z');
+  await db.prepare(`INSERT INTO community_moderation_targets(target_type,target_id,state,revision,updated_at)
+    VALUES('comment',?,'hidden',1,?)`).run(comment,new Date().toISOString());
+  await db.prepare(`INSERT INTO community_moderation_targets(target_type,target_id,state,revision,updated_at)
+    VALUES('post',?,'hidden',1,?)`).run(hiddenPost,new Date().toISOString());
+  await page.goto(`${f.url}${communityPostPath({kind:'discussion',id:post})}`);
+  await page.getByRole('button',{name:'Report post',exact:true}).click();
+  await page.getByLabel('Policy concern').selectOption('privacy');
+  const details='This browser report identifies a specific private detail that requires moderator review.';
+  await page.getByLabel('What should a moderator review?').fill(details);
+  await page.getByRole('button',{name:'Submit report',exact:true}).click();
+  await expect(page.getByText(/Reported for review/)).toBeVisible();
+  const saved=await db.prepare('SELECT request_key,category,details,state,assigned_to FROM community_reports WHERE reporter_id=?').get(owner);
+  assert.equal(saved?.category,'privacy');assert.equal(saved?.details,details);assert.equal(saved?.state,'open');assert.equal(saved?.assigned_to,null);
+  assert.match(String(saved?.request_key),/^[a-f0-9-]{36}$/);
+  const hidden=page.locator('.comment').filter({hasText:'This comment was hidden by moderation.'});
+  await expect(hidden).toBeVisible();await expect(hidden.getByRole('button',{name:'Reply',exact:true})).toHaveCount(0);
+  await expect(hidden.getByRole('button',{name:'Report comment',exact:true})).toHaveCount(0);
+  await hidden.getByRole('button',{name:'Manage hidden comment',exact:true}).click();
+  await expect(hidden.getByText('Moderation hid this comment',{exact:false})).toBeVisible();
+  await page.goto(`${f.url}${communityPostPath({kind:'discussion',id:hiddenPost})}`);
+  await expect(page.getByText('Hidden by moderation',{exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Report post',exact:true})).toHaveCount(0);
+  await expect(page.getByRole('heading',{name:/Discussion/})).toHaveCount(0);
+  await page.getByRole('button',{name:'Manage hidden post',exact:true}).click();
+  const editor=page.locator('#owned-contribution');
+  await expect(editor.getByText('Moderation hid this post',{exact:false})).toBeVisible();
+  await expect(editor.getByLabel('Edit post title')).toHaveCount(0);
+  await editor.getByLabel('I understand this deletes my post, its discussion, votes and follows.').check();
+  await editor.getByRole('button',{name:'Delete my local post',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Ask the community',exact:true})).toBeVisible();
+  assert.equal(await db.prepare('SELECT id FROM posts WHERE id=?').get(hiddenPost),undefined);
+  await expect(page.locator('[role="dialog"]')).toHaveCount(0);
 });
 
 test('discussion pages expose older authors beyond 500 without losing drafts, duplicating new comments or hiding load failures',async t=>{

@@ -8,6 +8,8 @@ import { once } from 'node:events';
 import { DatabaseSync } from 'node:sqlite';
 import { setTimeout as delay } from 'node:timers/promises';
 import { CommunityReads } from '../server/community';
+import { CommunityContributions } from '../server/community-contributions';
+import { CommunityModeration } from '../server/community-moderation';
 import { CommunitySubmissions } from '../server/community-submissions';
 import { localConnection, postgresConnection, type Database } from '../server/db/connection';
 import { assertDatabaseVersion, migrateDatabase, migrations } from '../server/db/migrations';
@@ -16,11 +18,12 @@ import { loadConfig } from '../server/config';
 import { startServer } from '../server/runtime';
 import { createApp, handleError } from '../server/app';
 import type { CommunityPost } from '../shared/types';
+import type { ManagedIdentity } from '../server/identity';
 import { communityFeedPath, communityPostApi, communityPostPath, parseStudioAddress } from '../shared/community-routes';
 
 const databaseUrl=process.env.TEST_DATABASE_URL;
 if(!databaseUrl)throw new Error('TEST_DATABASE_URL must identify a dedicated community PostgreSQL fixture.');
-const fields=['author','body','company','createdAt','followed','id','isMine','kind','level','region','sample','title','track','voted','votes'].sort();
+const fields=['author','body','company','createdAt','followed','id','isMine','kind','level','moderated','region','sample','title','track','voted','votes'].sort();
 async function fixture(t:TestContext,dialect:'sqlite'|'postgres'){
   let db:Database,url:string|undefined;
   const parent=path.resolve('data/community-tests');await mkdir(parent,{recursive:true});
@@ -70,7 +73,7 @@ test('community URL helpers preserve exact bounded data and reject malformed or 
   assert.deepEqual(parseStudioAddress('/community/questions/literal%252F','').segments,['community','questions','literal%2F']);
 });
 
-test('migrations 21-30 preserve actual legacy posts, memberships, comments and immutable history while adding deletion-safe comment state',async t=>{
+test('migrations 21-31 preserve actual legacy community data while adding deletion and moderation state',async t=>{
   const f=await fixture(t,'postgres'),post=await f.add();
   await f.db.prepare('INSERT INTO votes(post_id,user_id) VALUES(?,?)').run(post.id,f.owners[0]);
   await f.db.prepare('INSERT INTO follows(post_id,user_id) VALUES(?,?)').run(post.id,f.owners[1]);
@@ -119,6 +122,9 @@ test('migrations 21-30 preserve actual legacy posts, memberships, comments and i
   assert.deepEqual(await legacy.prepare('SELECT * FROM community_comment_submissions').all(),[]);
   assert.deepEqual(await legacy.prepare('SELECT * FROM community_comment_deletions').all(),[]);
   assert.deepEqual(await legacy.prepare('SELECT * FROM community_comment_tombstones').all(),[]);
+  assert.deepEqual(await legacy.prepare('SELECT * FROM community_reports').all(),[]);
+  assert.deepEqual(await legacy.prepare('SELECT * FROM community_moderation_targets').all(),[]);
+  assert.deepEqual(await legacy.prepare('SELECT * FROM community_moderation_events').all(),[]);
   assert.equal((await legacy.prepare(`SELECT is_nullable FROM information_schema.columns
     WHERE table_schema=current_schema() AND table_name='comments' AND column_name='user_id'`).get())?.is_nullable,'YES');
   assert.equal((await legacy.prepare('SELECT revision FROM community_comment_revisions WHERE comment_id=?').get(commentId))?.revision,1);
@@ -128,7 +134,9 @@ test('migrations 21-30 preserve actual legacy posts, memberships, comments and i
   await legacy.prepare('UPDATE posts SET title=? WHERE id=?').run('A controlled original title update',post.id);
   assert.equal((await legacy.prepare('SELECT revision FROM community_post_revisions WHERE post_id=?').get(post.id))?.revision,2);
   const indexes=await legacy.prepare('SELECT indexname FROM pg_indexes WHERE schemaname=?').all(schema);
-  for(const name of ['posts_owner_order','posts_created_order','follows_owner','comments_resource_cursor','community_comment_submissions_owner','community_comment_submissions_resource','community_comment_deletions_owner'])assert.ok(indexes.some(row=>row.indexname===name));
+  for(const name of ['posts_owner_order','posts_created_order','follows_owner','comments_resource_cursor','community_comment_submissions_owner',
+    'community_comment_submissions_resource','community_comment_deletions_owner','community_reports_owner_key','community_reports_queue',
+    'community_reports_owner_open','community_moderation_events_report'])assert.ok(indexes.some(row=>row.indexname===name));
   assert.equal((await new CommunityReads(legacy).detail(post.id,{kind:'questions'},f.owners[0])).isMine,true);
 });
 
@@ -236,11 +244,13 @@ test('PostgreSQL comment creation, durable submission and editing serialize with
   const db:Database={...f.db,prepare(sql){
     const statement=f.db.prepare(sql);
     return {...statement,get:async(...values)=>{
-      if(values[0]===waitingFor&&((first==='delete'&&sql==='SELECT id FROM posts WHERE id=? FOR UPDATE')||(first==='comment'&&sql.startsWith('SELECT kind FROM posts WHERE id=? AND author_id=? AND sample=0')))){
+      const commentPostLock=sql==='SELECT id FROM posts WHERE id=? FOR UPDATE'||
+        sql.startsWith('SELECT p.id FROM posts p WHERE p.id=? AND NOT EXISTS(')&&sql.includes('FOR UPDATE OF p');
+      if(values[0]===waitingFor&&((first==='delete'&&commentPostLock)||(first==='comment'&&sql.startsWith('SELECT kind FROM posts WHERE id=? AND author_id=? AND sample=0')))){
         waitingFor='';competingEnter();
       }
       const row=await statement.get(...values);
-      if(values[0]===target&&((first==='comment'&&sql==='SELECT id FROM posts WHERE id=? FOR UPDATE')||(first==='delete'&&sql.startsWith('SELECT kind FROM posts WHERE id=? AND author_id=? AND sample=0')))){
+      if(values[0]===target&&((first==='comment'&&commentPostLock)||(first==='delete'&&sql.startsWith('SELECT kind FROM posts WHERE id=? AND author_id=? AND sample=0')))){
         target='';enter();await gate;
       }
       return row;
@@ -326,7 +336,7 @@ test('a PostgreSQL comment edit waiting on a privileged row update reads the new
   const db:Database={...f.db,prepare(sql){
     const statement=f.db.prepare(sql);
     return {...statement,get:async(...values)=>{
-      if(values[0]===target&&sql.includes('FROM comments WHERE comments.id=? AND comments.user_id=?')&&sql.includes('FOR UPDATE')){
+      if(values[0]===target&&sql.includes('FROM comments LEFT JOIN community_moderation_targets')&&sql.includes('WHERE comments.id=? AND comments.user_id=?')&&sql.includes('FOR UPDATE')){
         const process=await f.db.prepare('SELECT pg_backend_pid() AS pid').get();assert.equal(typeof process?.pid,'number');
         waitingPid=Number(process!.pid);target='';entered();
       }
@@ -361,6 +371,110 @@ test('a PostgreSQL comment edit waiting on a privileged row update reads the new
 });
 
 for(const dialect of ['sqlite','postgres'] as const){
+  test(`${dialect}: authenticated reports bind owner, UUID key and exact content without exposing moderation authority`,async t=>{
+    const f=await fixture(t,dialect),post=await f.add(),moderation=new CommunityModeration(f.db,null);
+    const user={id:f.owners[0],name:'Synthetic author',email:`${f.owners[0]}@example.invalid`,demo:false};
+    const request={requestId:randomUUID(),targetType:'post' as const,targetId:post.id,category:'privacy' as const,
+      details:'This contribution includes a specific private detail that requires moderator review.'};
+    let admissions=0;
+    const saved=await moderation.report(user,request,async()=>{admissions++;});
+    assert.equal(saved.requestId,request.requestId);assert.equal(saved.delivery,'moderation-queue-only');assert.equal(admissions,2);
+    const replay=await moderation.report(user,request,async()=>{admissions++;});
+    assert.deepEqual(replay,saved);assert.equal(admissions,4);
+    await assert.rejects(()=>moderation.report(user,{...request,details:'A different report body reusing the same exact request key is rejected.'},async()=>{}),status(409));
+    await assert.rejects(()=>moderation.report(user,{...request,requestId:randomUUID()},async()=>{}),status(409));
+    await assert.rejects(()=>moderation.report(user,{...request,requestId:randomUUID(),targetId:randomUUID()},async()=>{}),status(404));
+    await assert.rejects(()=>f.db.prepare('UPDATE community_reports SET details=? WHERE id=?').run(
+      'Direct tampering must not alter a saved reporter statement.',saved.id));
+    await assert.rejects(()=>f.db.prepare('DELETE FROM community_reports WHERE id=?').run(saved.id));
+    const row=await f.db.prepare('SELECT reporter_id,assigned_to,state,report_revision FROM community_reports WHERE id=?').get(saved.id);
+    assert.equal(row?.reporter_id,user.id);assert.equal(row?.assigned_to,null);assert.equal(row?.state,'open');assert.equal(row?.report_revision,0);
+  });
+
+  test(`${dialect}: hidden comments are explicit non-repliable tombstones but remain owner-deletable`,async t=>{
+    const f=await fixture(t,dialect),post=await f.add(),resource=`post/${post.id}`,parent=randomUUID();
+    await f.db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run(parent,resource,f.owners[0],'Synthetic author',
+      'A comment that will be hidden by a reviewed moderation action.','2026-01-02T00:00:00.000Z',null);
+    await f.db.prepare(`INSERT INTO community_moderation_targets(target_type,target_id,state,revision,updated_at)
+      VALUES('comment',?,'hidden',1,?)`).run(parent,new Date().toISOString());
+    const contributions=new CommunityContributions(f.db),publicComments=await contributions.comments(resource,f.owners[0]);
+    assert.deepEqual(publicComments[0],{id:parent,resource,author:'Moderated',body:'This comment was hidden by moderation.',
+      createdAt:'2026-01-02T00:00:00.000Z',parentId:null,isMine:true,deleted:false,moderated:true});
+    await assert.rejects(()=>contributions.updateComment({id:parent,revision:0,body:'Hidden text must not be editable.'},f.owners[0],async()=>{}),status(409));
+    const submissions=new CommunitySubmissions(f.db);
+    await assert.rejects(()=>submissions.create({id:f.owners[1],name:'Synthetic author'},
+      {requestId:randomUUID(),resource,parentId:parent,body:'A new reply cannot target hidden content.'},async()=>{}),status(400));
+    const removed=await contributions.removeComment({id:parent,revision:0,requestId:randomUUID()},f.owners[0],async()=>{});
+    assert.equal(removed.comment?.deleted,true);assert.equal(removed.comment?.moderated,false);
+    assert.equal((await f.db.prepare('SELECT user_id,author,body FROM comments WHERE id=?').get(parent))?.user_id,null);
+    const hiddenPost=await f.add({title:'Owner-deletable hidden post'});
+    await f.db.prepare(`INSERT INTO community_moderation_targets(target_type,target_id,state,revision,updated_at)
+      VALUES('post',?,'hidden',1,?)`).run(hiddenPost.id,new Date().toISOString());
+    await assert.rejects(()=>f.reads.detail(hiddenPost.id,{kind:'questions'},null),status(404));
+    const ownedHidden=await f.reads.detail(hiddenPost.id,{kind:'questions'},f.owners[0],true);
+    assert.equal(ownedHidden.moderated,true);assert.equal(ownedHidden.isMine,true);
+    await assert.rejects(()=>contributions.update({id:hiddenPost.id,revision:0,title:'Hidden edits are blocked',
+      body:'A hidden post edit with otherwise valid complete body content.'},f.owners[0],async()=>{}),status(409));
+    assert.deepEqual(await contributions.remove({id:hiddenPost.id,revision:0},f.owners[0],async()=>{}),{deleted:true});
+    await assert.rejects(()=>f.db.prepare(`DELETE FROM community_moderation_targets
+      WHERE target_type='post' AND target_id=?`).run(hiddenPost.id));
+  });
+
+  if(dialect==='postgres')test('postgres: MFA-authorized moderators claim, hide and restore reports with revision-fenced evidence and global visibility',async t=>{
+    const f=await fixture(t,'postgres'),post=await f.add({company:'Hidden Fixture Company'});
+    const reporter={id:f.owners[0],name:'Reporter',email:`${f.owners[0]}@example.invalid`,demo:false};
+    const moderator={id:f.owners[1],name:'Moderator',email:`${f.owners[1]}@example.invalid`,demo:false};
+    const authority={
+      assertStaff:async()=>{},staffRoles:async(id:string)=>id===moderator.id?['moderator']:[],
+    } as unknown as ManagedIdentity;
+    const service=new CommunityModeration(f.db,authority);
+    const receipt=await service.report(reporter,{requestId:randomUUID(),targetType:'post',targetId:post.id,category:'spam',
+      details:'This report identifies repeated deceptive promotion in the contribution body.'},async()=>{});
+    const queue=await service.queue(moderator,{});
+    assert.equal(queue.reports.length,1);assert.equal(queue.reports[0]?.id,receipt.id);
+    assert.ok(!JSON.stringify(queue).includes(reporter.id));assert.equal(queue.reports[0]?.targetState,'visible');
+    assert.equal(queue.reports[0]?.target.author,'Anonymous');
+    const claimed=await service.act(moderator,receipt.id,{revision:0,targetRevision:0,action:'claim',
+      reason:'Claiming this report to review the cited deceptive promotion evidence.'});
+    assert.equal(claimed.assignment,'me');assert.equal(claimed.revision,1);
+    const hidden=await service.act(moderator,receipt.id,{revision:1,targetRevision:0,action:'hide',
+      reason:'The reviewed contribution is deceptive promotion and should be hidden.'});
+    assert.equal(hidden.targetState,'hidden');assert.equal(hidden.targetRevision,1);assert.equal(hidden.status,'actioned');
+    assert.equal((await f.reads.legacy('questions',null)).posts.some(value=>value.id===post.id),false);
+    assert.equal((await f.reads.feed({kind:'questions',company:'',level:'',region:'',track:'',q:'',sort:'recent',scope:'all',limit:'20'},null)).companies.includes('Hidden Fixture Company'),false);
+    await assert.rejects(()=>f.reads.detail(post.id,{kind:'questions'},null),status(404));
+    await assert.rejects(()=>service.act(moderator,receipt.id,{revision:1,targetRevision:0,action:'restore',
+      reason:'A stale report and target revision must never restore hidden content.'}),status(409));
+    const restored=await service.act(moderator,receipt.id,{revision:2,targetRevision:1,action:'restore',
+      reason:'A second review found the hide decision unsupported and restores the contribution.'});
+    assert.equal(restored.targetState,'visible');assert.equal(restored.targetRevision,2);
+    assert.equal((await f.reads.detail(post.id,{kind:'questions'},null)).id,post.id);
+    const events=await f.db.prepare('SELECT action,actor_ref,reason FROM community_moderation_events WHERE report_id=? ORDER BY created_at,id').all(receipt.id);
+    assert.deepEqual(events.map(value=>value.action),['claim','hide','restore']);assert.ok(events.every(value=>value.actor_ref===moderator.id));
+    await assert.rejects(()=>f.db.prepare('DELETE FROM community_moderation_events WHERE report_id=?').run(receipt.id));
+    const concurrentPost=await f.add({title:'Concurrent moderation target'});
+    const first=await service.report(reporter,{requestId:randomUUID(),targetType:'post',targetId:concurrentPost.id,category:'spam',
+      details:'The first independent report identifies a concrete deceptive-content concern.'},async()=>{});
+    const second=await service.report(moderator,{requestId:randomUUID(),targetType:'post',targetId:concurrentPost.id,category:'harassment',
+      details:'The second independent report identifies a concrete harassment policy concern.'},async()=>{});
+    await service.act(moderator,first.id,{revision:0,targetRevision:0,action:'claim',reason:'Claim the first report before the concurrency rehearsal begins.'});
+    await service.act(moderator,second.id,{revision:0,targetRevision:0,action:'claim',reason:'Claim the second report before the concurrency rehearsal begins.'});
+    const racing=await Promise.allSettled([
+      service.act(moderator,first.id,{revision:1,targetRevision:0,action:'hide',reason:'Apply the first reviewed hide decision with target revision fencing.'}),
+      service.act(moderator,second.id,{revision:1,targetRevision:0,action:'hide',reason:'Apply the second reviewed hide decision with target revision fencing.'}),
+    ]);
+    assert.equal(racing.filter(result=>result.status==='fulfilled').length,1);
+    const rejected=racing.find(result=>result.status==='rejected');assert.ok(rejected?.status==='rejected');
+    assert.ok(rejected.reason instanceof HttpError&&rejected.reason.status===409);
+    const replayTarget=await f.add({title:'Concurrent exact report target'}),requestId=randomUUID();
+    const exact={requestId,targetType:'post' as const,targetId:replayTarget.id,category:'privacy' as const,
+      details:'Two uncertain callers submit this same exact report key and normalized content.'};
+    const [left,right]=await Promise.all([service.report(reporter,exact,async()=>{}),service.report(reporter,exact,async()=>{})]);
+    assert.deepEqual(left,right);
+    assert.equal(Number((await f.db.prepare('SELECT count(*) AS count FROM community_reports WHERE reporter_id=? AND request_key=?')
+      .get(reporter.id,requestId))?.count),1);
+  });
+
   test(`${dialect}: failed receipt insertion rolls back its comment/revision and original-key retry creates once`,async t=>{
     const f=await fixture(t,dialect),resource=`lesson/rollback-${randomUUID()}`,user={id:f.owners[0],name:'Synthetic author'};
     let fail=true;
@@ -461,8 +575,8 @@ for(const dialect of ['sqlite','postgres'] as const){
     const page=await first.json();assert.deepEqual(Object.keys(page).sort(),['comments','limit','nextCursor'].sort());
     assert.equal(page.limit,50);assert.equal(page.comments.length,50);assert.equal(page.comments[0].id,'page-0000');
     for(const [i,row] of page.comments.entries()){
-      assert.deepEqual(Object.keys(row).sort(),['author','body','createdAt','deleted','id','isMine','parentId','resource'].sort());
-      assert.equal(row.resource,resource);assert.equal(row.isMine,i%2===0);
+      assert.deepEqual(Object.keys(row).sort(),['author','body','createdAt','deleted','id','isMine','moderated','parentId','resource'].sort());
+      assert.equal(row.resource,resource);assert.equal(row.isMine,i%2===0);assert.equal(row.moderated,false);
       assert.ok(!JSON.stringify(row).includes(owner));assert.ok(!JSON.stringify(row).includes(f.owners[1]));
     }
     assert.ok(page.nextCursor);assert.ok(!Buffer.from(page.nextCursor,'base64url').toString('utf8').includes(owner));
@@ -538,7 +652,7 @@ for(const dialect of ['sqlite','postgres'] as const){
     for(const [viewer,mine] of [[cookie,true],[otherCookie,false],['',false]] as const){
       const response=await api(`/api/comments?${new URLSearchParams({resource})}`,undefined,viewer);assert.equal(response.status,200);
       const row=(await response.json()).find((comment:{id:string})=>comment.id===id);
-      assert.equal(row.isMine,mine);assert.deepEqual(Object.keys(row).sort(),['author','body','createdAt','deleted','id','isMine','parentId','resource'].sort());
+      assert.equal(row.isMine,mine);assert.deepEqual(Object.keys(row).sort(),['author','body','createdAt','deleted','id','isMine','moderated','parentId','resource'].sort());
       assert.ok(!JSON.stringify(row).includes(owner));assert.ok(!Object.hasOwn(row,'revision'));
     }
     assert.equal((await api(route)).status,401);assert.equal((await api(route,undefined,otherCookie)).status,404);
@@ -586,7 +700,7 @@ for(const dialect of ['sqlite','postgres'] as const){
     const result=await deleted.json();assert.equal(result.receipt.status,'tombstoned');assert.equal(result.receipt.requestId,requestId);
     assert.equal(result.receipt.priorRevision,0);assert.equal(result.receipt.resultRevision,1);
     assert.deepEqual(result.comment,{id:root.id,resource,author:'Deleted',body:'This comment was removed by its author.',
-      createdAt:root.createdAt,parentId:null,isMine:false,deleted:true});
+      createdAt:root.createdAt,parentId:null,isMine:false,deleted:true,moderated:false});
     assert.deepEqual(await(await api('/api/comments/owned',input,cookie,'DELETE')).json(),result);
     assert.equal((await api('/api/comments/owned',{...input,requestId:randomUUID()},cookie,'DELETE')).status,404);
     const second=await api('/api/comments/submissions',{requestId:randomUUID(),resource,body:'A second owned comment remains live.',parentId:null},cookie);

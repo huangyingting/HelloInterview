@@ -33,12 +33,16 @@ export class CommunitySubmissions {
   private joins() {
     return `FROM community_comment_submissions s LEFT JOIN comments c ON c.id=s.comment_id AND c.user_id=s.user_id
       AND c.resource=s.resource AND c.created_at=s.created_at
-      AND (substr(s.resource,1,5)<>'post/' OR EXISTS(SELECT 1 FROM posts p WHERE p.id=substr(s.resource,6)))`;
+      AND NOT EXISTS(SELECT 1 FROM community_moderation_targets hidden_comment
+        WHERE hidden_comment.target_type='comment' AND hidden_comment.target_id=c.id AND hidden_comment.state='hidden')
+      AND (substr(s.resource,1,5)<>'post/' OR EXISTS(SELECT 1 FROM posts p WHERE p.id=substr(s.resource,6)
+        AND NOT EXISTS(SELECT 1 FROM community_moderation_targets hidden_post
+          WHERE hidden_post.target_type='post' AND hidden_post.target_id=p.id AND hidden_post.state='hidden')))`;
   }
   private envelope(row:Record<string,unknown>):CommunityCommentSubmission {
     const receipt=receiptSchema.parse({requestId:row.request_id,commentId:row.comment_id,resource:row.resource,createdAt:row.created_at,status:'created'});
     const comment=row.current_id===null?null:commentDto.parse({id:row.current_id,resource:row.current_resource,author:row.current_author,
-      body:row.current_body,createdAt:row.current_created_at,parentId:row.current_parent,isMine:1,deleted:0});
+      body:row.current_body,createdAt:row.current_created_at,parentId:row.current_parent,isMine:1,deleted:0,moderated:0});
     return {receipt,comment};
   }
   private async snapshot(owner:string,requestId:string) {
@@ -57,11 +61,15 @@ export class CommunitySubmissions {
         if(existing.input_hash!==hash)throw new HttpError(409,'This submission key belongs to different original content. Nothing was replaced or created.');
         return this.snapshot(user.id,request.requestId);
       }
-      if(request.resource.startsWith('post/')&&!await this.db.prepare(`SELECT id FROM posts WHERE id=?${this.db.dialect==='postgres'?' FOR UPDATE':''}`).get(request.resource.slice(5)))
+      if(request.resource.startsWith('post/')&&!await this.db.prepare(`SELECT p.id FROM posts p WHERE p.id=? AND NOT EXISTS(
+        SELECT 1 FROM community_moderation_targets moderation WHERE moderation.target_type='post'
+          AND moderation.target_id=p.id AND moderation.state='hidden')${this.db.dialect==='postgres'?' FOR UPDATE OF p':''}`).get(request.resource.slice(5)))
         throw new HttpError(404,'This post is no longer available for discussion.');
       if(request.parentId&&!await this.db.prepare(`SELECT comments.id FROM comments
         LEFT JOIN community_comment_tombstones tombstone ON tombstone.comment_id=comments.id
-        WHERE comments.id=? AND comments.resource=? AND comments.user_id IS NOT NULL AND tombstone.comment_id IS NULL`).get(request.parentId,request.resource))
+        LEFT JOIN community_moderation_targets moderation ON moderation.target_type='comment' AND moderation.target_id=comments.id
+        WHERE comments.id=? AND comments.resource=? AND comments.user_id IS NOT NULL AND tombstone.comment_id IS NULL
+          AND COALESCE(moderation.state,'visible')<>'hidden'`).get(request.parentId,request.resource))
         throw new HttpError(400,'Reply must belong to this exact discussion.');
       const id=randomUUID(),createdAt=new Date().toISOString();
       await this.db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run(id,request.resource,user.id,user.name,request.body,createdAt,request.parentId);

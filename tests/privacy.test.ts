@@ -88,6 +88,17 @@ test('privacy artifacts cover owned preparation, identity, grants, usage, contri
     VALUES(?,?,?,?,?,?,?,?,?,?,?,0)`).run('privacy-post','questions','Owned privacy post','A complete private-owner community contribution.','Example','system-design','Senior','Global','Owner',owner,'2026-10-13T00:00:00.000Z');
   await f.db.prepare(`INSERT INTO comments(id,resource,user_id,author,body,created_at,parent_id)
     VALUES(?,?,?,?,?,?,NULL)`).run('privacy-comment','post/privacy-post',owner,'Owner','Owned privacy comment.','2026-10-13T00:00:01.000Z');
+  const reportId=randomUUID(),reportKey=randomUUID();
+  await f.db.prepare(`INSERT INTO community_reports
+    (id,reporter_id,request_key,input_hash,target_type,target_id,category,details,created_at,updated_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?)`).run(reportId,owner,reportKey,'9'.repeat(64),'post','privacy-post','privacy',
+      'Owner-submitted private report details included without moderator identity.','2026-10-13T00:00:01.500Z','2026-10-13T00:00:01.500Z');
+  await f.db.prepare(`UPDATE community_reports SET assigned_to=?,report_revision=1,updated_at=?
+    WHERE id=?`).run(owner,'2026-10-13T00:00:01.600Z',reportId);
+  await f.db.prepare(`INSERT INTO community_moderation_events
+    (id,report_id,target_type,target_id,actor_ref,actor_role,action,reason,prior_report_revision,result_report_revision,created_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(randomUUID(),reportId,'post','privacy-post','private-moderator-ref','moderator','claim',
+      'Private internal moderation reason excluded from the owner export.',0,1,'2026-10-13T00:00:01.600Z');
   await f.db.prepare(`INSERT INTO comments(id,resource,user_id,author,body,created_at,parent_id)
     VALUES(?,?,?,?,?,?,NULL)`).run('privacy-deleted-comment','post/privacy-post',owner,'Owner private name','Removed private comment bytes.','2026-10-13T00:00:02.000Z');
   const deletionKey=randomUUID();
@@ -130,13 +141,14 @@ test('privacy artifacts cover owned preparation, identity, grants, usage, contri
   const token=[...(await f.db.prepare('SELECT token,csrf_hash FROM managed_sessions').all())][0];
   const exported=await completedPrivacyExport(browser,f.privacy);
   const text=JSON.stringify(exported.artifact);
-  assert.match(text,/A private owned story|Owned privacy post|Owned privacy comment|private support request|owner-visible in-app support reply|private export prompt/);
+  assert.match(text,/A private owned story|Owned privacy post|Owned privacy comment|Owner-submitted private report details|private support request|owner-visible in-app support reply|private export prompt/);
   assert.match(text,new RegExp(deletionKey));
+  assert.match(text,new RegExp(reportKey));
   assert.doesNotMatch(text,/Removed private comment bytes|Owner private name/);
   assert.match(text,/premium-read-v1|privacy-reservation|pro_monthly|sub_privacy|in_privacy/);
   assert.doesNotMatch(text,new RegExp(String(token.token)));
   assert.doesNotMatch(text,new RegExp(String(token.csrf_hash)));
-  assert.doesNotMatch(text,/fixture-operator|request_hash|hosted_url|provider_session_id|job_id/);
+  assert.doesNotMatch(text,/fixture-operator|private-moderator-ref|Private internal moderation reason|assigned_to|request_hash|hosted_url|provider_session_id|job_id/);
   assert.equal((exported.artifact.notices as {scope:string}).scope.includes('does not claim'),true);
 });
 

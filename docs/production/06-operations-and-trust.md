@@ -97,6 +97,17 @@ comment text. The
 database guards, export scope and local schema upgrade behavior. This does not
 approve legal retention, full privacy erasure, moderation or managed writing.
 
+**Implemented community report/moderation checkpoint (W11):** authenticated
+members can save exact UUID-keyed post/comment reports, and MFA/fresh
+`moderator` or `administrator` staff can use a bounded queue with assignment,
+dismiss, hide and restore actions. Migration 31 fences report and target
+revisions, preserves immutable staff evidence, filters hidden posts from every
+reader and projects hidden comments as non-repliable moderation tombstones.
+The [moderation runbook](40-mfa-community-reports-moderation.md) records the
+minimized DTO, privacy export and concurrency contract. Appeals, notifications,
+automated enforcement, staffed targets, approved retention and managed writing
+remain separate launch gates.
+
 **Implemented managed staff-administration checkpoint (W10):** verified OIDC
 `amr` can establish explicit MFA evidence for a managed session; privileged
 staff admission additionally requires an active verified account, a current
@@ -222,6 +233,11 @@ deletion/reply-retention policy remain separate work; local
 deletion is not the comprehensive privacy-erasure coordinator.
 The shared paged reader and its loaded-only search now follow
 [runbook 33](33-bounded-discussion-pages.md); live cursors are not privacy exports.
+Authenticated reports and reviewed in-app hide/restore operations now follow
+[runbook 40](40-mfa-community-reports-moderation.md). This provides the
+provider-neutral queue and visibility mechanics, but not appeals, author
+notices, abuse operations, retention approval or authority to enable managed
+contribution writes.
 
 Launch requirements:
 

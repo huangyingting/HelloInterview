@@ -1024,6 +1024,126 @@ export const migrations = [{
     CREATE TRIGGER immutable_community_comment_tombstone BEFORE UPDATE ON community_comment_tombstones
       FOR EACH ROW EXECUTE FUNCTION immutable_community_comment_deletion();
   `,
+  }, {
+    version: 31,
+    name: 'mfa-community-reports-moderation',
+    sql: `
+      CREATE TABLE community_moderation_targets (
+        target_type TEXT NOT NULL CHECK(target_type IN ('post','comment')),
+        target_id TEXT NOT NULL CHECK(length(target_id) BETWEEN 1 AND 200),
+        state TEXT NOT NULL CHECK(state IN ('visible','hidden')),
+        revision INTEGER NOT NULL CHECK(revision>0),
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(target_type,target_id)
+      );
+      CREATE TABLE community_reports (
+        id UUID PRIMARY KEY,
+        reporter_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+        request_key UUID NOT NULL,
+        input_hash TEXT NOT NULL CHECK(input_hash ~ '^[0-9a-f]{64}$'),
+        target_type TEXT NOT NULL CHECK(target_type IN ('post','comment')),
+        target_id TEXT NOT NULL CHECK(length(target_id) BETWEEN 1 AND 200),
+        category TEXT NOT NULL CHECK(category IN ('spam','harassment','privacy','misinformation','other')),
+        details TEXT NOT NULL CHECK(length(details) BETWEEN 20 AND 1000),
+        state TEXT NOT NULL DEFAULT 'open' CHECK(state IN ('open','dismissed','actioned')),
+        assigned_to TEXT REFERENCES users(id) ON DELETE RESTRICT,
+        report_revision INTEGER NOT NULL DEFAULT 0 CHECK(report_revision>=0),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX community_reports_owner_key ON community_reports(reporter_id,request_key) WHERE reporter_id IS NOT NULL;
+      CREATE INDEX community_reports_queue ON community_reports(updated_at DESC,id DESC);
+      CREATE INDEX community_reports_owner_open ON community_reports(reporter_id,state);
+      CREATE TABLE community_moderation_events (
+        id UUID PRIMARY KEY,
+        report_id UUID NOT NULL REFERENCES community_reports(id) ON DELETE RESTRICT,
+        target_type TEXT NOT NULL CHECK(target_type IN ('post','comment')),
+        target_id TEXT NOT NULL,
+        actor_ref TEXT NOT NULL,
+        actor_role TEXT NOT NULL CHECK(actor_role IN ('moderator','administrator')),
+        action TEXT NOT NULL CHECK(action IN ('claim','release','dismiss','hide','restore')),
+        reason TEXT NOT NULL CHECK(length(reason) BETWEEN 20 AND 500),
+        prior_report_revision INTEGER NOT NULL CHECK(prior_report_revision>=0),
+        result_report_revision INTEGER NOT NULL CHECK(result_report_revision=prior_report_revision+1),
+        prior_target_revision INTEGER,
+        result_target_revision INTEGER,
+        created_at TEXT NOT NULL,
+        CHECK((prior_target_revision IS NULL AND result_target_revision IS NULL) OR
+          (prior_target_revision IS NOT NULL AND prior_target_revision>=0 AND result_target_revision=prior_target_revision+1)),
+        CHECK((action IN ('hide','restore') AND prior_target_revision IS NOT NULL) OR
+          (action IN ('claim','release','dismiss') AND prior_target_revision IS NULL))
+      );
+      CREATE INDEX community_moderation_events_report ON community_moderation_events(report_id,created_at,id);
+      CREATE FUNCTION protect_community_report() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NOT (
+            OLD.reporter_id IS NOT NULL AND NEW.reporter_id IS NULL AND
+              NEW.id=OLD.id AND NEW.request_key=OLD.request_key AND NEW.input_hash=OLD.input_hash AND
+              NEW.target_type=OLD.target_type AND NEW.target_id=OLD.target_id AND NEW.category=OLD.category AND
+              NEW.details=OLD.details AND NEW.state=OLD.state AND NEW.assigned_to IS NOT DISTINCT FROM OLD.assigned_to AND
+              NEW.report_revision=OLD.report_revision AND NEW.created_at=OLD.created_at AND NEW.updated_at=OLD.updated_at OR
+            NEW.id=OLD.id AND NEW.reporter_id IS NOT DISTINCT FROM OLD.reporter_id AND NEW.request_key=OLD.request_key AND
+              NEW.input_hash=OLD.input_hash AND NEW.target_type=OLD.target_type AND NEW.target_id=OLD.target_id AND
+              NEW.category=OLD.category AND NEW.details=OLD.details AND NEW.created_at=OLD.created_at AND
+              NEW.report_revision=OLD.report_revision+1 AND NEW.updated_at>=OLD.updated_at
+          ) THEN RAISE EXCEPTION 'Community reports allow only reporter retirement or revision-fenced staff state changes.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER protect_community_report BEFORE UPDATE ON community_reports
+        FOR EACH ROW EXECUTE FUNCTION protect_community_report();
+      CREATE FUNCTION initialize_community_report() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NEW.reporter_id IS NULL OR NEW.state<>'open' OR NEW.assigned_to IS NOT NULL OR NEW.report_revision<>0 OR
+            NEW.created_at<>NEW.updated_at
+          THEN RAISE EXCEPTION 'New community reports must begin as unassigned revision-zero owner records.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER initialize_community_report BEFORE INSERT ON community_reports
+        FOR EACH ROW EXECUTE FUNCTION initialize_community_report();
+      CREATE FUNCTION protect_community_moderation_target() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NOT (NEW.target_type=OLD.target_type AND NEW.target_id=OLD.target_id AND NEW.state<>OLD.state AND
+            NEW.revision=OLD.revision+1 AND NEW.updated_at>=OLD.updated_at)
+          THEN RAISE EXCEPTION 'Moderation target changes require one revision-fenced state transition.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER protect_community_moderation_target BEFORE UPDATE ON community_moderation_targets
+        FOR EACH ROW EXECUTE FUNCTION protect_community_moderation_target();
+      CREATE FUNCTION initialize_community_moderation_target() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NEW.revision<>1 THEN RAISE EXCEPTION 'New moderation targets must begin at revision one.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER initialize_community_moderation_target BEFORE INSERT ON community_moderation_targets
+        FOR EACH ROW EXECUTE FUNCTION initialize_community_moderation_target();
+      CREATE FUNCTION validate_community_moderation_event() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NOT EXISTS(SELECT 1 FROM community_reports report WHERE report.id=NEW.report_id AND
+            report.target_type=NEW.target_type AND report.target_id=NEW.target_id AND report.report_revision=NEW.result_report_revision)
+          THEN RAISE EXCEPTION 'Moderation evidence must reference the resulting report revision.'; END IF;
+          IF NEW.result_target_revision IS NOT NULL AND NOT EXISTS(
+            SELECT 1 FROM community_moderation_targets target WHERE target.target_type=NEW.target_type AND
+              target.target_id=NEW.target_id AND target.revision=NEW.result_target_revision)
+          THEN RAISE EXCEPTION 'Moderation evidence must reference the resulting target revision.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER validate_community_moderation_event BEFORE INSERT ON community_moderation_events
+        FOR EACH ROW EXECUTE FUNCTION validate_community_moderation_event();
+      CREATE FUNCTION immutable_community_moderation_event() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN RAISE EXCEPTION 'Community moderation evidence is immutable.'; END;
+      $$;
+      CREATE TRIGGER immutable_community_moderation_event BEFORE UPDATE OR DELETE ON community_moderation_events
+        FOR EACH ROW EXECUTE FUNCTION immutable_community_moderation_event();
+      CREATE TRIGGER immutable_community_report_delete BEFORE DELETE ON community_reports
+        FOR EACH ROW EXECUTE FUNCTION immutable_community_moderation_event();
+      CREATE TRIGGER immutable_community_moderation_target_delete BEFORE DELETE ON community_moderation_targets
+        FOR EACH ROW EXECUTE FUNCTION immutable_community_moderation_event();
+    `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

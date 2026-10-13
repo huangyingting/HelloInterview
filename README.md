@@ -244,7 +244,12 @@ The [in-app support operations checkpoint](docs/production/38-mfa-in-app-support
 adds an MFA-gated bounded staff queue, revision-fenced assignment/status and
 idempotent owner-visible replies with immutable evidence. External email,
 helpdesk delivery, SLA and staffing claims remain disabled.
-Controlled PostgreSQL deployments must apply **migration 30 and maintained queue
+The [community moderation checkpoint](docs/production/40-mfa-community-reports-moderation.md)
+adds authenticated exact-retry reports, an MFA/role-gated bounded staff queue,
+revision-fenced hide/restore state, immutable evidence and consistent public
+visibility. Appeals, notices, staffing, retention approval and managed
+community writing remain disabled.
+Controlled PostgreSQL deployments must apply **migration 31 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 

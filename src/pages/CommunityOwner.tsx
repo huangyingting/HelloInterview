@@ -22,6 +22,8 @@ function ContributionOwner(props: PostProps | CommentProps) {
   const alive = useRef(false);
   const instanceId = useId(), editorId = props.post ? 'owned-contribution' : instanceId;
   const id = props.post ? props.post.id : props.comment.id;
+  const moderated=!!props.comment?.moderated||!!props.post?.moderated||
+    !!saved&&('comment' in saved?saved.comment.moderated:saved.post.moderated);
   const endpoint = props.post ? '/api/posts/owned' : '/api/comments/owned';
   const url = `${endpoint}?${new URLSearchParams({ id })}`;
   const values = (snapshot: Snapshot) => {
@@ -101,13 +103,14 @@ function ContributionOwner(props: PostProps | CommentProps) {
   });
   const dirty = saved && (title !== values(saved).title || body !== values(saved).body);
   return <section className="owned-contribution">
-    <button className="button secondary small" aria-expanded={open} aria-controls={editorId} disabled={pending} onClick={() => setOpen(!open)}><Pencil size={15} /> {props.post ? 'Manage your post' : 'Edit my comment'}</button>
+    <button className="button secondary small" aria-expanded={open} aria-controls={editorId} disabled={pending} onClick={() => setOpen(!open)}><Pencil size={15} /> {moderated?`Manage hidden ${props.post?'post':'comment'}`:props.post?'Manage your post':'Edit my comment'}</button>
     {open && <div className="panel post-editor" id={editorId}>
       <div className="section-heading"><h2>{props.post ? 'Your original contribution' : 'Your original comment'}</h2><button className="button secondary small" disabled={pending} onClick={() => setOpen(false)}>Close editor</button></div>
       <p className="fine-print">{props.post ? 'Edit the title and original text.' : 'Edit your original text; the discussion and reply parent stay unchanged.'} Context, authorship and publication date stay unchanged. Unsaved edits stay here while this page stays open.</p>
       {loading && <p role="status">Loading your saved contribution...</p>}
       {error && <p className="error-text" role="alert">{error}</p>}
-      {saved && <form onSubmit={event => { event.preventDefault(); void save(); }}>
+      {moderated&&<p className="fine-print">Moderation hid this {props.post?'post':'comment'}, so it cannot be edited or receive new discussion. You may still delete your original contribution.</p>}
+      {saved && !moderated&&<form onSubmit={event => { event.preventDefault(); void save(); }}>
         <p className="fine-print">Editing saved revision {saved.revision}.</p>
         {props.post && <label>Title<input aria-label="Edit post title" required minLength={5} maxLength={200} value={title} disabled={pending} onChange={event => setTitle(event.target.value)} /></label>}
         <label>Original text<textarea aria-label={props.post ? 'Edit post details' : 'Edit comment text'} required minLength={props.post ? 20 : 2} maxLength={props.post ? 10000 : 3000} value={body} disabled={pending} onChange={event => setBody(event.target.value)} /></label>

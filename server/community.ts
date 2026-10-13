@@ -49,7 +49,7 @@ const flag = z.union([z.boolean(),z.literal(0),z.literal(1)]).transform(Boolean)
 const rowSchema = z.object({
   id: identifier, kind: kindSchema, title: text(200), body: text(10000), company: text(80), track: text(80),
   level: text(40), region: text(40), author: text(200), createdAt: z.iso.datetime(),
-  votes: z.coerce.number().int().nonnegative().safe(), voted: flag, followed: flag, sample: flag, isMine: flag,
+  votes: z.coerce.number().int().nonnegative().safe(), voted: flag, followed: flag, sample: flag, isMine: flag, moderated:flag,
 });
 const cursorSchema = z.strictObject({ version: z.literal('community-feed-v1'), hash: z.string().regex(/^[a-f0-9]{64}$/),
   id: identifier, createdAt: z.iso.datetime(), votes: z.number().int().nonnegative().safe() });
@@ -57,39 +57,48 @@ function post(value: unknown): CommunityPost {
   const row = rowSchema.parse(value);
   return { id: row.id, kind: row.kind, title: row.title, body: row.body, company: row.company, track: row.track,
     level: row.level, region: row.region, author: row.kind === 'questions' ? 'Anonymous' : row.author,
-    createdAt: row.createdAt, votes: row.votes, voted: row.voted, followed: row.followed, sample: row.sample, isMine: row.isMine };
+    createdAt: row.createdAt, votes: row.votes, voted: row.voted, followed: row.followed, sample: row.sample,
+    isMine: row.isMine,moderated:row.moderated };
 }
 
 export class CommunityReads {
   constructor(private readonly db: Database) {}
+  private visible(alias='p') {
+    return `NOT EXISTS(SELECT 1 FROM community_moderation_targets moderation
+      WHERE moderation.target_type='post' AND moderation.target_id=${alias}.id AND moderation.state='hidden')`;
+  }
   private selection(full: boolean) {
     return `p.id,p.kind,p.title,${full ? 'p.body' : 'substr(p.body,1,241)'} AS body,p.company,p.track,p.level,p.region,
       CASE WHEN p.kind='questions' THEN 'Anonymous' ELSE p.author END AS author,p.created_at AS "createdAt",p.sample,
       (SELECT COUNT(*) FROM votes WHERE post_id=p.id) AS votes,
       EXISTS(SELECT 1 FROM votes WHERE post_id=p.id AND user_id=?) AS voted,
-      EXISTS(SELECT 1 FROM follows WHERE post_id=p.id AND user_id=?) AS followed,p.author_id=? AS "isMine"`;
+      EXISTS(SELECT 1 FROM follows WHERE post_id=p.id AND user_id=?) AS followed,p.author_id=? AS "isMine",
+      EXISTS(SELECT 1 FROM community_moderation_targets moderation WHERE moderation.target_type='post'
+        AND moderation.target_id=p.id AND moderation.state='hidden') AS moderated`;
   }
   async legacy(input: unknown, viewer: string | null) {
     const kind = kindSchema.safeParse(input);
     if (!kind.success) throw new HttpError(400, 'Choose a supported community section.');
-    const rows = await this.db.prepare(`SELECT ${this.selection(true)} FROM posts p WHERE p.kind=?
+    const rows = await this.db.prepare(`SELECT ${this.selection(true)} FROM posts p WHERE p.kind=? AND ${this.visible()}
       ORDER BY p.created_at DESC,p.id DESC LIMIT 1001`).all(viewer ?? '',viewer ?? '',viewer ?? '',kind.data);
     return { posts: rows.slice(0,1000).map(post), truncated: rows.length > 1000 };
   }
-  async detail(id: unknown, input: unknown, viewer: string | null) {
+  async detail(id: unknown, input: unknown, viewer: string | null, includeOwnedHidden=false) {
     const parsedId = identifier.safeParse(id), query = z.strictObject({ kind: kindSchema, track: text(80).optional() }).safeParse(input);
     if (!parsedId.success || !query.success) throw new HttpError(400, 'Choose a valid community post and section.');
+    const ownerAccess=includeOwnedHidden&&viewer!==null;
     const row = await this.db.prepare(`SELECT ${this.selection(true)} FROM posts p WHERE p.id=? AND p.kind=?
+      AND (${this.visible()}${ownerAccess?' OR p.author_id=?':''})
       ${query.data.track ? 'AND p.track=?' : ''}`)
-      .get(viewer ?? '',viewer ?? '',viewer ?? '',parsedId.data,query.data.kind,...(query.data.track ? [query.data.track] : []));
+      .get(viewer ?? '',viewer ?? '',viewer ?? '',parsedId.data,query.data.kind,...(ownerAccess?[viewer]:[]),...(query.data.track ? [query.data.track] : []));
     if (!row) throw new HttpError(404, 'Community post not found in this section.');
     return post(row);
   }
-  async addressedDetail(input: unknown, viewer: string | null) {
+  async addressedDetail(input: unknown, viewer: string | null, includeOwnedHidden=false) {
     const query = z.strictObject({ id: identifier, kind: kindSchema, track: text(80).optional() }).safeParse(input);
     if (!query.success) throw new HttpError(400, 'Choose a valid community post and section.');
     const { id, ...selection } = query.data;
-    return this.detail(id, selection, viewer);
+    return this.detail(id, selection, viewer, includeOwnedHidden);
   }
   async feed(input: unknown, viewer: string | null): Promise<CommunityFeed> {
     const parsed = querySchema.safeParse(input);
@@ -98,7 +107,7 @@ export class CommunityReads {
     if (query.scope !== 'all' && !viewer) throw new HttpError(401, 'Sign in to read your own or followed contributions.');
     const hash = digest(encodePayload({ query, viewer }));
     const cursor = communityPageCursor(encoded,cursorSchema,hash);
-    const clauses: string[] = [], values: string[] = [];
+    const clauses: string[] = [this.visible()], values: string[] = [];
     for (const [field,value] of Object.entries({ kind: query.kind, company: query.company, level: query.level, region: query.region, track: query.track })) {
       if (value) { clauses.push(`p.${field}=?`); values.push(value); }
     }
@@ -124,7 +133,8 @@ export class CommunityReads {
     const page = rows.filter(row => row.id !== null), posts = page.slice(0,query.limit).map(post), last = posts.at(-1);
     const nextCursor = page.length > query.limit && last ? Buffer.from(JSON.stringify({ version:'community-feed-v1',hash,
       id:last.id,createdAt:last.createdAt,votes:last.votes })).toString('base64url') : null;
-    const companies = await this.db.prepare(`SELECT DISTINCT company FROM posts WHERE company<>'' ${query.kind ? 'AND kind=?' : ''}
+    const companies = await this.db.prepare(`SELECT DISTINCT company FROM posts p WHERE company<>'' AND ${this.visible()}
+      ${query.kind ? 'AND kind=?' : ''}
       ORDER BY company LIMIT 201`).all(...(query.kind ? [query.kind] : []));
     return { posts,total,limit:query.limit,nextCursor,companies:companies.slice(0,200).map(row => text(80).parse(row.company)),
       companyOptionsTruncated:companies.length>200 };

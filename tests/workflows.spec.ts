@@ -190,14 +190,14 @@ test('community filtering, publishing, votes, follows and discussion are functio
   await page.getByRole('button',{name:'Publish locally',exact:true}).click();
   await expect(page).toHaveURL(/\/community\/post\?kind=questions&id=/);
   await expect(page.getByRole('heading',{name:'Design a shared annotation tool'})).toBeVisible();
-  await page.getByRole('button',{name:'0 local reports',exact:true}).click();
-  await expect(page.getByRole('button',{name:'1 local reports',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'0 upvotes',exact:true}).click();
+  await expect(page.getByRole('button',{name:'1 upvotes',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Follow',exact:true}).click();
   await expect(page.getByRole('button',{name:'Following',exact:true})).toBeVisible();
   await page.getByLabel('Add a comment').fill('I would start by defining the permission boundary for each document.');
   await page.getByRole('button',{name:'Post comment',exact:true}).click();
   await page.reload();
-  await expect(page.getByRole('button',{name:'1 local reports',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'1 upvotes',exact:true})).toBeVisible();
   await expect(page.getByText('I would start by defining the permission boundary for each document.',{exact:true})).toBeVisible();
 });
 

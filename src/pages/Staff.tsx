@@ -1,6 +1,8 @@
 import {useEffect,useState} from 'react';
 import {Link} from 'react-router-dom';
-import type {StaffAccount,StaffAuditPage,StaffRole,StaffSupportPage,StaffSupportTicket} from '../../shared/types';
+import type {
+  StaffAccount,StaffAuditPage,StaffCommunityReport,StaffCommunityReportPage,StaffRole,StaffSupportPage,StaffSupportTicket,
+} from '../../shared/types';
 import {Badge,PageHeading} from '../components';
 import {request,useStudio} from '../store';
 
@@ -50,6 +52,7 @@ function StaffSupportCard({value,onChange}:{value:StaffSupportTicket;onChange:(t
     }catch(cause){notify(cause instanceof Error?cause.message:'Support ticket update failed.',true);}
     finally{setPending(false);}
   }
+
   async function respond() {
     setPending(true);
     try{
@@ -84,11 +87,44 @@ function StaffSupportCard({value,onChange}:{value:StaffSupportTicket;onChange:(t
   </article>;
 }
 
+function StaffModerationCard({value,administrator,onChange}:{value:StaffCommunityReport;administrator:boolean;onChange:(report:StaffCommunityReport)=>void}) {
+  const {notify}=useStudio(),[reason,setReason]=useState(''),[pending,setPending]=useState(false);
+  async function apply(action:'claim'|'release'|'dismiss'|'hide'|'restore') {
+    setPending(true);
+    try{
+      const report=await request<StaffCommunityReport>(`/api/staff/community/reports/${value.id}`,
+        {revision:value.revision,targetRevision:value.targetRevision,action,reason},'PATCH');
+      onChange(report);setReason('');notify('Moderation state updated with immutable staff evidence.');
+    }catch(cause){notify(cause instanceof Error?cause.message:'Moderation action failed.',true);}
+    finally{setPending(false);}
+  }
+  const available=administrator||value.assignment!=='other',targetAction=value.targetState==='hidden'?'restore':'hide';
+  return <article className="panel">
+    <h3>{value.target.title??`${value.targetType} report`}</h3>
+    <p><Badge tone={value.status==='open'?'amber':'green'}>{value.status}</Badge>{' '}
+      {value.assignment==='me'?'Assigned to you':value.assignment==='other'?'Assigned to another moderator':'Unassigned'} · report revision {value.revision} · target revision {value.targetRevision}</p>
+    <p>{value.target.body}</p>
+    <p className="fine-print">{value.targetType} by {value.target.author}{value.target.resource?` · ${value.target.resource}`:''} · currently {value.targetState}</p>
+    <strong>{value.category.replaceAll('-',' ')}</strong><p>{value.details}</p>
+    <label>Required moderation reason
+      <textarea minLength={20} maxLength={500} value={reason} onChange={event=>setReason(event.target.value)}
+        placeholder="Record the specific policy and evidence reviewed."/>
+    </label>
+    {available&&<button className="button secondary small" disabled={pending||reason.trim().length<20}
+      onClick={()=>void apply(value.assignment==='me'?'release':'claim')}>{value.assignment==='me'?'Release report':'Claim report'}</button>}
+    {available&&value.assignment!==null&&<><button className="button secondary small" disabled={pending||reason.trim().length<20}
+      onClick={()=>void apply(targetAction)}>{targetAction==='hide'?'Hide contribution':'Restore contribution'}</button>
+      {value.status!=='dismissed'&&<button className="button secondary small" disabled={pending||reason.trim().length<20}
+        onClick={()=>void apply('dismiss')}>Dismiss report</button>}</>}
+  </article>;
+}
+
 export function StaffPage() {
   const {data,notify}=useStudio(),[roles,setRoles]=useState<StaffRole[]|null>(null),[error,setError]=useState(''),[email,setEmail]=useState('');
   const [accounts,setAccounts]=useState<StaffAccount[]>([]),[searching,setSearching]=useState(false),[audit,setAudit]=useState<StaffAuditPage>();
   const [auditError,setAuditError]=useState(''),[loadingAudit,setLoadingAudit]=useState(false);
   const [support,setSupport]=useState<StaffSupportPage>(),[supportError,setSupportError]=useState(''),[loadingSupport,setLoadingSupport]=useState(false);
+  const [moderation,setModeration]=useState<StaffCommunityReportPage>(),[moderationError,setModerationError]=useState(''),[loadingModeration,setLoadingModeration]=useState(false);
   useEffect(()=>{
     const controller=new AbortController();
     request<{roles:StaffRole[]}>('/api/staff/session',undefined,'GET',controller.signal)
@@ -97,6 +133,7 @@ export function StaffPage() {
     return()=>controller.abort();
   },[data.user?.id]);
   const administrator=roles?.includes('administrator')??false,canSearch=roles?.some(role=>role==='support-agent'||role==='administrator')??false;
+  const canModerate=roles?.some(role=>role==='moderator'||role==='administrator')??false;
   async function search() {
     setSearching(true);
     try{
@@ -121,6 +158,14 @@ export function StaffPage() {
     }catch(cause){setSupportError(cause instanceof Error?cause.message:'Support queue could not be loaded.');}
     finally{setLoadingSupport(false);}
   }
+  async function loadModeration(cursor?:string) {
+    setLoadingModeration(true);
+    try{
+      const page=await request<StaffCommunityReportPage>(`/api/staff/community/reports${cursor?`?${new URLSearchParams({cursor})}`:''}`);
+      setModeration(current=>cursor&&current?{reports:[...current.reports,...page.reports],nextCursor:page.nextCursor}:page);setModerationError('');
+    }catch(cause){setModerationError(cause instanceof Error?cause.message:'Moderation queue could not be loaded.');}
+    finally{setLoadingModeration(false);}
+  }
   return <>
     <PageHeading eyebrow="STAFF OPERATIONS" title="Account access, without impersonation." description="Privileged actions require a current managed session, verified MFA, a fresh sign-in, an active time-bounded role and an explicit reason."/>
     {error&&<section className="panel"><h2>Confirm privileged access</h2><p role="alert">{error}</p><p>Use an MFA-enabled identity provider and confirm that sign-in again. Fresh authentication alone is not treated as MFA.</p><Link className="button secondary small" to="/account">Open sign-in security</Link></section>}
@@ -142,6 +187,16 @@ export function StaffPage() {
           onChange={updated=>setSupport(current=>current&&({...current,tickets:current.tickets.map(item=>item.id===updated.id?updated:item)}))}/>)}
         {support&&!support.tickets.length&&<p>No support requests are saved.</p>}
         {support?.nextCursor&&<button className="button secondary small" disabled={loadingSupport} onClick={()=>void loadSupport(support.nextCursor!)}>Load older support requests</button>}
+      </section>}
+      {canModerate&&<section className="panel"><h2>Community moderation queue</h2>
+        <p>Reports and actions stay inside the authenticated Studio. Automated enforcement, appeals, external notifications and a staffed SLA are not connected.</p>
+        {!moderation&&<button className="button secondary small" disabled={loadingModeration} onClick={()=>void loadModeration()}>Load moderation queue</button>}
+        {moderationError&&<><p role="alert">{moderationError}</p><button className="button secondary small" disabled={loadingModeration} onClick={()=>void loadModeration()}>Retry moderation queue</button></>}
+        {moderation?.reports.map(report=><StaffModerationCard key={report.id} value={report} administrator={administrator}
+          onChange={updated=>setModeration(current=>current&&({...current,reports:current.reports.map(item=>item.id===updated.id?updated:item)}))}/>)}
+        {moderation&&!moderation.reports.length&&<p>No community reports are saved.</p>}
+        {moderation?.nextCursor&&<button className="button secondary small" disabled={loadingModeration}
+          onClick={()=>void loadModeration(moderation.nextCursor!)}>Load older community reports</button>}
       </section>}
       {administrator&&<section className="panel"><h2>Immutable staff audit</h2>
         {!audit&&<button className="button secondary small" disabled={loadingAudit} onClick={()=>void loadAudit()}>View recent staff audit</button>}

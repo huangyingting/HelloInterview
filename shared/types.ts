@@ -28,6 +28,18 @@ export interface StaffSupportTicket {
   status:'open'|'pending'|'resolved';revision:number;assignment:'me'|'other'|null;ownerAccess:boolean;
 }
 export interface StaffSupportPage {tickets:StaffSupportTicket[];nextCursor:string|null;delivery:'in-app-only'}
+export type CommunityReportCategory='spam'|'harassment'|'privacy'|'misinformation'|'other';
+export interface CommunityReportReceipt {
+  id:string;requestId:string;targetType:'post'|'comment';targetId:string;
+  category:CommunityReportCategory;status:'saved';createdAt:string;delivery:'moderation-queue-only';
+}
+export interface StaffCommunityReport {
+  id:string;targetType:'post'|'comment';targetId:string;category:CommunityReportCategory;details:string;
+  status:'open'|'dismissed'|'actioned';revision:number;assignment:'me'|'other'|null;
+  targetState:'visible'|'hidden';targetRevision:number;createdAt:string;updatedAt:string;
+  target:{title:string|null;body:string;author:string;resource:string|null};
+}
+export interface StaffCommunityReportPage {reports:StaffCommunityReport[];nextCursor:string|null}
 
 export interface ContentSection {
   title: string;
@@ -337,6 +349,7 @@ export interface CommunityPost {
   voted: boolean;
   followed: boolean;
   sample: boolean;
+  moderated: boolean;
 }
 export interface OwnedCommunityPost { post: CommunityPost; revision: number }
 export interface CommunityFeed {
@@ -356,6 +369,7 @@ export interface Comment {
   parentId: string | null;
   isMine: boolean;
   deleted: boolean;
+  moderated: boolean;
 }
 export interface OwnedCommunityComment { comment: Comment; revision: number }
 export interface CommunityCommentPage { comments: Comment[]; limit: number; nextCursor: string | null }

@@ -131,6 +131,52 @@ export function openDatabase(dataDir: string): DatabaseSync {
         comment_id TEXT PRIMARY KEY REFERENCES comments(id) ON DELETE CASCADE,
         deleted_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS community_moderation_targets (
+        target_type TEXT NOT NULL CHECK(target_type IN ('post','comment')),
+        target_id TEXT NOT NULL CHECK(length(target_id) BETWEEN 1 AND 200 AND instr(target_id,char(0))=0),
+        state TEXT NOT NULL CHECK(state IN ('visible','hidden')),
+        revision INTEGER NOT NULL CHECK(revision>0),
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(target_type,target_id)
+      );
+      CREATE TABLE IF NOT EXISTS community_reports (
+        id TEXT PRIMARY KEY,
+        reporter_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+        request_key TEXT NOT NULL,
+        input_hash TEXT NOT NULL CHECK(length(input_hash)=64 AND input_hash NOT GLOB '*[^0-9a-f]*'),
+        target_type TEXT NOT NULL CHECK(target_type IN ('post','comment')),
+        target_id TEXT NOT NULL CHECK(length(target_id) BETWEEN 1 AND 200 AND instr(target_id,char(0))=0),
+        category TEXT NOT NULL CHECK(category IN ('spam','harassment','privacy','misinformation','other')),
+        details TEXT NOT NULL CHECK(length(details) BETWEEN 20 AND 1000 AND instr(details,char(0))=0),
+        state TEXT NOT NULL DEFAULT 'open' CHECK(state IN ('open','dismissed','actioned')),
+        assigned_to TEXT REFERENCES users(id) ON DELETE RESTRICT,
+        report_revision INTEGER NOT NULL DEFAULT 0 CHECK(report_revision>=0),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS community_reports_owner_key ON community_reports(reporter_id,request_key) WHERE reporter_id IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS community_reports_queue ON community_reports(updated_at DESC,id DESC);
+      CREATE INDEX IF NOT EXISTS community_reports_owner_open ON community_reports(reporter_id,state);
+      CREATE TABLE IF NOT EXISTS community_moderation_events (
+        id TEXT PRIMARY KEY,
+        report_id TEXT NOT NULL REFERENCES community_reports(id) ON DELETE RESTRICT,
+        target_type TEXT NOT NULL CHECK(target_type IN ('post','comment')),
+        target_id TEXT NOT NULL,
+        actor_ref TEXT NOT NULL,
+        actor_role TEXT NOT NULL CHECK(actor_role IN ('moderator','administrator')),
+        action TEXT NOT NULL CHECK(action IN ('claim','release','dismiss','hide','restore')),
+        reason TEXT NOT NULL CHECK(length(reason) BETWEEN 20 AND 500 AND instr(reason,char(0))=0),
+        prior_report_revision INTEGER NOT NULL CHECK(prior_report_revision>=0),
+        result_report_revision INTEGER NOT NULL CHECK(result_report_revision=prior_report_revision+1),
+        prior_target_revision INTEGER,
+        result_target_revision INTEGER,
+        created_at TEXT NOT NULL,
+        CHECK((prior_target_revision IS NULL AND result_target_revision IS NULL) OR
+          (prior_target_revision IS NOT NULL AND prior_target_revision>=0 AND result_target_revision=prior_target_revision+1)),
+        CHECK((action IN ('hide','restore') AND prior_target_revision IS NOT NULL) OR
+          (action IN ('claim','release','dismiss') AND prior_target_revision IS NULL))
+      );
+      CREATE INDEX IF NOT EXISTS community_moderation_events_report ON community_moderation_events(report_id,created_at,id);
       CREATE TABLE IF NOT EXISTS community_comment_deletions (
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         request_id TEXT NOT NULL,
@@ -163,6 +209,44 @@ export function openDatabase(dataDir: string): DatabaseSync {
             EXISTS(SELECT 1 FROM community_comment_tombstones tombstone WHERE tombstone.comment_id=OLD.id)
         )
         BEGIN SELECT RAISE(ABORT,'Community comments allow only body edits, cross-resource parent cleanup or receipt-bound tombstoning.'); END;
+      CREATE TRIGGER IF NOT EXISTS protect_community_report BEFORE UPDATE ON community_reports
+      WHEN NOT (
+        OLD.reporter_id IS NOT NULL AND NEW.reporter_id IS NULL AND
+          NEW.id=OLD.id AND NEW.request_key=OLD.request_key AND NEW.input_hash=OLD.input_hash AND
+          NEW.target_type=OLD.target_type AND NEW.target_id=OLD.target_id AND NEW.category=OLD.category AND
+          NEW.details=OLD.details AND NEW.state=OLD.state AND NEW.assigned_to IS OLD.assigned_to AND
+          NEW.report_revision=OLD.report_revision AND NEW.created_at=OLD.created_at AND NEW.updated_at=OLD.updated_at OR
+        NEW.id=OLD.id AND NEW.reporter_id IS OLD.reporter_id AND NEW.request_key=OLD.request_key AND
+          NEW.input_hash=OLD.input_hash AND NEW.target_type=OLD.target_type AND NEW.target_id=OLD.target_id AND
+          NEW.category=OLD.category AND NEW.details=OLD.details AND NEW.created_at=OLD.created_at AND
+          NEW.report_revision=OLD.report_revision+1 AND NEW.updated_at>=OLD.updated_at
+      )
+      BEGIN SELECT RAISE(ABORT,'Community reports allow only reporter retirement or revision-fenced staff state changes.'); END;
+      CREATE TRIGGER IF NOT EXISTS initialize_community_report BEFORE INSERT ON community_reports
+      WHEN NEW.reporter_id IS NULL OR NEW.state<>'open' OR NEW.assigned_to IS NOT NULL OR NEW.report_revision<>0 OR NEW.created_at<>NEW.updated_at
+      BEGIN SELECT RAISE(ABORT,'New community reports must begin as unassigned revision-zero owner records.'); END;
+      CREATE TRIGGER IF NOT EXISTS protect_community_moderation_target BEFORE UPDATE ON community_moderation_targets
+      WHEN NOT (NEW.target_type=OLD.target_type AND NEW.target_id=OLD.target_id AND NEW.state<>OLD.state AND
+        NEW.revision=OLD.revision+1 AND NEW.updated_at>=OLD.updated_at)
+      BEGIN SELECT RAISE(ABORT,'Moderation target changes require one revision-fenced state transition.'); END;
+      CREATE TRIGGER IF NOT EXISTS initialize_community_moderation_target BEFORE INSERT ON community_moderation_targets
+      WHEN NEW.revision<>1
+      BEGIN SELECT RAISE(ABORT,'New moderation targets must begin at revision one.'); END;
+      CREATE TRIGGER IF NOT EXISTS validate_community_moderation_event BEFORE INSERT ON community_moderation_events
+      WHEN NOT EXISTS(SELECT 1 FROM community_reports report WHERE report.id=NEW.report_id AND
+        report.target_type=NEW.target_type AND report.target_id=NEW.target_id AND report.report_revision=NEW.result_report_revision)
+      OR NEW.result_target_revision IS NOT NULL AND NOT EXISTS(
+        SELECT 1 FROM community_moderation_targets target WHERE target.target_type=NEW.target_type AND
+          target.target_id=NEW.target_id AND target.revision=NEW.result_target_revision)
+      BEGIN SELECT RAISE(ABORT,'Moderation evidence must reference resulting report and target revisions.'); END;
+      CREATE TRIGGER IF NOT EXISTS immutable_community_moderation_event_update BEFORE UPDATE ON community_moderation_events
+      BEGIN SELECT RAISE(ABORT,'Community moderation evidence is immutable.'); END;
+      CREATE TRIGGER IF NOT EXISTS immutable_community_moderation_event_delete BEFORE DELETE ON community_moderation_events
+      BEGIN SELECT RAISE(ABORT,'Community moderation evidence is immutable.'); END;
+      CREATE TRIGGER IF NOT EXISTS immutable_community_report_delete BEFORE DELETE ON community_reports
+      BEGIN SELECT RAISE(ABORT,'Community moderation evidence is immutable.'); END;
+      CREATE TRIGGER IF NOT EXISTS immutable_community_moderation_target_delete BEFORE DELETE ON community_moderation_targets
+      BEGIN SELECT RAISE(ABORT,'Community moderation evidence is immutable.'); END;
       CREATE TRIGGER IF NOT EXISTS apply_community_comment_deletion AFTER INSERT ON community_comment_deletions
         BEGIN
           SELECT CASE WHEN NOT EXISTS(

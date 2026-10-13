@@ -30,6 +30,7 @@ import { CommunityReads, communityActionSchema, communityIdentifier, communityDi
 import { communityKinds } from '../shared/community-routes';
 import { CommunityContributions } from './community-contributions';
 import { CommunitySubmissions } from './community-submissions';
+import { CommunityModeration } from './community-moderation';
 import { StaffAdministration } from './staff';
 import type { PrivacyExports } from './privacy';
 function localSessionHash(req: express.Request) {
@@ -83,6 +84,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   if (config.billing && !billing) throw new Error('Configured billing notifications must be opened before serving requests.');
   if (config.identity && !privacy) throw new Error('Managed identity requires durable privacy export processing.');
   const identity = config.identity && config.publicOrigin ? new ManagedIdentity(db, config.identity, config.publicOrigin, shutdown, identityTransport, lifecycle) : null;
+  const moderation = new CommunityModeration(db, identity);
   const entitlements = identity ? new Entitlements(db) : null;
   const support = identity ? new SupportRequests(db, identity) : null;
   const staff = identity ? new StaffAdministration(db, identity) : null;
@@ -942,11 +944,11 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   });
   app.get('/api/community/post',async(req,res)=>{
     const user=await currentUser(req);
-    res.json(await community.addressedDetail(req.query,user?.id ?? null));
+    res.json(await community.addressedDetail(req.query,user?.id ?? null,!identity));
   });
   app.get('/api/community/posts/:id',async(req,res)=>{
     const user=await currentUser(req);
-    res.json(await community.detail(req.params.id,req.query,user?.id ?? null));
+    res.json(await community.detail(req.params.id,req.query,user?.id ?? null,!identity));
   });
   app.post('/api/posts', async (req, res) => {
     const user = (await requireUser(req)), body = record(req.body);
@@ -961,7 +963,10 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   async function postMembership(user: User, id: string, action: 'vote' | 'follow', desired?: boolean) {
     await db.transaction(async () => {
       if (!(await db.prepare(`SELECT id FROM users WHERE id=?${db.dialect === 'postgres' ? ' FOR UPDATE' : ''}`).get(user.id))) throw new HttpError(401, 'Sign in to update this community contribution.');
-      if (!(await db.prepare('SELECT id FROM posts WHERE id=?').get(id))) throw new HttpError(404, 'Post not found.');
+      if (!(await db.prepare(`SELECT p.id FROM posts p WHERE p.id=? AND NOT EXISTS(
+        SELECT 1 FROM community_moderation_targets moderation
+          WHERE moderation.target_type='post' AND moderation.target_id=p.id AND moderation.state='hidden')`).get(id)))
+        throw new HttpError(404, 'Post not found.');
       const table = action === 'vote' ? 'votes' : 'follows';
       const exists = !!await db.prepare(`SELECT user_id FROM ${table} WHERE post_id=? AND user_id=?`).get(id, user.id);
       const enabled = desired ?? !exists;
@@ -1025,6 +1030,10 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     const user=await requireLocalContributor(req);
     res.json(await contributions.removeComment(req.body,user.id,()=>assertLocalCommunitySession(req,user)));
   });
+  app.post('/api/community/reports',async(req,res)=>{
+    const user=await requireUser(req);
+    res.status(201).json(await moderation.report(user,req.body,()=>identity?identity.assertWritable(user):assertLocalCommunitySession(req,user)));
+  });
   app.post('/api/comments', async (req, res) => {
     const user = (await requireUser(req)), body = record(req.body);
     const resource = commentResource(body.resource);
@@ -1035,11 +1044,16 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
       if (resource.startsWith('post/')) {
         if (!await db.prepare(`SELECT id FROM users WHERE id=?${db.dialect === 'postgres' ? ' FOR UPDATE' : ''}`).get(user.id)) throw new HttpError(401, 'Sign in to join this discussion.');
         await assertLocalCommunitySession(req, user);
-        if (!await db.prepare(`SELECT id FROM posts WHERE id=?${db.dialect === 'postgres' ? ' FOR UPDATE' : ''}`).get(resource.slice(5))) throw new HttpError(404, 'This post is no longer available for discussion.');
+        if (!await db.prepare(`SELECT p.id FROM posts p WHERE p.id=? AND NOT EXISTS(
+          SELECT 1 FROM community_moderation_targets moderation WHERE moderation.target_type='post'
+            AND moderation.target_id=p.id AND moderation.state='hidden')${db.dialect === 'postgres' ? ' FOR UPDATE OF p' : ''}`).get(resource.slice(5)))
+          throw new HttpError(404, 'This post is no longer available for discussion.');
       }
       if (parentId && !(await db.prepare(`SELECT comments.id FROM comments
         LEFT JOIN community_comment_tombstones tombstone ON tombstone.comment_id=comments.id
-        WHERE comments.id=? AND comments.resource=? AND comments.user_id IS NOT NULL AND tombstone.comment_id IS NULL`).get(parentId, resource)))
+        LEFT JOIN community_moderation_targets moderation ON moderation.target_type='comment' AND moderation.target_id=comments.id
+        WHERE comments.id=? AND comments.resource=? AND comments.user_id IS NOT NULL AND tombstone.comment_id IS NULL
+          AND COALESCE(moderation.state,'visible')<>'hidden'`).get(parentId, resource)))
         throw new HttpError(400, 'Reply must belong to an available comment in this discussion.');
       await db.prepare('INSERT INTO comments VALUES (?,?,?,?,?,?,?)').run(id, resource, user.id, user.name, comment, new Date().toISOString(), parentId);
       return contributions.createdComment(id,user.id);
@@ -1147,6 +1161,12 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     });
     app.post('/api/staff/support/:id/replies',async(req,res)=>{
       const user=await requireUser(req);await identity.admitStaff(user,res);res.status(201).json(await support!.respond(user,req.params.id,req.body));
+    });
+    app.get('/api/staff/community/reports',async(req,res)=>{
+      const user=await requireUser(req);await identity.admitStaff(user,res);res.json(await moderation.queue(user,req.query));
+    });
+    app.patch('/api/staff/community/reports/:id',async(req,res)=>{
+      const user=await requireUser(req);await identity.admitStaff(user,res);res.json(await moderation.act(user,req.params.id,req.body));
     });
   }
   app.use('/api', (_req, res) => res.status(404).json({ error: 'API endpoint not found.' }));

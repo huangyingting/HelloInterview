@@ -253,6 +253,8 @@ export class PrivacyExports {
           WHERE user_id=? ORDER BY created_at,request_id`,owner),
         commentDeletions:await all(`SELECT request_id,comment_id,resource,prior_revision,result_revision,deleted_at
           FROM community_comment_deletions WHERE user_id=? ORDER BY deleted_at,request_id`,owner),
+        reports:await all(`SELECT id,request_key,target_type,target_id,category,details,state,report_revision,created_at,updated_at
+          FROM community_reports WHERE reporter_id=? ORDER BY created_at,id`,owner),
       },
       support:await Promise.all((await all(`SELECT id,email,body,created_at,handling_status,support_revision,support_updated_at
         FROM support WHERE user_id=? ORDER BY created_at,id`,owner)).map(async ticket=>({

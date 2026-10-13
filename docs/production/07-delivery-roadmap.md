@@ -24,7 +24,7 @@ production feature. An open package can therefore contain a closed checkpoint.
 | W08 - Authentic payment lifecycle | [#9](https://github.com/huangyingting/HelloInterview/issues/9) | [#22 - Sandbox billing/subscription lifecycle](https://github.com/huangyingting/HelloInterview/issues/22) |
 | W09 - Approved AI dispatch | [#10](https://github.com/huangyingting/HelloInterview/issues/10) | [#23 - Usage/native-intent/provenance foundation](https://github.com/huangyingting/HelloInterview/issues/23) |
 | W10 - Staff/support/privacy | [#11](https://github.com/huangyingting/HelloInterview/issues/11) | [#24 - Private member-support receipts](https://github.com/huangyingting/HelloInterview/issues/24); [#28 - MFA staff account administration](https://github.com/huangyingting/HelloInterview/issues/28) |
-| W11 - Community lifecycle/moderation | [#12](https://github.com/huangyingting/HelloInterview/issues/12) | [#25 - Reads/local ownership/pagination](https://github.com/huangyingting/HelloInterview/issues/25); [#27 - Comment submission receipts](https://github.com/huangyingting/HelloInterview/issues/27); [#32 - Recoverable comment deletion](https://github.com/huangyingting/HelloInterview/issues/32) |
+| W11 - Community lifecycle/moderation | [#12](https://github.com/huangyingting/HelloInterview/issues/12) | [#25 - Reads/local ownership/pagination](https://github.com/huangyingting/HelloInterview/issues/25); [#27 - Comment submission receipts](https://github.com/huangyingting/HelloInterview/issues/27); [#32 - Recoverable comment deletion](https://github.com/huangyingting/HelloInterview/issues/32); [#33 - MFA community reports/moderation](https://github.com/huangyingting/HelloInterview/issues/33) |
 | W12 - Reviewed/accessible product | [#13](https://github.com/huangyingting/HelloInterview/issues/13) | [#26 - Deferred/keyboard/address recovery](https://github.com/huangyingting/HelloInterview/issues/26) |
 | W13 - Integrated acceptance/launch | [#14](https://github.com/huangyingting/HelloInterview/issues/14) | Pending |
 
@@ -56,7 +56,7 @@ explicit gates; issue creation or closure cannot supply them.
 | W08 | In progress; sandbox notifications, owned Checkout/recheckout, canonical funding/ledger, gated service authority, owned stop/resume cycles and restricted Portal checkpoints implemented | Pinned official Stripe SDK/API, signed durable evidence, stable owned financial keys, complete funding/adjustment traces, default-off calendar grants/scoped revocations, acknowledged exact-target renewal/recheckout with retained paid history and fresh restricted card-method/invoice sessions with URL-free audit; authentic provider evidence, commercial/grace policy, history partitioning/paid deletion and operated lifecycle remain |
 | W09 | In progress; internal usage-ledger, native-intent and saved-input provenance checkpoints implemented | Explicit immutable sandbox manifests, atomic replica unit/cost/native/private-input reservations, pinned operation/job/generation, owned source/model/prompt hashes, exact UTF-8 bounds, transactional raw-payload retirement, overlap-safe original-calendar windows, unknown holds and coupled cancellation/SQL settlement; actual managed provider dispatch, consent/UX, model/token/cost policy, operating reconciliation and approval remain |
 | W10 | In progress; member receipts, MFA staff administration, durable exports, deletion cooling-off and in-app support operations implemented | Private paginated receipts; MFA/role-gated support queue with revision-fenced assignment/status and owner-visible replies; exact masked account controls and immutable audit; fresh comprehensive exports; fresh deletion admission, restricted recovery, seven-day cancellation and explicit due blockers. Impersonation, external helpdesk/email, staffed SLA, physical erasure, processor/billing completion and retention approvals remain |
-| W11 | In progress; private-safe reads, opaque addresses, local owner, comment-receipt and deletion-tombstone checkpoints implemented | Minimized DTOs with server ownership, bounded feeds/search/discussions, exact legacy-ID routing, current-session/revision-fenced original-post/comment edits, atomic actor/key-bound comment creation recovery and exact-retry owner deletion that strips comment identity/text while preserving existing reply context; managed writing remains denied and retention approval, broader ordered intents, moderation/report/appeal and publication gates remain |
+| W11 | In progress; private-safe reads, local owner/comment lifecycle and MFA reports/moderation checkpoints implemented | Minimized DTOs with server ownership; bounded feeds/search/discussions; exact legacy-ID routing; revision-fenced owner edits/deletion; key-bound comment/report recovery; MFA/role-gated report claim/dismiss/hide/restore with immutable evidence; consistent hidden post/comment behavior. Managed writing remains denied and retention approval, appeals, abuse operations, staffing and publication gates remain |
 | W12 | In progress; deferred-screen, keyboard and malformed-address checkpoints implemented | Separated discovery graphs, fixed cold JavaScript budgets, explicit loading/failure/recovery, semantic ready-screen/skip focus, keyboard-safe mobile navigation, rapid Search and invalid-address recovery; reviewed offers, broad accessibility and operated serving remain |
 | W13 | Pending | Integrated provider lifecycle, load/recovery/security evidence and operating/launch gates |
 
@@ -162,11 +162,20 @@ The [W11 community-read runbook](27-private-safe-community-reads.md) records
 migration 21, minimized public identities, query/viewer-bound cursor feeds and
 independent full-text detail across Community and global Search. It preserves
 local contributions but authorizes no managed writing or editorial publication;
-staff moderation, reports/appeals, abuse and operating approval remain.
+at that checkpoint staff moderation, reports/appeals, abuse and operating
+approval remained. Migration 31 now supplies bounded reports and reviewed
+hide/restore mechanics, while appeals, abuse operations, staffing and operating
+approval remain.
 The [W11 comment-deletion runbook](39-recoverable-owner-comment-deletion.md)
 records migration 30, exact owner/key/revision receipts, stripped comment
 identity/text and non-repliable tombstones that preserve existing reply context.
 It supplies no legal retention/privacy-erasure approval, staff moderation or
+managed-writing authority.
+The [W11 moderation runbook](40-mfa-community-reports-moderation.md) records
+migration 31, authenticated owner/key-bound reports, a minimized MFA/role-gated
+queue, revision-fenced claim/dismiss/hide/restore actions and consistent
+post/comment visibility. It supplies no appeals, automated enforcement,
+notification delivery, moderation staffing, retention approval or
 managed-writing authority.
 The [W12 deferred-screen runbook](28-deferred-screen-delivery.md) records the
 fixed eager/cold graph budgets, compatibility metadata split, persistent shell,
