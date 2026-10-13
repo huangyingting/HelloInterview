@@ -167,12 +167,13 @@ test('runtime-only release retains identity after restart and operates canonical
     assert.equal(code, 0, diagnostics); assert.equal(signal, null);
   };
   const deadline = Date.now() + 15000;
-  while ((await second.bootstrap()).user) {
+  while (true) {
+    const [bootstrap,operation]=await Promise.all([second.bootstrap(),f.lifecycle.jobs.operation(held.data.operationId)]);
+    if(!bootstrap.user&&operation.completedAt)break;
     assert.equal(worker.exitCode, null, diagnostics);
     assert.ok(Date.now() < deadline, `The compiled worker did not reconcile: ${diagnostics}`);
     await delay(200);
   }
-  assert.ok((await f.lifecycle.jobs.operation(held.data.operationId)).completedAt);
   await stopWorker();
   await assert.rejects(promisify(execFile)(process.execPath, ['dist-server/index.js'], {
     cwd: release, timeout: 15000, env: { ...env,
