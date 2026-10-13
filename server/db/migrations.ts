@@ -1243,6 +1243,76 @@ export const migrations = [{
       CREATE TRIGGER immutable_community_appeal_delete BEFORE DELETE ON community_appeals
         FOR EACH ROW EXECUTE FUNCTION immutable_community_appeal_event();
     `,
+  }, {
+    version: 33,
+    name: 'privacy-safe-community-author-mutes',
+    sql: `
+      CREATE TABLE community_mutes (
+        id UUID PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        subject_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        target_type TEXT NOT NULL CHECK(target_type IN ('post','comment')),
+        target_id TEXT NOT NULL CHECK(length(target_id) BETWEEN 1 AND 200),
+        state TEXT NOT NULL CHECK(state IN ('muted','unmuted')),
+        revision INTEGER NOT NULL CHECK(revision>0),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(owner_id,subject_id),
+        CHECK(owner_id<>subject_id)
+      );
+      CREATE INDEX community_mutes_owner_state ON community_mutes(owner_id,state,updated_at DESC,id DESC);
+      CREATE INDEX community_mutes_subject ON community_mutes(subject_id,owner_id);
+      CREATE TABLE community_mute_intents (
+        owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        request_key UUID NOT NULL,
+        input_hash TEXT NOT NULL CHECK(input_hash ~ '^[0-9a-f]{64}$'),
+        mute_id UUID NOT NULL REFERENCES community_mutes(id) ON DELETE CASCADE,
+        target_type TEXT NOT NULL CHECK(target_type IN ('post','comment')),
+        target_id TEXT NOT NULL CHECK(length(target_id) BETWEEN 1 AND 200),
+        muted BOOLEAN NOT NULL,
+        prior_revision INTEGER NOT NULL CHECK(prior_revision>=0),
+        result_revision INTEGER NOT NULL CHECK(result_revision=prior_revision OR result_revision=prior_revision+1),
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(owner_id,request_key)
+      );
+      CREATE INDEX community_mute_intents_owner_order
+        ON community_mute_intents(owner_id,created_at DESC,request_key DESC);
+      CREATE FUNCTION protect_community_mute() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NOT (NEW.id=OLD.id AND NEW.owner_id=OLD.owner_id AND NEW.subject_id=OLD.subject_id AND
+            NEW.target_type=OLD.target_type AND NEW.target_id=OLD.target_id AND NEW.state<>OLD.state AND
+            NEW.revision=OLD.revision+1 AND NEW.created_at=OLD.created_at AND NEW.updated_at>=OLD.updated_at)
+          THEN RAISE EXCEPTION 'Community mutes allow only one revision-fenced desired-state transition.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER protect_community_mute BEFORE UPDATE ON community_mutes
+        FOR EACH ROW EXECUTE FUNCTION protect_community_mute();
+      CREATE FUNCTION initialize_community_mute() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NEW.state<>'muted' OR NEW.revision<>1 OR NEW.created_at<>NEW.updated_at
+          THEN RAISE EXCEPTION 'New community mutes must begin muted at revision one.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER initialize_community_mute BEFORE INSERT ON community_mutes
+        FOR EACH ROW EXECUTE FUNCTION initialize_community_mute();
+      CREATE FUNCTION validate_community_mute_intent() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NOT EXISTS(SELECT 1 FROM community_mutes mute WHERE mute.id=NEW.mute_id AND mute.owner_id=NEW.owner_id AND
+            mute.revision=NEW.result_revision AND mute.state=CASE WHEN NEW.muted THEN 'muted' ELSE 'unmuted' END)
+          THEN RAISE EXCEPTION 'Mute intents must reference the resulting owned desired state.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER validate_community_mute_intent BEFORE INSERT ON community_mute_intents
+        FOR EACH ROW EXECUTE FUNCTION validate_community_mute_intent();
+      CREATE FUNCTION immutable_community_mute_intent() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN RAISE EXCEPTION 'Community mute intent receipts are immutable.'; END;
+      $$;
+      CREATE TRIGGER immutable_community_mute_intent BEFORE UPDATE OR DELETE ON community_mute_intents
+        FOR EACH ROW EXECUTE FUNCTION immutable_community_mute_intent();
+    `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

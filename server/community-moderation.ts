@@ -111,6 +111,12 @@ export class CommunityModeration {
         return this.receipt(concurrent);
       }
       if(!await this.targetExists(request.targetType,request.targetId,true,true))throw new HttpError(404,'This community contribution is unavailable for reporting.');
+      const muted=request.targetType==='post'
+        ?await this.db.prepare(`SELECT mute.id FROM posts p JOIN community_mutes mute
+          ON mute.owner_id=? AND mute.subject_id=p.author_id AND mute.state='muted' WHERE p.id=?`).get(user.id,request.targetId)
+        :await this.db.prepare(`SELECT mute.id FROM comments JOIN community_mutes mute
+          ON mute.owner_id=? AND mute.subject_id=comments.user_id AND mute.state='muted' WHERE comments.id=?`).get(user.id,request.targetId);
+      if(muted)throw new HttpError(404,'This community contribution is unavailable for reporting.');
       const duplicate=await this.db.prepare(`SELECT id FROM community_reports WHERE reporter_id=? AND target_type=? AND target_id=? AND state='open'`).get(
         user.id,request.targetType,request.targetId);
       if(duplicate)throw new HttpError(409,'You already have an open report for this contribution.');

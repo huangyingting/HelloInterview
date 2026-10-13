@@ -257,6 +257,10 @@ export class PrivacyExports {
           FROM community_reports WHERE reporter_id=? ORDER BY created_at,id`,owner),
         appeals:await all(`SELECT id,request_key,target_type,target_id,target_revision,statement,state,appeal_revision,created_at,updated_at
           FROM community_appeals WHERE owner_id=? ORDER BY created_at,id`,owner),
+        mutes:await all(`SELECT id,target_type,target_id,state,revision,created_at,updated_at
+          FROM community_mutes WHERE owner_id=? ORDER BY created_at,id`,owner),
+        muteIntents:await all(`SELECT request_key,mute_id,target_type,target_id,muted,prior_revision,result_revision,created_at
+          FROM community_mute_intents WHERE owner_id=? ORDER BY created_at,request_key`,owner),
       },
       support:await Promise.all((await all(`SELECT id,email,body,created_at,handling_status,support_revision,support_updated_at
         FROM support WHERE user_id=? ORDER BY created_at,id`,owner)).map(async ticket=>({

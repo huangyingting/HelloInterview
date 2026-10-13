@@ -10,6 +10,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { CommunityReads } from '../server/community';
 import { CommunityContributions } from '../server/community-contributions';
 import { CommunityModeration } from '../server/community-moderation';
+import { CommunityMutes } from '../server/community-mutes';
 import { CommunitySubmissions } from '../server/community-submissions';
 import { localConnection, postgresConnection, type Database } from '../server/db/connection';
 import { assertDatabaseVersion, migrateDatabase, migrations } from '../server/db/migrations';
@@ -73,7 +74,7 @@ test('community URL helpers preserve exact bounded data and reject malformed or 
   assert.deepEqual(parseStudioAddress('/community/questions/literal%252F','').segments,['community','questions','literal%2F']);
 });
 
-test('migrations 21-32 preserve actual legacy community data while adding deletion, moderation and appeal state',async t=>{
+test('migrations 21-33 preserve actual legacy community data while adding deletion, moderation, appeal and personal-mute state',async t=>{
   const f=await fixture(t,'postgres'),post=await f.add();
   await f.db.prepare('INSERT INTO votes(post_id,user_id) VALUES(?,?)').run(post.id,f.owners[0]);
   await f.db.prepare('INSERT INTO follows(post_id,user_id) VALUES(?,?)').run(post.id,f.owners[1]);
@@ -127,6 +128,8 @@ test('migrations 21-32 preserve actual legacy community data while adding deleti
   assert.deepEqual(await legacy.prepare('SELECT * FROM community_moderation_events').all(),[]);
   assert.deepEqual(await legacy.prepare('SELECT * FROM community_appeals').all(),[]);
   assert.deepEqual(await legacy.prepare('SELECT * FROM community_appeal_events').all(),[]);
+  assert.deepEqual(await legacy.prepare('SELECT * FROM community_mutes').all(),[]);
+  assert.deepEqual(await legacy.prepare('SELECT * FROM community_mute_intents').all(),[]);
   assert.equal((await legacy.prepare(`SELECT is_nullable FROM information_schema.columns
     WHERE table_schema=current_schema() AND table_name='comments' AND column_name='user_id'`).get())?.is_nullable,'YES');
   assert.equal((await legacy.prepare('SELECT revision FROM community_comment_revisions WHERE comment_id=?').get(commentId))?.revision,1);
@@ -140,7 +143,8 @@ test('migrations 21-32 preserve actual legacy community data while adding deleti
     'community_comment_submissions_resource','community_comment_deletions_owner','community_reports_owner_key','community_reports_queue',
     'community_reports_owner_open','community_moderation_events_report','community_appeals_owner_key',
     'community_appeals_owner_target_revision','community_appeals_queue','community_appeals_owner_order',
-    'community_appeal_events_appeal'])assert.ok(indexes.some(row=>row.indexname===name));
+    'community_appeal_events_appeal','community_mutes_owner_state','community_mutes_subject','community_mute_intents_owner_order'])
+    assert.ok(indexes.some(row=>row.indexname===name));
   await legacy.prepare(`INSERT INTO identity_abuse_buckets(scope,fingerprint,attempts,started,expires)
     VALUES('community-account',?,1,1,2)`).run('a'.repeat(64));
   assert.equal((await new CommunityReads(legacy).detail(post.id,{kind:'questions'},f.owners[0])).isMine,true);
@@ -428,6 +432,53 @@ for(const dialect of ['sqlite','postgres'] as const){
     await assert.rejects(()=>f.db.prepare('DELETE FROM community_appeals WHERE id=?').run(saved.id));
   });
 
+  test(`${dialect}: personal author mutes are replay-safe, privacy-minimized and filter every contribution until exact unmute`,async t=>{
+    const f=await fixture(t,dialect),viewer={id:f.owners[0],name:'Viewer',email:`${f.owners[0]}@example.invalid`,demo:false};
+    const author=f.owners[1],first=await f.add({owner:author,title:'First muted author post',company:'Muted Company'});
+    const second=await f.add({owner:author,title:'Second muted author post',company:'Muted Company'});
+    const sample=await f.add({owner:author,title:'Illustrative sample cannot identify a member',sample:true});
+    const own=await f.add({owner:viewer.id,title:'Viewer owned post',company:'Visible Company'});
+    const resource=`post/${own.id}`,comment=randomUUID();
+    await f.db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run(comment,resource,author,'Other author',
+      'A live comment from the author who will be muted.','2026-01-02T00:00:00.000Z',null);
+    const service=new CommunityMutes(f.db),request={requestId:randomUUID(),muted:true as const,targetType:'post' as const,targetId:first.id};
+    let admissions=0;
+    const saved=await service.set(viewer,request,async()=>{admissions++;});
+    assert.equal(saved.muted,true);assert.equal(saved.revision,1);assert.equal(admissions,2);
+    assert.deepEqual(await service.set(viewer,request,async()=>{admissions++;}),saved);assert.equal(admissions,4);
+    await assert.rejects(()=>service.set(viewer,{...request,targetId:second.id},async()=>{}),status(409));
+    await assert.rejects(()=>service.set(viewer,{requestId:randomUUID(),muted:true,targetType:'post',targetId:own.id},async()=>{}),status(409));
+    await assert.rejects(()=>service.set(viewer,{requestId:randomUUID(),muted:true,targetType:'post',targetId:sample.id},async()=>{}),status(404));
+    await assert.rejects(()=>service.set(viewer,{requestId:randomUUID(),muted:true,targetType:'post',targetId:randomUUID()},async()=>{}),status(404));
+    const history=await service.history(viewer,{},async()=>{});
+    assert.equal(history.mutes.length,1);assert.equal(history.mutes[0]?.id,saved.id);
+    assert.ok(!JSON.stringify(history).includes(author));assert.ok(!Object.hasOwn(history.mutes[0] ?? {},'subjectId'));
+    const feed=await f.reads.feed({kind:'questions'},viewer.id);
+    assert.ok(feed.posts.some(value=>value.id===own.id));assert.ok(!feed.posts.some(value=>value.id===first.id||value.id===second.id));
+    assert.ok(!feed.companies.includes('Muted Company'));assert.equal(feed.total,1);
+    await assert.rejects(()=>f.reads.detail(first.id,{kind:'questions'},viewer.id),status(404));
+    const comments=await new CommunityContributions(f.db).comments(resource,viewer.id);
+    assert.deepEqual(comments.find(value=>value.id===comment),{id:comment,resource,author:'Muted',
+      body:'This comment is hidden because you muted its author.',createdAt:'2026-01-02T00:00:00.000Z',
+      parentId:null,isMine:false,deleted:false,moderated:false,moderationRevision:0,muted:true});
+    await assert.rejects(()=>new CommunitySubmissions(f.db).create(viewer,
+      {requestId:randomUUID(),resource,parentId:comment,body:'A reply cannot target an author muted by this viewer.'},async()=>{}),status(400));
+    await assert.rejects(()=>new CommunityModeration(f.db,null).report(viewer,{requestId:randomUUID(),targetType:'comment',
+      targetId:comment,category:'other',details:'A muted contribution cannot be reported through a direct API request.'},async()=>{}),status(404));
+    await assert.rejects(()=>service.set(viewer,{requestId:randomUUID(),muted:false,muteId:saved.id,revision:2},async()=>{}),status(409));
+    const unmuted=await service.set(viewer,{requestId:randomUUID(),muted:false,muteId:saved.id,revision:1},async()=>{});
+    assert.equal(unmuted.muted,false);assert.equal(unmuted.revision,2);
+    assert.equal((await service.history(viewer,{},async()=>{})).mutes.length,0);
+    assert.equal((await f.reads.detail(first.id,{kind:'questions'},viewer.id)).id,first.id);
+    assert.equal((await new CommunityContributions(f.db).comments(resource,viewer.id)).find(value=>value.id===comment)?.muted,false);
+    const remuted=await service.set(viewer,{requestId:randomUUID(),muted:true,targetType:'comment',targetId:comment},async()=>{});
+    assert.equal(remuted.id,saved.id);assert.equal(remuted.revision,3);
+    await assert.rejects(()=>f.db.prepare('UPDATE community_mute_intents SET target_id=? WHERE owner_id=?')
+      .run('tampered-target',viewer.id));
+    await assert.rejects(()=>f.db.prepare('DELETE FROM community_mute_intents WHERE owner_id=?').run(viewer.id));
+    await assert.rejects(()=>f.db.prepare(`UPDATE community_mutes SET state='unmuted' WHERE id=?`).run(saved.id));
+  });
+
   test(`${dialect}: hidden comments are explicit non-repliable tombstones but remain owner-deletable`,async t=>{
     const f=await fixture(t,dialect),post=await f.add(),resource=`post/${post.id}`,parent=randomUUID();
     await f.db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run(parent,resource,f.owners[0],'Synthetic author',
@@ -436,7 +487,7 @@ for(const dialect of ['sqlite','postgres'] as const){
       VALUES('comment',?,'hidden',1,?)`).run(parent,new Date().toISOString());
     const contributions=new CommunityContributions(f.db),publicComments=await contributions.comments(resource,f.owners[0]);
     assert.deepEqual(publicComments[0],{id:parent,resource,author:'Moderated',body:'This comment was hidden by moderation.',
-      createdAt:'2026-01-02T00:00:00.000Z',parentId:null,isMine:true,deleted:false,moderated:true,moderationRevision:1});
+      createdAt:'2026-01-02T00:00:00.000Z',parentId:null,isMine:true,deleted:false,moderated:true,moderationRevision:1,muted:false});
     await assert.rejects(()=>contributions.updateComment({id:parent,revision:0,body:'Hidden text must not be editable.'},f.owners[0],async()=>{}),status(409));
     const submissions=new CommunitySubmissions(f.db);
     await assert.rejects(()=>submissions.create({id:f.owners[1],name:'Synthetic author'},
@@ -660,7 +711,7 @@ for(const dialect of ['sqlite','postgres'] as const){
     const page=await first.json();assert.deepEqual(Object.keys(page).sort(),['comments','limit','nextCursor'].sort());
     assert.equal(page.limit,50);assert.equal(page.comments.length,50);assert.equal(page.comments[0].id,'page-0000');
     for(const [i,row] of page.comments.entries()){
-      assert.deepEqual(Object.keys(row).sort(),['author','body','createdAt','deleted','id','isMine','moderated','moderationRevision','parentId','resource'].sort());
+      assert.deepEqual(Object.keys(row).sort(),['author','body','createdAt','deleted','id','isMine','moderated','moderationRevision','muted','parentId','resource'].sort());
       assert.equal(row.resource,resource);assert.equal(row.isMine,i%2===0);assert.equal(row.moderated,false);
       assert.ok(!JSON.stringify(row).includes(owner));assert.ok(!JSON.stringify(row).includes(f.owners[1]));
     }
@@ -737,7 +788,7 @@ for(const dialect of ['sqlite','postgres'] as const){
     for(const [viewer,mine] of [[cookie,true],[otherCookie,false],['',false]] as const){
       const response=await api(`/api/comments?${new URLSearchParams({resource})}`,undefined,viewer);assert.equal(response.status,200);
       const row=(await response.json()).find((comment:{id:string})=>comment.id===id);
-      assert.equal(row.isMine,mine);assert.deepEqual(Object.keys(row).sort(),['author','body','createdAt','deleted','id','isMine','moderated','moderationRevision','parentId','resource'].sort());
+      assert.equal(row.isMine,mine);assert.deepEqual(Object.keys(row).sort(),['author','body','createdAt','deleted','id','isMine','moderated','moderationRevision','muted','parentId','resource'].sort());
       assert.ok(!JSON.stringify(row).includes(owner));assert.ok(!Object.hasOwn(row,'revision'));
     }
     assert.equal((await api(route)).status,401);assert.equal((await api(route,undefined,otherCookie)).status,404);
@@ -785,7 +836,7 @@ for(const dialect of ['sqlite','postgres'] as const){
     const result=await deleted.json();assert.equal(result.receipt.status,'tombstoned');assert.equal(result.receipt.requestId,requestId);
     assert.equal(result.receipt.priorRevision,0);assert.equal(result.receipt.resultRevision,1);
     assert.deepEqual(result.comment,{id:root.id,resource,author:'Deleted',body:'This comment was removed by its author.',
-      createdAt:root.createdAt,parentId:null,isMine:false,deleted:true,moderated:false,moderationRevision:0});
+      createdAt:root.createdAt,parentId:null,isMine:false,deleted:true,moderated:false,moderationRevision:0,muted:false});
     assert.deepEqual(await(await api('/api/comments/owned',input,cookie,'DELETE')).json(),result);
     assert.equal((await api('/api/comments/owned',{...input,requestId:randomUUID()},cookie,'DELETE')).status,404);
     const second=await api('/api/comments/submissions',{requestId:randomUUID(),resource,body:'A second owned comment remains live.',parentId:null},cookie);

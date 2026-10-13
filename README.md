@@ -254,7 +254,12 @@ status, revision-fenced uphold/deny decisions, atomic restoration and shared
 PostgreSQL account/network admission for report and appeal writes. External
 delivery, repeat-abuse restrictions, staffing, retention approval and managed
 community writing remain disabled.
-Controlled PostgreSQL deployments must apply **migration 32 and maintained queue
+The [personal author-muting checkpoint](docs/production/42-privacy-safe-personal-author-muting.md)
+adds exact private mute/unmute receipts, central per-viewer post filtering,
+non-interactive muted-comment tombstones, minimized history/privacy exports and
+shared managed admission without exposing the muted account. Account blocking,
+repeat-abuse policy, notifications and managed community writing remain open.
+Controlled PostgreSQL deployments must apply **migration 33 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 

@@ -31,6 +31,7 @@ import { communityKinds } from '../shared/community-routes';
 import { CommunityContributions } from './community-contributions';
 import { CommunitySubmissions } from './community-submissions';
 import { CommunityModeration } from './community-moderation';
+import {CommunityMutes} from './community-mutes';
 import { StaffAdministration } from './staff';
 import type { PrivacyExports } from './privacy';
 function localSessionHash(req: express.Request) {
@@ -85,6 +86,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   if (config.identity && !privacy) throw new Error('Managed identity requires durable privacy export processing.');
   const identity = config.identity && config.publicOrigin ? new ManagedIdentity(db, config.identity, config.publicOrigin, shutdown, identityTransport, lifecycle) : null;
   const moderation = new CommunityModeration(db, identity);
+  const mutes = new CommunityMutes(db);
   const entitlements = identity ? new Entitlements(db) : null;
   const support = identity ? new SupportRequests(db, identity) : null;
   const staff = identity ? new StaffAdministration(db, identity) : null;
@@ -1048,6 +1050,15 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     const user=await requireUser(req);
     res.json(await moderation.appealHistory(user,req.query,()=>identity?identity.assertWritable(user):assertLocalCommunitySession(req,user)));
   });
+  app.put('/api/community/mutes',async(req,res)=>{
+    const user=await requireUser(req);
+    if(identity)await identity.admitCommunity(req,user,res);
+    res.json(await mutes.set(user,req.body,()=>identity?identity.assertWritable(user):assertLocalCommunitySession(req,user)));
+  });
+  app.get('/api/community/mutes',async(req,res)=>{
+    const user=await requireUser(req);
+    res.json(await mutes.history(user,req.query,()=>identity?identity.assertWritable(user):assertLocalCommunitySession(req,user)));
+  });
   app.post('/api/comments', async (req, res) => {
     const user = (await requireUser(req)), body = record(req.body);
     const resource = commentResource(body.resource);
@@ -1060,14 +1071,18 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
         await assertLocalCommunitySession(req, user);
         if (!await db.prepare(`SELECT p.id FROM posts p WHERE p.id=? AND NOT EXISTS(
           SELECT 1 FROM community_moderation_targets moderation WHERE moderation.target_type='post'
-            AND moderation.target_id=p.id AND moderation.state='hidden')${db.dialect === 'postgres' ? ' FOR UPDATE OF p' : ''}`).get(resource.slice(5)))
+            AND moderation.target_id=p.id AND moderation.state='hidden') AND NOT EXISTS(
+          SELECT 1 FROM community_mutes mute WHERE mute.owner_id=? AND mute.subject_id=p.author_id AND mute.state='muted')
+          ${db.dialect === 'postgres' ? 'FOR UPDATE OF p' : ''}`).get(resource.slice(5),user.id))
           throw new HttpError(404, 'This post is no longer available for discussion.');
       }
       if (parentId && !(await db.prepare(`SELECT comments.id FROM comments
         LEFT JOIN community_comment_tombstones tombstone ON tombstone.comment_id=comments.id
         LEFT JOIN community_moderation_targets moderation ON moderation.target_type='comment' AND moderation.target_id=comments.id
         WHERE comments.id=? AND comments.resource=? AND comments.user_id IS NOT NULL AND tombstone.comment_id IS NULL
-          AND COALESCE(moderation.state,'visible')<>'hidden'`).get(parentId, resource)))
+          AND COALESCE(moderation.state,'visible')<>'hidden' AND NOT EXISTS(
+            SELECT 1 FROM community_mutes mute WHERE mute.owner_id=? AND mute.subject_id=comments.user_id AND mute.state='muted')`)
+        .get(parentId,resource,user.id)))
         throw new HttpError(400, 'Reply must belong to an available comment in this discussion.');
       await db.prepare('INSERT INTO comments VALUES (?,?,?,?,?,?,?)').run(id, resource, user.id, user.name, comment, new Date().toISOString(), parentId);
       return contributions.createdComment(id,user.id);

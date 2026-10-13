@@ -218,6 +218,36 @@ export function openDatabase(dataDir: string): DatabaseSync {
           (action IN ('claim','release','deny') AND prior_target_revision IS NULL))
       );
       CREATE INDEX IF NOT EXISTS community_appeal_events_appeal ON community_appeal_events(appeal_id,created_at,id);
+      CREATE TABLE IF NOT EXISTS community_mutes (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        subject_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        target_type TEXT NOT NULL CHECK(target_type IN ('post','comment')),
+        target_id TEXT NOT NULL CHECK(length(target_id) BETWEEN 1 AND 200 AND instr(target_id,char(0))=0),
+        state TEXT NOT NULL CHECK(state IN ('muted','unmuted')),
+        revision INTEGER NOT NULL CHECK(revision>0),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(owner_id,subject_id),
+        CHECK(owner_id<>subject_id)
+      );
+      CREATE INDEX IF NOT EXISTS community_mutes_owner_state ON community_mutes(owner_id,state,updated_at DESC,id DESC);
+      CREATE INDEX IF NOT EXISTS community_mutes_subject ON community_mutes(subject_id,owner_id);
+      CREATE TABLE IF NOT EXISTS community_mute_intents (
+        owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        request_key TEXT NOT NULL,
+        input_hash TEXT NOT NULL CHECK(length(input_hash)=64 AND input_hash NOT GLOB '*[^0-9a-f]*'),
+        mute_id TEXT NOT NULL REFERENCES community_mutes(id) ON DELETE CASCADE,
+        target_type TEXT NOT NULL CHECK(target_type IN ('post','comment')),
+        target_id TEXT NOT NULL CHECK(length(target_id) BETWEEN 1 AND 200 AND instr(target_id,char(0))=0),
+        muted INTEGER NOT NULL CHECK(muted IN (0,1)),
+        prior_revision INTEGER NOT NULL CHECK(prior_revision>=0),
+        result_revision INTEGER NOT NULL CHECK(result_revision=prior_revision OR result_revision=prior_revision+1),
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(owner_id,request_key)
+      );
+      CREATE INDEX IF NOT EXISTS community_mute_intents_owner_order
+        ON community_mute_intents(owner_id,created_at DESC,request_key DESC);
       CREATE TABLE IF NOT EXISTS community_comment_deletions (
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         request_id TEXT NOT NULL,
@@ -317,6 +347,22 @@ export function openDatabase(dataDir: string): DatabaseSync {
       BEGIN SELECT RAISE(ABORT,'Community appeal evidence is immutable.'); END;
       CREATE TRIGGER IF NOT EXISTS immutable_community_appeal_delete BEFORE DELETE ON community_appeals
       BEGIN SELECT RAISE(ABORT,'Community appeal evidence is immutable.'); END;
+      CREATE TRIGGER IF NOT EXISTS protect_community_mute BEFORE UPDATE ON community_mutes
+      WHEN NOT (NEW.id=OLD.id AND NEW.owner_id=OLD.owner_id AND NEW.subject_id=OLD.subject_id AND
+        NEW.target_type=OLD.target_type AND NEW.target_id=OLD.target_id AND NEW.state<>OLD.state AND
+        NEW.revision=OLD.revision+1 AND NEW.created_at=OLD.created_at AND NEW.updated_at>=OLD.updated_at)
+      BEGIN SELECT RAISE(ABORT,'Community mutes allow only one revision-fenced desired-state transition.'); END;
+      CREATE TRIGGER IF NOT EXISTS initialize_community_mute BEFORE INSERT ON community_mutes
+      WHEN NEW.state<>'muted' OR NEW.revision<>1 OR NEW.created_at<>NEW.updated_at
+      BEGIN SELECT RAISE(ABORT,'New community mutes must begin muted at revision one.'); END;
+      CREATE TRIGGER IF NOT EXISTS validate_community_mute_intent BEFORE INSERT ON community_mute_intents
+      WHEN NOT EXISTS(SELECT 1 FROM community_mutes mute WHERE mute.id=NEW.mute_id AND mute.owner_id=NEW.owner_id AND
+        mute.revision=NEW.result_revision AND mute.state=CASE WHEN NEW.muted=1 THEN 'muted' ELSE 'unmuted' END)
+      BEGIN SELECT RAISE(ABORT,'Mute intents must reference the resulting owned desired state.'); END;
+      CREATE TRIGGER IF NOT EXISTS immutable_community_mute_intent_update BEFORE UPDATE ON community_mute_intents
+      BEGIN SELECT RAISE(ABORT,'Community mute intent receipts are immutable.'); END;
+      CREATE TRIGGER IF NOT EXISTS immutable_community_mute_intent_delete BEFORE DELETE ON community_mute_intents
+      BEGIN SELECT RAISE(ABORT,'Community mute intent receipts are immutable.'); END;
       CREATE TRIGGER IF NOT EXISTS apply_community_comment_deletion AFTER INSERT ON community_comment_deletions
         BEGIN
           SELECT CASE WHEN NOT EXISTS(

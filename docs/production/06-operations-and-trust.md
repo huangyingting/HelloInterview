@@ -114,9 +114,19 @@ hidden revision atomically. Managed report/appeal writes consume shared
 PostgreSQL account and canonical-network admission buckets and fail closed when
 that protection is unavailable. The
 [appeal runbook](41-community-appeals-status-admission.md) records migration 32,
-privacy export and failure behavior. External delivery, block/mute,
+privacy export and failure behavior. External delivery, account blocking,
 repeat-abuse restrictions, automated enforcement, staffed targets, approved
 retention and managed writing remain separate launch gates.
+
+**Implemented personal author-muting checkpoint (W11):** authenticated members
+can privately mute one live contribution author with an exact UUID key, hide
+that author's posts from all viewer-bound readers and retain comments only as
+non-interactive personal tombstones. Exact revision-fenced unmute, bounded
+minimized history, privacy exports without subject account IDs and shared
+managed admission are included in migration 33. The
+[mute runbook](42-privacy-safe-personal-author-muting.md) records concurrency,
+privacy and failure behavior. Account blocking, repeat-abuse policy, external
+notification, staffing, approved retention and managed writing remain gates.
 
 **Implemented managed staff-administration checkpoint (W10):** verified OIDC
 `amr` can establish explicit MFA evidence for a managed session; privileged
@@ -248,8 +258,10 @@ Authenticated reports and reviewed in-app hide/restore operations now follow
 provider-neutral queue and visibility mechanics. Owner appeals, minimized
 member status and shared managed report/appeal admission now follow
 [runbook 41](41-community-appeals-status-admission.md). These provide no
-external notices, block/mute, repeat-abuse operations, retention approval or
-authority to enable managed contribution writes.
+external notices, repeat-abuse operations, retention approval or authority to
+enable managed contribution writes. Private personal author muting now follows
+[runbook 42](42-privacy-safe-personal-author-muting.md); it is not account
+blocking or a substitute for staffed abuse response.
 
 Launch requirements:
 

@@ -6,6 +6,7 @@ import { openIdentityFixture } from './fixtures/identity';
 import { Entitlements } from '../server/entitlements';
 import type { Bootstrap } from '../shared/types';
 import { courses } from '../shared/public-catalog';
+import {communityPostPath} from '../shared/community-routes';
 import {appendStaffRole} from '../server/staff';
 
 async function fixture(t: TestContext, lifecycle = false) {
@@ -141,6 +142,34 @@ test('managed browser requests and cancels deletion in-page without claiming era
   await expect(page.getByText('Your previous deletion request was cancelled',{exact:false})).toBeVisible();
   assert.equal((await f.db.prepare('SELECT status FROM managed_accounts WHERE user_id=?').get(bootstrap.user.id))?.status,'active');
   assert.equal((await f.db.prepare('SELECT state FROM privacy_deletions WHERE user_id=?').get(bootstrap.user.id))?.state,'cancelled');
+});
+
+test('managed browser personal muting uses shared admission and exact in-page unmute without exposing the subject account',async t=>{
+  const f=await fixture(t),{page}=f;
+  await page.goto(`${f.origin}/auth`);await page.getByRole('link',{name:'Continue with Google'}).click();
+  const bootstrap:Bootstrap=await page.evaluate(async()=>(await fetch('/api/bootstrap')).json()),viewer=bootstrap.user?.id;assert.ok(viewer);
+  const subject=randomUUID(),post=randomUUID();
+  await f.db.prepare('INSERT INTO users(id,name,email,password,demo) VALUES(?,?,?,NULL,0)')
+    .run(subject,'Managed mute subject',`${subject}@example.invalid`);
+  await f.db.prepare(`INSERT INTO posts(id,kind,title,body,company,track,level,region,author,author_id,created_at,sample)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,0)`).run(post,'discussion','Managed personal mute target',
+    'A synthetic contribution used to verify shared admission for a private personal mute.','Fixture Company','system-design',
+    'Senior','Global','Managed mute subject',subject,new Date().toISOString());
+  await page.goto(`${f.origin}${communityPostPath({kind:'discussion',id:post})}`);
+  await page.getByRole('button',{name:'Mute author',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Managed personal mute target',exact:true})).toHaveCount(0);
+  const saved=await f.db.prepare('SELECT id,state,revision,subject_id FROM community_mutes WHERE owner_id=?').get(viewer);
+  assert.equal(saved?.state,'muted');assert.equal(saved?.revision,1);assert.equal(saved?.subject_id,subject);
+  const muteId=String(saved?.id);assert.match(muteId,/^[a-f0-9-]{36}$/);
+  assert.deepEqual((await f.db.prepare(`SELECT scope FROM identity_abuse_buckets
+    WHERE scope IN ('community-network','community-account') ORDER BY scope`).all()).map(row=>row.scope),['community-account','community-network']);
+  await page.getByRole('button',{name:'My moderation status',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Authors muted for me',exact:true})).toBeVisible();
+  await expect(page.getByText(subject,{exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'Unmute author',exact:true}).click();
+  await expect(page.getByText('No authors are currently muted for you.',{exact:true})).toBeVisible();
+  assert.deepEqual(await f.db.prepare('SELECT state,revision FROM community_mutes WHERE id=?').get(muteId),{state:'unmuted',revision:2});
+  await expect(page.locator('[role="dialog"]')).toHaveCount(0);
 });
 
 test('staff UI is deferred, capability-gated and applies an audited in-page suspension without dialogs',async t=>{

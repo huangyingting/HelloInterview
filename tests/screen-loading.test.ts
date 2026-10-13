@@ -232,6 +232,45 @@ test('community reports, owner appeals and hidden controls stay in-page with exa
   await expect(page.locator('[role="dialog"]')).toHaveCount(0);
 });
 
+test('personal author muting hides posts, publishes comment tombstones and un-mutes from in-page history',async t=>{
+  const f=await fixture(t),{page}=f,db=localConnection(f.directory);t.after(()=>db.close());
+  const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);
+  const viewer=(await login.json()).user.id,subject=randomUUID(),subjectPost=randomUUID(),viewerPost=randomUUID(),comment=randomUUID();
+  await db.prepare('INSERT INTO users(id,name,email,password,demo) VALUES(?,?,?,NULL,0)')
+    .run(subject,'Muted browser author',`${subject}@example.invalid`);
+  await db.prepare('INSERT INTO posts VALUES(?,?,?,?,?,?,?,?,?,?,?,0)').run(subjectPost,'discussion','Post hidden by personal mute',
+    'This contribution disappears only for the viewer who mutes its author.','Fixture Company','system-design',
+    'Senior','Global','Muted browser author',subject,'2026-01-01T00:00:00.000Z');
+  await db.prepare('INSERT INTO posts VALUES(?,?,?,?,?,?,?,?,?,?,?,0)').run(viewerPost,'discussion','Viewer owned mute discussion',
+    'This owned contribution hosts a comment from another member.','Fixture Company','system-design',
+    'Senior','Global','Viewer',viewer,'2026-01-02T00:00:00.000Z');
+  await db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run(comment,`post/${viewerPost}`,subject,'Muted browser author',
+    'A comment that becomes a viewer-only personal mute tombstone.','2026-01-03T00:00:00.000Z',null);
+  await page.goto(`${f.url}${communityPostPath({kind:'discussion',id:subjectPost})}`);
+  await expect(page.getByRole('button',{name:'Mute author',exact:true})).toBeVisible();
+  await page.goto(`${f.url}${communityPostPath({kind:'discussion',id:viewerPost})}`);
+  const row=page.locator('.comment').filter({hasText:'A comment that becomes a viewer-only personal mute tombstone.'});
+  await row.getByRole('button',{name:'Mute author',exact:true}).click();
+  const tombstone=page.locator('.comment').filter({hasText:'This comment is hidden because you muted its author.'});
+  await expect(tombstone.getByText('This comment is hidden because you muted its author.',{exact:true})).toBeVisible();
+  await expect(tombstone.getByRole('button',{name:'Reply',exact:true})).toHaveCount(0);
+  await expect(tombstone.getByRole('button',{name:'Report comment',exact:true})).toHaveCount(0);
+  const saved=await db.prepare('SELECT id,state,revision,subject_id FROM community_mutes WHERE owner_id=?').get(viewer);
+  assert.equal(saved?.state,'muted');assert.equal(saved?.revision,1);assert.equal(saved?.subject_id,subject);
+  const muteId=String(saved?.id);assert.match(muteId,/^[a-f0-9-]{36}$/);
+  await page.goto(`${f.url}/community/discussion`);
+  await expect(page.getByRole('heading',{name:'Post hidden by personal mute',exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'My moderation status',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Authors muted for me',exact:true})).toBeVisible();
+  await expect(page.getByText(comment,{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Unmute author',exact:true}).click();
+  await expect(page.getByText('No authors are currently muted for you.',{exact:true})).toBeVisible();
+  assert.equal((await db.prepare('SELECT state,revision FROM community_mutes WHERE id=?').get(muteId))?.state,'unmuted');
+  await page.reload();
+  await expect(page.getByRole('heading',{name:'Post hidden by personal mute',exact:true})).toBeVisible();
+  await expect(page.locator('[role="dialog"]')).toHaveCount(0);
+});
+
 test('discussion pages expose older authors beyond 500 without losing drafts, duplicating new comments or hiding load failures',async t=>{
   const f=await fixture(t),{page}=f,db=localConnection(f.directory);t.after(()=>db.close());
   const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);

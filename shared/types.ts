@@ -49,6 +49,13 @@ export interface CommunityAppealStatus {
   createdAt:string;updatedAt:string;
 }
 export interface CommunityAppealStatusPage {appeals:CommunityAppealStatus[];nextCursor:string|null}
+export interface CommunityMuteReceipt {
+  id:string;requestId:string;targetType:'post'|'comment';targetId:string;muted:boolean;revision:number;createdAt:string;
+}
+export interface CommunityMute {
+  id:string;targetType:'post'|'comment';targetId:string;revision:number;createdAt:string;updatedAt:string;
+}
+export interface CommunityMutePage {mutes:CommunityMute[];nextCursor:string|null}
 export interface StaffCommunityReport {
   id:string;targetType:'post'|'comment';targetId:string;category:CommunityReportCategory;details:string;
   status:'open'|'dismissed'|'actioned';revision:number;assignment:'me'|'other'|null;
@@ -395,6 +402,7 @@ export interface Comment {
   deleted: boolean;
   moderated: boolean;
   moderationRevision: number;
+  muted: boolean;
 }
 export interface OwnedCommunityComment { comment: Comment; revision: number }
 export interface CommunityCommentPage { comments: Comment[]; limit: number; nextCursor: string | null }

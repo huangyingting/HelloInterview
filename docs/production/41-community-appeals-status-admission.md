@@ -1,7 +1,7 @@
 # 41 - Community appeals, member status and shared admission
 
 **Status: implemented W11 engineering checkpoint, not external notification,
-automated enforcement, block/mute, repeat-abuse restriction, staffed moderation,
+automated enforcement, account blocking, repeat-abuse restriction, staffed moderation,
 approved retention, managed writing or public-launch approval.**
 
 This checkpoint implements
@@ -183,7 +183,7 @@ W11 remains open for:
 
 - approved rules, legal retention and takedown policy;
 - external author/reporter delivery and published response targets;
-- block/mute, repeat-abuse restrictions and reviewed spam triage;
+- account blocking, repeat-abuse restrictions and reviewed spam triage;
 - moderation staffing and escalation ownership;
 - managed contribution writing or explicit read-only operating approval;
 - complete privacy erasure and backup/processor handling;
