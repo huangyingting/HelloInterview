@@ -112,7 +112,20 @@ function StaffModerationCard({value,administrator,onChange}:{value:StaffCommunit
     }catch(cause){notify(cause instanceof Error?cause.message:'Community restriction failed.',true);}
     finally{setPending(false);}
   }
+  async function reviewTriage(decision:'confirmed'|'rejected') {
+    if(!value.triage)return;
+    setPending(true);
+    try{
+      const report=await request<StaffCommunityReport>(`/api/staff/community/reports/${value.id}/triage`,
+        {revision:value.triage.revision,decision,reason},'PATCH');
+      onChange(report);setReason('');
+      notify('Spam suggestion review saved without changing report, contribution or account state.');
+    }catch(cause){notify(cause instanceof Error?cause.message:'Spam suggestion review failed.',true);}
+    finally{setPending(false);}
+  }
   const available=administrator||value.assignment!=='other',targetAction=value.targetState==='hidden'?'restore':'hide';
+  const canReviewTriage=administrator||value.assignment==='me';
+  const triageCurrent=value.triage!==null&&value.target.contentRevision===value.triage.contentRevision;
   return <article className="panel">
     <h3>{value.target.title??`${value.targetType} report`}</h3>
     <p><Badge tone={value.status==='open'?'amber':'green'}>{value.status}</Badge>{' '}
@@ -120,6 +133,18 @@ function StaffModerationCard({value,administrator,onChange}:{value:StaffCommunit
     <p>{value.target.body}</p>
     <p className="fine-print">{value.targetType} by {value.target.author}{value.target.resource?` · ${value.target.resource}`:''} · currently {value.targetState}</p>
     <strong>{value.category.replaceAll('-',' ')}</strong><p>{value.details}</p>
+    {value.triage?<div className="local-notice"><strong>Automated spam suggestion: {value.triage.classification.replaceAll('-',' ')}</strong>
+      <p>Score {value.triage.score}/100 · {value.triage.algorithmVersion} · {value.triage.state}
+        {value.triage.outcome?` (${value.triage.outcome})`:''} · triage revision {value.triage.revision} ·
+        content revision {value.triage.contentRevision}{!triageCurrent&&value.triage.state==='pending'?' (stale or unavailable)':''}</p>
+      <p className="fine-print">{value.triage.signals.length
+        ?`Bounded signals: ${value.triage.signals.map(signal=>signal.replaceAll('-',' ')).join(', ')}.`
+        :'No configured spam signals matched.'} This suggestion never changes visibility, report state, restrictions or account access.</p>
+      {value.triage.state==='pending'&&canReviewTriage&&<>{triageCurrent&&<button className="button secondary small"
+        disabled={pending||reason.trim().length<20} onClick={()=>void reviewTriage('confirmed')}>Confirm spam suggestion</button>
+      }<button className="button secondary small" disabled={pending||reason.trim().length<20}
+        onClick={()=>void reviewTriage('rejected')}>{triageCurrent?'Reject spam suggestion':'Reject stale spam suggestion'}</button></>}
+    </div>:<p className="fine-print">No spam suggestion exists for this pre-migration report; no evidence was fabricated during reads.</p>}
     <label>Required moderation reason
       <textarea minLength={20} maxLength={500} value={reason} onChange={event=>setReason(event.target.value)}
         placeholder="Record the specific policy and evidence reviewed."/>
@@ -354,7 +379,7 @@ export function StaffPage() {
         {support?.nextCursor&&<button className="button secondary small" disabled={loadingSupport} onClick={()=>void loadSupport(support.nextCursor!)}>Load older support requests</button>}
       </section>}
       {canModerate&&<section className="panel"><h2>Community moderation queue</h2>
-        <p>Reports and actions stay inside the authenticated Studio. Automated enforcement, external notifications and a staffed SLA are not connected.</p>
+        <p>Reports and actions stay inside the authenticated Studio. Versioned spam suggestions require human review and never enforce an action. External notifications and a staffed SLA are not connected.</p>
         {!moderation&&<button className="button secondary small" disabled={loadingModeration} onClick={()=>void loadModeration()}>Load moderation queue</button>}
         {moderationError&&<><p role="alert">{moderationError}</p><button className="button secondary small" disabled={loadingModeration} onClick={()=>void loadModeration()}>Retry moderation queue</button></>}
         {moderation?.reports.map(report=><StaffModerationCard key={report.id} value={report} administrator={administrator}

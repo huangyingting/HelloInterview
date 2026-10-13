@@ -247,9 +247,17 @@ test('staff UI is deferred, capability-gated and applies an audited in-page susp
   await page.getByRole('button',{name:'Load moderation queue'}).click();
   const moderationCard=page.getByRole('heading',{name:reportTitle,exact:true}).locator('..');
   await expect(moderationCard).toBeVisible();
+  await expect(moderationCard.getByText('Automated spam suggestion: unlikely spam',{exact:true})).toBeVisible();
+  await expect(moderationCard.getByText('This suggestion never changes visibility, report state, restrictions or account access.',{exact:false})).toBeVisible();
   await moderationCard.getByLabel('Required moderation reason').fill('Claim this report for a bounded reviewed browser moderation check.');
   await moderationCard.getByRole('button',{name:'Claim report'}).click();
   await expect(moderationCard.getByText('Assigned to you',{exact:false})).toBeVisible();
+  await moderationCard.getByLabel('Required moderation reason').fill('Confirm this bounded low-spam suggestion after reviewing the exact contribution.');
+  await moderationCard.getByRole('button',{name:'Confirm spam suggestion'}).click();
+  await expect(page.getByText('Spam suggestion review saved without changing report, contribution or account state.',{exact:true})).toBeVisible();
+  await expect(moderationCard.getByText('reviewed (confirmed)',{exact:false})).toBeVisible();
+  assert.deepEqual(await f.db.prepare('SELECT decision FROM community_spam_triage_events WHERE report_id=?').all(reportReceipt.id),
+    [{decision:'confirmed'}]);
   await moderationCard.getByLabel('Required moderation reason').fill('Restrict author participation after reviewing the exact browser report evidence.');
   await moderationCard.getByRole('button',{name:'Restrict author participation'}).click();
   await expect(page.getByText('Author participation restricted with an expiring reviewed record.',{exact:true})).toBeVisible();

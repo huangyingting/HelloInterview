@@ -186,7 +186,8 @@ W11 remains open for:
 - an approved abuse, appeal, retention and takedown policy;
 - approved relationship/direct-interaction policy; personal account blocking
   follows in runbook 45;
-- reviewed automated spam triage that cannot make irreversible decisions;
+- approved policy and operated calibration for the deterministic,
+  non-punitive spam triage delivered in runbook 46;
 - moderation staffing, escalation ownership and published response targets;
 - managed contribution writing or explicit read-only operating approval;
 - complete privacy erasure and backup/processor handling;

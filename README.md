@@ -277,7 +277,12 @@ filtering/comment tombstones, relationship-locked direct interaction and
 minimized history/privacy exports. It does not remove content globally, notify
 the other member, expose block direction or claim an approved interaction
 policy.
-Controlled PostgreSQL deployments must apply **migration 36 and maintained queue
+The [reviewed spam-triage checkpoint](docs/production/46-reviewed-non-punitive-community-spam-triage.md)
+adds one bounded, deterministic, versioned suggestion to each new report plus
+MFA/role-gated confirm/reject evidence. Suggestions never hide content, change
+report state, restrict an account or leave the staff queue; no AI provider or
+user-history score is used.
+Controlled PostgreSQL deployments must apply **migration 37 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 

@@ -189,7 +189,8 @@ W11 remains open for:
   notices, approved restriction-appeal policy and shared rate-limit operations;
   personal muting, reviewed restrictions, exact restriction appeals and private
   account blocking follow in runbooks 42-45;
-- reviewed automated triage that cannot make irreversible decisions;
+- approved policy and operated calibration for the deterministic,
+  staff-reviewed non-punitive triage delivered in runbook 46;
 - moderation staffing, escalation ownership and published response targets;
 - managed contribution writing and read-only rollback approval;
 - complete privacy erasure and backup/processor handling;

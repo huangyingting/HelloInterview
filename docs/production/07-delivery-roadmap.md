@@ -24,7 +24,7 @@ production feature. An open package can therefore contain a closed checkpoint.
 | W08 - Authentic payment lifecycle | [#9](https://github.com/huangyingting/HelloInterview/issues/9) | [#22 - Sandbox billing/subscription lifecycle](https://github.com/huangyingting/HelloInterview/issues/22) |
 | W09 - Approved AI dispatch | [#10](https://github.com/huangyingting/HelloInterview/issues/10) | [#23 - Usage/native-intent/provenance foundation](https://github.com/huangyingting/HelloInterview/issues/23) |
 | W10 - Staff/support/privacy | [#11](https://github.com/huangyingting/HelloInterview/issues/11) | [#24 - Private member-support receipts](https://github.com/huangyingting/HelloInterview/issues/24); [#28 - MFA staff account administration](https://github.com/huangyingting/HelloInterview/issues/28) |
-| W11 - Community lifecycle/moderation | [#12](https://github.com/huangyingting/HelloInterview/issues/12) | [#25 - Reads/local ownership/pagination](https://github.com/huangyingting/HelloInterview/issues/25); [#27 - Comment submission receipts](https://github.com/huangyingting/HelloInterview/issues/27); [#32 - Recoverable comment deletion](https://github.com/huangyingting/HelloInterview/issues/32); [#33 - MFA community reports/moderation](https://github.com/huangyingting/HelloInterview/issues/33); [#34 - Appeals/status/shared admission](https://github.com/huangyingting/HelloInterview/issues/34); [#35 - Personal author muting](https://github.com/huangyingting/HelloInterview/issues/35); [#36 - Reviewed community restrictions](https://github.com/huangyingting/HelloInterview/issues/36); [#37 - Exact restriction appeals](https://github.com/huangyingting/HelloInterview/issues/37); [#38 - Privacy-safe account blocking](https://github.com/huangyingting/HelloInterview/issues/38) |
+| W11 - Community lifecycle/moderation | [#12](https://github.com/huangyingting/HelloInterview/issues/12) | [#25 - Reads/local ownership/pagination](https://github.com/huangyingting/HelloInterview/issues/25); [#27 - Comment submission receipts](https://github.com/huangyingting/HelloInterview/issues/27); [#32 - Recoverable comment deletion](https://github.com/huangyingting/HelloInterview/issues/32); [#33 - MFA community reports/moderation](https://github.com/huangyingting/HelloInterview/issues/33); [#34 - Appeals/status/shared admission](https://github.com/huangyingting/HelloInterview/issues/34); [#35 - Personal author muting](https://github.com/huangyingting/HelloInterview/issues/35); [#36 - Reviewed community restrictions](https://github.com/huangyingting/HelloInterview/issues/36); [#37 - Exact restriction appeals](https://github.com/huangyingting/HelloInterview/issues/37); [#38 - Privacy-safe account blocking](https://github.com/huangyingting/HelloInterview/issues/38); [#39 - Reviewed non-punitive spam triage](https://github.com/huangyingting/HelloInterview/issues/39) |
 | W12 - Reviewed/accessible product | [#13](https://github.com/huangyingting/HelloInterview/issues/13) | [#26 - Deferred/keyboard/address recovery](https://github.com/huangyingting/HelloInterview/issues/26) |
 | W13 - Integrated acceptance/launch | [#14](https://github.com/huangyingting/HelloInterview/issues/14) | Pending |
 
@@ -56,7 +56,7 @@ explicit gates; issue creation or closure cannot supply them.
 | W08 | In progress; sandbox notifications, owned Checkout/recheckout, canonical funding/ledger, gated service authority, owned stop/resume cycles and restricted Portal checkpoints implemented | Pinned official Stripe SDK/API, signed durable evidence, stable owned financial keys, complete funding/adjustment traces, default-off calendar grants/scoped revocations, acknowledged exact-target renewal/recheckout with retained paid history and fresh restricted card-method/invoice sessions with URL-free audit; authentic provider evidence, commercial/grace policy, history partitioning/paid deletion and operated lifecycle remain |
 | W09 | In progress; internal usage-ledger, native-intent and saved-input provenance checkpoints implemented | Explicit immutable sandbox manifests, atomic replica unit/cost/native/private-input reservations, pinned operation/job/generation, owned source/model/prompt hashes, exact UTF-8 bounds, transactional raw-payload retirement, overlap-safe original-calendar windows, unknown holds and coupled cancellation/SQL settlement; actual managed provider dispatch, consent/UX, model/token/cost policy, operating reconciliation and approval remain |
 | W10 | In progress; member receipts, MFA staff administration, durable exports, deletion cooling-off and in-app support operations implemented | Private paginated receipts; MFA/role-gated support queue with revision-fenced assignment/status and owner-visible replies; exact masked account controls and immutable audit; fresh comprehensive exports; fresh deletion admission, restricted recovery, seven-day cancellation and explicit due blockers. Impersonation, external helpdesk/email, staffed SLA, physical erasure, processor/billing completion and retention approvals remain |
-| W11 | In progress; private-safe reads, local owner/comment lifecycle, moderation, appeals, personal mute/block and reviewed restriction checkpoints implemented | Minimized DTOs with server ownership; bounded feeds/search/discussions/status; exact legacy-ID routing; revision-fenced owner edits/deletion; key-bound comment/report/appeal/mute/block/restriction-appeal recovery; MFA/role-gated report, appeal, expiring restriction and independent restriction-review decisions with immutable evidence; atomic exact appeal/lift; narrow participation/reporting and relationship-locked direct-interaction admission; shared managed admission; consistent moderation visibility and direction-neutral personal filtering. Managed writing remains denied and retention/interaction-policy approval, external notices, reviewed spam triage, staffing and publication gates remain |
+| W11 | In progress; private-safe reads, local owner/comment lifecycle, moderation, appeals, personal mute/block, reviewed restrictions and non-punitive spam-triage checkpoints implemented | Minimized DTOs with server ownership; bounded feeds/search/discussions/status; exact legacy-ID routing; revision-fenced owner edits/deletion; key-bound comment/report/appeal/mute/block/restriction-appeal recovery; MFA/role-gated report, appeal, expiring restriction, independent restriction-review and triage-review decisions with immutable evidence; atomic exact appeal/lift; narrow participation/reporting and relationship-locked direct-interaction admission; versioned bounded content-only spam suggestions with no automatic action; shared managed admission; consistent moderation visibility and direction-neutral personal filtering. Managed writing remains denied and retention/interaction/abuse-policy approval, external notices, operated calibration, staffing and publication gates remain |
 | W12 | In progress; deferred-screen, keyboard and malformed-address checkpoints implemented | Separated discovery graphs, fixed cold JavaScript budgets, explicit loading/failure/recovery, semantic ready-screen/skip focus, keyboard-safe mobile navigation, rapid Search and invalid-address recovery; reviewed offers, broad accessibility and operated serving remain |
 | W13 | Pending | Integrated provider lifecycle, load/recovery/security evidence and operating/launch gates |
 
@@ -165,11 +165,12 @@ local contributions but authorizes no managed writing or editorial publication;
 at that checkpoint staff moderation, reports/appeals, abuse and operating
 approval remained. Migrations 31-32 now supply bounded reports, reviewed
 hide/restore mechanics, exact owner appeals, minimized member status and shared
-write admission. Migrations 33-36 add personal author muting, reviewed expiring
+write admission. Migrations 33-37 add personal author muting, reviewed expiring
 participation/reporting restrictions, exact restriction appeals and private
-relationship-wide account blocking, while external delivery, approved
-interaction/retention policy, automation, staffing and operating approval
-remain.
+relationship-wide account blocking plus deterministic staff-reviewed
+non-punitive spam suggestions, while external delivery, approved
+interaction/retention/abuse policy, operated calibration, staffing and
+operating approval remain.
 The [W11 comment-deletion runbook](39-recoverable-owner-comment-deletion.md)
 records migration 30, exact owner/key/revision receipts, stripped comment
 identity/text and non-repliable tombstones that preserve existing reply context.
@@ -212,6 +213,12 @@ relationship locks, minimized owner history/export and shared managed
 admission. It supplies no global moderation action, notification, approved
 interaction/retention policy, determined-abuse guarantee, staffing or
 managed-writing authority.
+The [reviewed spam-triage runbook](46-reviewed-non-punitive-community-spam-triage.md)
+records migration 37, one bounded versioned content-only suggestion per new
+report, staff-only minimized signals and exact confirm/reject evidence. It
+uses no AI provider or account history and cannot change report, target,
+restriction or account state. Approved policy, operated calibration, external
+notices, staffing and managed-writing authority remain open.
 The [W12 deferred-screen runbook](28-deferred-screen-delivery.md) records the
 fixed eager/cold graph budgets, compatibility metadata split, persistent shell,
 explicit loading/failure and manual reload, actual built-chunk browser evidence

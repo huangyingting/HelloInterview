@@ -101,6 +101,17 @@ test('privacy artifacts cover owned preparation, identity, grants, usage, contri
       'Private internal moderation reason excluded from the owner export.',0,1,'2026-10-13T00:00:01.600Z');
   await f.db.prepare(`INSERT INTO community_moderation_targets(target_type,target_id,state,revision,updated_at)
     VALUES('post','privacy-post','hidden',1,'2026-10-13T00:00:01.700Z')`).run();
+  await f.db.prepare(`INSERT INTO community_spam_triage
+    (report_id,algorithm_version,input_hash,content_revision,input_truncated,score,classification,link_count,
+      contact_solicitation,promotional_language,repetitive_content,state,outcome,revision,created_at,updated_at)
+    VALUES(?,'community-spam-rules-v1',?,1,FALSE,73,'likely-spam',3,TRUE,TRUE,FALSE,'pending',NULL,0,?,?)`)
+    .run(reportId,'d'.repeat(64),'2026-10-13T00:00:01.750Z','2026-10-13T00:00:01.750Z');
+  await f.db.prepare(`UPDATE community_spam_triage SET state='reviewed',outcome='rejected',revision=1,updated_at=?
+    WHERE report_id=?`).run('2026-10-13T00:00:01.760Z',reportId);
+  await f.db.prepare(`INSERT INTO community_spam_triage_events
+    (id,report_id,actor_ref,actor_role,decision,reason,prior_revision,result_revision,created_at)
+    VALUES(?,?,?,?,?,?,0,1,?)`).run(randomUUID(),reportId,'private-spam-reviewer','moderator','rejected',
+      'Private spam triage review reason excluded from the owner export.','2026-10-13T00:00:01.760Z');
   const appealId=randomUUID(),appealKey=randomUUID();
   await f.db.prepare(`INSERT INTO community_appeals
     (id,owner_id,request_key,input_hash,target_type,target_id,target_revision,statement,created_at,updated_at)
@@ -218,7 +229,7 @@ test('privacy artifacts cover owned preparation, identity, grants, usage, contri
   assert.match(text,/premium-read-v1|privacy-reservation|pro_monthly|sub_privacy|in_privacy/);
   assert.doesNotMatch(text,new RegExp(String(token.token)));
   assert.doesNotMatch(text,new RegExp(String(token.csrf_hash)));
-  assert.doesNotMatch(text,/fixture-operator|private-moderator-ref|Private internal moderation reason|private-appeal-moderator|Private internal appeal reason|private-restriction-moderator|Private internal restriction reason|private-restriction-appeal-reviewer|Private restriction appeal review reason|assigned_to|request_hash|hosted_url|provider_session_id|job_id/);
+  assert.doesNotMatch(text,/fixture-operator|private-moderator-ref|Private internal moderation reason|private-spam-reviewer|Private spam triage review reason|community-spam-rules-v1|likely-spam|private-appeal-moderator|Private internal appeal reason|private-restriction-moderator|Private internal restriction reason|private-restriction-appeal-reviewer|Private restriction appeal review reason|assigned_to|request_hash|hosted_url|provider_session_id|job_id/);
   assert.equal((exported.artifact.notices as {scope:string}).scope.includes('does not claim'),true);
 });
 

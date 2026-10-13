@@ -14,6 +14,7 @@ import { CommunityMutes } from '../server/community-mutes';
 import {CommunityBlocks} from '../server/community-blocks';
 import { CommunityRestrictions } from '../server/community-restrictions';
 import { CommunitySubmissions } from '../server/community-submissions';
+import {classifyCommunitySpam,communitySpamTriageVersion} from '../server/community-spam-triage';
 import { localConnection, postgresConnection, type Database } from '../server/db/connection';
 import { assertDatabaseVersion, migrateDatabase, migrations } from '../server/db/migrations';
 import { HttpError } from '../server/http-error';
@@ -76,7 +77,20 @@ test('community URL helpers preserve exact bounded data and reject malformed or 
   assert.deepEqual(parseStudioAddress('/community/questions/literal%252F','').segments,['community','questions','literal%2F']);
 });
 
-test('migrations 21-36 preserve actual legacy community data while adding deletion, moderation and personal-safety state',async t=>{
+test('community spam triage is deterministic, bounded and content-only',()=>{
+  const likely=classifyCommunitySpam({title:'LIMITED TIME promo code',body:
+    'BUY NOW and contact me on Telegram!!!!!!!! https://one.invalid https://two.invalid https://three.invalid',
+    category:'spam',contentRevision:4});
+  assert.equal(likely.algorithmVersion,communitySpamTriageVersion);assert.equal(likely.score,100);
+  assert.equal(likely.classification,'likely-spam');
+  assert.deepEqual(likely.signals,['multiple-links','contact-solicitation','promotional-language','repetitive-content']);
+  assert.deepEqual(classifyCommunitySpam({title:null,body:'A normal technical discussion.',category:'other',contentRevision:0}),
+    {...classifyCommunitySpam({title:null,body:'A normal technical discussion.',category:'other',contentRevision:0})});
+  const bounded=classifyCommunitySpam({title:null,body:'x'.repeat(20_001),category:'other',contentRevision:0});
+  assert.equal(bounded.inputTruncated,true);assert.ok(bounded.signals.includes('input-truncated'));
+});
+
+test('migrations 21-37 preserve actual legacy community data while adding deletion, moderation and personal-safety state',async t=>{
   const f=await fixture(t,'postgres'),post=await f.add();
   await f.db.prepare('INSERT INTO votes(post_id,user_id) VALUES(?,?)').run(post.id,f.owners[0]);
   await f.db.prepare('INSERT INTO follows(post_id,user_id) VALUES(?,?)').run(post.id,f.owners[1]);
@@ -128,6 +142,8 @@ test('migrations 21-36 preserve actual legacy community data while adding deleti
   assert.deepEqual(await legacy.prepare('SELECT * FROM community_reports').all(),[]);
   assert.deepEqual(await legacy.prepare('SELECT * FROM community_moderation_targets').all(),[]);
   assert.deepEqual(await legacy.prepare('SELECT * FROM community_moderation_events').all(),[]);
+  assert.deepEqual(await legacy.prepare('SELECT * FROM community_spam_triage').all(),[]);
+  assert.deepEqual(await legacy.prepare('SELECT * FROM community_spam_triage_events').all(),[]);
   assert.deepEqual(await legacy.prepare('SELECT * FROM community_appeals').all(),[]);
   assert.deepEqual(await legacy.prepare('SELECT * FROM community_appeal_events').all(),[]);
   assert.deepEqual(await legacy.prepare('SELECT * FROM community_mutes').all(),[]);
@@ -150,6 +166,7 @@ test('migrations 21-36 preserve actual legacy community data while adding deleti
   for(const name of ['posts_owner_order','posts_created_order','follows_owner','comments_resource_cursor','community_comment_submissions_owner',
     'community_comment_submissions_resource','community_comment_deletions_owner','community_reports_owner_key','community_reports_queue',
     'community_reports_owner_open','community_moderation_events_report','community_appeals_owner_key',
+    'community_spam_triage_queue','community_spam_triage_events_report',
     'community_appeals_owner_target_revision','community_appeals_queue','community_appeals_owner_order',
     'community_appeal_events_appeal','community_mutes_owner_state','community_mutes_subject','community_mute_intents_owner_order',
     'community_blocks_owner_state','community_blocks_subject_owner','community_block_intents_owner_order',
@@ -490,6 +507,77 @@ for(const dialect of ['sqlite','postgres'] as const){
       .run('tampered-target',viewer.id));
     await assert.rejects(()=>f.db.prepare('DELETE FROM community_mute_intents WHERE owner_id=?').run(viewer.id));
     await assert.rejects(()=>f.db.prepare(`UPDATE community_mutes SET state='unmuted' WHERE id=?`).run(saved.id));
+  });
+
+  test(`${dialect}: spam triage stays non-punitive until one exact authorized human review`,async t=>{
+    const f=await fixture(t,dialect),reporter={id:f.owners[1],name:'Reporter',email:`${f.owners[1]}@example.invalid`,demo:false};
+    const administrator={id:f.owners[0],name:'Administrator',email:`${f.owners[0]}@example.invalid`,demo:false};
+    const authority={assertStaff:async()=>{},staffRoles:async(id:string)=>id===administrator.id?['administrator']:[]} as unknown as ManagedIdentity;
+    const service=new CommunityModeration(f.db,authority);
+    const post=await f.add({owner:administrator.id,title:'Limited time promotion',
+      body:'BUY NOW with a promo code. Contact me on Telegram!!!!!!!! https://one.invalid https://two.invalid https://three.invalid'});
+    const receipt=await service.report(reporter,{requestId:randomUUID(),targetType:'post',targetId:post.id,category:'spam',
+      details:'This report identifies repeated promotional links and off-platform contact solicitation.'},async()=>{});
+    const stored=await f.db.prepare(`SELECT algorithm_version,input_hash,state,revision,score,classification
+      FROM community_spam_triage WHERE report_id=?`).get(receipt.id);
+    assert.equal(stored?.algorithm_version,communitySpamTriageVersion);assert.equal(stored?.state,'pending');
+    assert.equal(stored?.revision,0);assert.equal(stored?.score,100);assert.equal(stored?.classification,'likely-spam');
+    const inputHash=String(stored?.input_hash);assert.match(inputHash,/^[0-9a-f]{64}$/);
+    const member=await service.reportHistory(reporter,{},async()=>{});
+    assert.equal(member.reports[0]?.id,receipt.id);assert.ok(!Object.hasOwn(member.reports[0]??{},'triage'));
+    const legacyPost=await f.add({owner:administrator.id,title:'Pre-migration triage fixture'}),legacyId=randomUUID(),now=new Date().toISOString();
+    await f.db.prepare(`INSERT INTO community_reports
+      (id,reporter_id,request_key,input_hash,target_type,target_id,category,details,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,'other',?,?,?)`)
+      .run(legacyId,reporter.id,randomUUID(),'a'.repeat(64),'post',legacyPost.id,
+        'A pre-migration report intentionally has no fabricated spam triage snapshot.',now,now);
+    const queue=await service.queue(administrator,{}),current=queue.reports.find(value=>value.id===receipt.id),
+      legacy=queue.reports.find(value=>value.id===legacyId);
+    assert.ok(current?.triage);assert.equal(current.triage.classification,'likely-spam');
+    assert.deepEqual(current.triage.signals,['multiple-links','contact-solicitation','promotional-language','repetitive-content']);
+    assert.equal(legacy?.triage,null);assert.ok(!JSON.stringify(queue).includes(reporter.id));
+    assert.ok(!JSON.stringify(queue).includes(inputHash));
+    const moderatorAuthority={assertStaff:async()=>{},staffRoles:async(id:string)=>id===reporter.id?['moderator']:[]} as unknown as ManagedIdentity;
+    await assert.rejects(()=>new CommunityModeration(f.db,moderatorAuthority).reviewTriage(reporter,receipt.id,{
+      revision:0,decision:'confirmed',reason:'A moderator must claim this report before reviewing the automated suggestion.',
+    }),status(409));
+    const before=await f.db.prepare('SELECT state,assigned_to,report_revision FROM community_reports WHERE id=?').get(receipt.id);
+    const decisions=await Promise.allSettled([
+      service.reviewTriage(administrator,receipt.id,{revision:0,decision:'confirmed',
+        reason:'The bounded signals match the exact contribution, but this review applies no moderation action.'}),
+      service.reviewTriage(administrator,receipt.id,{revision:0,decision:'rejected',
+        reason:'A competing reviewer rejects the suggestion without changing contribution or account state.'}),
+    ]);
+    assert.equal(decisions.filter(value=>value.status==='fulfilled').length,1);
+    const rejected=decisions.find(value=>value.status==='rejected');assert.ok(rejected?.status==='rejected');
+    assert.ok(rejected.reason instanceof HttpError&&rejected.reason.status===409);
+    const reviewed=decisions.find(value=>value.status==='fulfilled');assert.ok(reviewed?.status==='fulfilled');
+    assert.equal(reviewed.value.triage?.state,'reviewed');assert.equal(reviewed.value.triage?.revision,1);
+    assert.deepEqual(await f.db.prepare('SELECT state,assigned_to,report_revision FROM community_reports WHERE id=?').get(receipt.id),before);
+    assert.equal(await f.db.prepare('SELECT state FROM community_moderation_targets WHERE target_type=? AND target_id=?')
+      .get('post',post.id),undefined);
+    assert.equal(Number((await f.db.prepare('SELECT count(*) AS count FROM community_restrictions WHERE source_report_id=?')
+      .get(receipt.id))?.count),0);
+    const events=await f.db.prepare(`SELECT decision,actor_ref,prior_revision,result_revision
+      FROM community_spam_triage_events WHERE report_id=?`).all(receipt.id);
+    assert.equal(events.length,1);assert.equal(events[0]?.actor_ref,administrator.id);
+    assert.equal(events[0]?.prior_revision,0);assert.equal(events[0]?.result_revision,1);
+    const stalePost=await f.add({owner:administrator.id,title:'Editable triage revision fixture'}),stale=await service.report(reporter,{
+      requestId:randomUUID(),targetType:'post',targetId:stalePost.id,category:'other',
+      details:'This report receives a snapshot before the exact contribution content is edited.',
+    },async()=>{});
+    await f.db.prepare('UPDATE posts SET body=? WHERE id=?').run(
+      'The contribution changed after its bounded spam suggestion was generated.',stalePost.id);
+    const staleQueue=(await service.queue(administrator,{})).reports.find(value=>value.id===stale.id);
+    assert.equal(staleQueue?.triage?.contentRevision,0);assert.equal(staleQueue?.target.contentRevision,1);
+    await assert.rejects(()=>service.reviewTriage(administrator,stale.id,{revision:0,decision:'confirmed',
+      reason:'A stale suggestion must not be confirmed while displaying a newer contribution revision.'}),status(409));
+    const rejectedStale=await service.reviewTriage(administrator,stale.id,{revision:0,decision:'rejected',
+      reason:'Reject the stale suggestion because the contribution changed after generation.'});
+    assert.equal(rejectedStale.triage?.outcome,'rejected');assert.equal(rejectedStale.target.contentRevision,1);
+    await assert.rejects(()=>f.db.prepare('UPDATE community_spam_triage SET score=0 WHERE report_id=?').run(receipt.id));
+    await assert.rejects(()=>f.db.prepare('DELETE FROM community_spam_triage_events WHERE report_id=?').run(receipt.id));
+    await assert.rejects(()=>f.db.prepare('DELETE FROM community_spam_triage WHERE report_id=?').run(receipt.id));
   });
 
   test(`${dialect}: personal account blocks create a private two-way interaction boundary with exact owner recovery`,async t=>{

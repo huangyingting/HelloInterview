@@ -165,6 +165,18 @@ privacy, concurrency and failure behavior. Approved interaction/retention
 policy, global abuse response, external notification, staffing, managed writing
 and launch approval remain gates.
 
+**Implemented reviewed spam-triage checkpoint (W11):** every newly saved report
+receives one bounded `community-spam-rules-v1` content-only suggestion with an
+exact input hash, fixed inspectable signals, score and unlikely/uncertain/likely
+label. Only the MFA/role-gated staff queue exposes it. An assigned moderator or
+administrator can confirm or reject the suggestion once with revision-fenced
+immutable evidence. Neither decision changes report, contribution, restriction
+or account state. Migration 37 and the
+[spam-triage runbook](46-reviewed-non-punitive-community-spam-triage.md) record
+the false-positive, privacy, rollback and concurrency boundaries. Approved
+policy, operated calibration, staffing, external notices, managed writing and
+launch approval remain gates.
+
 **Implemented managed staff-administration checkpoint (W10):** verified OIDC
 `amr` can establish explicit MFA evidence for a managed session; privileged
 staff admission additionally requires an active verified account, a current

@@ -56,11 +56,20 @@ export interface CommunityMute {
   id:string;targetType:'post'|'comment';targetId:string;revision:number;createdAt:string;updatedAt:string;
 }
 export interface CommunityMutePage {mutes:CommunityMute[];nextCursor:string|null}
+export type CommunitySpamTriageClassification='unlikely-spam'|'uncertain'|'likely-spam';
+export type CommunitySpamTriageSignal=
+  'multiple-links'|'contact-solicitation'|'promotional-language'|'repetitive-content'|'input-truncated';
+export interface StaffCommunitySpamTriage {
+  algorithmVersion:'community-spam-rules-v1';classification:CommunitySpamTriageClassification;score:number;
+  signals:CommunitySpamTriageSignal[];contentRevision:number;state:'pending'|'reviewed';revision:number;
+  outcome:'confirmed'|'rejected'|null;createdAt:string;updatedAt:string;
+}
 export interface StaffCommunityReport {
   id:string;targetType:'post'|'comment';targetId:string;category:CommunityReportCategory;details:string;
   status:'open'|'dismissed'|'actioned';revision:number;assignment:'me'|'other'|null;
   targetState:'visible'|'hidden';targetRevision:number;createdAt:string;updatedAt:string;
-  target:{title:string|null;body:string;author:string;resource:string|null};
+  triage:StaffCommunitySpamTriage|null;
+  target:{title:string|null;body:string;author:string;resource:string|null;contentRevision:number|null};
 }
 export interface StaffCommunityReportPage {reports:StaffCommunityReport[];nextCursor:string|null}
 export interface StaffCommunityAppeal {

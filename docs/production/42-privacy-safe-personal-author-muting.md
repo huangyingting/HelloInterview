@@ -140,8 +140,9 @@ W11 remains open for:
   runbook 45;
 - approved community rules, legal retention and takedown policy;
 - external author/reporter delivery and published response targets;
-- external restriction notices, approved restriction-appeal policy and reviewed
-  automated spam triage; exact in-app restriction appeals follow in runbook 44;
+- external restriction notices, approved restriction-appeal policy and
+  operated calibration for the reviewed spam triage in runbook 46; exact
+  in-app restriction appeals follow in runbook 44;
 - moderation staffing and ownership;
 - managed contribution writing or explicit read-only operating approval;
 - complete privacy erasure and backup/processor handling;

@@ -89,7 +89,9 @@ export class SupportRequests {
       const rows = await this.db.prepare(`SELECT * FROM support WHERE user_id=?
         ${cursor ? 'AND (created_at,id)<(?,?)' : ''} ORDER BY created_at DESC,id DESC LIMIT 11`)
         .all(user.id, ...(cursor ? [cursor.createdAt, cursor.id] : []));
-      const tickets = await Promise.all(rows.slice(0, 10).map(row=>receipt(this.db,row))), last = tickets.at(-1);
+      const tickets:SupportReceipt[]=[];
+      for(const row of rows.slice(0,10))tickets.push(await receipt(this.db,row));
+      const last = tickets.at(-1);
       const nextCursor = rows.length > 10 && last ? Buffer.from(JSON.stringify({ owner: user.id, id: last.id, createdAt: last.createdAt })).toString('base64url') : null;
       await this.identity.assertSupport(user);
       return { tickets, nextCursor, delivery: 'not-connected' };

@@ -1600,6 +1600,90 @@ export const migrations = [{
       CREATE TRIGGER protect_community_block_intent_delete BEFORE DELETE ON community_block_intents
         FOR EACH ROW EXECUTE FUNCTION protect_community_block_intent_delete();
     `,
+  }, {
+    version: 37,
+    name: 'reviewed-non-punitive-community-spam-triage',
+    sql: `
+      CREATE TABLE community_spam_triage (
+        report_id UUID PRIMARY KEY REFERENCES community_reports(id) ON DELETE RESTRICT,
+        algorithm_version TEXT NOT NULL CHECK(algorithm_version='community-spam-rules-v1'),
+        input_hash TEXT NOT NULL CHECK(input_hash ~ '^[0-9a-f]{64}$'),
+        content_revision INTEGER NOT NULL CHECK(content_revision>=0),
+        input_truncated BOOLEAN NOT NULL,
+        score INTEGER NOT NULL CHECK(score BETWEEN 0 AND 100),
+        classification TEXT NOT NULL CHECK(classification IN ('unlikely-spam','uncertain','likely-spam')),
+        link_count INTEGER NOT NULL CHECK(link_count BETWEEN 0 AND 20),
+        contact_solicitation BOOLEAN NOT NULL,
+        promotional_language BOOLEAN NOT NULL,
+        repetitive_content BOOLEAN NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('pending','reviewed')),
+        outcome TEXT CHECK(outcome IN ('confirmed','rejected')),
+        revision INTEGER NOT NULL CHECK(revision>=0),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        CHECK((score<30 AND classification='unlikely-spam') OR
+          (score BETWEEN 30 AND 59 AND classification='uncertain') OR
+          (score>=60 AND classification='likely-spam')),
+        CHECK((state='pending' AND outcome IS NULL AND revision=0) OR
+          (state='reviewed' AND outcome IS NOT NULL AND revision=1))
+      );
+      CREATE INDEX community_spam_triage_queue
+        ON community_spam_triage(state,classification,score DESC,updated_at DESC,report_id);
+      CREATE TABLE community_spam_triage_events (
+        id UUID PRIMARY KEY,
+        report_id UUID NOT NULL REFERENCES community_spam_triage(report_id) ON DELETE RESTRICT,
+        actor_ref TEXT NOT NULL,
+        actor_role TEXT NOT NULL CHECK(actor_role IN ('moderator','administrator')),
+        decision TEXT NOT NULL CHECK(decision IN ('confirmed','rejected')),
+        reason TEXT NOT NULL CHECK(length(reason) BETWEEN 20 AND 500),
+        prior_revision INTEGER NOT NULL CHECK(prior_revision=0),
+        result_revision INTEGER NOT NULL CHECK(result_revision=1),
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX community_spam_triage_events_report
+        ON community_spam_triage_events(report_id,created_at,id);
+      CREATE FUNCTION initialize_community_spam_triage() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NEW.state<>'pending' OR NEW.outcome IS NOT NULL OR NEW.revision<>0 OR NEW.created_at<>NEW.updated_at
+          THEN RAISE EXCEPTION 'New spam triage snapshots must begin pending at revision zero.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER initialize_community_spam_triage BEFORE INSERT ON community_spam_triage
+        FOR EACH ROW EXECUTE FUNCTION initialize_community_spam_triage();
+      CREATE FUNCTION protect_community_spam_triage() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NOT (NEW.report_id=OLD.report_id AND NEW.algorithm_version=OLD.algorithm_version AND NEW.input_hash=OLD.input_hash AND
+            NEW.content_revision=OLD.content_revision AND NEW.input_truncated=OLD.input_truncated AND NEW.score=OLD.score AND
+            NEW.classification=OLD.classification AND NEW.link_count=OLD.link_count AND
+            NEW.contact_solicitation=OLD.contact_solicitation AND NEW.promotional_language=OLD.promotional_language AND
+            NEW.repetitive_content=OLD.repetitive_content AND OLD.state='pending' AND OLD.outcome IS NULL AND OLD.revision=0 AND
+            NEW.state='reviewed' AND NEW.outcome IS NOT NULL AND NEW.revision=1 AND NEW.created_at=OLD.created_at AND
+            NEW.updated_at>=OLD.updated_at)
+          THEN RAISE EXCEPTION 'Spam triage permits only one revision-fenced human review.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER protect_community_spam_triage BEFORE UPDATE ON community_spam_triage
+        FOR EACH ROW EXECUTE FUNCTION protect_community_spam_triage();
+      CREATE FUNCTION validate_community_spam_triage_event() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NOT EXISTS(SELECT 1 FROM community_spam_triage triage WHERE triage.report_id=NEW.report_id AND
+            triage.state='reviewed' AND triage.outcome=NEW.decision AND triage.revision=NEW.result_revision)
+          THEN RAISE EXCEPTION 'Spam triage review evidence must reference the resulting decision.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER validate_community_spam_triage_event BEFORE INSERT ON community_spam_triage_events
+        FOR EACH ROW EXECUTE FUNCTION validate_community_spam_triage_event();
+      CREATE FUNCTION immutable_community_spam_triage_record() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN RAISE EXCEPTION 'Community spam triage evidence is immutable.'; END;
+      $$;
+      CREATE TRIGGER immutable_community_spam_triage_event BEFORE UPDATE OR DELETE ON community_spam_triage_events
+        FOR EACH ROW EXECUTE FUNCTION immutable_community_spam_triage_record();
+      CREATE TRIGGER immutable_community_spam_triage_delete BEFORE DELETE ON community_spam_triage
+        FOR EACH ROW EXECUTE FUNCTION immutable_community_spam_triage_record();
+    `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

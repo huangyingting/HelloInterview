@@ -1257,6 +1257,10 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     app.patch('/api/staff/community/reports/:id',async(req,res)=>{
       const user=await requireUser(req);await identity.admitStaff(user,res);res.json(await moderation.act(user,req.params.id,req.body));
     });
+    app.patch('/api/staff/community/reports/:id/triage',async(req,res)=>{
+      const user=await requireUser(req);await identity.admitStaff(user,res);
+      res.json(await moderation.reviewTriage(user,req.params.id,req.body));
+    });
     app.post('/api/staff/community/reports/:id/restrictions',async(req,res)=>{
       const user=await requireUser(req);await identity.admitStaff(user,res);
       res.status(201).json(await restrictions.apply(user,req.params.id,req.body));

@@ -177,6 +177,44 @@ export function openDatabase(dataDir: string): DatabaseSync {
           (action IN ('claim','release','dismiss') AND prior_target_revision IS NULL))
       );
       CREATE INDEX IF NOT EXISTS community_moderation_events_report ON community_moderation_events(report_id,created_at,id);
+      CREATE TABLE IF NOT EXISTS community_spam_triage (
+        report_id TEXT PRIMARY KEY REFERENCES community_reports(id) ON DELETE RESTRICT,
+        algorithm_version TEXT NOT NULL CHECK(algorithm_version='community-spam-rules-v1'),
+        input_hash TEXT NOT NULL CHECK(length(input_hash)=64 AND input_hash NOT GLOB '*[^0-9a-f]*'),
+        content_revision INTEGER NOT NULL CHECK(content_revision>=0),
+        input_truncated INTEGER NOT NULL CHECK(input_truncated IN (0,1)),
+        score INTEGER NOT NULL CHECK(score BETWEEN 0 AND 100),
+        classification TEXT NOT NULL CHECK(classification IN ('unlikely-spam','uncertain','likely-spam')),
+        link_count INTEGER NOT NULL CHECK(link_count BETWEEN 0 AND 20),
+        contact_solicitation INTEGER NOT NULL CHECK(contact_solicitation IN (0,1)),
+        promotional_language INTEGER NOT NULL CHECK(promotional_language IN (0,1)),
+        repetitive_content INTEGER NOT NULL CHECK(repetitive_content IN (0,1)),
+        state TEXT NOT NULL CHECK(state IN ('pending','reviewed')),
+        outcome TEXT CHECK(outcome IN ('confirmed','rejected')),
+        revision INTEGER NOT NULL CHECK(revision>=0),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        CHECK((score<30 AND classification='unlikely-spam') OR
+          (score BETWEEN 30 AND 59 AND classification='uncertain') OR
+          (score>=60 AND classification='likely-spam')),
+        CHECK((state='pending' AND outcome IS NULL AND revision=0) OR
+          (state='reviewed' AND outcome IS NOT NULL AND revision=1))
+      );
+      CREATE INDEX IF NOT EXISTS community_spam_triage_queue
+        ON community_spam_triage(state,classification,score DESC,updated_at DESC,report_id);
+      CREATE TABLE IF NOT EXISTS community_spam_triage_events (
+        id TEXT PRIMARY KEY,
+        report_id TEXT NOT NULL REFERENCES community_spam_triage(report_id) ON DELETE RESTRICT,
+        actor_ref TEXT NOT NULL,
+        actor_role TEXT NOT NULL CHECK(actor_role IN ('moderator','administrator')),
+        decision TEXT NOT NULL CHECK(decision IN ('confirmed','rejected')),
+        reason TEXT NOT NULL CHECK(length(reason) BETWEEN 20 AND 500 AND instr(reason,char(0))=0),
+        prior_revision INTEGER NOT NULL CHECK(prior_revision=0),
+        result_revision INTEGER NOT NULL CHECK(result_revision=1),
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS community_spam_triage_events_report
+        ON community_spam_triage_events(report_id,created_at,id);
       CREATE TABLE IF NOT EXISTS community_appeals (
         id TEXT PRIMARY KEY,
         owner_id TEXT REFERENCES users(id) ON DELETE SET NULL,
@@ -433,6 +471,28 @@ export function openDatabase(dataDir: string): DatabaseSync {
       BEGIN SELECT RAISE(ABORT,'Community moderation evidence is immutable.'); END;
       CREATE TRIGGER IF NOT EXISTS immutable_community_moderation_target_delete BEFORE DELETE ON community_moderation_targets
       BEGIN SELECT RAISE(ABORT,'Community moderation evidence is immutable.'); END;
+      CREATE TRIGGER IF NOT EXISTS initialize_community_spam_triage BEFORE INSERT ON community_spam_triage
+      WHEN NEW.state<>'pending' OR NEW.outcome IS NOT NULL OR NEW.revision<>0 OR NEW.created_at<>NEW.updated_at
+      BEGIN SELECT RAISE(ABORT,'New spam triage snapshots must begin pending at revision zero.'); END;
+      CREATE TRIGGER IF NOT EXISTS protect_community_spam_triage BEFORE UPDATE ON community_spam_triage
+      WHEN NOT (NEW.report_id=OLD.report_id AND NEW.algorithm_version=OLD.algorithm_version AND NEW.input_hash=OLD.input_hash AND
+        NEW.content_revision=OLD.content_revision AND NEW.input_truncated=OLD.input_truncated AND NEW.score=OLD.score AND
+        NEW.classification=OLD.classification AND NEW.link_count=OLD.link_count AND
+        NEW.contact_solicitation=OLD.contact_solicitation AND NEW.promotional_language=OLD.promotional_language AND
+        NEW.repetitive_content=OLD.repetitive_content AND OLD.state='pending' AND OLD.outcome IS NULL AND OLD.revision=0 AND
+        NEW.state='reviewed' AND NEW.outcome IS NOT NULL AND NEW.revision=1 AND NEW.created_at=OLD.created_at AND
+        NEW.updated_at>=OLD.updated_at)
+      BEGIN SELECT RAISE(ABORT,'Spam triage permits only one revision-fenced human review.'); END;
+      CREATE TRIGGER IF NOT EXISTS validate_community_spam_triage_event BEFORE INSERT ON community_spam_triage_events
+      WHEN NOT EXISTS(SELECT 1 FROM community_spam_triage triage WHERE triage.report_id=NEW.report_id AND
+        triage.state='reviewed' AND triage.outcome=NEW.decision AND triage.revision=NEW.result_revision)
+      BEGIN SELECT RAISE(ABORT,'Spam triage review evidence must reference the resulting decision.'); END;
+      CREATE TRIGGER IF NOT EXISTS immutable_community_spam_triage_event_update BEFORE UPDATE ON community_spam_triage_events
+      BEGIN SELECT RAISE(ABORT,'Community spam triage evidence is immutable.'); END;
+      CREATE TRIGGER IF NOT EXISTS immutable_community_spam_triage_event_delete BEFORE DELETE ON community_spam_triage_events
+      BEGIN SELECT RAISE(ABORT,'Community spam triage evidence is immutable.'); END;
+      CREATE TRIGGER IF NOT EXISTS immutable_community_spam_triage_delete BEFORE DELETE ON community_spam_triage
+      BEGIN SELECT RAISE(ABORT,'Community spam triage evidence is immutable.'); END;
       CREATE TRIGGER IF NOT EXISTS protect_community_appeal BEFORE UPDATE ON community_appeals
       WHEN NOT (
         OLD.owner_id IS NOT NULL AND NEW.owner_id IS NULL AND
