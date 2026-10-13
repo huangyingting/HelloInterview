@@ -114,10 +114,10 @@ hidden revision atomically. Managed report/appeal writes consume shared
 PostgreSQL account and canonical-network admission buckets and fail closed when
 that protection is unavailable. The
 [appeal runbook](41-community-appeals-status-admission.md) records migration 32,
-privacy export and failure behavior. External delivery, account blocking,
-automated enforcement, staffed targets, approved retention and managed writing
-remain separate launch gates; reviewed expiring restrictions are added by
-runbook 43.
+privacy export and failure behavior. External delivery, automated enforcement,
+staffed targets, approved retention/interaction policy and managed writing
+remain separate launch gates; reviewed restrictions and personal blocking are
+added by runbooks 43 and 45.
 
 **Implemented personal author-muting checkpoint (W11):** authenticated members
 can privately mute one live contribution author with an exact UUID key, hide
@@ -126,9 +126,9 @@ non-interactive personal tombstones. Exact revision-fenced unmute, bounded
 minimized history, privacy exports without subject account IDs and shared
 managed admission are included in migration 33. The
 [mute runbook](42-privacy-safe-personal-author-muting.md) records concurrency,
-privacy and failure behavior. Relationship-wide account blocking, automated
-abuse policy, external notification, staffing, approved retention and managed
-writing remain gates; reviewed expiring restrictions are added by runbook 43.
+privacy and failure behavior. Automated abuse policy, external notification,
+staffing, approved retention/interaction policy and managed writing remain
+gates; relationship-wide blocking is added by runbook 45.
 
 **Implemented reviewed community-restriction checkpoint (W11):** fresh
 MFA-authorized moderators or administrators can issue one exact report-bound
@@ -138,8 +138,8 @@ and lift are revision-fenced; member status/privacy exports are minimized; and
 staff reasons remain immutable private evidence in migration 34. The
 [restriction runbook](43-reviewed-expiring-community-restrictions.md) records
 lock order, expiry and failure behavior. Automated enforcement, permanent/global
-suspension, relationship-wide blocking, external notices, approved policy,
-staffing and managed writing remain gates.
+suspension, external notices, approved abuse/interaction policy, staffing and
+managed writing remain gates; personal blocking is added by runbook 45.
 
 **Implemented exact restriction-appeal checkpoint (W11):** a restricted member
 can submit one owner/key/restriction-revision-bound in-app appeal. A different
@@ -152,6 +152,18 @@ appeal/restriction evidence. The
 lock order, independence and failure behavior. External notices, approved
 abuse/appeal policy, staffed response targets, managed writing and launch
 approval remain gates.
+
+**Implemented privacy-safe relationship-blocking checkpoint (W11):**
+authenticated members can privately block one live contribution account with
+an exact UUID key. Either active direction hides the two accounts' posts from
+each other, renders direction-neutral comment safety tombstones and prevents
+direct vote/follow/discussion/reply writes under one canonical account-pair
+lock. Exact owner-only unblock, bounded minimized history, privacy export and
+shared managed admission are included in migration 36. The
+[blocking runbook](45-privacy-safe-community-account-blocking.md) records
+privacy, concurrency and failure behavior. Approved interaction/retention
+policy, global abuse response, external notification, staffing, managed writing
+and launch approval remain gates.
 
 **Implemented managed staff-administration checkpoint (W10):** verified OIDC
 `amr` can establish explicit MFA evidence for a managed session; privileged

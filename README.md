@@ -257,8 +257,9 @@ community writing remain disabled.
 The [personal author-muting checkpoint](docs/production/42-privacy-safe-personal-author-muting.md)
 adds exact private mute/unmute receipts, central per-viewer post filtering,
 non-interactive muted-comment tombstones, minimized history/privacy exports and
-shared managed admission without exposing the muted account. Account blocking,
-notifications and managed community writing remain open.
+shared managed admission without exposing the muted account. Relationship-wide
+blocking follows in the separate checkpoint below; notifications and managed
+community writing remain open.
 The [reviewed community-restriction checkpoint](docs/production/43-reviewed-expiring-community-restrictions.md)
 adds report-bound, MFA/role-gated author-participation and reporter-submission
 restrictions with fixed expiry, revision-fenced extension/lift, minimized
@@ -270,7 +271,13 @@ adds owner/key/restriction-revision-bound in-app review, independent moderator
 decisions, exact atomic uphold/lift and minimized member/staff/privacy surfaces.
 It does not promise external delivery, response times, approved policy, staffing
 or managed writing.
-Controlled PostgreSQL deployments must apply **migration 35 and maintained queue
+The [relationship-blocking checkpoint](docs/production/45-privacy-safe-community-account-blocking.md)
+adds exact private block/unblock receipts, direction-neutral two-account post
+filtering/comment tombstones, relationship-locked direct interaction and
+minimized history/privacy exports. It does not remove content globally, notify
+the other member, expose block direction or claim an approved interaction
+policy.
+Controlled PostgreSQL deployments must apply **migration 36 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 

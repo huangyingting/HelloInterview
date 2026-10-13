@@ -184,7 +184,8 @@ W11 remains open for:
 
 - external author/reporter restriction notices;
 - an approved abuse, appeal, retention and takedown policy;
-- relationship-wide personal account blocking and direct-interaction policy;
+- approved relationship/direct-interaction policy; personal account blocking
+  follows in runbook 45;
 - reviewed automated spam triage that cannot make irreversible decisions;
 - moderation staffing, escalation ownership and published response targets;
 - managed contribution writing or explicit read-only operating approval;

@@ -6,6 +6,7 @@ import { commentDto } from './community-contributions';
 import { communityDiscussionResource, communityIdentifierSchema, communityPageCursor } from './community';
 import { digest, encodePayload } from './jobs/schema';
 import { HttpError } from './http-error';
+import {CommunityBlocks} from './community-blocks';
 
 const key = z.uuid().transform(value => value.toLowerCase());
 const inputSchema = z.strictObject({
@@ -20,7 +21,8 @@ const cursorSchema = z.strictObject({
 });
 
 export class CommunitySubmissions {
-  constructor(private readonly db: Database) {}
+  private readonly blocks:CommunityBlocks;
+  constructor(private readonly db: Database) {this.blocks=new CommunityBlocks(db);}
   private async admitted(owner:string,admit:()=>Promise<void>) {
     if(!await this.db.prepare(`SELECT id FROM users WHERE id=?${this.db.dialect==='postgres'?' FOR UPDATE':''}`).get(owner))
       throw new HttpError(401,'Sign in to check or submit your comment.');
@@ -42,7 +44,8 @@ export class CommunitySubmissions {
   private envelope(row:Record<string,unknown>):CommunityCommentSubmission {
     const receipt=receiptSchema.parse({requestId:row.request_id,commentId:row.comment_id,resource:row.resource,createdAt:row.created_at,status:'created'});
     const comment=row.current_id===null?null:commentDto.parse({id:row.current_id,resource:row.current_resource,author:row.current_author,
-      body:row.current_body,createdAt:row.current_created_at,parentId:row.current_parent,isMine:1,deleted:0,moderated:0,moderationRevision:0,muted:0});
+      body:row.current_body,createdAt:row.current_created_at,parentId:row.current_parent,isMine:1,deleted:0,moderated:0,
+      moderationRevision:0,muted:0,blocked:0});
     return {receipt,comment};
   }
   private async snapshot(owner:string,requestId:string) {
@@ -61,6 +64,21 @@ export class CommunitySubmissions {
         if(existing.input_hash!==hash)throw new HttpError(409,'This submission key belongs to different original content. Nothing was replaced or created.');
         return this.snapshot(user.id,request.requestId);
       }
+      const post=request.resource.startsWith('post/')?await this.db.prepare(`SELECT p.author_id FROM posts p WHERE p.id=? AND
+        NOT EXISTS(SELECT 1 FROM community_moderation_targets moderation WHERE moderation.target_type='post'
+          AND moderation.target_id=p.id AND moderation.state='hidden') AND NOT EXISTS(
+          SELECT 1 FROM community_mutes mute WHERE mute.owner_id=? AND mute.subject_id=p.author_id AND mute.state='muted')`)
+        .get(request.resource.slice(5),user.id):undefined;
+      if(request.resource.startsWith('post/')&&!post)throw new HttpError(404,'This post is no longer available for discussion.');
+      const parent=request.parentId?await this.db.prepare(`SELECT comments.user_id FROM comments
+        LEFT JOIN community_comment_tombstones tombstone ON tombstone.comment_id=comments.id
+        LEFT JOIN community_moderation_targets moderation ON moderation.target_type='comment' AND moderation.target_id=comments.id
+        WHERE comments.id=? AND comments.resource=? AND comments.user_id IS NOT NULL AND tombstone.comment_id IS NULL
+          AND COALESCE(moderation.state,'visible')<>'hidden' AND NOT EXISTS(
+            SELECT 1 FROM community_mutes mute WHERE mute.owner_id=? AND mute.subject_id=comments.user_id AND mute.state='muted')`)
+        .get(request.parentId,request.resource,user.id):undefined;
+      if(request.parentId&&!parent)throw new HttpError(400,'Reply must belong to this exact discussion.');
+      await this.blocks.assertAllowedMany(user.id,[post?.author_id,parent?.user_id].filter((value):value is string=>typeof value==='string'));
       if(request.resource.startsWith('post/')&&!await this.db.prepare(`SELECT p.id FROM posts p WHERE p.id=? AND NOT EXISTS(
         SELECT 1 FROM community_moderation_targets moderation WHERE moderation.target_type='post'
           AND moderation.target_id=p.id AND moderation.state='hidden') AND NOT EXISTS(

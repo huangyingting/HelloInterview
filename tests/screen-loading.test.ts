@@ -302,6 +302,51 @@ test('personal author muting hides posts, publishes comment tombstones and un-mu
   await expect(page.locator('[role="dialog"]')).toHaveCount(0);
 });
 
+test('local browser account block creates a private relationship boundary and exact in-page recovery',async t=>{
+  const f=await fixture(t),{page}=f,db=localConnection(f.directory);t.after(()=>db.close());
+  const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);
+  const viewer=(await login.json()).user.id,subject=randomUUID(),subjectPost=randomUUID(),viewerPost=randomUUID(),comment=randomUUID();
+  await db.prepare('INSERT INTO users(id,name,email,password,demo) VALUES(?,?,?,NULL,0)')
+    .run(subject,'Blocked browser member',`${subject}@example.invalid`);
+  await db.prepare(`INSERT INTO posts(id,kind,title,body,company,track,level,region,author,author_id,created_at,sample)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,0)`).run(subjectPost,'discussion','Post hidden by relationship block',
+    'A live contribution used to create a private relationship-wide community block.','Fixture Company','system-design',
+    'Senior','Global','Blocked browser member',subject,'2026-01-04T00:00:00.000Z');
+  await db.prepare(`INSERT INTO posts(id,kind,title,body,company,track,level,region,author,author_id,created_at,sample)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,0)`).run(viewerPost,'discussion','Viewer post with blocked relationship comment',
+    'This owned contribution hosts a comment replaced by a private relationship safety tombstone.','Fixture Company','system-design',
+    'Senior','Global','Viewer',viewer,'2026-01-04T00:00:01.000Z');
+  await db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run(comment,`post/${viewerPost}`,subject,
+    'Blocked browser member','A comment hidden by the private relationship block.','2026-01-04T00:00:02.000Z',null);
+  await page.goto(`${f.url}${communityPostPath({kind:'discussion',id:subjectPost})}`);
+  await page.getByRole('button',{name:'Block account',exact:true}).click();
+  await expect(page.getByText(/does not notify the other member or remove content globally/)).toBeVisible();
+  await page.getByRole('button',{name:'Confirm account block',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Post hidden by relationship block',exact:true})).toHaveCount(0);
+  const saved=await db.prepare('SELECT id,state,revision,subject_id FROM community_blocks WHERE owner_id=?').get(viewer);
+  assert.equal(saved?.state,'blocked');assert.equal(saved?.revision,1);assert.equal(saved?.subject_id,subject);
+  const blockId=String(saved?.id);assert.match(blockId,/^[a-f0-9-]{36}$/);
+  assert.equal((await page.request.post(`${f.url}/api/posts/actions`,{
+    data:{id:subjectPost,action:'vote',enabled:true}})).status(),404);
+  assert.equal((await page.request.post(`${f.url}/api/comments`,{
+    data:{resource:`post/${subjectPost}`,parentId:null,body:'A direct discussion write must respect the active block.'}})).status(),404);
+  await page.goto(`${f.url}${communityPostPath({kind:'discussion',id:viewerPost})}`);
+  const tombstone=page.locator('.comment').filter({hasText:'This comment is unavailable due to a personal safety setting.'});
+  await expect(tombstone.getByText('Unavailable',{exact:true})).toBeVisible();
+  await expect(tombstone.getByRole('button',{name:'Reply',exact:true})).toHaveCount(0);
+  await expect(tombstone.getByRole('button',{name:'Report comment',exact:true})).toHaveCount(0);
+  await page.goto(`${f.url}/community/discussion`);
+  await page.getByRole('button',{name:'My moderation status',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Community accounts blocked by me',exact:true})).toBeVisible();
+  await expect(page.getByText(subject,{exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'Remove my block',exact:true}).click();
+  await expect(page.getByText('No community accounts are currently blocked by you.',{exact:true})).toBeVisible();
+  assert.equal((await db.prepare('SELECT state,revision FROM community_blocks WHERE id=?').get(blockId))?.state,'unblocked');
+  await page.goto(`${f.url}${communityPostPath({kind:'discussion',id:viewerPost})}`);
+  await expect(page.getByText('A comment hidden by the private relationship block.',{exact:true})).toBeVisible();
+  await expect(page.locator('[role="dialog"]')).toHaveCount(0);
+});
+
 test('discussion pages expose older authors beyond 500 without losing drafts, duplicating new comments or hiding load failures',async t=>{
   const f=await fixture(t),{page}=f,db=localConnection(f.directory);t.after(()=>db.close());
   const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);

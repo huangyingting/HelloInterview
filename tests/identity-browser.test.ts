@@ -172,6 +172,37 @@ test('managed browser personal muting uses shared admission and exact in-page un
   await expect(page.locator('[role="dialog"]')).toHaveCount(0);
 });
 
+test('managed browser relationship blocking uses shared admission and private exact recovery',async t=>{
+  const f=await fixture(t),{page}=f;
+  await page.goto(`${f.origin}/auth`);await page.getByRole('link',{name:'Continue with Google'}).click();
+  const bootstrap:Bootstrap=await page.evaluate(async()=>(await fetch('/api/bootstrap')).json()),viewer=bootstrap.user?.id;assert.ok(viewer);
+  const subject=randomUUID(),post=randomUUID();
+  await f.db.prepare('INSERT INTO users(id,name,email,password,demo) VALUES(?,?,?,NULL,0)')
+    .run(subject,'Managed block subject',`${subject}@example.invalid`);
+  await f.db.prepare(`INSERT INTO posts(id,kind,title,body,company,track,level,region,author,author_id,created_at,sample)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,0)`).run(post,'discussion','Managed relationship block target',
+    'A synthetic contribution used to verify shared admission for a private account block.','Fixture Company','system-design',
+    'Senior','Global','Managed block subject',subject,new Date().toISOString());
+  await page.goto(`${f.origin}${communityPostPath({kind:'discussion',id:post})}`);
+  await page.getByRole('button',{name:'Block account',exact:true}).click();
+  await page.getByRole('button',{name:'Confirm account block',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Managed relationship block target',exact:true})).toHaveCount(0);
+  const saved=await f.db.prepare('SELECT id,state,revision,subject_id FROM community_blocks WHERE owner_id=?').get(viewer);
+  assert.equal(saved?.state,'blocked');assert.equal(saved?.revision,1);assert.equal(saved?.subject_id,subject);
+  const blockId=String(saved?.id);assert.match(blockId,/^[a-f0-9-]{36}$/);
+  assert.deepEqual((await f.db.prepare(`SELECT scope FROM identity_abuse_buckets
+    WHERE scope IN ('community-network','community-account') ORDER BY scope`).all()).map(row=>row.scope),
+  ['community-account','community-network']);
+  await page.getByRole('button',{name:'My moderation status',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Community accounts blocked by me',exact:true})).toBeVisible();
+  await expect(page.getByText(subject,{exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'Remove my block',exact:true}).click();
+  await expect(page.getByText('No community accounts are currently blocked by you.',{exact:true})).toBeVisible();
+  assert.deepEqual(await f.db.prepare('SELECT state,revision FROM community_blocks WHERE id=?').get(blockId),
+    {state:'unblocked',revision:2});
+  await expect(page.locator('[role="dialog"]')).toHaveCount(0);
+});
+
 test('staff UI is deferred, capability-gated and applies an audited in-page suspension without dialogs',async t=>{
   const f=await fixture(t),{page}=f;
   f.setClaims({amr:['pwd','mfa']});

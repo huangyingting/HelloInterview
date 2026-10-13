@@ -248,6 +248,38 @@ export function openDatabase(dataDir: string): DatabaseSync {
       );
       CREATE INDEX IF NOT EXISTS community_mute_intents_owner_order
         ON community_mute_intents(owner_id,created_at DESC,request_key DESC);
+      CREATE TABLE IF NOT EXISTS community_blocks (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        subject_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        target_type TEXT NOT NULL CHECK(target_type IN ('post','comment')),
+        target_id TEXT NOT NULL CHECK(length(target_id) BETWEEN 1 AND 200 AND instr(target_id,char(0))=0),
+        state TEXT NOT NULL CHECK(state IN ('blocked','unblocked')),
+        revision INTEGER NOT NULL CHECK(revision>0),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(owner_id,subject_id),
+        CHECK(owner_id<>subject_id)
+      );
+      CREATE INDEX IF NOT EXISTS community_blocks_owner_state
+        ON community_blocks(owner_id,state,updated_at DESC,id DESC);
+      CREATE INDEX IF NOT EXISTS community_blocks_subject_owner
+        ON community_blocks(subject_id,owner_id,state);
+      CREATE TABLE IF NOT EXISTS community_block_intents (
+        owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        request_key TEXT NOT NULL,
+        input_hash TEXT NOT NULL CHECK(length(input_hash)=64 AND input_hash NOT GLOB '*[^0-9a-f]*'),
+        block_id TEXT NOT NULL REFERENCES community_blocks(id) ON DELETE CASCADE,
+        target_type TEXT NOT NULL CHECK(target_type IN ('post','comment')),
+        target_id TEXT NOT NULL CHECK(length(target_id) BETWEEN 1 AND 200 AND instr(target_id,char(0))=0),
+        blocked INTEGER NOT NULL CHECK(blocked IN (0,1)),
+        prior_revision INTEGER NOT NULL CHECK(prior_revision>=0),
+        result_revision INTEGER NOT NULL CHECK(result_revision=prior_revision OR result_revision=prior_revision+1),
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(owner_id,request_key)
+      );
+      CREATE INDEX IF NOT EXISTS community_block_intents_owner_order
+        ON community_block_intents(owner_id,created_at DESC,request_key DESC);
       CREATE TABLE IF NOT EXISTS community_restrictions (
         id TEXT PRIMARY KEY,
         subject_id TEXT REFERENCES users(id) ON DELETE SET NULL,
@@ -446,6 +478,27 @@ export function openDatabase(dataDir: string): DatabaseSync {
       BEGIN SELECT RAISE(ABORT,'Community mute intent receipts are immutable.'); END;
       CREATE TRIGGER IF NOT EXISTS immutable_community_mute_intent_delete BEFORE DELETE ON community_mute_intents
       BEGIN SELECT RAISE(ABORT,'Community mute intent receipts are immutable.'); END;
+      CREATE TRIGGER IF NOT EXISTS protect_community_block BEFORE UPDATE ON community_blocks
+      WHEN NOT (NEW.id=OLD.id AND NEW.owner_id=OLD.owner_id AND NEW.subject_id=OLD.subject_id AND
+        NEW.target_type=OLD.target_type AND NEW.target_id=OLD.target_id AND NEW.state<>OLD.state AND
+        NEW.revision=OLD.revision+1 AND NEW.created_at=OLD.created_at AND NEW.updated_at>=OLD.updated_at)
+      BEGIN SELECT RAISE(ABORT,'Community blocks allow only one revision-fenced desired-state transition.'); END;
+      CREATE TRIGGER IF NOT EXISTS protect_community_block_delete BEFORE DELETE ON community_blocks
+      WHEN EXISTS(SELECT 1 FROM users WHERE id=OLD.owner_id) AND EXISTS(SELECT 1 FROM users WHERE id=OLD.subject_id)
+      BEGIN SELECT RAISE(ABORT,'Community blocks can be deleted only with account erasure.'); END;
+      CREATE TRIGGER IF NOT EXISTS initialize_community_block BEFORE INSERT ON community_blocks
+      WHEN NEW.state<>'blocked' OR NEW.revision<>1 OR NEW.created_at<>NEW.updated_at
+      BEGIN SELECT RAISE(ABORT,'New community blocks must begin blocked at revision one.'); END;
+      CREATE TRIGGER IF NOT EXISTS validate_community_block_intent BEFORE INSERT ON community_block_intents
+      WHEN NOT EXISTS(SELECT 1 FROM community_blocks block WHERE block.id=NEW.block_id AND block.owner_id=NEW.owner_id AND
+        block.revision=NEW.result_revision AND block.state=CASE WHEN NEW.blocked=1 THEN 'blocked' ELSE 'unblocked' END)
+      BEGIN SELECT RAISE(ABORT,'Block intents must reference the resulting owned desired state.'); END;
+      CREATE TRIGGER IF NOT EXISTS immutable_community_block_intent_update BEFORE UPDATE ON community_block_intents
+      BEGIN SELECT RAISE(ABORT,'Community block intent receipts are immutable.'); END;
+      CREATE TRIGGER IF NOT EXISTS protect_community_block_intent_delete BEFORE DELETE ON community_block_intents
+      WHEN EXISTS(SELECT 1 FROM users WHERE id=OLD.owner_id) AND
+        EXISTS(SELECT 1 FROM community_blocks WHERE id=OLD.block_id)
+      BEGIN SELECT RAISE(ABORT,'Community block intent receipts can be deleted only with account erasure.'); END;
       CREATE TRIGGER IF NOT EXISTS initialize_community_restriction BEFORE INSERT ON community_restrictions
       WHEN NEW.subject_id IS NULL OR NEW.state<>'active' OR NEW.revision<>1 OR
         NEW.starts_at<>NEW.created_at OR NEW.created_at<>NEW.updated_at

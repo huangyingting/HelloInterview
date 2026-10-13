@@ -1,6 +1,7 @@
 import {useState} from 'react';
 import type {
-  CommunityAppealReceipt,CommunityAppealStatusPage,CommunityMute,CommunityMutePage,CommunityMuteReceipt,
+  CommunityAppealReceipt,CommunityAppealStatusPage,CommunityBlock,CommunityBlockPage,CommunityBlockReceipt,
+  CommunityMute,CommunityMutePage,CommunityMuteReceipt,
   CommunityReportCategory,CommunityReportReceipt,CommunityReportStatusPage,CommunityRestriction,
   CommunityRestrictionAppealPage,CommunityRestrictionAppealReceipt,CommunityRestrictionStatus,
 } from '../../shared/types';
@@ -108,6 +109,40 @@ export function CommunityMuteControl({targetType,targetId,onMuted}:{
   </div>;
 }
 
+export function CommunityBlockControl({targetType,targetId,onBlocked}:{
+  targetType:'post'|'comment';targetId:string;onBlocked?:()=>void;
+}) {
+  const {data,notify}=useStudio(),[open,setOpen]=useState(false),[requestId]=useState(()=>crypto.randomUUID());
+  const [pending,setPending]=useState(false),[saved,setSaved]=useState<CommunityBlockReceipt>(),[error,setError]=useState('');
+  if(!data.user)return null;
+  async function submit() {
+    setPending(true);setError('');
+    try{
+      const receipt=await request<CommunityBlockReceipt>('/api/community/blocks',
+        {requestId,blocked:true,targetType,targetId},'PUT');
+      setSaved(receipt);setOpen(false);
+      notify('Account blocked for community interactions. This private setting is not sent to the other member.');
+      onBlocked?.();
+    }catch(cause){
+      const message=cause instanceof Error?cause.message:'The account block was not confirmed.';
+      setError(`${message} Retry only block request ${requestId}.`);notify(message,true);
+    }finally{setPending(false);}
+  }
+  if(saved)return <p className="fine-print" role="status">Community account blocked · request <code>{saved.requestId}</code></p>;
+  return <div className="community-report-control">
+    <button className="text-button" aria-expanded={open} disabled={pending} onClick={()=>setOpen(value=>!value)}>
+      Block account
+    </button>
+    {open&&<div className="panel">
+      <p>This hides community posts between both accounts, replaces comments with private safety tombstones and prevents direct votes, follows, discussion and replies. It does not notify the other member or remove content globally.</p>
+      {error&&<p className="error-text" role="alert">{error}</p>}
+      <button className="button secondary small" disabled={pending} onClick={()=>void submit()}>
+        {pending?'Saving account block...':error?'Retry same block request':'Confirm account block'}
+      </button>
+    </div>}
+  </div>;
+}
+
 function CommunityUnmuteControl({mute,onSaved}:{mute:CommunityMute;onSaved:()=>void}) {
   const {notify}=useStudio(),[requestId]=useState(()=>crypto.randomUUID()),[pending,setPending]=useState(false);
   const [error,setError]=useState('');
@@ -125,6 +160,29 @@ function CommunityUnmuteControl({mute,onSaved}:{mute:CommunityMute;onSaved:()=>v
   return <div>
     <button className="button secondary small" disabled={pending} onClick={()=>void submit()}>
       {pending?'Unmuting author...':error?'Retry same unmute request':'Unmute author'}
+    </button>
+    {error&&<p className="error-text" role="alert">{error}</p>}
+  </div>;
+}
+
+function CommunityUnblockControl({block,onSaved}:{block:CommunityBlock;onSaved:()=>void}) {
+  const {notify}=useStudio(),[requestId]=useState(()=>crypto.randomUUID()),[pending,setPending]=useState(false);
+  const [error,setError]=useState('');
+  async function submit() {
+    setPending(true);setError('');
+    try{
+      await request<CommunityBlockReceipt>('/api/community/blocks',
+        {requestId,blocked:false,blockId:block.id,revision:block.revision},'PUT');
+      notify('Your community block was removed. Another member’s private setting may still keep the relationship unavailable.');
+      onSaved();
+    }catch(cause){
+      const message=cause instanceof Error?cause.message:'The account unblock was not confirmed.';
+      setError(`${message} Retry only unblock request ${requestId}.`);notify(message,true);
+    }finally{setPending(false);}
+  }
+  return <div>
+    <button className="button secondary small" disabled={pending} onClick={()=>void submit()}>
+      {pending?'Removing block...':error?'Retry same unblock request':'Remove my block'}
     </button>
     {error&&<p className="error-text" role="alert">{error}</p>}
   </div>;
@@ -170,22 +228,24 @@ function CommunityRestrictionAppealControl({restriction,onSaved}:{
 export function CommunityModerationHistory() {
   const {data}=useStudio(),[open,setOpen]=useState(false),[reports,setReports]=useState<CommunityReportStatusPage>();
   const [appeals,setAppeals]=useState<CommunityAppealStatusPage>(),[mutes,setMutes]=useState<CommunityMutePage>();
+  const [blocks,setBlocks]=useState<CommunityBlockPage>();
   const [restrictions,setRestrictions]=useState<CommunityRestrictionStatus>();
   const [restrictionAppeals,setRestrictionAppeals]=useState<CommunityRestrictionAppealPage>();
   const [pending,setPending]=useState(false),[error,setError]=useState('');
   if(!data.user)return null;
-  async function load(kind:'initial'|'reports'|'appeals'|'mutes'|'restrictionAppeals') {
+  async function load(kind:'initial'|'reports'|'appeals'|'mutes'|'blocks'|'restrictionAppeals') {
     setPending(true);setError('');
     try{
       if(kind==='initial'){
-        const [reportPage,appealPage,mutePage,restrictionStatus,restrictionAppealPage]=await Promise.all([
+        const [reportPage,appealPage,mutePage,blockPage,restrictionStatus,restrictionAppealPage]=await Promise.all([
           request<CommunityReportStatusPage>('/api/community/reports'),
           request<CommunityAppealStatusPage>('/api/community/appeals'),
           request<CommunityMutePage>('/api/community/mutes'),
+          request<CommunityBlockPage>('/api/community/blocks'),
           request<CommunityRestrictionStatus>('/api/community/restrictions'),
           request<CommunityRestrictionAppealPage>('/api/community/restriction-appeals'),
         ]);
-        setReports(reportPage);setAppeals(appealPage);setMutes(mutePage);setRestrictions(restrictionStatus);
+        setReports(reportPage);setAppeals(appealPage);setMutes(mutePage);setBlocks(blockPage);setRestrictions(restrictionStatus);
         setRestrictionAppeals(restrictionAppealPage);
       }else if(kind==='reports'&&reports?.nextCursor){
         const page=await request<CommunityReportStatusPage>(`/api/community/reports?${new URLSearchParams({cursor:reports.nextCursor})}`);
@@ -196,6 +256,10 @@ export function CommunityModerationHistory() {
       }else if(kind==='mutes'&&mutes?.nextCursor){
         const page=await request<CommunityMutePage>(`/api/community/mutes?${new URLSearchParams({cursor:mutes.nextCursor})}`);
         setMutes({mutes:[...mutes.mutes,...page.mutes],nextCursor:page.nextCursor});
+      }else if(kind==='blocks'&&blocks?.nextCursor){
+        const page=await request<CommunityBlockPage>(
+          `/api/community/blocks?${new URLSearchParams({cursor:blocks.nextCursor})}`);
+        setBlocks({blocks:[...blocks.blocks,...page.blocks],nextCursor:page.nextCursor});
       }else if(kind==='restrictionAppeals'&&restrictionAppeals?.nextCursor){
         const page=await request<CommunityRestrictionAppealPage>(
           `/api/community/restriction-appeals?${new URLSearchParams({cursor:restrictionAppeals.nextCursor})}`);
@@ -209,8 +273,8 @@ export function CommunityModerationHistory() {
       const next=!open;setOpen(next);if(next&&!reports&&!appeals)void load('initial');
     }}>My moderation status</button>
     {open&&<div>
-      <p className="fine-print">Only your report, appeal, active personal-mute, current restriction and restriction-appeal status is shown. Staff identities, internal reasons, account identifiers and other members' activity remain private.</p>
-      {pending&&!reports&&!appeals&&!mutes&&!restrictions&&!restrictionAppeals&&<p role="status">Loading moderation status...</p>}
+      <p className="fine-print">Only your report, appeal, active personal-mute/block, current restriction and restriction-appeal status is shown. Staff identities, internal reasons, account identifiers and other members' activity remain private.</p>
+      {pending&&!reports&&!appeals&&!mutes&&!blocks&&!restrictions&&!restrictionAppeals&&<p role="status">Loading moderation status...</p>}
       {error&&<p className="error-text" role="alert">{error}</p>}
       {reports&&<><h3>My reports</h3>{reports.reports.map(value=><p key={value.id}>
         <strong>{value.category.replaceAll('-',' ')}</strong> · {value.status} · target {value.targetState} at revision {value.targetRevision}
@@ -229,12 +293,21 @@ export function CommunityModerationHistory() {
         <CommunityUnmuteControl mute={value} onSaved={()=>setMutes(current=>current?{...current,mutes:current.mutes.filter(row=>row.id!==value.id)}:current)}/>
       </div>)}{!mutes.mutes.length&&<p>No authors are currently muted for you.</p>}
       {mutes.nextCursor&&<button className="button secondary small" disabled={pending} onClick={()=>void load('mutes')}>Load older active mutes</button>}</>}
+      {blocks&&<><h3>Community accounts blocked by me</h3>{blocks.blocks.map(value=><div className="panel" key={value.id}>
+        <p><strong>Private relationship block</strong> · revision {value.revision}<br/>
+          <span className="fine-print">Representative {value.targetType} <code>{value.targetId}</code> · no account identifier or another member’s private state is exposed</span>
+        </p>
+        <CommunityUnblockControl block={value} onSaved={()=>setBlocks(current=>current?{
+          ...current,blocks:current.blocks.filter(row=>row.id!==value.id)}:current)}/>
+      </div>)}{!blocks.blocks.length&&<p>No community accounts are currently blocked by you.</p>}
+      {blocks.nextCursor&&<button className="button secondary small" disabled={pending}
+        onClick={()=>void load('blocks')}>Load older active blocks</button>}</>}
       {restrictions&&<><h3>My community restrictions</h3>{restrictions.restrictions.map(value=>{
         const existing=restrictionAppeals?.appeals.find(appeal=>
           appeal.restrictionId===value.id&&appeal.appealedRestrictionRevision===value.revision);
         return <div className="panel" key={value.id}><p>
           <strong>{value.scope==='participation'?'Participation restricted':'Report submission restricted'}</strong> · revision {value.revision}
-          <br/><span className="fine-print">Expires {new Date(value.expiresAt).toLocaleString()}. Reading, deletion, contribution appeals, personal mutes and non-community account features remain available.</span>
+          <br/><span className="fine-print">Expires {new Date(value.expiresAt).toLocaleString()}. Reading, deletion, contribution appeals, personal mutes/blocks and non-community account features remain available.</span>
         </p>{existing?<p className="fine-print">This exact restriction revision has an <strong>{existing.status}</strong> appeal.</p>
           :<CommunityRestrictionAppealControl restriction={value} onSaved={()=>void request<CommunityRestrictionAppealPage>(
             '/api/community/restriction-appeals',undefined,'GET').then(setRestrictionAppeals)

@@ -123,6 +123,17 @@ test('privacy artifacts cover owned preparation, identity, grants, usage, contri
     (owner_id,request_key,input_hash,mute_id,target_type,target_id,muted,prior_revision,result_revision,created_at)
     VALUES(?,?,?,?,'post','privacy-muted-post',TRUE,0,1,'2026-10-13T00:00:01.950Z')`)
     .run(owner,muteKey,'b'.repeat(64),muteId);
+  const blockedSubject=randomUUID(),blockId=randomUUID(),blockKey=randomUUID();
+  await f.db.prepare('INSERT INTO users(id,name,email,password,demo) VALUES(?,?,?,NULL,0)')
+    .run(blockedSubject,'Private blocked subject',`${blockedSubject}@example.invalid`);
+  await f.db.prepare(`INSERT INTO community_blocks
+    (id,owner_id,subject_id,target_type,target_id,state,revision,created_at,updated_at)
+    VALUES(?,?,?,'comment','privacy-blocked-comment','blocked',1,'2026-10-13T00:00:01.960Z','2026-10-13T00:00:01.960Z')`)
+    .run(blockId,owner,blockedSubject);
+  await f.db.prepare(`INSERT INTO community_block_intents
+    (owner_id,request_key,input_hash,block_id,target_type,target_id,blocked,prior_revision,result_revision,created_at)
+    VALUES(?,?,?,?,'comment','privacy-blocked-comment',TRUE,0,1,'2026-10-13T00:00:01.960Z')`)
+    .run(owner,blockKey,'d'.repeat(64),blockId);
   const restrictionId=randomUUID(),restrictionActor='private-restriction-moderator';
   await f.db.prepare(`INSERT INTO community_restrictions
     (id,subject_id,source_report_id,scope,state,revision,starts_at,expires_at,created_at,updated_at)
@@ -195,11 +206,14 @@ test('privacy artifacts cover owned preparation, identity, grants, usage, contri
   assert.match(text,new RegExp(reportKey));
   assert.match(text,new RegExp(appealKey));
   assert.match(text,new RegExp(muteKey));
+  assert.match(text,new RegExp(blockKey));
   assert.match(text,new RegExp(restrictionAppealKey));
   assert.match(text,/privacy-muted-post/);
+  assert.match(text,/privacy-blocked-comment/);
   assert.match(text,new RegExp(restrictionId));
   assert.match(text,/reporting|2999-10-13T00:00:01.975Z/);
   assert.doesNotMatch(text,new RegExp(mutedSubject));
+  assert.doesNotMatch(text,new RegExp(blockedSubject));
   assert.doesNotMatch(text,/Removed private comment bytes|Owner private name/);
   assert.match(text,/premium-read-v1|privacy-reservation|pro_monthly|sub_privacy|in_privacy/);
   assert.doesNotMatch(text,new RegExp(String(token.token)));

@@ -185,10 +185,10 @@ W11 remains open for:
 
 - approved community rules, retention and takedown policy;
 - external author/reporter delivery and published response targets;
-- relationship-wide blocking, external restriction notices, approved
-  restriction-appeal policy and shared rate-limit operations; personal muting,
-  reviewed expiring restrictions and exact in-app restriction appeals follow
-  in runbooks 42-44;
+- approved relationship/direct-interaction policy, external restriction
+  notices, approved restriction-appeal policy and shared rate-limit operations;
+  personal muting, reviewed restrictions, exact restriction appeals and private
+  account blocking follow in runbooks 42-45;
 - reviewed automated triage that cannot make irreversible decisions;
 - moderation staffing, escalation ownership and published response targets;
 - managed contribution writing and read-only rollback approval;

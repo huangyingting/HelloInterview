@@ -261,6 +261,10 @@ export class PrivacyExports {
           FROM community_mutes WHERE owner_id=? ORDER BY created_at,id`,owner),
         muteIntents:await all(`SELECT request_key,mute_id,target_type,target_id,muted,prior_revision,result_revision,created_at
           FROM community_mute_intents WHERE owner_id=? ORDER BY created_at,request_key`,owner),
+        blocks:await all(`SELECT id,target_type,target_id,state,revision,created_at,updated_at
+          FROM community_blocks WHERE owner_id=? ORDER BY created_at,id`,owner),
+        blockIntents:await all(`SELECT request_key,block_id,target_type,target_id,blocked,prior_revision,result_revision,created_at
+          FROM community_block_intents WHERE owner_id=? ORDER BY created_at,request_key`,owner),
         restrictions:await all(`SELECT id,scope,state,revision,starts_at,expires_at,created_at,updated_at
           FROM community_restrictions WHERE subject_id=? ORDER BY created_at,id`,owner),
         restrictionAppeals:await all(`SELECT id,request_key,restriction_id,restriction_revision,statement,state,

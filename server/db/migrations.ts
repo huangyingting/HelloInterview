@@ -1511,6 +1511,95 @@ export const migrations = [{
       CREATE TRIGGER immutable_community_restriction_appeal_delete BEFORE DELETE ON community_restriction_appeals
         FOR EACH ROW EXECUTE FUNCTION immutable_community_restriction_appeal_record();
     `,
+  }, {
+    version: 36,
+    name: 'privacy-safe-community-account-blocks',
+    sql: `
+      CREATE TABLE community_blocks (
+        id UUID PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        subject_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        target_type TEXT NOT NULL CHECK(target_type IN ('post','comment')),
+        target_id TEXT NOT NULL CHECK(length(target_id) BETWEEN 1 AND 200),
+        state TEXT NOT NULL CHECK(state IN ('blocked','unblocked')),
+        revision INTEGER NOT NULL CHECK(revision>0),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(owner_id,subject_id),
+        CHECK(owner_id<>subject_id)
+      );
+      CREATE INDEX community_blocks_owner_state ON community_blocks(owner_id,state,updated_at DESC,id DESC);
+      CREATE INDEX community_blocks_subject_owner ON community_blocks(subject_id,owner_id,state);
+      CREATE TABLE community_block_intents (
+        owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        request_key UUID NOT NULL,
+        input_hash TEXT NOT NULL CHECK(input_hash ~ '^[0-9a-f]{64}$'),
+        block_id UUID NOT NULL REFERENCES community_blocks(id) ON DELETE CASCADE,
+        target_type TEXT NOT NULL CHECK(target_type IN ('post','comment')),
+        target_id TEXT NOT NULL CHECK(length(target_id) BETWEEN 1 AND 200),
+        blocked BOOLEAN NOT NULL,
+        prior_revision INTEGER NOT NULL CHECK(prior_revision>=0),
+        result_revision INTEGER NOT NULL CHECK(result_revision=prior_revision OR result_revision=prior_revision+1),
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(owner_id,request_key)
+      );
+      CREATE INDEX community_block_intents_owner_order
+        ON community_block_intents(owner_id,created_at DESC,request_key DESC);
+      CREATE FUNCTION protect_community_block() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NOT (NEW.id=OLD.id AND NEW.owner_id=OLD.owner_id AND NEW.subject_id=OLD.subject_id AND
+            NEW.target_type=OLD.target_type AND NEW.target_id=OLD.target_id AND NEW.state<>OLD.state AND
+            NEW.revision=OLD.revision+1 AND NEW.created_at=OLD.created_at AND NEW.updated_at>=OLD.updated_at)
+          THEN RAISE EXCEPTION 'Community blocks allow only one revision-fenced desired-state transition.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER protect_community_block BEFORE UPDATE ON community_blocks
+        FOR EACH ROW EXECUTE FUNCTION protect_community_block();
+      CREATE FUNCTION protect_community_block_delete() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF EXISTS(SELECT 1 FROM users WHERE id=OLD.owner_id) AND EXISTS(SELECT 1 FROM users WHERE id=OLD.subject_id)
+          THEN RAISE EXCEPTION 'Community blocks can be deleted only with account erasure.'; END IF;
+          RETURN OLD;
+        END;
+      $$;
+      CREATE TRIGGER protect_community_block_delete BEFORE DELETE ON community_blocks
+        FOR EACH ROW EXECUTE FUNCTION protect_community_block_delete();
+      CREATE FUNCTION initialize_community_block() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NEW.state<>'blocked' OR NEW.revision<>1 OR NEW.created_at<>NEW.updated_at
+          THEN RAISE EXCEPTION 'New community blocks must begin blocked at revision one.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER initialize_community_block BEFORE INSERT ON community_blocks
+        FOR EACH ROW EXECUTE FUNCTION initialize_community_block();
+      CREATE FUNCTION validate_community_block_intent() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NOT EXISTS(SELECT 1 FROM community_blocks block WHERE block.id=NEW.block_id AND block.owner_id=NEW.owner_id AND
+            block.revision=NEW.result_revision AND block.state=CASE WHEN NEW.blocked THEN 'blocked' ELSE 'unblocked' END)
+          THEN RAISE EXCEPTION 'Block intents must reference the resulting owned desired state.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER validate_community_block_intent BEFORE INSERT ON community_block_intents
+        FOR EACH ROW EXECUTE FUNCTION validate_community_block_intent();
+      CREATE FUNCTION immutable_community_block_intent() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN RAISE EXCEPTION 'Community block intent receipts are immutable.'; END;
+      $$;
+      CREATE TRIGGER immutable_community_block_intent BEFORE UPDATE ON community_block_intents
+        FOR EACH ROW EXECUTE FUNCTION immutable_community_block_intent();
+      CREATE FUNCTION protect_community_block_intent_delete() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF EXISTS(SELECT 1 FROM users WHERE id=OLD.owner_id) AND
+            EXISTS(SELECT 1 FROM community_blocks WHERE id=OLD.block_id)
+          THEN RAISE EXCEPTION 'Community block intent receipts can be deleted only with account erasure.'; END IF;
+          RETURN OLD;
+        END;
+      $$;
+      CREATE TRIGGER protect_community_block_intent_delete BEFORE DELETE ON community_block_intents
+        FOR EACH ROW EXECUTE FUNCTION protect_community_block_intent_delete();
+    `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

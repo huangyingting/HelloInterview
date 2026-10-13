@@ -32,6 +32,7 @@ import { CommunityContributions } from './community-contributions';
 import { CommunitySubmissions } from './community-submissions';
 import { CommunityModeration } from './community-moderation';
 import {CommunityMutes} from './community-mutes';
+import {CommunityBlocks} from './community-blocks';
 import {CommunityRestrictions} from './community-restrictions';
 import { StaffAdministration } from './staff';
 import type { PrivacyExports } from './privacy';
@@ -88,6 +89,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   const identity = config.identity && config.publicOrigin ? new ManagedIdentity(db, config.identity, config.publicOrigin, shutdown, identityTransport, lifecycle) : null;
   const moderation = new CommunityModeration(db, identity);
   const mutes = new CommunityMutes(db);
+  const blocks = new CommunityBlocks(db);
   const restrictions = new CommunityRestrictions(db,identity);
   const entitlements = identity ? new Entitlements(db) : null;
   const support = identity ? new SupportRequests(db, identity) : null;
@@ -974,6 +976,11 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     await db.transaction(async () => {
       await restrictions.assertAllowed(user.id,'participation');
       if (!(await db.prepare(`SELECT id FROM users WHERE id=?${db.dialect === 'postgres' ? ' FOR UPDATE' : ''}`).get(user.id))) throw new HttpError(401, 'Sign in to update this community contribution.');
+      const target=await db.prepare(`SELECT p.author_id FROM posts p WHERE p.id=? AND NOT EXISTS(
+        SELECT 1 FROM community_moderation_targets moderation
+          WHERE moderation.target_type='post' AND moderation.target_id=p.id AND moderation.state='hidden')`).get(id);
+      if(!target)throw new HttpError(404,'Post not found.');
+      await blocks.assertAllowed(user.id,z.string().parse(target.author_id));
       if (!(await db.prepare(`SELECT p.id FROM posts p WHERE p.id=? AND NOT EXISTS(
         SELECT 1 FROM community_moderation_targets moderation
           WHERE moderation.target_type='post' AND moderation.target_id=p.id AND moderation.state='hidden')`).get(id)))
@@ -1068,6 +1075,15 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     const user=await requireUser(req);
     res.json(await mutes.history(user,req.query,()=>identity?identity.assertWritable(user):assertLocalCommunitySession(req,user)));
   });
+  app.put('/api/community/blocks',async(req,res)=>{
+    const user=await requireUser(req);
+    if(identity)await identity.admitCommunity(req,user,res);
+    res.json(await blocks.set(user,req.body,()=>identity?identity.assertWritable(user):assertLocalCommunitySession(req,user)));
+  });
+  app.get('/api/community/blocks',async(req,res)=>{
+    const user=await requireUser(req);
+    res.json(await blocks.history(user,req.query,()=>identity?identity.assertWritable(user):assertLocalCommunitySession(req,user)));
+  });
   app.get('/api/community/restrictions',async(req,res)=>{
     res.json(await restrictions.status(await requireUser(req)));
   });
@@ -1090,24 +1106,44 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     const comment = text(body.body, 'Comment', 2, 3000);
     const saved = await db.transaction(async () => {
       await assertCommunityWrite(req,user,'participation');
+      let postAuthor:string|undefined,parentAuthor:string|undefined;
       if (resource.startsWith('post/')) {
         if (!await db.prepare(`SELECT id FROM users WHERE id=?${db.dialect === 'postgres' ? ' FOR UPDATE' : ''}`).get(user.id)) throw new HttpError(401, 'Sign in to join this discussion.');
         await assertLocalCommunitySession(req, user);
-        if (!await db.prepare(`SELECT p.id FROM posts p WHERE p.id=? AND NOT EXISTS(
+        const post=await db.prepare(`SELECT p.author_id FROM posts p WHERE p.id=? AND NOT EXISTS(
           SELECT 1 FROM community_moderation_targets moderation WHERE moderation.target_type='post'
             AND moderation.target_id=p.id AND moderation.state='hidden') AND NOT EXISTS(
-          SELECT 1 FROM community_mutes mute WHERE mute.owner_id=? AND mute.subject_id=p.author_id AND mute.state='muted')
-          ${db.dialect === 'postgres' ? 'FOR UPDATE OF p' : ''}`).get(resource.slice(5),user.id))
-          throw new HttpError(404, 'This post is no longer available for discussion.');
+          SELECT 1 FROM community_mutes mute WHERE mute.owner_id=? AND mute.subject_id=p.author_id AND mute.state='muted')`)
+          .get(resource.slice(5),user.id);
+        if(!post)throw new HttpError(404,'This post is no longer available for discussion.');
+        postAuthor=z.string().parse(post.author_id);
       }
-      if (parentId && !(await db.prepare(`SELECT comments.id FROM comments
+      if(parentId){
+        const parent=await db.prepare(`SELECT comments.user_id FROM comments
         LEFT JOIN community_comment_tombstones tombstone ON tombstone.comment_id=comments.id
         LEFT JOIN community_moderation_targets moderation ON moderation.target_type='comment' AND moderation.target_id=comments.id
         WHERE comments.id=? AND comments.resource=? AND comments.user_id IS NOT NULL AND tombstone.comment_id IS NULL
           AND COALESCE(moderation.state,'visible')<>'hidden' AND NOT EXISTS(
             SELECT 1 FROM community_mutes mute WHERE mute.owner_id=? AND mute.subject_id=comments.user_id AND mute.state='muted')`)
-        .get(parentId,resource,user.id)))
-        throw new HttpError(400, 'Reply must belong to an available comment in this discussion.');
+          .get(parentId,resource,user.id);
+        if(!parent)throw new HttpError(400,'Reply must belong to an available comment in this discussion.');
+        parentAuthor=z.string().parse(parent.user_id);
+      }
+      await blocks.assertAllowedMany(user.id,[postAuthor,parentAuthor].filter((value):value is string=>value!==undefined));
+      if(resource.startsWith('post/')&&!await db.prepare(`SELECT p.id FROM posts p WHERE p.id=? AND NOT EXISTS(
+        SELECT 1 FROM community_moderation_targets moderation WHERE moderation.target_type='post'
+          AND moderation.target_id=p.id AND moderation.state='hidden') AND NOT EXISTS(
+        SELECT 1 FROM community_mutes mute WHERE mute.owner_id=? AND mute.subject_id=p.author_id AND mute.state='muted')
+        ${db.dialect==='postgres'?'FOR UPDATE OF p':''}`).get(resource.slice(5),user.id))
+        throw new HttpError(404,'This post is no longer available for discussion.');
+      if(parentId&&!await db.prepare(`SELECT comments.id FROM comments
+        LEFT JOIN community_comment_tombstones tombstone ON tombstone.comment_id=comments.id
+        LEFT JOIN community_moderation_targets moderation ON moderation.target_type='comment' AND moderation.target_id=comments.id
+        WHERE comments.id=? AND comments.resource=? AND comments.user_id IS NOT NULL AND tombstone.comment_id IS NULL
+          AND COALESCE(moderation.state,'visible')<>'hidden' AND NOT EXISTS(
+            SELECT 1 FROM community_mutes mute WHERE mute.owner_id=? AND mute.subject_id=comments.user_id AND mute.state='muted')`)
+        .get(parentId,resource,user.id))
+        throw new HttpError(400,'Reply must belong to an available comment in this discussion.');
       await db.prepare('INSERT INTO comments VALUES (?,?,?,?,?,?,?)').run(id, resource, user.id, user.name, comment, new Date().toISOString(), parentId);
       return contributions.createdComment(id,user.id);
     });

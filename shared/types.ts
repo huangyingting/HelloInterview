@@ -403,6 +403,7 @@ export interface Comment {
   moderated: boolean;
   moderationRevision: number;
   muted: boolean;
+  blocked: boolean;
 }
 export interface OwnedCommunityComment { comment: Comment; revision: number }
 export interface CommunityCommentPage { comments: Comment[]; limit: number; nextCursor: string | null }
@@ -419,6 +420,14 @@ export interface CommunityCommentDeletion {
   };
   comment:Comment|null;
 }
+export interface CommunityBlockReceipt {
+  id:string;requestId:string;targetType:'post'|'comment';targetId:string;
+  blocked:boolean;revision:number;createdAt:string;
+}
+export interface CommunityBlock {
+  id:string;targetType:'post'|'comment';targetId:string;revision:number;createdAt:string;updatedAt:string;
+}
+export interface CommunityBlockPage {blocks:CommunityBlock[];nextCursor:string|null}
 export type CommunityRestrictionScope='participation'|'reporting';
 export interface CommunityRestriction {
   id:string;scope:CommunityRestrictionScope;status:'active'|'lifted'|'expired';revision:number;

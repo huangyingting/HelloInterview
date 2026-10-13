@@ -158,7 +158,8 @@ The repository verifies:
 
 W11 remains open for:
 
-- relationship-wide personal account blocking and direct-interaction policy;
+- approved relationship/direct-interaction policy; personal account blocking
+  follows in runbook 45;
 - approved community rules, legal retention and takedown policy;
 - external author/reporter restriction notices and an approved restriction
   appeal policy;

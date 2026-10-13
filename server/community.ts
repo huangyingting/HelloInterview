@@ -68,7 +68,13 @@ export class CommunityReads {
     return `NOT EXISTS(SELECT 1 FROM community_moderation_targets moderation
       WHERE moderation.target_type='post' AND moderation.target_id=${alias}.id AND moderation.state='hidden')
       AND NOT EXISTS(SELECT 1 FROM community_mutes mute WHERE mute.owner_id=? AND mute.subject_id=${alias}.author_id
-        AND mute.state='muted')`;
+        AND mute.state='muted')
+      AND NOT EXISTS(SELECT 1 FROM community_blocks block WHERE block.state='blocked' AND
+        ((block.owner_id=? AND block.subject_id=${alias}.author_id) OR
+          (block.owner_id=${alias}.author_id AND block.subject_id=?)))`;
+  }
+  private visibleValues(viewer:string|null) {
+    return [viewer??'',viewer??'',viewer??''];
   }
   private selection(full: boolean) {
     return `p.id,p.kind,p.title,${full ? 'p.body' : 'substr(p.body,1,241)'} AS body,p.company,p.track,p.level,p.region,
@@ -87,7 +93,7 @@ export class CommunityReads {
     if (!kind.success) throw new HttpError(400, 'Choose a supported community section.');
     const rows = await this.db.prepare(`SELECT ${this.selection(true)} FROM posts p WHERE p.kind=? AND ${this.visible()}
       ORDER BY p.created_at DESC,p.id DESC LIMIT 1001`)
-      .all(viewer ?? '',viewer ?? '',viewer ?? '',viewer ?? '',kind.data,viewer ?? '');
+      .all(viewer ?? '',viewer ?? '',viewer ?? '',viewer ?? '',kind.data,...this.visibleValues(viewer));
     return { posts: rows.slice(0,1000).map(post), truncated: rows.length > 1000 };
   }
   async detail(id: unknown, input: unknown, viewer: string | null, includeOwnedHidden=false) {
@@ -97,7 +103,7 @@ export class CommunityReads {
     const row = await this.db.prepare(`SELECT ${this.selection(true)} FROM posts p WHERE p.id=? AND p.kind=?
       AND (${this.visible()}${ownerAccess?' OR p.author_id=?':''})
       ${query.data.track ? 'AND p.track=?' : ''}`)
-      .get(viewer ?? '',viewer ?? '',viewer ?? '',viewer ?? '',parsedId.data,query.data.kind,viewer ?? '',
+      .get(viewer ?? '',viewer ?? '',viewer ?? '',viewer ?? '',parsedId.data,query.data.kind,...this.visibleValues(viewer),
         ...(ownerAccess?[viewer]:[]),...(query.data.track ? [query.data.track] : []));
     if (!row) throw new HttpError(404, 'Community post not found in this section.');
     return post(row);
@@ -115,7 +121,7 @@ export class CommunityReads {
     if (query.scope !== 'all' && !viewer) throw new HttpError(401, 'Sign in to read your own or followed contributions.');
     const hash = digest(encodePayload({ query, viewer }));
     const cursor = communityPageCursor(encoded,cursorSchema,hash);
-    const clauses: string[] = [this.visible()], values: string[] = [viewer ?? ''];
+    const clauses: string[] = [this.visible()], values: string[] = this.visibleValues(viewer);
     for (const [field,value] of Object.entries({ kind: query.kind, company: query.company, level: query.level, region: query.region, track: query.track })) {
       if (value) { clauses.push(`p.${field}=?`); values.push(value); }
     }
@@ -143,7 +149,7 @@ export class CommunityReads {
       id:last.id,createdAt:last.createdAt,votes:last.votes })).toString('base64url') : null;
     const companies = await this.db.prepare(`SELECT DISTINCT company FROM posts p WHERE company<>'' AND ${this.visible()}
       ${query.kind ? 'AND kind=?' : ''}
-      ORDER BY company LIMIT 201`).all(viewer ?? '',...(query.kind ? [query.kind] : []));
+      ORDER BY company LIMIT 201`).all(...this.visibleValues(viewer),...(query.kind ? [query.kind] : []));
     return { posts,total,limit:query.limit,nextCursor,companies:companies.slice(0,200).map(row => text(80).parse(row.company)),
       companyOptionsTruncated:companies.length>200 };
   }

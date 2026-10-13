@@ -15,9 +15,10 @@ const commentEdit = identity.extend({ body: z.string().max(3000).trim().min(2).r
 const commentDelete = identity.extend({ requestId:z.uuid().transform(value=>value.toLowerCase()) });
 const commentProjection = `comments.id,comments.resource,
   CASE WHEN comments.user_id IS NULL THEN 'Deleted' WHEN moderation.state='hidden' THEN 'Moderated'
-    WHEN mute.subject_id IS NOT NULL THEN 'Muted' ELSE comments.author END AS author,
+    WHEN block.id IS NOT NULL THEN 'Unavailable' WHEN mute.subject_id IS NOT NULL THEN 'Muted' ELSE comments.author END AS author,
   CASE WHEN comments.user_id IS NULL THEN 'This comment was removed by its author.'
     WHEN moderation.state='hidden' THEN 'This comment was hidden by moderation.'
+    WHEN block.id IS NOT NULL THEN 'This comment is unavailable due to a personal safety setting.'
     WHEN mute.subject_id IS NOT NULL THEN 'This comment is hidden because you muted its author.' ELSE comments.body END AS body,
   comments.created_at AS "createdAt",comments.parent_id AS "parentId"`;
 const liveCommentProjection=`comments.id,comments.resource,comments.author,comments.body,
@@ -29,6 +30,7 @@ const commentDto = z.strictObject({
   moderated:z.union([z.literal(0),z.literal(1)]).transform(value=>value===1),
   moderationRevision:z.coerce.number().int().nonnegative(),
   muted:z.union([z.literal(0),z.literal(1)]).transform(value=>value===1),
+  blocked:z.union([z.literal(0),z.literal(1)]).transform(value=>value===1),
 });
 export { commentProjection, commentDto };
 const commentPageQuery = z.strictObject({
@@ -65,35 +67,48 @@ export class CommunityContributions {
     if (saved.revision !== expected) throw new HttpError(409, `This ${kind} changed since you opened it. The requested change was not applied. Load the saved version before deciding what to change.`);
   }
   async comments(resource: string, owner: string | null): Promise<Comment[]> {
-    await this.assertDiscussionVisible(resource);
+    await this.assertDiscussionVisible(resource,owner);
     const rows = await this.db.prepare(`SELECT ${commentProjection},CASE WHEN comments.user_id=? THEN 1 ELSE 0 END AS "isMine",
       CASE WHEN comments.user_id IS NOT NULL THEN 0 ELSE 1 END AS deleted,
       CASE WHEN moderation.state='hidden' THEN 1 ELSE 0 END AS moderated,
       CASE WHEN comments.user_id=? AND moderation.state='hidden' THEN moderation.revision ELSE 0 END AS "moderationRevision",
-      CASE WHEN mute.subject_id IS NOT NULL AND COALESCE(moderation.state,'visible')<>'hidden' THEN 1 ELSE 0 END AS muted FROM comments
+      CASE WHEN mute.subject_id IS NOT NULL AND block.id IS NULL AND COALESCE(moderation.state,'visible')<>'hidden'
+        THEN 1 ELSE 0 END AS muted,
+      CASE WHEN block.id IS NOT NULL AND COALESCE(moderation.state,'visible')<>'hidden' THEN 1 ELSE 0 END AS blocked FROM comments
       LEFT JOIN community_comment_tombstones tombstone ON tombstone.comment_id=comments.id
       LEFT JOIN community_moderation_targets moderation ON moderation.target_type='comment' AND moderation.target_id=comments.id
       LEFT JOIN community_mutes mute ON mute.owner_id=? AND mute.subject_id=comments.user_id AND mute.state='muted'
-      WHERE comments.resource=? ORDER BY comments.created_at ASC LIMIT 500`).all(owner,owner,owner??'',resource);
+      LEFT JOIN community_blocks block ON block.id=(SELECT relationship.id FROM community_blocks relationship
+        WHERE relationship.state='blocked' AND
+          ((relationship.owner_id=? AND relationship.subject_id=comments.user_id) OR
+            (relationship.owner_id=comments.user_id AND relationship.subject_id=?)) LIMIT 1)
+      WHERE comments.resource=? ORDER BY comments.created_at ASC LIMIT 500`)
+      .all(owner,owner,owner??'',owner??'',owner??'',resource);
     return rows.map(row => commentDto.parse(row));
   }
   async commentPage(input: unknown, owner: string | null): Promise<CommunityCommentPage> {
     const parsed = commentPageQuery.safeParse(input);
     if (!parsed.success) throw new HttpError(400, 'Provide one discussion resource, supported page size and cursor.');
     const { cursor: encoded, ...raw } = parsed.data, query = { ...raw, resource: communityDiscussionResource(raw.resource) };
-    await this.assertDiscussionVisible(query.resource);
+    await this.assertDiscussionVisible(query.resource,owner);
     const hash = digest(encodePayload({ query, viewer: owner })), cursor = communityPageCursor(encoded,commentCursor,hash);
     const rows = await this.db.prepare(`SELECT ${commentProjection},CASE WHEN comments.user_id=? THEN 1 ELSE 0 END AS "isMine",
       CASE WHEN comments.user_id IS NOT NULL THEN 0 ELSE 1 END AS deleted,
       CASE WHEN moderation.state='hidden' THEN 1 ELSE 0 END AS moderated,
       CASE WHEN comments.user_id=? AND moderation.state='hidden' THEN moderation.revision ELSE 0 END AS "moderationRevision",
-      CASE WHEN mute.subject_id IS NOT NULL AND COALESCE(moderation.state,'visible')<>'hidden' THEN 1 ELSE 0 END AS muted FROM comments
+      CASE WHEN mute.subject_id IS NOT NULL AND block.id IS NULL AND COALESCE(moderation.state,'visible')<>'hidden'
+        THEN 1 ELSE 0 END AS muted,
+      CASE WHEN block.id IS NOT NULL AND COALESCE(moderation.state,'visible')<>'hidden' THEN 1 ELSE 0 END AS blocked FROM comments
       LEFT JOIN community_comment_tombstones tombstone ON tombstone.comment_id=comments.id
       LEFT JOIN community_moderation_targets moderation ON moderation.target_type='comment' AND moderation.target_id=comments.id
       LEFT JOIN community_mutes mute ON mute.owner_id=? AND mute.subject_id=comments.user_id AND mute.state='muted'
+      LEFT JOIN community_blocks block ON block.id=(SELECT relationship.id FROM community_blocks relationship
+        WHERE relationship.state='blocked' AND
+          ((relationship.owner_id=? AND relationship.subject_id=comments.user_id) OR
+            (relationship.owner_id=comments.user_id AND relationship.subject_id=?)) LIMIT 1)
       WHERE comments.resource=? ${cursor ? 'AND (comments.created_at,comments.id)>(?,?)' : ''}
       ORDER BY comments.created_at ASC,comments.id ASC LIMIT ?`)
-      .all(owner,owner,owner??'',query.resource,...(cursor ? [cursor.createdAt,cursor.id] : []),query.limit+1);
+      .all(owner,owner,owner??'',owner??'',owner??'',query.resource,...(cursor ? [cursor.createdAt,cursor.id] : []),query.limit+1);
     const comments = rows.slice(0,query.limit).map(row => commentDto.parse(row)), last = comments.at(-1);
     const nextCursor = rows.length > query.limit && last ? Buffer.from(JSON.stringify(commentCursor.parse({
       version:'community-comments-v1',hash,id:last.id,createdAt:last.createdAt,
@@ -101,7 +116,8 @@ export class CommunityContributions {
     return { comments, limit:query.limit, nextCursor };
   }
   async createdComment(id: string, owner: string): Promise<Comment> {
-    const row = await this.db.prepare(`SELECT ${liveCommentProjection},1 AS "isMine",0 AS deleted,0 AS moderated,0 AS "moderationRevision",0 AS muted
+    const row = await this.db.prepare(`SELECT ${liveCommentProjection},1 AS "isMine",0 AS deleted,0 AS moderated,
+      0 AS "moderationRevision",0 AS muted,0 AS blocked
       FROM comments WHERE comments.id=? AND comments.user_id=?`).get(id,owner);
     if (!row) throw new Error('The admitted comment was not found after insertion.');
     return commentDto.parse(row);
@@ -117,10 +133,11 @@ export class CommunityContributions {
     }
     const row = await this.db.prepare(`SELECT ${commentProjection},1 AS "isMine",0 AS deleted,
       CASE WHEN moderation.state='hidden' THEN 1 ELSE 0 END AS moderated,
-      CASE WHEN moderation.state='hidden' THEN moderation.revision ELSE 0 END AS "moderationRevision",0 AS muted
+      CASE WHEN moderation.state='hidden' THEN moderation.revision ELSE 0 END AS "moderationRevision",0 AS muted,0 AS blocked
       FROM comments LEFT JOIN community_moderation_targets moderation
         ON moderation.target_type='comment' AND moderation.target_id=comments.id
       LEFT JOIN community_mutes mute ON 1=0
+      LEFT JOIN community_blocks block ON 1=0
       WHERE comments.id=? AND comments.user_id=?
       ${this.db.dialect === 'postgres' ? 'FOR UPDATE OF comments' : ''}`).get(id,owner);
     if (!row) throw new HttpError(404, 'This comment is no longer editable.');
@@ -180,8 +197,10 @@ export class CommunityContributions {
       request_id:z.uuid(),comment_id:communityIdentifierSchema,resource:z.string().min(1).max(205),
       prior_revision:revision,result_revision:revision,deleted_at:z.iso.datetime(),input_hash:z.string(),
     }).parse(value);
-    const row=await this.db.prepare(`SELECT ${commentProjection},0 AS "isMine",1 AS deleted,0 AS moderated,0 AS "moderationRevision",0 AS muted FROM comments
+    const row=await this.db.prepare(`SELECT ${commentProjection},0 AS "isMine",1 AS deleted,0 AS moderated,
+      0 AS "moderationRevision",0 AS muted,0 AS blocked FROM comments
       LEFT JOIN community_mutes mute ON 1=0
+      LEFT JOIN community_blocks block ON 1=0
       JOIN community_comment_tombstones tombstone ON tombstone.comment_id=comments.id
       LEFT JOIN community_moderation_targets moderation ON moderation.target_type='comment' AND moderation.target_id=comments.id
       WHERE comments.id=?`).get(receipt.comment_id);
@@ -219,11 +238,17 @@ export class CommunityContributions {
       return { deleted: true };
     });
   }
-  private async assertDiscussionVisible(resource:string) {
+  private async assertDiscussionVisible(resource:string,owner:string|null) {
     if(!resource.startsWith('post/'))return;
     const visible=await this.db.prepare(`SELECT p.id FROM posts p WHERE p.id=? AND NOT EXISTS(
       SELECT 1 FROM community_moderation_targets moderation
-        WHERE moderation.target_type='post' AND moderation.target_id=p.id AND moderation.state='hidden')`).get(resource.slice(5));
+        WHERE moderation.target_type='post' AND moderation.target_id=p.id AND moderation.state='hidden')
+      AND NOT EXISTS(SELECT 1 FROM community_mutes mute
+        WHERE mute.owner_id=? AND mute.subject_id=p.author_id AND mute.state='muted')
+      AND NOT EXISTS(SELECT 1 FROM community_blocks block WHERE block.state='blocked' AND
+        ((block.owner_id=? AND block.subject_id=p.author_id) OR
+          (block.owner_id=p.author_id AND block.subject_id=?)))`)
+      .get(resource.slice(5),owner??'',owner??'',owner??'');
     if(!visible)throw new HttpError(404,'This discussion is no longer available.');
   }
 }

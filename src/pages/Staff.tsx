@@ -374,7 +374,7 @@ export function StaffPage() {
           onClick={()=>void loadAppeals(appeals.nextCursor!)}>Load older community appeals</button>}
       </section>}
       {canModerate&&<section className="panel"><h2>Active community restrictions</h2>
-        <p>Restrictions are narrow, expiring and report-bound. They do not suspend accounts, revoke sessions or block learning, billing, support, privacy, appeals or personal mutes.</p>
+        <p>Restrictions are narrow, expiring and report-bound. They do not suspend accounts, revoke sessions or block learning, billing, support, privacy, appeals or personal mutes/blocks.</p>
         {!restrictions&&<button className="button secondary small" disabled={loadingRestrictions}
           onClick={()=>void loadRestrictions()}>Load active restrictions</button>}
         {restrictionError&&<><p role="alert">{restrictionError}</p><button className="button secondary small"
