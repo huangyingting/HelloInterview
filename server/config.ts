@@ -33,7 +33,7 @@ export interface ServerConfig {
   readonly host: string;
   readonly port: number;
   readonly cookieSecure: boolean;
-  readonly ai: Readonly<{ apiKey: string; baseUrl: string; model: string }> | null;
+  readonly ai: Readonly<{ provider:'openai'|'azure-openai';apiKey:string;baseUrl:string;model:string;apiVersion:string|null }> | null;
   readonly identity: Readonly<IdentityConfig> | null;
   readonly billing: Readonly<BillingConfig> | null;
 }
@@ -96,6 +96,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
       throw new ConfigurationError('DATABASE_URL', 'must be a PostgreSQL connection URL with a hostname and database name.');
     }
   }
+  const azureSettings=['AZURE_OPENAI_API_KEY','AZURE_OPENAI_ENDPOINT','AZURE_OPENAI_DEPLOYMENT','AZURE_OPENAI_API_VERSION'];
+  const hasAzure=azureSettings.some(key=>env[key]!==undefined);
+  const hasOpenAi=['OPENAI_API_KEY','OPENAI_BASE_URL','OPENAI_MODEL'].some(key=>env[key]!==undefined);
+  if(hasAzure&&hasOpenAi)throw new ConfigurationError('AI configuration','must select either OPENAI_* or AZURE_OPENAI_* settings, not both.');
+  let ai:ServerConfig['ai']=null;
   const apiKey = env.OPENAI_API_KEY?.trim() || null;
   if (apiKey && /[\x00-\x20\x7f]/.test(apiKey)) throw new ConfigurationError('OPENAI_API_KEY', 'must not contain whitespace or control characters.');
   const baseUrlText = env.OPENAI_BASE_URL?.trim() || 'https://api.openai.com/v1';
@@ -111,6 +116,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
   }
   const model = env.OPENAI_MODEL?.trim() || 'gpt-4.1-mini';
   if (model.length > 200 || /[\x00-\x20\x7f]/.test(model)) throw new ConfigurationError('OPENAI_MODEL', 'must be a model identifier of at most 200 characters.');
+  if(apiKey)ai=Object.freeze({provider:'openai' as const,apiKey,baseUrl:baseUrl.href.replace(/\/+$/,''),model,apiVersion:null});
+  if(hasAzure){
+    const key=env.AZURE_OPENAI_API_KEY?.trim(),deployment=env.AZURE_OPENAI_DEPLOYMENT?.trim(),version=env.AZURE_OPENAI_API_VERSION?.trim(),endpointText=env.AZURE_OPENAI_ENDPOINT?.trim();
+    if(!key||/[\x00-\x20\x7f]/.test(key))throw new ConfigurationError('AZURE_OPENAI_API_KEY','must be present without whitespace or control characters.');
+    if(!deployment||deployment.length>200||!/^[A-Za-z0-9._-]+$/.test(deployment))throw new ConfigurationError('AZURE_OPENAI_DEPLOYMENT','must be a bounded deployment identifier.');
+    if(!version||!/^\d{4}-\d{2}-\d{2}(?:-preview)?$/.test(version))throw new ConfigurationError('AZURE_OPENAI_API_VERSION','must be a dated Azure OpenAI API version.');
+    let endpoint:URL;
+    try{endpoint=new URL(endpointText??'');}catch{throw new ConfigurationError('AZURE_OPENAI_ENDPOINT','must be an HTTPS origin or loopback HTTP origin.');}
+    const loopback=endpoint.protocol==='http:'&&['127.0.0.1','::1','localhost'].includes(endpoint.hostname);
+    if(!(endpoint.protocol==='https:'||loopback)||endpoint.username||endpoint.password||endpoint.pathname!=='/'||endpoint.search||endpoint.hash)throw new ConfigurationError('AZURE_OPENAI_ENDPOINT','must be an HTTPS origin or loopback HTTP origin.');
+    ai=Object.freeze({provider:'azure-openai' as const,apiKey:key,baseUrl:`${endpoint.origin}/openai/deployments/${encodeURIComponent(deployment)}`,model:deployment,apiVersion:version});
+  }
   let identity: Readonly<IdentityConfig> | null = null;
   const identitySettings = ['OIDC_ISSUER', 'OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET', 'OIDC_EMAIL_CONNECTION', 'OIDC_GOOGLE_CONNECTION', 'OIDC_GITHUB_CONNECTION', 'OIDC_LEGACY_LINK_UNTIL',
     'OIDC_MANAGEMENT_ORIGIN', 'OIDC_MANAGEMENT_CLIENT_ID', 'OIDC_MANAGEMENT_CLIENT_SECRET', 'OIDC_PASSWORD_HOOK_SECRET'];
@@ -215,7 +232,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
     host,
     port: Number(portText),
     cookieSecure: cookieSecure === 'true',
-    ai: apiKey ? Object.freeze({ apiKey, baseUrl: baseUrl.href.replace(/\/+$/, ''), model }) : null,
+    ai,
     identity,
     billing,
   });

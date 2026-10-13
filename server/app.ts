@@ -678,10 +678,13 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     if (!ai) throw new HttpError(503, 'An AI provider is not configured.');
     let response: Response;
     try {
-      response = await fetch(`${ai.baseUrl}/chat/completions`, {
+      const azure=ai.provider==='azure-openai';
+      const headers:Record<string,string>={'Content-Type':'application/json'};
+      if(azure)headers['api-key']=ai.apiKey;else headers.Authorization=`Bearer ${ai.apiKey}`;
+      response = await fetch(`${ai.baseUrl}/chat/completions${azure?`?api-version=${encodeURIComponent(ai.apiVersion!)}`:''}`, {
         method: 'POST', signal: AbortSignal.any([AbortSignal.timeout(45000), shutdown]),
-        headers: { Authorization: `Bearer ${ai.apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: ai.model, messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }], max_tokens: 1200 }),
+        headers,
+        body: JSON.stringify({ ...(!azure?{model:ai.model}:{}),messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }], max_tokens: 1200 }),
       });
     } catch (error) {
       if (shutdown.aborted) throw new HttpError(503, 'The Studio is shutting down. Your saved work is unchanged.');

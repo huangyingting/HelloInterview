@@ -543,6 +543,16 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4.1-mini
 ```
 
+Alternatively, configure one complete Azure OpenAI set and remove all
+`OPENAI_*` settings:
+
+```dotenv
+AZURE_OPENAI_API_KEY=your-azure-key
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
+AZURE_OPENAI_DEPLOYMENT=your-deployment
+AZURE_OPENAI_API_VERSION=2025-04-01-preview
+```
+
 Restart the server after changing configuration. The API key stays server-side.
 Configured tutoring sends your questions and selected lesson context to the
 provider. Configured grading sends the practice prompt, requirements, level,
@@ -553,8 +563,10 @@ sends your explanation, user-reported verification notes, and file diff.
 
 Responses are validated, with explicit errors for provider failures rather
 than a silent switch to local grading. The integration is verified against an
-isolated local provider fixture; live provider behavior has not been verified
-with a real key. Reference-site cookies are never used as provider credentials.
+isolated Azure-shaped fixture. A synthetic authorized probe currently returns
+`DeploymentNotFound`, so live response behavior is not yet verified; see the
+[Azure transport boundary](docs/production/54-azure-openai-transport.md).
+Reference-site cookies are never used as provider credentials.
 
 ## Data and credential boundaries
 

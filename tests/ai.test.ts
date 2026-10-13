@@ -15,12 +15,12 @@ let origin = '';
 let cookie = '';
 let attempt: Attempt;
 const dataDirectory = `data/ai-tests/${randomUUID()}`;
-const requests: { model: string; messages: { role: string; content: string }[] }[] = [];
+const requests: { model?: string; messages: { role: string; content: string }[];url:string;apiKey:string|null }[] = [];
 const provider = createServer(async (req, res) => {
   let body = '';
   for await (const chunk of req) body += chunk;
-  const payload = JSON.parse(body) as { model: string; messages: { role: string; content: string }[] };
-  requests.push(payload);
+  const payload = JSON.parse(body) as { model?: string; messages: { role: string; content: string }[] };
+  requests.push({...payload,url:req.url??'',apiKey:typeof req.headers['api-key']==='string'?req.headers['api-key']:null});
   res.setHeader('Content-Type', 'application/json');
   if (mode === 'unavailable') {
     res.statusCode = 503;
@@ -43,7 +43,7 @@ async function api<T>(route: string, body?: unknown) {
 async function startApplication() {
   const address = provider.address();
   assert.ok(address && typeof address === 'object');
-  const env: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: 'production', PORT: '0', HOST: '127.0.0.1', COOKIE_SECURE: 'false', DATA_DIR: dataDirectory, OPENAI_API_KEY: 'local-fixture-only', OPENAI_BASE_URL: `http://127.0.0.1:${address.port}/v1`, OPENAI_MODEL: 'fixture-model' };
+  const env: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: 'production', PORT: '0', HOST: '127.0.0.1', COOKIE_SECURE: 'false', DATA_DIR: dataDirectory, AZURE_OPENAI_API_KEY: 'local-fixture-only', AZURE_OPENAI_ENDPOINT: `http://127.0.0.1:${address.port}`, AZURE_OPENAI_DEPLOYMENT: 'fixture-model',AZURE_OPENAI_API_VERSION:'2025-04-01-preview' };
   delete env.DATABASE_URL;
   env.LOG_REQUESTS = 'false';
   env.APP_MODE = 'local';
@@ -98,7 +98,9 @@ test('configured provider receives context and returns validated AI feedback and
   assert.equal(chat.response.status, 200);
   assert.equal(chat.value.chat.at(-1)?.source, 'ai');
   assert.match(chat.value.chat.at(-1)!.text, /Fixture AI tutor/);
-  assert.equal(requests[0].model, 'fixture-model');
+  assert.equal(requests[0].model,undefined);
+  assert.equal(requests[0].apiKey,'local-fixture-only');
+  assert.equal(requests[0].url,'/openai/deployments/fixture-model/chat/completions?api-version=2025-04-01-preview');
   assert.match(requests.at(-1)!.messages[1].content, /Caching lesson/);
 });
 test('malformed upstream feedback is a provider error and never becomes rubric success', async () => {

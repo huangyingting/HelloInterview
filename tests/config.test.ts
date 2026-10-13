@@ -42,10 +42,17 @@ test('configuration resolves paths and accepts explicit runtime settings and IPv
 test('optional AI configuration normalizes the endpoint without leaking it to client capabilities', () => {
   assert.equal(loadConfig({ OPENAI_API_KEY: '', OPENAI_BASE_URL: '', OPENAI_MODEL: '' }).ai, null);
   assert.deepEqual(loadConfig({ OPENAI_API_KEY: 'fixture-only', OPENAI_BASE_URL: 'http://127.0.0.1:8080/v1///', OPENAI_MODEL: 'fixture-model' }).ai, {
+    provider: 'openai',
     apiKey: 'fixture-only',
     baseUrl: 'http://127.0.0.1:8080/v1',
     model: 'fixture-model',
+    apiVersion: null,
   });
+  assert.deepEqual(loadConfig({AZURE_OPENAI_API_KEY:'fixture-only',AZURE_OPENAI_ENDPOINT:'https://fixture.openai.azure.com',AZURE_OPENAI_DEPLOYMENT:'gpt-4.1-mini',AZURE_OPENAI_API_VERSION:'2025-04-01-preview'}).ai,{
+    provider:'azure-openai',apiKey:'fixture-only',baseUrl:'https://fixture.openai.azure.com/openai/deployments/gpt-4.1-mini',model:'gpt-4.1-mini',apiVersion:'2025-04-01-preview',
+  });
+  assert.throws(()=>loadConfig({AZURE_OPENAI_API_KEY:'fixture-only'}),/AZURE_OPENAI_DEPLOYMENT/);
+  assert.throws(()=>loadConfig({AZURE_OPENAI_API_KEY:'fixture-only',AZURE_OPENAI_ENDPOINT:'https://fixture.openai.azure.com',AZURE_OPENAI_DEPLOYMENT:'deployment',AZURE_OPENAI_API_VERSION:'2025-04-01-preview',OPENAI_MODEL:'mixed'}),/either OPENAI/);
   assert.equal(loadConfig({ OPENAI_API_KEY: 'fixture-only' }).ai?.baseUrl, 'https://api.openai.com/v1');
 });
 

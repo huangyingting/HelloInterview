@@ -83,6 +83,7 @@ service with defined recovery and support commitments.
 | [51 - Reduced motion in critical flows](51-reduced-motion-critical-flows.md) | Shared compiled CSS motion suppression, visible static loading, dynamic preference observation and manual algorithm progression; no complete vestibular/media, alternate-engine, physical-device or launch approval | Frontend and accessibility |
 | [52 - Reflow, text spacing and forced colors](52-reflow-text-spacing-forced-colors.md) | 320 CSS-pixel reflow with WCAG text-spacing overrides plus system-color focus/current/progress evidence in forced-colors mode; no complete low-vision, screen-magnifier, alternate-engine, physical-device or launch approval | Frontend and accessibility |
 | [53 - Retained frontend assets](53-retained-frontend-assets.md) | Current-first immutable hashed assets with explicitly mounted prior-release overlays, startup validation and asset-shaped 404s; no operated CDN/load-balancer, retention-duration, field-performance or launch approval | Frontend and operations |
+| [54 - Azure OpenAI transport compatibility](54-azure-openai-transport.md) | Azure deployment routing, API-version and api-key support with full fixture AI regression coverage; authentic evidence blocked by the configured missing deployment, with no managed dispatch authority | AI and backend |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to
