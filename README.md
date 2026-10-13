@@ -82,7 +82,10 @@ Coarse-pointer devices receive 44 CSS-pixel actionable controls across sampled
 authentication, shell, learning, community, account and support flows without
 changing compact fine-pointer layouts; see the
 [touch-target boundaries](docs/production/48-coarse-pointer-touch-targets.md).
-This is not a complete accessibility assessment or real-device approval.
+Those same compiled flows now have computed light/dark text, placeholder and
+keyboard-focus contrast checks with shared-token corrections; see the
+[contrast boundaries](docs/production/49-critical-flow-contrast.md).
+This is not a complete accessibility assessment or real-device/browser approval.
 
 **This is a production-format runtime, not a production-ready paid service.**
 Local accounts, demo plans, and the existing service limitations remain.
@@ -297,6 +300,12 @@ checkbox/radio label hit areas and production-built checks for undersized,
 overlapping or horizontally overflowing targets across sampled critical flows.
 It is not broad WCAG, assistive-technology, contrast or physical-device
 approval.
+The [critical-flow contrast checkpoint](docs/production/49-critical-flow-contrast.md)
+computes rendered light/dark text and placeholder contrast through ancestor
+background layers and gradient stops, checks the shared keyboard focus outline,
+and verifies alert/current-page semantics. Shared muted, accent, error and
+placeholder tokens were corrected; broad WCAG, screen-reader, forced-colors,
+image-content and alternate-engine approval remain open.
 Controlled PostgreSQL deployments must apply **migration 37 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.

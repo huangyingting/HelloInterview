@@ -394,6 +394,11 @@ uses 44 CSS-pixel targets for application controls and label hit areas in
 compiled sampled flows while explicitly exempting inline prose links. This is
 engineering evidence only; physical-device, screen-reader, contrast, zoom and
 complete conformance review remain required.
+The implemented [critical-flow contrast checkpoint](49-critical-flow-contrast.md)
+computes light/dark rendered text, placeholder and keyboard-focus contrast on
+sampled compiled flows and fixes shared palette tokens. It does not replace
+forced-colors, image-content, full-state, assistive-technology or alternate-
+engine review.
 
 Maintain mobile usability for reading, planning, account and checkout flows.
 Do not promise full desktop code-editing ergonomics on a narrow phone viewport.

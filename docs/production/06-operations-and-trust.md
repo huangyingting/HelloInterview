@@ -76,6 +76,16 @@ for dimensions, overlap and horizontal overflow. The
 rollback. Physical-device, alternate-engine, assistive-technology, contrast,
 zoom and complete WCAG approval remain open.
 
+**Implemented critical-flow contrast checkpoint (W12):** production-built
+light/dark browser acceptance computes direct text and placeholder contrast
+through rendered ancestor colors and gradient stops, checks the shared solid
+focus outline, and exercises alert/current-page semantics across auth, shell,
+learning, community, account and support. The
+[contrast runbook](49-critical-flow-contrast.md) records exact thresholds,
+token corrections, image-background failure behavior and exemptions. Broad
+WCAG, forced-colors, assistive-technology, alternate-engine, physical-device
+and launch approval remain open.
+
 **Implemented local owner-contribution checkpoint (W11):** private owned
 snapshots, current-session/revision-fenced title/body edits, exact discussion
 deletion and serialized post-comment admission are available. The

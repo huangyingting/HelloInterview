@@ -9,11 +9,12 @@
   --surface: #fff;
   --surface-soft: #f5f8f6;
   --text: #202b32;
-  --muted: #74817f;
+  --muted: #606d69;
   --border: #e3e9e6;
-  --accent: #147d71;
+  --accent: #13766b;
   --accent-hover: #0d675d;
   --accent-light: #eaf5f0;
+  --error: #a64b4b;
   --shadow: 0 4px 24px #203a3010;
   --radius: 15px;
 }
@@ -28,6 +29,7 @@
   --accent: #63c2ac;
   --accent-hover: #83d7c1;
   --accent-light: #243d38;
+  --error: #f08b8b;
   --shadow: 0 4px 24px #0002;
 }
 * { box-sizing: border-box; }
@@ -37,10 +39,10 @@ button,input,textarea,select { font: inherit; }
 button { cursor: pointer; color: inherit; }
 button:disabled { cursor: not-allowed; opacity: .5; }
 button,a,input,textarea,select { -webkit-tap-highlight-color: transparent; }
-:focus-visible { outline: 3px solid color-mix(in srgb,var(--accent) 65%,transparent); outline-offset: 3px; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 button { border: 0; background: none; }
 input,textarea,select { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; min-width: 0; width: 100%; }
-input::placeholder,textarea::placeholder { color: var(--muted); opacity: .85; }
+input::placeholder,textarea::placeholder { color: var(--muted); opacity: 1; }
 textarea { resize: vertical; line-height: 1.75; }
 input[type="checkbox"],input[type="radio"] { width: 16px; height: 16px; accent-color: var(--accent); flex-shrink: 0; }
 label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 550; color: var(--muted); }
@@ -144,8 +146,8 @@ button:hover,a:hover { color: var(--accent); }
 .skip-link:focus { top: 10px; }
 .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); max-width: min(90vw,650px); padding: 14px 20px; border: 1px solid var(--accent); border-radius: 10px; background: var(--surface); box-shadow: 0 6px 40px #0002; display: flex; align-items: center; gap: 11px; color: var(--text); font-size: 12px; z-index: 100; }
 .toast>span { color: var(--accent); }
-.toast.error { border-color: #bb6262; }
-.toast.error>span { color: #bb6262; }
+.toast.error { border-color: var(--error); }
+.toast.error>span { color: var(--error); }
 .boot-screen { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; }
 .loading-bar { width: 120px; height: 3px; border-radius: 3px; background: var(--accent-light); overflow: hidden; position: relative; }
 .loading-bar:after { content: ''; background: var(--accent); height: 100%; width: 50px; position: absolute; animation: loading 1.5s ease infinite; }
@@ -212,7 +214,8 @@ button:hover,a:hover { color: var(--accent); }
 .streak-note>span { color: var(--muted); }
 .quiz-promo { background: #f0f4df; border: 1px solid #e5e9d2; border-radius: var(--radius); padding: 24px; position: relative; overflow: hidden; }
 [data-theme="dark"] .quiz-promo { background: #2b382b; border-color: #3d4c37; }
-.quiz-promo .eyebrow { color: #859456; font-size: 8px; }
+.quiz-promo .eyebrow { color: #5d6b2c; font-size: 8px; }
+[data-theme="dark"] .quiz-promo .eyebrow { color: #aebe72; }
 .quiz-promo h3 { font-size: 24px; line-height: 1.27; letter-spacing: -.8px; position: relative; z-index: 1; }
 .quiz-promo p { font-size: 10px; line-height: 1.75; max-width: 195px; margin-top: 13px; position: relative; z-index: 1; }
 .quiz-promo .button { margin-top: 20px; font-size: 10px; padding: 8px 12px; min-height: 32px; position: relative; z-index: 1; }
@@ -589,7 +592,7 @@ button:hover,a:hover { color: var(--accent); }
 .quiz-explanations h3 { font-size: 14px; }
 .quiz-explanations p { margin-top: 12px; font-size: 11px; }
 .success-icon,.success-text { color: var(--accent); }
-.error-icon,.error-text { color: #ba5f5f; }
+.error-icon,.error-text { color: var(--error); }
 .error-text { font-size: 12px; padding: 12px 0; }
 .local-notice { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--muted); padding: 12px 15px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); margin-bottom: 22px; }
 .post-editor { margin-bottom: 25px; }

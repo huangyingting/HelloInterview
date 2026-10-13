@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { gzipSync } from 'node:zlib';
-import { chromium, expect } from '@playwright/test';
+import { chromium, expect, type Page } from '@playwright/test';
 import { z } from 'zod';
 import { loadConfig } from '../server/config';
 import { startServer } from '../server/runtime';
@@ -863,6 +863,150 @@ test('coarse-pointer critical flows keep sampled controls at 44 CSS pixels witho
     await page.goto(`${f.url}${route}`);
     await expect(page.locator('main')).toContainText(text);
     await inspect(route);
+  }
+});
+
+test('critical flows meet computed text and focus contrast in both themes',async t=>{
+  const f=await fixture(t);
+  async function inspect(page:Page,label:string) {
+    const result=await page.locator('body').evaluate(body=>{
+      type Color=[number,number,number,number];
+      const helper={
+        parse(value:string):Color{
+          const parts=value.match(/[\d.]+/g)?.map(Number)??[];
+          return [parts[0]??0,parts[1]??0,parts[2]??0,parts.length>3?parts[3]:1];
+        },
+        blend(front:Color,back:Color):Color{
+          const alpha=front[3]+back[3]*(1-front[3]);
+          return alpha===0?[0,0,0,0]:[
+            (front[0]*front[3]+back[0]*back[3]*(1-front[3]))/alpha,
+            (front[1]*front[3]+back[1]*back[3]*(1-front[3]))/alpha,
+            (front[2]*front[3]+back[2]*back[3]*(1-front[3]))/alpha,
+            alpha,
+          ];
+        },
+        luminance(color:Color){
+          const channels=color.slice(0,3).map(value=>value/255).map(value=>value<=.04045?value/12.92:((value+.055)/1.055)**2.4);
+          return .2126*channels[0]+.7152*channels[1]+.0722*channels[2];
+        },
+        ratio(left:Color,right:Color){
+          const a=this.luminance(left),b=this.luminance(right);
+          return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);
+        },
+        background(element:Element){
+          const chain:Element[]=[];
+          for(let current:Element|null=element;current;current=current.parentElement)chain.unshift(current);
+          let colors:Color[]=[[255,255,255,1]],unsupported='';
+          for(const current of chain){
+            const style=getComputedStyle(current),layer=this.parse(style.backgroundColor);
+            if(layer[3]>=.999)unsupported=style.backgroundImage==='none'?'':style.backgroundImage.slice(0,80);
+            colors=colors.map(color=>this.blend(layer,color));
+            if(style.backgroundImage!=='none'){
+              if(style.backgroundImage.includes('gradient(')){
+                const stops:Color[]=[];
+                for(const match of style.backgroundImage.matchAll(/rgba?\([^)]+\)/g))stops.push(this.parse(match[0]));
+                if(stops.length){
+                  const candidates:Color[]=[];
+                  for(const stop of stops)for(const color of colors)candidates.push(this.blend(stop,color));
+                  colors=candidates;
+                }else unsupported=style.backgroundImage.slice(0,80);
+              }else unsupported=style.backgroundImage.slice(0,80);
+            }
+          }
+          return {colors,unsupported};
+        },
+        visible(element:HTMLElement){
+          const style=getComputedStyle(element),rect=element.getBoundingClientRect();
+          return style.display!=='none'&&style.visibility!=='hidden'&&rect.width>0&&rect.height>0;
+        },
+        exempt(element:HTMLElement){
+          return element.matches(':disabled,[aria-disabled="true"],[aria-hidden="true"]')||!!element.closest(':disabled,[aria-disabled="true"],[aria-hidden="true"]');
+        },
+      };
+      const failures:{element:string;text:string;ratio?:number;required?:number;foreground?:string;background?:string;unsupported?:string}[]=[];
+      for(const element of Array.from(body.querySelectorAll<HTMLElement>('*'))){
+        if(!helper.visible(element)||helper.exempt(element))continue;
+        const direct=Array.from(element.childNodes).filter(node=>node.nodeType===Node.TEXT_NODE).map(node=>node.textContent?.trim()??'').filter(Boolean).join(' ');
+        const placeholder=element instanceof HTMLInputElement||element instanceof HTMLTextAreaElement
+          ? !element.value&&element.placeholder?element.placeholder:''
+          :'';
+        for(const [text,pseudo] of [[direct,''],[placeholder,'::placeholder']] as const){
+          if(!text)continue;
+          const style=getComputedStyle(element,pseudo),bg=helper.background(element);
+          if(bg.unsupported){
+            failures.push({element:`${element.tagName.toLowerCase()}.${element.className}`,text:text.slice(0,80),unsupported:bg.unsupported});
+            continue;
+          }
+          const foreground=helper.parse(style.color);
+          foreground[3]*=Number(style.opacity);
+          const size=parseFloat(style.fontSize),weight=Number(style.fontWeight)||400;
+          const required=size>=24||size>=18.66&&weight>=700?3:4.5;
+          let actual=Infinity,worst=bg.colors[0];
+          for(const color of bg.colors){
+            const candidate=helper.ratio(helper.blend(foreground,color),color);
+            if(candidate<actual){actual=candidate;worst=color;}
+          }
+          if(actual+.01<required)failures.push({
+            element:`${element.tagName.toLowerCase()}.${element.className}`,
+            text:text.slice(0,80),
+            ratio:Number(actual.toFixed(2)),
+            required,
+            foreground:style.color,
+            background:`rgb(${worst.slice(0,3).map(value=>Math.round(value)).join(', ')})`,
+          });
+        }
+      }
+      return failures.slice(0,50);
+    });
+    assert.deepEqual(result,[],`${label}: text contrast failures`);
+    await page.evaluate(()=>{if(document.activeElement instanceof HTMLElement)document.activeElement.blur();});
+    const target=page.locator(':focus-visible').first();
+    for(let attempt=0;attempt<4&&!await target.count();attempt++)await page.keyboard.press('Tab');
+    await expect(target).toBeVisible();
+    const focus=await target.evaluate(element=>{
+      const helper={
+        parse(value:string){return value.match(/[\d.]+/g)?.slice(0,3).map(Number)??[0,0,0];},
+        luminance(color:number[]){return color.map(value=>value/255).map(value=>value<=.04045?value/12.92:((value+.055)/1.055)**2.4).reduce((sum,value,index)=>sum+value*[.2126,.7152,.0722][index],0);},
+      };
+      const style=getComputedStyle(element),foreground=helper.parse(style.outlineColor);
+      let parent=element.parentElement,surface=[255,255,255];
+      while(parent){
+        const color=getComputedStyle(parent).backgroundColor,parts=color.match(/[\d.]+/g)?.map(Number)??[];
+        if((parts[3]??1)>.99){surface=helper.parse(color);break;}
+        parent=parent.parentElement;
+      }
+      const left=helper.luminance(foreground),right=helper.luminance(surface);
+      return {style:style.outlineStyle,width:parseFloat(style.outlineWidth),ratio:(Math.max(left,right)+.05)/(Math.min(left,right)+.05)};
+    });
+    assert.equal(focus.style,'solid',`${label}: focus outline style`);
+    assert.ok(focus.width>=2,`${label}: focus outline width ${focus.width}`);
+    assert.ok(focus.ratio>=3,`${label}: focus outline contrast ${focus.ratio}`);
+  }
+  for(const theme of ['light','dark'] as const){
+    const context=await f.browser.newContext({viewport:{width:1280,height:900}});
+    await context.addInitScript(value=>localStorage.setItem('studio-theme',value),theme);
+    try{
+      const page=await context.newPage();
+      await page.goto(`${f.url}/auth`);
+      await expect(page.getByRole('heading',{name:'Welcome back.',exact:true})).toBeVisible();
+      await inspect(page,`${theme} public auth`);
+      await page.getByRole('button',{name:'Password recovery availability'}).click();
+      await expect(page.getByRole('alert')).toContainText('Email-based password recovery is not configured.');
+      await inspect(page,`${theme} public auth error`);
+      const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);
+      for(const [route,text] of [
+        ['/dashboard','Good to see you, Alex.'],
+        ['/practice/ai-coding/task-board','Start practice'],
+        ['/community/questions','Interview questions'],
+        ['/account','A few things about you.'],
+        ['/support','What’s getting in your way?'],
+      ] as const){
+        await page.goto(`${f.url}${route}`);
+        await expect(page.locator('main')).toContainText(text);
+        if(route==='/dashboard')await expect(page.getByRole('link',{name:'Your dashboard'})).toHaveAttribute('aria-current','page');
+        await inspect(page,`${theme} ${route}`);
+      }
+    }finally{await context.close();}
   }
 });
 
