@@ -941,6 +941,89 @@ export const migrations = [{
     CREATE TRIGGER zz_protect_support_ticket BEFORE UPDATE ON support
       FOR EACH ROW EXECUTE FUNCTION protect_support_ticket();
   `,
+}, {
+  version:30,
+  name:'recoverable-owner-comment-deletion',
+  sql:`
+    ALTER TABLE comments ALTER COLUMN user_id DROP NOT NULL;
+    CREATE TABLE community_comment_tombstones (
+      comment_id TEXT PRIMARY KEY REFERENCES comments(id) ON DELETE CASCADE,
+      deleted_at TEXT NOT NULL CHECK (deleted_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$')
+    );
+    CREATE TABLE community_comment_deletions (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      request_id TEXT NOT NULL CHECK (request_id ~ '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'),
+      comment_id TEXT NOT NULL UNIQUE CHECK (length(comment_id) BETWEEN 1 AND 200),
+      resource TEXT NOT NULL CHECK (length(resource) BETWEEN 1 AND 205),
+      input_hash TEXT NOT NULL CHECK (input_hash ~ '^[a-f0-9]{64}$'),
+      prior_revision INTEGER NOT NULL CHECK (prior_revision>=0),
+      result_revision INTEGER NOT NULL CHECK (result_revision=prior_revision+1),
+      deleted_at TEXT NOT NULL CHECK (deleted_at ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$'),
+      PRIMARY KEY(user_id,request_id)
+    );
+    CREATE INDEX community_comment_deletions_owner
+      ON community_comment_deletions(user_id,deleted_at DESC,request_id DESC);
+    CREATE FUNCTION require_community_comment_owner() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+      BEGIN
+        IF NEW.user_id IS NULL THEN RAISE EXCEPTION 'New community comments require an owner.'; END IF;
+        RETURN NEW;
+      END;
+    $$;
+    CREATE TRIGGER require_community_comment_owner BEFORE INSERT ON comments
+      FOR EACH ROW EXECUTE FUNCTION require_community_comment_owner();
+    CREATE FUNCTION protect_community_comment_row() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+      BEGIN
+        IF NOT (
+          OLD.user_id IS NOT NULL AND NEW.id=OLD.id AND NEW.resource=OLD.resource AND
+            NEW.user_id=OLD.user_id AND NEW.author=OLD.author AND NEW.created_at=OLD.created_at AND
+            NEW.parent_id IS NOT DISTINCT FROM OLD.parent_id OR
+          OLD.user_id IS NOT NULL AND NEW.id=OLD.id AND NEW.resource=OLD.resource AND
+            NEW.user_id=OLD.user_id AND NEW.author=OLD.author AND NEW.body=OLD.body AND
+            NEW.created_at=OLD.created_at AND OLD.parent_id IS NOT NULL AND NEW.parent_id IS NULL AND
+            EXISTS(SELECT 1 FROM comments parent WHERE parent.id=OLD.parent_id AND parent.resource<>OLD.resource) OR
+          OLD.user_id IS NOT NULL AND NEW.id=OLD.id AND NEW.resource=OLD.resource AND NEW.user_id IS NULL AND
+            NEW.author='' AND NEW.body='' AND NEW.created_at=OLD.created_at AND
+            NEW.parent_id IS NOT DISTINCT FROM OLD.parent_id AND
+            EXISTS(SELECT 1 FROM community_comment_deletions deletion
+              WHERE deletion.comment_id=OLD.id AND deletion.user_id=OLD.user_id AND deletion.resource=OLD.resource) AND
+            EXISTS(SELECT 1 FROM community_comment_tombstones tombstone WHERE tombstone.comment_id=OLD.id)
+        ) THEN
+          RAISE EXCEPTION 'Community comments allow only body edits, cross-resource parent cleanup or receipt-bound tombstoning.';
+        END IF;
+        RETURN NEW;
+      END;
+    $$;
+    CREATE TRIGGER protect_community_comment_update BEFORE UPDATE ON comments
+      FOR EACH ROW EXECUTE FUNCTION protect_community_comment_row();
+    CREATE FUNCTION apply_community_comment_deletion() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+      DECLARE changed INTEGER; saved_revision INTEGER;
+      BEGIN
+        SELECT saved.revision INTO saved_revision FROM community_comment_revisions saved
+          JOIN comments comment ON comment.id=saved.comment_id
+          WHERE comment.id=NEW.comment_id AND comment.user_id=NEW.user_id AND comment.resource=NEW.resource FOR UPDATE;
+        IF saved_revision IS NULL OR saved_revision<>NEW.prior_revision THEN
+          RAISE EXCEPTION 'Comment deletion requires the current owned revision.';
+        END IF;
+        INSERT INTO community_comment_tombstones(comment_id,deleted_at) VALUES(NEW.comment_id,NEW.deleted_at);
+        UPDATE comments SET user_id=NULL,author='',body='' WHERE id=NEW.comment_id AND user_id=NEW.user_id;
+        GET DIAGNOSTICS changed=ROW_COUNT;
+        IF changed<>1 OR NOT EXISTS(
+          SELECT 1 FROM community_comment_revisions saved
+            WHERE saved.comment_id=NEW.comment_id AND saved.revision=NEW.result_revision
+        ) THEN RAISE EXCEPTION 'Comment deletion did not publish one exact tombstone revision.'; END IF;
+        RETURN NEW;
+      END;
+    $$;
+    CREATE TRIGGER apply_community_comment_deletion AFTER INSERT ON community_comment_deletions
+      FOR EACH ROW EXECUTE FUNCTION apply_community_comment_deletion();
+    CREATE FUNCTION immutable_community_comment_deletion() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+      BEGIN RAISE EXCEPTION 'Comment deletion receipts and tombstones are immutable.'; END;
+    $$;
+    CREATE TRIGGER immutable_community_comment_deletion BEFORE UPDATE ON community_comment_deletions
+      FOR EACH ROW EXECUTE FUNCTION immutable_community_comment_deletion();
+    CREATE TRIGGER immutable_community_comment_tombstone BEFORE UPDATE ON community_comment_tombstones
+      FOR EACH ROW EXECUTE FUNCTION immutable_community_comment_deletion();
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

@@ -161,6 +161,8 @@ community DTOs. Monitor validation/conflict/unknown-recovery rates without raw
 body, credential, cookie or cursor capture. Operators need retention/export/
 deletion policy and incident ownership before real customer data is collected.
 
-This checkpoint does not approve managed writing, comment deletion/reply
-retention policy, moderation/reports/appeals, immutable body history, complete
-privacy export/deletion, public launch or customer migration.
+Recoverable local owner deletion and reply-preserving tombstones are implemented
+separately in [runbook 39](39-recoverable-owner-comment-deletion.md). Neither
+checkpoint approves managed writing, legal retention policy,
+moderation/reports/appeals, immutable body history, complete privacy erasure,
+public launch or customer migration.

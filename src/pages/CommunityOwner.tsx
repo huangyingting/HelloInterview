@@ -1,11 +1,16 @@
 import { Pencil, Trash2 } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
-import type { Comment, CommunityPost, OwnedCommunityComment, OwnedCommunityPost } from '../../shared/types';
+import type { Comment, CommunityCommentDeletion, CommunityPost, OwnedCommunityComment, OwnedCommunityPost } from '../../shared/types';
 import { request, useStudio } from '../store';
 
 type PostProps = { post: CommunityPost; comment?: never; onSaved: (post: CommunityPost) => void; onDeleted: () => void };
-type CommentProps = { comment: Comment; post?: never; onSaved: (comment: Comment) => void; onDeleted?: never };
+type CommentProps = { comment: Comment; post?: never; onSaved: (comment: Comment) => void; onDeleted: (comment:Comment|null) => void };
 type Snapshot = OwnedCommunityPost | OwnedCommunityComment;
+function deletionMessage(props:PostProps|CommentProps,result?:CommunityCommentDeletion) {
+  if(props.post)return 'Your local post and its discussion were deleted.';
+  return result?.comment?'Your comment text and authorship were removed; existing replies retain a deleted-comment tombstone.'
+    :'This comment deletion was recorded earlier; its discussion is no longer available.';
+}
 export function CommunityOwner(props: PostProps) { return <ContributionOwner {...props} />; }
 export function CommentOwner(props: CommentProps) { return <ContributionOwner {...props} />; }
 function ContributionOwner(props: PostProps | CommentProps) {
@@ -13,7 +18,7 @@ function ContributionOwner(props: PostProps | CommentProps) {
   const [open, setOpen] = useState(!!props.comment), [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState<Snapshot>(), [current, setCurrent] = useState<Snapshot>();
   const [title, setTitle] = useState(''), [body, setBody] = useState(''), [error, setError] = useState('');
-  const [confirmed, setConfirmed] = useState(false);
+  const [confirmed, setConfirmed] = useState(false),[deletionKey,setDeletionKey]=useState<string>();
   const alive = useRef(false);
   const instanceId = useId(), editorId = props.post ? 'owned-contribution' : instanceId;
   const id = props.post ? props.post.id : props.comment.id;
@@ -72,16 +77,27 @@ function ContributionOwner(props: PostProps | CommentProps) {
     }
   });
   const remove = () => act(async () => {
-    if (!saved || !confirmed || !props.post) return;
+    if (!saved || !confirmed) return;
+    const commentRequestId=props.comment?(deletionKey??crypto.randomUUID()):undefined;
+    if(commentRequestId)setDeletionKey(commentRequestId);
+    let deletion:CommunityCommentDeletion|undefined;
     setError('');
     try {
-      await request(endpoint, { id, revision: saved.revision }, 'DELETE');
+      if(props.post){
+        await request(endpoint,{id,revision:saved.revision},'DELETE');
+      }else{
+        deletion=await request<CommunityCommentDeletion>(endpoint,{id,revision:saved.revision,requestId:commentRequestId},'DELETE');
+        if(!alive.current)return;
+        props.onDeleted(deletion.comment);
+      }
       if (!alive.current) return;
-      notify('Your local post and its discussion were deleted.'); props.onDeleted();
+      notify(deletionMessage(props,deletion));
+      if(props.post)props.onDeleted();else setOpen(false);
     } catch (reason) {
-      if (alive.current) setError(`Deletion was not confirmed. ${reason instanceof Error ? reason.message : 'Check the saved version before trying again.'}`);
+      if (alive.current) setError(`Deletion was not confirmed. ${reason instanceof Error ? reason.message : 'Check the saved version before trying again.'}${commentRequestId?` Retry only deletion request ${commentRequestId}.`:''}`);
       throw reason;
     }
+
   });
   const dirty = saved && (title !== values(saved).title || body !== values(saved).body);
   return <section className="owned-contribution">
@@ -99,10 +115,13 @@ function ContributionOwner(props: PostProps | CommentProps) {
       </form>}
       <button className="button secondary small" disabled={pending || loading || !saved && !error} onClick={() => void check()}>Check saved version</button>
       {current && <article className="panel"><h3>Current saved version</h3><p className="fine-print">Saved revision {current.revision}. Checking did not replace your draft.</p>{props.post && <strong>{values(current).title}</strong>}<p className="post-body">{values(current).body}</p><button className="button secondary small" disabled={pending} onClick={() => { install(current); publish(current); }}>Replace my draft with saved version</button></article>}
-      {saved && props.post && <div role="group" aria-label="Delete original local post">
-        <h3>Delete this local contribution</h3><p>This permanently removes this post, its exact local discussion, votes and follows. Minimal private submission references remain to prevent duplicate retries; they retain no original comment text. It also discards your unsaved edit. This is not account or privacy deletion.</p>
-        <label className="checkbox-label"><input type="checkbox" checked={confirmed} disabled={pending} onChange={event => setConfirmed(event.target.checked)} /> I understand this deletes my post, its discussion, votes and follows.</label>
-        <button className="button secondary small" disabled={pending || !confirmed} onClick={() => void remove()}><Trash2 size={15} /> Delete my local post</button>
+      {saved && <div role="group" aria-label={props.post?'Delete original local post':'Delete original local comment'}>
+        <h3>Delete this local {props.post?'contribution':'comment'}</h3>
+        <p>{props.post?'This permanently removes this post, its exact local discussion, votes and follows. Minimal private submission references remain to prevent duplicate retries; they retain no original comment text. It also discards your unsaved edit. This is not account or privacy deletion.'
+          :'This removes the saved comment text and public authorship. A deleted-comment tombstone keeps existing replies in context; no one can reply to the tombstone. A private request receipt remains for exact retry recovery. This is not account or privacy deletion.'}</p>
+        {deletionKey&&<p className="fine-print">Deletion request: <code>{deletionKey}</code>. If the result is uncertain, retry only this same request.</p>}
+        <label className="checkbox-label"><input type="checkbox" checked={confirmed} disabled={pending} onChange={event => setConfirmed(event.target.checked)} /> {props.post?'I understand this deletes my post, its discussion, votes and follows.':'I understand the original comment text and authorship cannot be restored.'}</label>
+        <button className="button secondary small" disabled={pending || !confirmed} onClick={() => void remove()}><Trash2 size={15} /> {props.post?'Delete my local post':deletionKey?'Retry same comment deletion':'Delete my local comment'}</button>
       </div>}
     </div>}
   </section>;

@@ -38,7 +38,7 @@ export class CommunitySubmissions {
   private envelope(row:Record<string,unknown>):CommunityCommentSubmission {
     const receipt=receiptSchema.parse({requestId:row.request_id,commentId:row.comment_id,resource:row.resource,createdAt:row.created_at,status:'created'});
     const comment=row.current_id===null?null:commentDto.parse({id:row.current_id,resource:row.current_resource,author:row.current_author,
-      body:row.current_body,createdAt:row.current_created_at,parentId:row.current_parent,isMine:1});
+      body:row.current_body,createdAt:row.current_created_at,parentId:row.current_parent,isMine:1,deleted:0});
     return {receipt,comment};
   }
   private async snapshot(owner:string,requestId:string) {
@@ -59,7 +59,9 @@ export class CommunitySubmissions {
       }
       if(request.resource.startsWith('post/')&&!await this.db.prepare(`SELECT id FROM posts WHERE id=?${this.db.dialect==='postgres'?' FOR UPDATE':''}`).get(request.resource.slice(5)))
         throw new HttpError(404,'This post is no longer available for discussion.');
-      if(request.parentId&&!await this.db.prepare('SELECT id FROM comments WHERE id=? AND resource=?').get(request.parentId,request.resource))
+      if(request.parentId&&!await this.db.prepare(`SELECT comments.id FROM comments
+        LEFT JOIN community_comment_tombstones tombstone ON tombstone.comment_id=comments.id
+        WHERE comments.id=? AND comments.resource=? AND comments.user_id IS NOT NULL AND tombstone.comment_id IS NULL`).get(request.parentId,request.resource))
         throw new HttpError(400,'Reply must belong to this exact discussion.');
       const id=randomUUID(),createdAt=new Date().toISOString();
       await this.db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run(id,request.resource,user.id,user.name,request.body,createdAt,request.parentId);

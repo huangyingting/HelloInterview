@@ -206,8 +206,7 @@ owner management is still disabled.
 The [owned-comment checkpoint](docs/production/32-owned-comment-editing.md)
 adds author-only local text editing, private version snapshots and server-derived
 ownership without account IDs. Its shared in-page editor preserves drafts
-through conflicts, lost responses, closing and filtering. Comment deletion and
-managed discussion writing remain disabled.
+through conflicts, lost responses, closing and filtering.
 The [bounded-discussion checkpoint](docs/production/33-bounded-discussion-pages.md)
 replaces the shared UI's 500-comment ceiling with indexed, viewer/resource-bound
 pages and explicit load-more/retry controls. Open drafts survive paging and
@@ -218,6 +217,12 @@ adds explicit local lost-response check/same-key retry, atomic duplicate-safe
 creation and bounded private history without retaining original text in the
 receipt ledger. Removed acknowledged comments are never recreated. Managed
 writing, retention approval and comprehensive privacy workflows remain open.
+The [comment-deletion checkpoint](docs/production/39-recoverable-owner-comment-deletion.md)
+adds revision-fenced, UUID-keyed local owner deletion with exact lost-response
+retry. It removes saved author/body/account ownership from the comment while a
+non-repliable tombstone preserves existing reply context; private receipts retain
+no removed text. This is not approved retention, privacy erasure, moderation or
+managed writing.
 The [staff administration checkpoint](docs/production/35-mfa-staff-account-administration.md)
 adds verified OIDC MFA evidence, time-bounded role events, exact masked lookup,
 revision-fenced account suspension/reactivation, session revocation and immutable
@@ -239,7 +244,7 @@ The [in-app support operations checkpoint](docs/production/38-mfa-in-app-support
 adds an MFA-gated bounded staff queue, revision-fenced assignment/status and
 idempotent owner-visible replies with immutable evidence. External email,
 helpdesk delivery, SLA and staffing claims remain disabled.
-Controlled PostgreSQL deployments must apply **migration 29 and maintained queue
+Controlled PostgreSQL deployments must apply **migration 30 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 

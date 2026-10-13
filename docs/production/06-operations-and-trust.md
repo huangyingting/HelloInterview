@@ -68,7 +68,7 @@ ownership, private current-session/CAS snapshots and text-only author edits
 share the in-page post editor without loading it into cold initial screens.
 The [comment runbook](32-owned-comment-editing.md) records migration 23,
 parent-before-comment lock ordering, conflict/lost-response and close/filter
-draft preservation. Comment deletion/reply retention, managed writing,
+draft preservation. Managed writing,
 moderation operation and comprehensive privacy workflows remain separate gates.
 
 **Implemented bounded discussion checkpoint (W11):** the shared UI uses indexed
@@ -85,6 +85,17 @@ response through explicit check or same-key retry. The
 minimal immutable references without original comment text, bounded private
 history, actual-session fences and non-resurrection after removal. This is not
 retention approval, privacy export/deletion, moderation or managed writing.
+
+**Implemented recoverable comment-deletion checkpoint (W11):** local comment
+owners can publish one current-session, revision-fenced deletion through an
+owner-scoped UUID request key. Migration 30 strips the saved author, body and
+account ownership from the comment while retaining an explicit non-repliable
+tombstone so existing replies keep their parent context. Immutable private
+receipts permit exact retry after an uncertain response and retain no removed
+comment text. The
+[deletion runbook](39-recoverable-owner-comment-deletion.md) records structural
+database guards, export scope and local schema upgrade behavior. This does not
+approve legal retention, full privacy erasure, moderation or managed writing.
 
 **Implemented managed staff-administration checkpoint (W10):** verified OIDC
 `amr` can establish explicit MFA evidence for a managed session; privileged

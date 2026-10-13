@@ -1021,6 +1021,10 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     const user = await requireLocalContributor(req);
     res.json(await contributions.updateComment(req.body,user.id,() => assertLocalCommunitySession(req,user)));
   });
+  app.delete('/api/comments/owned',async(req,res)=>{
+    const user=await requireLocalContributor(req);
+    res.json(await contributions.removeComment(req.body,user.id,()=>assertLocalCommunitySession(req,user)));
+  });
   app.post('/api/comments', async (req, res) => {
     const user = (await requireUser(req)), body = record(req.body);
     const resource = commentResource(body.resource);
@@ -1033,7 +1037,10 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
         await assertLocalCommunitySession(req, user);
         if (!await db.prepare(`SELECT id FROM posts WHERE id=?${db.dialect === 'postgres' ? ' FOR UPDATE' : ''}`).get(resource.slice(5))) throw new HttpError(404, 'This post is no longer available for discussion.');
       }
-      if (parentId && !(await db.prepare('SELECT id FROM comments WHERE id=? AND resource=?').get(parentId, resource))) throw new HttpError(400, 'Reply must belong to this discussion.');
+      if (parentId && !(await db.prepare(`SELECT comments.id FROM comments
+        LEFT JOIN community_comment_tombstones tombstone ON tombstone.comment_id=comments.id
+        WHERE comments.id=? AND comments.resource=? AND comments.user_id IS NOT NULL AND tombstone.comment_id IS NULL`).get(parentId, resource)))
+        throw new HttpError(400, 'Reply must belong to an available comment in this discussion.');
       await db.prepare('INSERT INTO comments VALUES (?,?,?,?,?,?,?)').run(id, resource, user.id, user.name, comment, new Date().toISOString(), parentId);
       return contributions.createdComment(id,user.id);
     });

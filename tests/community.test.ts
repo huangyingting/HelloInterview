@@ -70,7 +70,7 @@ test('community URL helpers preserve exact bounded data and reject malformed or 
   assert.deepEqual(parseStudioAddress('/community/questions/literal%252F','').segments,['community','questions','literal%2F']);
 });
 
-test('migrations 21-25 preserve actual legacy posts, memberships, comments and immutable history while adding indexes, revisions and empty receipts',async t=>{
+test('migrations 21-30 preserve actual legacy posts, memberships, comments and immutable history while adding deletion-safe comment state',async t=>{
   const f=await fixture(t,'postgres'),post=await f.add();
   await f.db.prepare('INSERT INTO votes(post_id,user_id) VALUES(?,?)').run(post.id,f.owners[0]);
   await f.db.prepare('INSERT INTO follows(post_id,user_id) VALUES(?,?)').run(post.id,f.owners[1]);
@@ -117,6 +117,10 @@ test('migrations 21-25 preserve actual legacy posts, memberships, comments and i
   assert.deepEqual(await legacy.prepare('SELECT version,name,checksum FROM schema_migrations WHERE version<=23 ORDER BY version').all(),history23);
   assert.deepEqual(await legacy.prepare('SELECT version,name,checksum FROM schema_migrations WHERE version<=24 ORDER BY version').all(),history24);
   assert.deepEqual(await legacy.prepare('SELECT * FROM community_comment_submissions').all(),[]);
+  assert.deepEqual(await legacy.prepare('SELECT * FROM community_comment_deletions').all(),[]);
+  assert.deepEqual(await legacy.prepare('SELECT * FROM community_comment_tombstones').all(),[]);
+  assert.equal((await legacy.prepare(`SELECT is_nullable FROM information_schema.columns
+    WHERE table_schema=current_schema() AND table_name='comments' AND column_name='user_id'`).get())?.is_nullable,'YES');
   assert.equal((await legacy.prepare('SELECT revision FROM community_comment_revisions WHERE comment_id=?').get(commentId))?.revision,1);
   await legacy.prepare('UPDATE comments SET body=body WHERE id=?').run(commentId);
   assert.equal((await legacy.prepare('SELECT revision FROM community_comment_revisions WHERE comment_id=?').get(commentId))?.revision,2);
@@ -124,7 +128,7 @@ test('migrations 21-25 preserve actual legacy posts, memberships, comments and i
   await legacy.prepare('UPDATE posts SET title=? WHERE id=?').run('A controlled original title update',post.id);
   assert.equal((await legacy.prepare('SELECT revision FROM community_post_revisions WHERE post_id=?').get(post.id))?.revision,2);
   const indexes=await legacy.prepare('SELECT indexname FROM pg_indexes WHERE schemaname=?').all(schema);
-  for(const name of ['posts_owner_order','posts_created_order','follows_owner','comments_resource_cursor','community_comment_submissions_owner','community_comment_submissions_resource'])assert.ok(indexes.some(row=>row.indexname===name));
+  for(const name of ['posts_owner_order','posts_created_order','follows_owner','comments_resource_cursor','community_comment_submissions_owner','community_comment_submissions_resource','community_comment_deletions_owner'])assert.ok(indexes.some(row=>row.indexname===name));
   assert.equal((await new CommunityReads(legacy).detail(post.id,{kind:'questions'},f.owners[0])).isMine,true);
 });
 
@@ -160,6 +164,37 @@ test('SQLite adds comment revisions to the prior schema without rewriting commen
     assert.equal((await upgraded.prepare('SELECT revision FROM community_comment_revisions WHERE comment_id=?').get(id))?.revision,0);
     assert.equal((await upgraded.prepare('SELECT revision FROM community_post_revisions WHERE post_id=?').get(post.id))?.revision,1);
   }finally{await upgraded.close();}
+});
+
+test('SQLite upgrades prior non-null comment ownership before publishing receipt-bound tombstones',async t=>{
+  const parent=path.resolve('data/community-tests');await mkdir(parent,{recursive:true});
+  const directory=await mkdtemp(path.join(parent,'comment-nullability-'));t.after(()=>rm(directory,{recursive:true,force:true}));
+  const owner=randomUUID(),comment=randomUUID(),legacy=new DatabaseSync(path.join(directory,'studio.sqlite'));
+  try{
+    legacy.exec(`PRAGMA foreign_keys=ON;
+      CREATE TABLE users(id TEXT PRIMARY KEY,name TEXT NOT NULL,email TEXT UNIQUE NOT NULL,password TEXT,demo INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE comments(id TEXT PRIMARY KEY,resource TEXT NOT NULL,user_id TEXT NOT NULL,author TEXT NOT NULL,body TEXT NOT NULL,created_at TEXT NOT NULL,parent_id TEXT);
+      CREATE TABLE community_comment_revisions(comment_id TEXT PRIMARY KEY REFERENCES comments(id) ON DELETE CASCADE,revision INTEGER NOT NULL DEFAULT 0);
+      CREATE TRIGGER advance_community_comment_revision AFTER UPDATE ON comments
+        BEGIN UPDATE community_comment_revisions SET revision=revision+1 WHERE comment_id=NEW.id; END;`);
+    legacy.prepare('INSERT INTO users VALUES(?,?,?,?,?)').run(owner,'Legacy owner','legacy@example.invalid',null,0);
+    legacy.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run(comment,'lesson/legacy-nullability',owner,'Legacy owner','Legacy private comment bytes.','2026-01-01T00:00:00.000Z',null);
+    legacy.prepare('INSERT INTO community_comment_revisions VALUES(?,0)').run(comment);
+  }finally{legacy.close();}
+  const upgraded=localConnection(directory);
+  try{
+    const column=(await upgraded.prepare('PRAGMA table_info(comments)').all()).find(value=>value.name==='user_id');assert.equal(column?.notnull,0);
+    assert.equal((await upgraded.prepare('SELECT body FROM comments WHERE id=?').get(comment))?.body,'Legacy private comment bytes.');
+    await upgraded.prepare(`INSERT INTO community_comment_deletions
+      (user_id,request_id,comment_id,resource,input_hash,prior_revision,result_revision,deleted_at)
+      VALUES(?,?,?,?,?,?,?,?)`).run(owner,randomUUID(),comment,'lesson/legacy-nullability','9'.repeat(64),0,1,'2026-01-02T00:00:00.000Z');
+    const stripped=await upgraded.prepare('SELECT user_id,author,body FROM comments WHERE id=?').get(comment);
+    assert.equal(stripped?.user_id,null);assert.equal(stripped?.author,'');assert.equal(stripped?.body,'');
+    assert.equal((await upgraded.prepare('SELECT revision FROM community_comment_revisions WHERE comment_id=?').get(comment))?.revision,1);
+  }finally{await upgraded.close();}
+  const reopened=localConnection(directory);
+  try{assert.ok(await reopened.prepare('SELECT comment_id FROM community_comment_tombstones WHERE comment_id=?').get(comment));}
+  finally{await reopened.close();}
 });
 
 for(const kind of ['post','comment'] as const)test(`a PostgreSQL owned ${kind} mutation paused before admission cannot commit after the actual browser session is revoked`,async t=>{
@@ -291,7 +326,7 @@ test('a PostgreSQL comment edit waiting on a privileged row update reads the new
   const db:Database={...f.db,prepare(sql){
     const statement=f.db.prepare(sql);
     return {...statement,get:async(...values)=>{
-      if(values[0]===target&&sql.includes('FROM comments WHERE id=? AND user_id=?')&&sql.includes('FOR UPDATE')){
+      if(values[0]===target&&sql.includes('FROM comments WHERE comments.id=? AND comments.user_id=?')&&sql.includes('FOR UPDATE')){
         const process=await f.db.prepare('SELECT pg_backend_pid() AS pid').get();assert.equal(typeof process?.pid,'number');
         waitingPid=Number(process!.pid);target='';entered();
       }
@@ -344,7 +379,7 @@ for(const dialect of ['sqlite','postgres'] as const){
     const saved=await service.create(user,input,async()=>{}),replay=await service.create(user,input,async()=>{});
     assert.deepEqual(replay,saved);
     assert.equal(Number((await f.db.prepare('SELECT COUNT(*) AS count FROM comments WHERE resource=?').get(resource))?.count),1);
-    await f.db.prepare('UPDATE comments SET created_at=? WHERE id=?').run('2001-01-01T00:00:00.000Z',saved.receipt.commentId);
+    await f.db.prepare('DELETE FROM comments WHERE id=?').run(saved.receipt.commentId);
     assert.equal((await service.read(user.id,{requestId:input.requestId},async()=>{})).comment,null);
     await f.db.prepare('DELETE FROM users WHERE id=?').run(user.id);
     assert.deepEqual(await f.db.prepare('SELECT request_id FROM community_comment_submissions').all(),[]);
@@ -426,7 +461,7 @@ for(const dialect of ['sqlite','postgres'] as const){
     const page=await first.json();assert.deepEqual(Object.keys(page).sort(),['comments','limit','nextCursor'].sort());
     assert.equal(page.limit,50);assert.equal(page.comments.length,50);assert.equal(page.comments[0].id,'page-0000');
     for(const [i,row] of page.comments.entries()){
-      assert.deepEqual(Object.keys(row).sort(),['author','body','createdAt','id','isMine','parentId','resource'].sort());
+      assert.deepEqual(Object.keys(row).sort(),['author','body','createdAt','deleted','id','isMine','parentId','resource'].sort());
       assert.equal(row.resource,resource);assert.equal(row.isMine,i%2===0);
       assert.ok(!JSON.stringify(row).includes(owner));assert.ok(!JSON.stringify(row).includes(f.owners[1]));
     }
@@ -503,7 +538,7 @@ for(const dialect of ['sqlite','postgres'] as const){
     for(const [viewer,mine] of [[cookie,true],[otherCookie,false],['',false]] as const){
       const response=await api(`/api/comments?${new URLSearchParams({resource})}`,undefined,viewer);assert.equal(response.status,200);
       const row=(await response.json()).find((comment:{id:string})=>comment.id===id);
-      assert.equal(row.isMine,mine);assert.deepEqual(Object.keys(row).sort(),['author','body','createdAt','id','isMine','parentId','resource'].sort());
+      assert.equal(row.isMine,mine);assert.deepEqual(Object.keys(row).sort(),['author','body','createdAt','deleted','id','isMine','parentId','resource'].sort());
       assert.ok(!JSON.stringify(row).includes(owner));assert.ok(!Object.hasOwn(row,'revision'));
     }
     assert.equal((await api(route)).status,401);assert.equal((await api(route,undefined,otherCookie)).status,404);
@@ -532,6 +567,50 @@ for(const dialect of ['sqlite','postgres'] as const){
     assert.equal((await maximum.json()).comment.body.length,3000);
     await f.db.prepare('UPDATE community_comment_revisions SET revision=? WHERE comment_id=?').run(2147483647,generic);
     assert.equal((await api('/api/comments/owned',{...draft,id:generic,revision:2147483647},cookie,'PUT')).status,409);
+  });
+  test(`${dialect}: owner comment deletion is receipt-bound, strips private bytes and retains only a non-repliable tombstone for existing replies`,async t=>{
+    const f=await fixture(t,dialect),server=await startServer(loadConfig({NODE_ENV:'production',DATA_DIR:f.directory,...(f.url?{DATABASE_URL:f.url}:{}),PORT:'0',LOG_REQUESTS:'false'}));t.after(()=>server.close());
+    const api=async(route:string,body?:unknown,cookie='',method=body===undefined?'GET':'POST')=>fetch(`${server.url}${route}`,{method,headers:{Cookie:cookie,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+    const login=await api('/api/auth/demo',{}),owner=(await login.json()).user.id,cookie=login.headers.getSetCookie().map(value=>value.split(';')[0]).join('; ');
+    const other=await api('/api/auth/signup',{name:'Reply author',email:`${randomUUID()}@example.invalid`,password:'fixture-password-123'}),otherCookie=other.headers.getSetCookie().map(value=>value.split(';')[0]).join('; ');
+    const resource='lesson/recoverable-comment-deletion',submissionKey=randomUUID();
+    const created=await api('/api/comments/submissions',{requestId:submissionKey,resource,body:'Original comment bytes that must be removed.',parentId:null},cookie);
+    assert.equal(created.status,200);const root=(await created.json()).comment;assert.ok(root);
+    const reply=await api('/api/comments',{resource,parentId:root.id,body:'An existing reply must retain its parent context.'},otherCookie);
+    assert.equal(reply.status,201);const replyId=(await reply.json()).id;
+    const snapshot=await(await api(`/api/comments/owned?${new URLSearchParams({id:root.id})}`,undefined,cookie)).json();
+    const requestId=randomUUID(),input={id:root.id,revision:snapshot.revision,requestId};
+    assert.equal((await api('/api/comments/owned',input,otherCookie,'DELETE')).status,404);
+    assert.equal((await api('/api/comments/owned',{...input,actor:'forged'},cookie,'DELETE')).status,400);
+    const deleted=await api('/api/comments/owned',input,cookie,'DELETE');assert.equal(deleted.status,200);
+    const result=await deleted.json();assert.equal(result.receipt.status,'tombstoned');assert.equal(result.receipt.requestId,requestId);
+    assert.equal(result.receipt.priorRevision,0);assert.equal(result.receipt.resultRevision,1);
+    assert.deepEqual(result.comment,{id:root.id,resource,author:'Deleted',body:'This comment was removed by its author.',
+      createdAt:root.createdAt,parentId:null,isMine:false,deleted:true});
+    assert.deepEqual(await(await api('/api/comments/owned',input,cookie,'DELETE')).json(),result);
+    assert.equal((await api('/api/comments/owned',{...input,requestId:randomUUID()},cookie,'DELETE')).status,404);
+    const second=await api('/api/comments/submissions',{requestId:randomUUID(),resource,body:'A second owned comment remains live.',parentId:null},cookie);
+    const secondComment=(await second.json()).comment;
+    assert.equal((await api('/api/comments/owned',{id:secondComment.id,revision:0,requestId},cookie,'DELETE')).status,409);
+    assert.equal((await api('/api/comments/owned',{id:root.id,revision:1,body:'No edit may restore deleted bytes.'},cookie,'PUT')).status,404);
+    assert.equal((await api('/api/comments',{resource,parentId:root.id,body:'No new reply can target the tombstone.'},otherCookie)).status,400);
+    const discussion=await(await api(`/api/comments?${new URLSearchParams({resource})}`,undefined,cookie)).json();
+    assert.equal(discussion.find((comment:{id:string})=>comment.id===root.id).deleted,true);
+    assert.equal(discussion.find((comment:{id:string})=>comment.id===replyId).parentId,root.id);
+    const receipt=await(await api(`/api/comments/submissions/receipt?${new URLSearchParams({requestId:submissionKey})}`,undefined,cookie)).json();
+    assert.equal(receipt.comment,null);
+    const stripped=await f.db.prepare('SELECT user_id,author,body FROM comments WHERE id=?').get(root.id);
+    assert.equal(stripped?.user_id,null);assert.equal(stripped?.author,'');assert.equal(stripped?.body,'');
+    assert.equal((await f.db.prepare('SELECT revision FROM community_comment_revisions WHERE comment_id=?').get(root.id))?.revision,1);
+    assert.ok(await f.db.prepare('SELECT comment_id FROM community_comment_tombstones WHERE comment_id=?').get(root.id));
+    await assert.rejects(f.db.prepare(`INSERT INTO comments(id,resource,user_id,author,body,created_at,parent_id)
+      VALUES(?,?,NULL,'','',?,NULL)`).run(randomUUID(),resource,new Date().toISOString()),/require an owner/);
+    await assert.rejects(f.db.prepare('UPDATE comments SET body=? WHERE id=?').run('Restored private bytes',root.id),/receipt-bound tombstoning/);
+    await assert.rejects(f.db.prepare('UPDATE community_comment_deletions SET resource=? WHERE comment_id=?').run('lesson/changed',root.id),/immutable/);
+    await assert.rejects(f.db.prepare('UPDATE community_comment_tombstones SET deleted_at=? WHERE comment_id=?').run(new Date().toISOString(),root.id),/immutable/);
+    await f.db.prepare('DELETE FROM comments WHERE id=?').run(root.id);
+    const retainedReceipt=await(await api('/api/comments/owned',input,cookie,'DELETE')).json();
+    assert.equal(retainedReceipt.receipt.requestId,requestId);assert.equal(retainedReceipt.comment,null);
   });
   test(`${dialect}: missing revision data fails explicitly without changing posts or resetting prior revisions`,async t=>{
     const f=await fixture(t,dialect),post=await f.add();

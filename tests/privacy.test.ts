@@ -88,6 +88,12 @@ test('privacy artifacts cover owned preparation, identity, grants, usage, contri
     VALUES(?,?,?,?,?,?,?,?,?,?,?,0)`).run('privacy-post','questions','Owned privacy post','A complete private-owner community contribution.','Example','system-design','Senior','Global','Owner',owner,'2026-10-13T00:00:00.000Z');
   await f.db.prepare(`INSERT INTO comments(id,resource,user_id,author,body,created_at,parent_id)
     VALUES(?,?,?,?,?,?,NULL)`).run('privacy-comment','post/privacy-post',owner,'Owner','Owned privacy comment.','2026-10-13T00:00:01.000Z');
+  await f.db.prepare(`INSERT INTO comments(id,resource,user_id,author,body,created_at,parent_id)
+    VALUES(?,?,?,?,?,?,NULL)`).run('privacy-deleted-comment','post/privacy-post',owner,'Owner private name','Removed private comment bytes.','2026-10-13T00:00:02.000Z');
+  const deletionKey=randomUUID();
+  await f.db.prepare(`INSERT INTO community_comment_deletions
+    (user_id,request_id,comment_id,resource,input_hash,prior_revision,result_revision,deleted_at)
+    VALUES(?,?,?,?,?,?,?,?)`).run(owner,deletionKey,'privacy-deleted-comment','post/privacy-post','8'.repeat(64),0,1,'2026-10-13T00:00:03.000Z');
   await f.db.prepare('INSERT INTO votes(post_id,user_id) VALUES(?,?)').run('privacy-post',owner);
   await f.db.prepare('INSERT INTO follows(post_id,user_id) VALUES(?,?)').run('privacy-post',owner);
 
@@ -125,6 +131,8 @@ test('privacy artifacts cover owned preparation, identity, grants, usage, contri
   const exported=await completedPrivacyExport(browser,f.privacy);
   const text=JSON.stringify(exported.artifact);
   assert.match(text,/A private owned story|Owned privacy post|Owned privacy comment|private support request|owner-visible in-app support reply|private export prompt/);
+  assert.match(text,new RegExp(deletionKey));
+  assert.doesNotMatch(text,/Removed private comment bytes|Owner private name/);
   assert.match(text,/premium-read-v1|privacy-reservation|pro_monthly|sub_privacy|in_privacy/);
   assert.doesNotMatch(text,new RegExp(String(token.token)));
   assert.doesNotMatch(text,new RegExp(String(token.csrf_hash)));

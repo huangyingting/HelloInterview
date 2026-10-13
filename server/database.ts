@@ -9,6 +9,36 @@ export function openDatabase(dataDir: string): DatabaseSync {
   try {
     const hasCommunityRevisions = !!db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name='community_post_revisions'").get();
     const hasCommentRevisions = !!db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name='community_comment_revisions'").get();
+    const commentUser = (db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name='comments'").get()
+      ? db.prepare('PRAGMA table_info(comments)').all() : []).find(column => column.name === 'user_id');
+    if (commentUser?.notnull === 1) {
+      db.exec(`PRAGMA foreign_keys=OFF;
+        BEGIN IMMEDIATE;
+        DROP TRIGGER IF EXISTS initialize_community_comment_revision;
+        DROP TRIGGER IF EXISTS advance_community_comment_revision;
+        DROP INDEX IF EXISTS comments_resource_order;
+        DROP INDEX IF EXISTS comments_resource_cursor;
+        ${hasCommentRevisions ? 'ALTER TABLE community_comment_revisions RENAME TO community_comment_revisions_not_nullable_backup;' : ''}
+        ALTER TABLE comments RENAME TO comments_not_nullable_backup;
+        CREATE TABLE comments (
+          id TEXT PRIMARY KEY, resource TEXT NOT NULL, user_id TEXT,
+          author TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL, parent_id TEXT
+        );
+        INSERT INTO comments SELECT * FROM comments_not_nullable_backup;
+        ${hasCommentRevisions ? `
+          CREATE TABLE community_comment_revisions (
+            comment_id TEXT PRIMARY KEY NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
+            revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0 AND revision <= 2147483647)
+          );
+          INSERT INTO community_comment_revisions SELECT * FROM community_comment_revisions_not_nullable_backup;
+          DROP TABLE community_comment_revisions_not_nullable_backup;
+        ` : ''}
+        DROP TABLE comments_not_nullable_backup;
+        COMMIT;
+        PRAGMA foreign_keys=ON;`);
+      if (db.prepare('PRAGMA foreign_key_check').get())
+        throw new Error('Community comment schema upgrade found invalid saved relationships. Restore or reconcile the local database before starting.');
+    }
     db.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA foreign_keys = ON;
@@ -51,7 +81,7 @@ export function openDatabase(dataDir: string): DatabaseSync {
         PRIMARY KEY (post_id, user_id)
       );
       CREATE TABLE IF NOT EXISTS comments (
-        id TEXT PRIMARY KEY, resource TEXT NOT NULL, user_id TEXT NOT NULL,
+        id TEXT PRIMARY KEY, resource TEXT NOT NULL, user_id TEXT,
         author TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL, parent_id TEXT
       );
       CREATE TABLE IF NOT EXISTS community_comment_revisions (
@@ -97,6 +127,59 @@ export function openDatabase(dataDir: string): DatabaseSync {
       CREATE INDEX IF NOT EXISTS community_comment_submissions_resource ON community_comment_submissions(user_id,resource,created_at DESC,request_id DESC);
       CREATE TRIGGER IF NOT EXISTS immutable_community_comment_submission BEFORE UPDATE ON community_comment_submissions
         BEGIN SELECT RAISE(ABORT,'Comment submission receipts are immutable.'); END;
+      CREATE TABLE IF NOT EXISTS community_comment_tombstones (
+        comment_id TEXT PRIMARY KEY REFERENCES comments(id) ON DELETE CASCADE,
+        deleted_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS community_comment_deletions (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        request_id TEXT NOT NULL,
+        comment_id TEXT NOT NULL UNIQUE,
+        resource TEXT NOT NULL,
+        input_hash TEXT NOT NULL CHECK(length(input_hash)=64 AND input_hash NOT GLOB '*[^0-9a-f]*'),
+        prior_revision INTEGER NOT NULL CHECK(prior_revision>=0),
+        result_revision INTEGER NOT NULL CHECK(result_revision=prior_revision+1),
+        deleted_at TEXT NOT NULL,
+        PRIMARY KEY(user_id,request_id)
+      );
+      CREATE INDEX IF NOT EXISTS community_comment_deletions_owner
+        ON community_comment_deletions(user_id,deleted_at DESC,request_id DESC);
+      CREATE TRIGGER IF NOT EXISTS require_community_comment_owner BEFORE INSERT ON comments
+        WHEN NEW.user_id IS NULL
+        BEGIN SELECT RAISE(ABORT,'New community comments require an owner.'); END;
+      CREATE TRIGGER IF NOT EXISTS protect_community_comment_update BEFORE UPDATE ON comments
+        WHEN NOT (
+          OLD.user_id IS NOT NULL AND NEW.id=OLD.id AND NEW.resource=OLD.resource AND
+            NEW.user_id=OLD.user_id AND NEW.author=OLD.author AND NEW.created_at=OLD.created_at AND
+            NEW.parent_id IS OLD.parent_id OR
+          OLD.user_id IS NOT NULL AND NEW.id=OLD.id AND NEW.resource=OLD.resource AND
+            NEW.user_id=OLD.user_id AND NEW.author=OLD.author AND NEW.body=OLD.body AND
+            NEW.created_at=OLD.created_at AND OLD.parent_id IS NOT NULL AND NEW.parent_id IS NULL AND
+            EXISTS(SELECT 1 FROM comments parent WHERE parent.id=OLD.parent_id AND parent.resource<>OLD.resource) OR
+          OLD.user_id IS NOT NULL AND NEW.id=OLD.id AND NEW.resource=OLD.resource AND NEW.user_id IS NULL AND
+            NEW.author='' AND NEW.body='' AND NEW.created_at=OLD.created_at AND NEW.parent_id IS OLD.parent_id AND
+            EXISTS(SELECT 1 FROM community_comment_deletions deletion
+              WHERE deletion.comment_id=OLD.id AND deletion.user_id=OLD.user_id AND deletion.resource=OLD.resource) AND
+            EXISTS(SELECT 1 FROM community_comment_tombstones tombstone WHERE tombstone.comment_id=OLD.id)
+        )
+        BEGIN SELECT RAISE(ABORT,'Community comments allow only body edits, cross-resource parent cleanup or receipt-bound tombstoning.'); END;
+      CREATE TRIGGER IF NOT EXISTS apply_community_comment_deletion AFTER INSERT ON community_comment_deletions
+        BEGIN
+          SELECT CASE WHEN NOT EXISTS(
+            SELECT 1 FROM comments comment JOIN community_comment_revisions saved ON saved.comment_id=comment.id
+            WHERE comment.id=NEW.comment_id AND comment.user_id=NEW.user_id AND
+              comment.resource=NEW.resource AND saved.revision=NEW.prior_revision
+          ) THEN RAISE(ABORT,'Comment deletion requires the current owned revision.') END;
+          INSERT INTO community_comment_tombstones(comment_id,deleted_at) VALUES(NEW.comment_id,NEW.deleted_at);
+          UPDATE comments SET user_id=NULL,author='',body='' WHERE id=NEW.comment_id AND user_id=NEW.user_id;
+          SELECT CASE WHEN NOT EXISTS(
+            SELECT 1 FROM community_comment_revisions WHERE comment_id=NEW.comment_id AND revision=NEW.result_revision
+          ) THEN RAISE(ABORT,'Comment deletion did not publish one exact tombstone revision.') END;
+        END;
+      CREATE TRIGGER IF NOT EXISTS immutable_community_comment_deletion BEFORE UPDATE ON community_comment_deletions
+        BEGIN SELECT RAISE(ABORT,'Comment deletion receipts and tombstones are immutable.'); END;
+      CREATE TRIGGER IF NOT EXISTS immutable_community_comment_tombstone BEFORE UPDATE ON community_comment_tombstones
+        BEGIN SELECT RAISE(ABORT,'Comment deletion receipts and tombstones are immutable.'); END;
     `);
     if (!hasCommunityRevisions) db.exec('INSERT OR IGNORE INTO community_post_revisions(post_id) SELECT id FROM posts');
     if (db.prepare('SELECT p.id FROM posts p LEFT JOIN community_post_revisions r ON r.post_id=p.id WHERE r.post_id IS NULL LIMIT 1').get())

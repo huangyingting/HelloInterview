@@ -355,6 +355,7 @@ export interface Comment {
   createdAt: string;
   parentId: string | null;
   isMine: boolean;
+  deleted: boolean;
 }
 export interface OwnedCommunityComment { comment: Comment; revision: number }
 export interface CommunityCommentPage { comments: Comment[]; limit: number; nextCursor: string | null }
@@ -364,6 +365,13 @@ export interface CommunityCommentSubmission {
   comment: Comment | null;
 }
 export interface CommunityCommentSubmissionHistory { submissions: CommunityCommentSubmission[]; nextCursor: string | null }
+export interface CommunityCommentDeletion {
+  receipt: {
+    requestId:string;commentId:string;resource:string;deletedAt:string;
+    priorRevision:number;resultRevision:number;status:'tombstoned';
+  };
+  comment:Comment|null;
+}
 export interface StaffAccount {
   id:string;maskedEmail:string;status:'pending-verification'|'active'|'suspended'|'deletion-pending';
   verified:boolean;revision:number;activeSessions:number;

@@ -181,10 +181,12 @@ matches without using the old corpus endpoint.
 Local original-post revision-fenced owner editing/deletion is now implemented
 in [runbook 31](31-owned-community-contributions.md); actor-scoped desired-state
 votes/follows are implemented in [runbook 30](30-opaque-community-addresses.md).
+Recoverable owner comment deletion and reply-preserving tombstones are
+implemented in [runbook 39](39-recoverable-owner-comment-deletion.md).
 Still required before public writing: approved rules, staffed moderation,
-comment deletion/reply-retention policy, ordered/durable mutation receipts, reports/review/appeals,
-notifications and audited staff permissions, anti-abuse controls and truthful
-production recognition accounting. Publication/access/moderation
+legal retention policy, broader ordered/durable mutation receipts,
+reports/review/appeals, notifications and audited staff permissions, anti-abuse
+controls and truthful production recognition accounting. Publication/access/moderation
 state must be integrated consistently into every reader when those states are
 introduced; this checkpoint adds no such state. Unreviewed imported/local
 content is not automatically approved editorial content.

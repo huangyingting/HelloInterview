@@ -167,8 +167,11 @@ This build's complete static graph measurements are:
 | Cold Auth | 312,778 | 100,615 | 5 |
 
 Large-history loaded DOM/memory assessment, full-history search, frozen privacy
-export/retention/deletion, defined comment deletion/reply policy, durable ordered
-write intents/unknown-outcome receipts, rules/consent, staff/report/appeal/abuse
-and operated publication remain separate work. Managed writing stays denied.
+export/retention/deletion, durable ordered write intents/unknown-outcome
+receipts, rules/consent, staff/report/appeal/abuse and operated publication
+remain separate work. Recoverable local owner deletion and reply-preserving
+tombstones are implemented in
+[runbook 39](39-recoverable-owner-comment-deletion.md), without approving legal
+retention or complete privacy erasure. Managed writing stays denied.
 Real providers, customer migration and public launch retain explicit approval
 gates.

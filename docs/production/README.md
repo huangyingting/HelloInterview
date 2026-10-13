@@ -68,6 +68,7 @@ service with defined recovery and support commitments.
 | [36 - Durable owner privacy exports](36-durable-owner-privacy-exports.md) | Fresh-authenticated owner-only durable export requests, comprehensive owned-domain artifacts, integrity checks, explicit failure/expiry and migration 27; no external delivery, retention approval, processor erasure or account deletion | Privacy, identity and backend |
 | [37 - Owner deletion cooling-off foundation](37-owner-deletion-cooling-off-foundation.md) | Fresh owner request, immediate restricted authority, peer-session revocation, seven-day cancellation and immutable due blockers in migration 28; no physical erasure or external completion | Privacy, identity and backend |
 | [38 - MFA-gated in-app support operations](38-mfa-in-app-support-operations.md) | Bounded staff queue, revision-fenced assignment/status, idempotent owner-visible replies and immutable evidence in migration 29; no email/helpdesk delivery or SLA | Support, identity and full-stack |
+| [39 - Recoverable owner comment deletion](39-recoverable-owner-comment-deletion.md) | Owner/key/revision-bound local deletion receipts, stripped comment identity/text, non-repliable reply-preserving tombstones and migration 30; no retention/privacy-erasure or moderation approval | Community, privacy and full-stack |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to

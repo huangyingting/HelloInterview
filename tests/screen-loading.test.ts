@@ -407,6 +407,7 @@ test('local comment editing preserves conflict and lost-response drafts through 
   const owner=(await login.json()).user.id,id=' comment/?%# ',post='comment-editor-parent',resource=`post/${post}`;
   await db.prepare('INSERT INTO posts VALUES(?,?,?,?,?,?,?,?,?,?,?,0)').run(post,'questions','A comment editing fixture','An original local question with full context and reasoning.','Fixture Company','system-design','Senior','Global','Anonymous',owner,'2026-01-01T00:00:00.000Z');
   await db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run(id,resource,owner,'Owned synthetic commenter','Original owner reply.','2026-01-01T00:00:00.000Z',null);
+  await db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run('retained-child',resource,'another-local-author','Reply author','A reply retained after owner deletion.','2026-01-01T00:00:01.000Z',id);
   for(let index=0;index<3;index++)await db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run(`other-comment-${index}`,resource,'another-local-author','Other retained commenter',`Other original reply ${index}.`,'2026-01-01T00:00:00.000Z',null);
   let releaseRead!:()=>void;
   const reading=new Promise<void>(resolve=>{releaseRead=resolve;});
@@ -456,9 +457,26 @@ test('local comment editing preserves conflict and lost-response drafts through 
   await expect(text).toHaveValue('A committed but unconfirmed reply.');
   await comment.getByRole('button',{name:'Replace my draft with saved version',exact:true}).click();
   await expect(comment.locator(':scope > div > p')).toHaveText('A committed but unconfirmed reply.');
-  await expect(comment.getByRole('button',{name:/Delete/})).toHaveCount(0);
+  await expect(comment.getByRole('button',{name:'Delete my local comment',exact:true})).toBeVisible();
   await text.fill('x'.repeat(3000));await comment.getByRole('button',{name:'Save comment changes',exact:true}).click();
   await expect(comment.locator(':scope > div > p')).toHaveText('x'.repeat(3000));
+  const deletionKeys:string[]=[];
+  await page.route('**/api/comments/owned',async route=>{
+    if(route.request().method()!=='DELETE'){await route.continue();return;}
+    deletionKeys.push(String(route.request().postDataJSON().requestId));
+    if(deletionKeys.length===1){const response=await route.fetch();assert.equal(response.status(),200);await route.abort('failed');}
+    else await route.continue();
+  });
+  await comment.getByLabel('I understand the original comment text and authorship cannot be restored.').check();
+  await comment.getByRole('button',{name:'Delete my local comment',exact:true}).click();
+  await expect(comment.getByRole('alert')).toContainText('Deletion was not confirmed');
+  await expect(comment.getByText(/Deletion request:/)).toBeVisible();
+  await comment.getByRole('button',{name:'Retry same comment deletion',exact:true}).click();
+  assert.equal(deletionKeys.length,2);assert.equal(deletionKeys[0],deletionKeys[1]);
+  const tombstone=page.locator('.comment').filter({has:page.getByText('This comment was removed by its author.',{exact:true})});
+  await expect(tombstone.getByText('Deleted',{exact:true})).toBeVisible();
+  await expect(tombstone.getByRole('button',{name:'Reply',exact:true})).toHaveCount(0);
+  await expect(page.getByText('A reply retained after owner deletion.',{exact:true})).toBeVisible();
   await page.setViewportSize({width:390,height:844});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true);
   await expect(page.getByRole('dialog')).toHaveCount(0);assert.equal(f.documents.length,1);

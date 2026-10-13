@@ -251,6 +251,8 @@ export class PrivacyExports {
         follows:await all('SELECT post_id FROM follows WHERE user_id=? ORDER BY post_id',owner),
         commentSubmissions:await all(`SELECT request_id,comment_id,resource,created_at FROM community_comment_submissions
           WHERE user_id=? ORDER BY created_at,request_id`,owner),
+        commentDeletions:await all(`SELECT request_id,comment_id,resource,prior_revision,result_revision,deleted_at
+          FROM community_comment_deletions WHERE user_id=? ORDER BY deleted_at,request_id`,owner),
       },
       support:await Promise.all((await all(`SELECT id,email,body,created_at,handling_status,support_revision,support_updated_at
         FROM support WHERE user_id=? ORDER BY created_at,id`,owner)).map(async ticket=>({

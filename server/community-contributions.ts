@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Comment, CommunityCommentPage, OwnedCommunityComment, OwnedCommunityPost } from '../shared/types';
+import type { Comment, CommunityCommentDeletion, CommunityCommentPage, OwnedCommunityComment, OwnedCommunityPost } from '../shared/types';
 import type { Database } from './db/connection';
 import { CommunityReads, communityDiscussionResource, communityIdentifier, communityIdentifierSchema, communityPageCursor } from './community';
 import { HttpError } from './http-error';
@@ -12,10 +12,17 @@ const edit = identity.extend({
   body: z.string().max(10000).trim().min(20).refine(value => !value.includes('\0')),
 });
 const commentEdit = identity.extend({ body: z.string().max(3000).trim().min(2).refine(value => !value.includes('\0')) });
-const commentProjection = 'id,resource,author,body,created_at AS "createdAt",parent_id AS "parentId"';
+const commentDelete = identity.extend({ requestId:z.uuid().transform(value=>value.toLowerCase()) });
+const commentProjection = `comments.id,comments.resource,
+  CASE WHEN comments.user_id IS NOT NULL THEN comments.author ELSE 'Deleted' END AS author,
+  CASE WHEN comments.user_id IS NOT NULL THEN comments.body ELSE 'This comment was removed by its author.' END AS body,
+  comments.created_at AS "createdAt",comments.parent_id AS "parentId"`;
+const liveCommentProjection=`comments.id,comments.resource,comments.author,comments.body,
+  comments.created_at AS "createdAt",comments.parent_id AS "parentId"`;
 const commentDto = z.strictObject({
   id: z.string(), resource: z.string(), author: z.string(), body: z.string(),
   createdAt: z.string(), parentId: z.string().nullable(), isMine: z.union([z.literal(0),z.literal(1)]).transform(value => value === 1),
+  deleted:z.union([z.literal(0),z.literal(1)]).transform(value=>value===1),
 });
 export { commentProjection, commentDto };
 const commentPageQuery = z.strictObject({
@@ -52,8 +59,10 @@ export class CommunityContributions {
     if (saved.revision !== expected) throw new HttpError(409, `This ${kind} changed since you opened it. The requested change was not applied. Load the saved version before deciding what to change.`);
   }
   async comments(resource: string, owner: string | null): Promise<Comment[]> {
-    const rows = await this.db.prepare(`SELECT ${commentProjection},CASE WHEN user_id=? THEN 1 ELSE 0 END AS "isMine"
-      FROM comments WHERE resource=? ORDER BY created_at ASC LIMIT 500`).all(owner,resource);
+    const rows = await this.db.prepare(`SELECT ${commentProjection},CASE WHEN comments.user_id=? THEN 1 ELSE 0 END AS "isMine",
+      CASE WHEN comments.user_id IS NOT NULL THEN 0 ELSE 1 END AS deleted FROM comments
+      LEFT JOIN community_comment_tombstones tombstone ON tombstone.comment_id=comments.id
+      WHERE comments.resource=? ORDER BY comments.created_at ASC LIMIT 500`).all(owner,resource);
     return rows.map(row => commentDto.parse(row));
   }
   async commentPage(input: unknown, owner: string | null): Promise<CommunityCommentPage> {
@@ -61,8 +70,11 @@ export class CommunityContributions {
     if (!parsed.success) throw new HttpError(400, 'Provide one discussion resource, supported page size and cursor.');
     const { cursor: encoded, ...raw } = parsed.data, query = { ...raw, resource: communityDiscussionResource(raw.resource) };
     const hash = digest(encodePayload({ query, viewer: owner })), cursor = communityPageCursor(encoded,commentCursor,hash);
-    const rows = await this.db.prepare(`SELECT ${commentProjection},CASE WHEN user_id=? THEN 1 ELSE 0 END AS "isMine"
-      FROM comments WHERE resource=? ${cursor ? 'AND (created_at,id)>(?,?)' : ''} ORDER BY created_at ASC,id ASC LIMIT ?`)
+    const rows = await this.db.prepare(`SELECT ${commentProjection},CASE WHEN comments.user_id=? THEN 1 ELSE 0 END AS "isMine",
+      CASE WHEN comments.user_id IS NOT NULL THEN 0 ELSE 1 END AS deleted FROM comments
+      LEFT JOIN community_comment_tombstones tombstone ON tombstone.comment_id=comments.id
+      WHERE comments.resource=? ${cursor ? 'AND (comments.created_at,comments.id)>(?,?)' : ''}
+      ORDER BY comments.created_at ASC,comments.id ASC LIMIT ?`)
       .all(owner,query.resource,...(cursor ? [cursor.createdAt,cursor.id] : []),query.limit+1);
     const comments = rows.slice(0,query.limit).map(row => commentDto.parse(row)), last = comments.at(-1);
     const nextCursor = rows.length > query.limit && last ? Buffer.from(JSON.stringify(commentCursor.parse({
@@ -71,7 +83,8 @@ export class CommunityContributions {
     return { comments, limit:query.limit, nextCursor };
   }
   async createdComment(id: string, owner: string): Promise<Comment> {
-    const row = await this.db.prepare(`SELECT ${commentProjection},1 AS "isMine" FROM comments WHERE id=? AND user_id=?`).get(id,owner);
+    const row = await this.db.prepare(`SELECT ${liveCommentProjection},1 AS "isMine",0 AS deleted
+      FROM comments WHERE comments.id=? AND comments.user_id=?`).get(id,owner);
     if (!row) throw new Error('The admitted comment was not found after insertion.');
     return commentDto.parse(row);
   }
@@ -84,7 +97,8 @@ export class CommunityContributions {
       if (!await this.db.prepare(`SELECT id FROM posts WHERE id=?${this.db.dialect === 'postgres' ? ' FOR UPDATE' : ''}`).get(postId))
         throw new HttpError(404, 'This discussion is no longer available.');
     }
-    const row = await this.db.prepare(`SELECT ${commentProjection},1 AS "isMine" FROM comments WHERE id=? AND user_id=?
+    const row = await this.db.prepare(`SELECT ${liveCommentProjection},1 AS "isMine",0 AS deleted
+      FROM comments WHERE comments.id=? AND comments.user_id=?
       ${this.db.dialect === 'postgres' ? 'FOR UPDATE' : ''}`).get(id,owner);
     if (!row) throw new HttpError(404, 'This comment is no longer editable.');
     const comment = commentDto.parse(row);
@@ -112,6 +126,41 @@ export class CommunityContributions {
       if (changed !== 1) throw new HttpError(404, 'This comment is no longer editable.');
       return this.commentSnapshot(draft.id,owner);
     });
+  }
+  async removeComment(input:unknown,owner:string,admit:()=>Promise<void>):Promise<CommunityCommentDeletion> {
+    const parsed=commentDelete.safeParse(input);
+    if(!parsed.success)throw new HttpError(400,'Provide an exact comment identifier, saved revision and UUID deletion request key.');
+    const request=parsed.data,hash=digest(encodePayload({owner,id:request.id,revision:request.revision}));
+    return this.db.transaction(async()=>{
+      await this.admitted(owner,admit);
+      const existing=await this.db.prepare(`SELECT request_id,comment_id,resource,input_hash,prior_revision,result_revision,deleted_at
+        FROM community_comment_deletions WHERE user_id=? AND request_id=?`).get(owner,request.requestId);
+      if(existing){
+        if(existing.input_hash!==hash)throw new HttpError(409,'This comment deletion key belongs to another saved deletion request.');
+        return this.commentDeletion(existing);
+      }
+      const saved=await this.commentSnapshot(request.id,owner);this.assertRevision(saved,request.revision,'comment');
+      if(saved.revision===2147483647)throw new HttpError(409,'This comment reached its revision limit and cannot publish a deletion tombstone.');
+      const deletedAt=new Date().toISOString();
+      await this.db.prepare(`INSERT INTO community_comment_deletions
+        (user_id,request_id,comment_id,resource,input_hash,prior_revision,result_revision,deleted_at)
+        VALUES(?,?,?,?,?,?,?,?)`).run(owner,request.requestId,request.id,saved.comment.resource,hash,request.revision,request.revision+1,deletedAt);
+      const row=await this.db.prepare(`SELECT request_id,comment_id,resource,input_hash,prior_revision,result_revision,deleted_at
+        FROM community_comment_deletions WHERE user_id=? AND request_id=?`).get(owner,request.requestId);
+      if(!row)throw new Error('The admitted comment deletion receipt was not found.');
+      return this.commentDeletion(row);
+    });
+  }
+  private async commentDeletion(value:Record<string,unknown>):Promise<CommunityCommentDeletion> {
+    const receipt=z.object({
+      request_id:z.uuid(),comment_id:communityIdentifierSchema,resource:z.string().min(1).max(205),
+      prior_revision:revision,result_revision:revision,deleted_at:z.iso.datetime(),input_hash:z.string(),
+    }).parse(value);
+    const row=await this.db.prepare(`SELECT ${commentProjection},0 AS "isMine",1 AS deleted FROM comments
+      JOIN community_comment_tombstones tombstone ON tombstone.comment_id=comments.id WHERE comments.id=?`).get(receipt.comment_id);
+    return {receipt:{requestId:receipt.request_id,commentId:receipt.comment_id,resource:receipt.resource,
+      deletedAt:receipt.deleted_at,priorRevision:receipt.prior_revision,resultRevision:receipt.result_revision,status:'tombstoned'},
+      comment:row?commentDto.parse(row):null};
   }
   async update(input: unknown, owner: string, admit: () => Promise<void>) {
     const parsed = edit.safeParse(input);
