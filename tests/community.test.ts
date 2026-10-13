@@ -509,8 +509,32 @@ for(const dialect of ['sqlite','postgres'] as const){
       'A viewer comment hidden from the subject by the same relationship boundary.','2026-01-03T00:00:00.000Z',null);
     const service=new CommunityBlocks(f.db),request={requestId:randomUUID(),blocked:true as const,
       targetType:'post' as const,targetId:subjectPost.id};
-    let admissions=0;
-    const saved=await service.set(viewer,request,async()=>{admissions++;});
+    let admissions=0,blockReady!:()=>void,releaseBlock!:()=>void;
+    const ready=new Promise<void>(resolve=>{blockReady=resolve;}),release=new Promise<void>(resolve=>{releaseBlock=resolve;});
+    const publishing=f.db.transaction(async()=>{
+      const result=await service.set(viewer,request,async()=>{admissions++;});
+      blockReady();await release;return result;
+    });
+    await ready;
+    let interactionSettled=false;
+    const waiting=f.db.transaction(()=>service.assertAllowed(subject.id,viewer.id));
+    void waiting.then(()=>{interactionSettled=true;},()=>{interactionSettled=true;});
+    try{
+      if(dialect==='postgres'){
+        const deadline=Date.now()+5000;
+        let blocked=false;
+        while(Date.now()<deadline){
+          const row=await f.db.prepare(`SELECT count(*) AS count FROM pg_stat_activity
+            WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT pg_advisory_xact_lock%'`).get();
+          if(Number(row?.count)>0){blocked=true;break;}
+          await new Promise(resolve=>setTimeout(resolve,20));
+        }
+        assert.equal(blocked,true,'The direct interaction did not wait on the relationship-pair lock.');
+      }else await new Promise(resolve=>setTimeout(resolve,20));
+      assert.equal(interactionSettled,false);
+    }finally{releaseBlock();}
+    const saved=await publishing;
+    await assert.rejects(()=>waiting,status(404));
     assert.equal(saved.blocked,true);assert.equal(saved.revision,1);assert.equal(admissions,2);
     assert.deepEqual(await service.set(viewer,request,async()=>{admissions++;}),saved);assert.equal(admissions,4);
     await assert.rejects(()=>service.set(viewer,{...request,targetId:randomUUID()},async()=>{}),status(409));
