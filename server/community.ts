@@ -50,6 +50,7 @@ const rowSchema = z.object({
   id: identifier, kind: kindSchema, title: text(200), body: text(10000), company: text(80), track: text(80),
   level: text(40), region: text(40), author: text(200), createdAt: z.iso.datetime(),
   votes: z.coerce.number().int().nonnegative().safe(), voted: flag, followed: flag, sample: flag, isMine: flag, moderated:flag,
+  moderationRevision:z.coerce.number().int().nonnegative(),
 });
 const cursorSchema = z.strictObject({ version: z.literal('community-feed-v1'), hash: z.string().regex(/^[a-f0-9]{64}$/),
   id: identifier, createdAt: z.iso.datetime(), votes: z.number().int().nonnegative().safe() });
@@ -58,7 +59,7 @@ function post(value: unknown): CommunityPost {
   return { id: row.id, kind: row.kind, title: row.title, body: row.body, company: row.company, track: row.track,
     level: row.level, region: row.region, author: row.kind === 'questions' ? 'Anonymous' : row.author,
     createdAt: row.createdAt, votes: row.votes, voted: row.voted, followed: row.followed, sample: row.sample,
-    isMine: row.isMine,moderated:row.moderated };
+    isMine: row.isMine,moderated:row.moderated,moderationRevision:row.moderationRevision };
 }
 
 export class CommunityReads {
@@ -74,13 +75,16 @@ export class CommunityReads {
       EXISTS(SELECT 1 FROM votes WHERE post_id=p.id AND user_id=?) AS voted,
       EXISTS(SELECT 1 FROM follows WHERE post_id=p.id AND user_id=?) AS followed,p.author_id=? AS "isMine",
       EXISTS(SELECT 1 FROM community_moderation_targets moderation WHERE moderation.target_type='post'
-        AND moderation.target_id=p.id AND moderation.state='hidden') AS moderated`;
+        AND moderation.target_id=p.id AND moderation.state='hidden') AS moderated,
+      CASE WHEN p.author_id=? THEN COALESCE((SELECT moderation.revision FROM community_moderation_targets moderation
+        WHERE moderation.target_type='post' AND moderation.target_id=p.id AND moderation.state='hidden'),0)
+        ELSE 0 END AS "moderationRevision"`;
   }
   async legacy(input: unknown, viewer: string | null) {
     const kind = kindSchema.safeParse(input);
     if (!kind.success) throw new HttpError(400, 'Choose a supported community section.');
     const rows = await this.db.prepare(`SELECT ${this.selection(true)} FROM posts p WHERE p.kind=? AND ${this.visible()}
-      ORDER BY p.created_at DESC,p.id DESC LIMIT 1001`).all(viewer ?? '',viewer ?? '',viewer ?? '',kind.data);
+      ORDER BY p.created_at DESC,p.id DESC LIMIT 1001`).all(viewer ?? '',viewer ?? '',viewer ?? '',viewer ?? '',kind.data);
     return { posts: rows.slice(0,1000).map(post), truncated: rows.length > 1000 };
   }
   async detail(id: unknown, input: unknown, viewer: string | null, includeOwnedHidden=false) {
@@ -90,7 +94,7 @@ export class CommunityReads {
     const row = await this.db.prepare(`SELECT ${this.selection(true)} FROM posts p WHERE p.id=? AND p.kind=?
       AND (${this.visible()}${ownerAccess?' OR p.author_id=?':''})
       ${query.data.track ? 'AND p.track=?' : ''}`)
-      .get(viewer ?? '',viewer ?? '',viewer ?? '',parsedId.data,query.data.kind,...(ownerAccess?[viewer]:[]),...(query.data.track ? [query.data.track] : []));
+      .get(viewer ?? '',viewer ?? '',viewer ?? '',viewer ?? '',parsedId.data,query.data.kind,...(ownerAccess?[viewer]:[]),...(query.data.track ? [query.data.track] : []));
     if (!row) throw new HttpError(404, 'Community post not found in this section.');
     return post(row);
   }
@@ -128,7 +132,7 @@ export class CommunityReads {
     const rows = await this.db.prepare(`WITH counted AS (SELECT COUNT(*) AS total FROM posts p ${where}),
       page AS (SELECT * FROM (SELECT ${this.selection(false)} FROM posts p ${where}) feed ${boundary} ORDER BY ${order} LIMIT ?)
       SELECT page.*,counted.total FROM counted LEFT JOIN page ON true ORDER BY ${order}`)
-      .all(...values,viewer ?? '',viewer ?? '',viewer ?? '',...values,...boundaryValues,query.limit+1);
+      .all(...values,viewer ?? '',viewer ?? '',viewer ?? '',viewer ?? '',...values,...boundaryValues,query.limit+1);
     const total = z.coerce.number().int().nonnegative().safe().parse(rows[0]?.total);
     const page = rows.filter(row => row.id !== null), posts = page.slice(0,query.limit).map(post), last = posts.at(-1);
     const nextCursor = page.length > query.limit && last ? Buffer.from(JSON.stringify({ version:'community-feed-v1',hash,

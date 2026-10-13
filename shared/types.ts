@@ -33,6 +33,22 @@ export interface CommunityReportReceipt {
   id:string;requestId:string;targetType:'post'|'comment';targetId:string;
   category:CommunityReportCategory;status:'saved';createdAt:string;delivery:'moderation-queue-only';
 }
+export interface CommunityReportStatus {
+  id:string;requestId:string;targetType:'post'|'comment';targetId:string;category:CommunityReportCategory;
+  status:'open'|'dismissed'|'actioned';targetState:'visible'|'hidden';targetRevision:number;
+  createdAt:string;updatedAt:string;
+}
+export interface CommunityReportStatusPage {reports:CommunityReportStatus[];nextCursor:string|null}
+export interface CommunityAppealReceipt {
+  id:string;requestId:string;targetType:'post'|'comment';targetId:string;appealedTargetRevision:number;
+  status:'saved';createdAt:string;delivery:'moderation-queue-only';
+}
+export interface CommunityAppealStatus {
+  id:string;requestId:string;targetType:'post'|'comment';targetId:string;appealedTargetRevision:number;
+  status:'open'|'denied'|'upheld';revision:number;targetState:'visible'|'hidden';targetRevision:number;
+  createdAt:string;updatedAt:string;
+}
+export interface CommunityAppealStatusPage {appeals:CommunityAppealStatus[];nextCursor:string|null}
 export interface StaffCommunityReport {
   id:string;targetType:'post'|'comment';targetId:string;category:CommunityReportCategory;details:string;
   status:'open'|'dismissed'|'actioned';revision:number;assignment:'me'|'other'|null;
@@ -40,6 +56,13 @@ export interface StaffCommunityReport {
   target:{title:string|null;body:string;author:string;resource:string|null};
 }
 export interface StaffCommunityReportPage {reports:StaffCommunityReport[];nextCursor:string|null}
+export interface StaffCommunityAppeal {
+  id:string;targetType:'post'|'comment';targetId:string;statement:string;appealedTargetRevision:number;
+  status:'open'|'denied'|'upheld';revision:number;assignment:'me'|'other'|null;
+  targetState:'visible'|'hidden';targetRevision:number;createdAt:string;updatedAt:string;
+  target:{title:string|null;body:string;author:string;resource:string|null};
+}
+export interface StaffCommunityAppealPage {appeals:StaffCommunityAppeal[];nextCursor:string|null}
 
 export interface ContentSection {
   title: string;
@@ -350,6 +373,7 @@ export interface CommunityPost {
   followed: boolean;
   sample: boolean;
   moderated: boolean;
+  moderationRevision: number;
 }
 export interface OwnedCommunityPost { post: CommunityPost; revision: number }
 export interface CommunityFeed {
@@ -370,6 +394,7 @@ export interface Comment {
   isMine: boolean;
   deleted: boolean;
   moderated: boolean;
+  moderationRevision: number;
 }
 export interface OwnedCommunityComment { comment: Comment; revision: number }
 export interface CommunityCommentPage { comments: Comment[]; limit: number; nextCursor: string | null }

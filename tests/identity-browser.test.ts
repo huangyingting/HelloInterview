@@ -165,7 +165,7 @@ test('staff UI is deferred, capability-gated and applies an audited in-page susp
     'Senior','Global','Managed contributor',targetData.user.id,new Date().toISOString());
   const savedReport=await target.request('/api/community/reports',{requestId:randomUUID(),targetType:'post',targetId:reportedPost,
     category:'harassment',details:'This synthetic report describes a specific policy concern for browser moderation review.'});
-  assert.equal(savedReport.status,201);
+  assert.equal(savedReport.status,201);const reportReceipt=await savedReport.json();
   await page.reload();
   await page.getByRole('link',{name:'Staff operations'}).click();
   await expect(page.getByRole('heading',{name:'Account access, without impersonation.'})).toBeVisible();
@@ -194,12 +194,31 @@ test('staff UI is deferred, capability-gated and applies an audited in-page susp
   await moderationCard.getByRole('button',{name:'Hide contribution'}).click();
   await expect(moderationCard.getByText('currently hidden',{exact:false})).toBeVisible();
   assert.equal((await target.request(`/api/community/posts/${reportedPost}?kind=discussion`)).status,404);
-  await moderationCard.getByLabel('Required moderation reason').fill('Restore this synthetic contribution after a second review reversed the hide decision.');
-  await moderationCard.getByRole('button',{name:'Restore contribution'}).click();
-  await expect(moderationCard.getByText('currently visible',{exact:false})).toBeVisible();
+  const savedAppeal=await target.request('/api/community/appeals',{requestId:randomUUID(),targetType:'post',targetId:reportedPost,targetRevision:1,
+    statement:'The synthetic contribution context should receive an independent second policy review.'});
+  assert.equal(savedAppeal.status,201);const appealReceipt=await savedAppeal.json();
+  const reportHistory=await(await target.request('/api/community/reports')).json();
+  assert.equal(reportHistory.reports[0].id,reportReceipt.id);assert.equal(reportHistory.reports[0].targetState,'hidden');
+  assert.ok(!JSON.stringify(reportHistory).includes('This synthetic report describes'));
+  const appealHistory=await(await target.request('/api/community/appeals')).json();
+  assert.equal(appealHistory.appeals[0].id,appealReceipt.id);assert.equal(appealHistory.appeals[0].status,'open');
+  assert.ok(!JSON.stringify(appealHistory).includes('independent second policy review'));
+  await page.getByRole('button',{name:'Load appeal queue'}).click();
+  const appealSection=page.getByRole('heading',{name:'Community appeal queue',exact:true}).locator('..');
+  const appealCard=appealSection.getByRole('heading',{name:reportTitle,exact:true}).locator('..');
+  await appealCard.getByLabel('Required appeal reason').fill('Claim this appeal for an independent reviewed browser moderation check.');
+  await appealCard.getByRole('button',{name:'Claim appeal'}).click();
+  await expect(appealCard.getByText('Assigned to you',{exact:false})).toBeVisible();
+  await appealCard.getByLabel('Required appeal reason').fill('Uphold this appeal after the second review found the hide unsupported.');
+  await appealCard.getByRole('button',{name:'Uphold and restore contribution'}).click();
+  await expect(appealCard.getByText('currently visible',{exact:false})).toBeVisible();
   assert.equal((await target.request(`/api/community/posts/${reportedPost}?kind=discussion`)).status,200);
   assert.deepEqual((await f.db.prepare('SELECT action FROM community_moderation_events WHERE report_id=? ORDER BY created_at,id')
-    .all((await savedReport.json()).id)).map(row=>row.action),['claim','hide','restore']);
+    .all(reportReceipt.id)).map(row=>row.action),['claim','hide']);
+  assert.deepEqual((await f.db.prepare('SELECT action FROM community_appeal_events WHERE appeal_id=? ORDER BY created_at,id')
+    .all(appealReceipt.id)).map(row=>row.action),['claim','uphold']);
+  assert.deepEqual((await f.db.prepare(`SELECT scope FROM identity_abuse_buckets
+    WHERE scope IN ('community-network','community-account') ORDER BY scope`).all()).map(row=>row.scope),['community-account','community-network']);
   await page.getByLabel('Exact contact email').fill('staff.target@example.invalid');
   await page.getByRole('button',{name:'Find account'}).click();
   await expect(page.getByText('active',{exact:true})).toBeVisible();

@@ -155,6 +155,10 @@ export class ManagedIdentity {
     await this.limits.enforce('support-network', networkAddress(req.ip ?? ''), res);
     if (user) await this.limits.enforce('support-account', user.id, res);
   }
+  async admitCommunity(req: express.Request, user: User, res: express.Response) {
+    await this.limits.enforce('community-network', networkAddress(req.ip ?? ''), res);
+    await this.limits.enforce('community-account', user.id, res);
+  }
   async admitBilling(user: User, res: express.Response) {
     await this.limits.enforce('billing', user.id, res);
   }

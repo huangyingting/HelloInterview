@@ -42,7 +42,7 @@ export class CommunitySubmissions {
   private envelope(row:Record<string,unknown>):CommunityCommentSubmission {
     const receipt=receiptSchema.parse({requestId:row.request_id,commentId:row.comment_id,resource:row.resource,createdAt:row.created_at,status:'created'});
     const comment=row.current_id===null?null:commentDto.parse({id:row.current_id,resource:row.current_resource,author:row.current_author,
-      body:row.current_body,createdAt:row.current_created_at,parentId:row.current_parent,isMine:1,deleted:0,moderated:0});
+      body:row.current_body,createdAt:row.current_created_at,parentId:row.current_parent,isMine:1,deleted:0,moderated:0,moderationRevision:0});
     return {receipt,comment};
   }
   private async snapshot(owner:string,requestId:string) {

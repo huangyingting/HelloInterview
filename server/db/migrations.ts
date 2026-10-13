@@ -1144,6 +1144,105 @@ export const migrations = [{
       CREATE TRIGGER immutable_community_moderation_target_delete BEFORE DELETE ON community_moderation_targets
         FOR EACH ROW EXECUTE FUNCTION immutable_community_moderation_event();
     `,
+  }, {
+    version: 32,
+    name: 'community-appeals-status-admission',
+    sql: `
+      ALTER TABLE identity_abuse_buckets DROP CONSTRAINT identity_abuse_buckets_scope_check;
+      ALTER TABLE identity_abuse_buckets ADD CONSTRAINT identity_abuse_buckets_scope_check
+        CHECK (scope IN ('network','legacy-account','account-security','billing','support-network','support-account',
+          'community-network','community-account'));
+      CREATE TABLE community_appeals (
+        id UUID PRIMARY KEY,
+        owner_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+        request_key UUID NOT NULL,
+        input_hash TEXT NOT NULL CHECK(input_hash ~ '^[0-9a-f]{64}$'),
+        target_type TEXT NOT NULL CHECK(target_type IN ('post','comment')),
+        target_id TEXT NOT NULL CHECK(length(target_id) BETWEEN 1 AND 200),
+        target_revision INTEGER NOT NULL CHECK(target_revision>0),
+        statement TEXT NOT NULL CHECK(length(statement) BETWEEN 20 AND 1000),
+        state TEXT NOT NULL DEFAULT 'open' CHECK(state IN ('open','denied','upheld')),
+        assigned_to TEXT REFERENCES users(id) ON DELETE RESTRICT,
+        appeal_revision INTEGER NOT NULL DEFAULT 0 CHECK(appeal_revision>=0),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX community_appeals_owner_key ON community_appeals(owner_id,request_key) WHERE owner_id IS NOT NULL;
+      CREATE UNIQUE INDEX community_appeals_owner_target_revision
+        ON community_appeals(owner_id,target_type,target_id,target_revision) WHERE owner_id IS NOT NULL;
+      CREATE INDEX community_appeals_queue ON community_appeals(updated_at DESC,id DESC);
+      CREATE INDEX community_appeals_owner_order ON community_appeals(owner_id,created_at DESC,id DESC);
+      CREATE TABLE community_appeal_events (
+        id UUID PRIMARY KEY,
+        appeal_id UUID NOT NULL REFERENCES community_appeals(id) ON DELETE RESTRICT,
+        target_type TEXT NOT NULL CHECK(target_type IN ('post','comment')),
+        target_id TEXT NOT NULL,
+        actor_ref TEXT NOT NULL,
+        actor_role TEXT NOT NULL CHECK(actor_role IN ('moderator','administrator')),
+        action TEXT NOT NULL CHECK(action IN ('claim','release','deny','uphold')),
+        reason TEXT NOT NULL CHECK(length(reason) BETWEEN 20 AND 500),
+        prior_appeal_revision INTEGER NOT NULL CHECK(prior_appeal_revision>=0),
+        result_appeal_revision INTEGER NOT NULL CHECK(result_appeal_revision=prior_appeal_revision+1),
+        prior_target_revision INTEGER,
+        result_target_revision INTEGER,
+        created_at TEXT NOT NULL,
+        CHECK((prior_target_revision IS NULL AND result_target_revision IS NULL) OR
+          (prior_target_revision IS NOT NULL AND prior_target_revision>0 AND result_target_revision=prior_target_revision+1)),
+        CHECK((action='uphold' AND prior_target_revision IS NOT NULL) OR
+          (action IN ('claim','release','deny') AND prior_target_revision IS NULL))
+      );
+      CREATE INDEX community_appeal_events_appeal ON community_appeal_events(appeal_id,created_at,id);
+      CREATE FUNCTION protect_community_appeal() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NOT (
+            OLD.owner_id IS NOT NULL AND NEW.owner_id IS NULL AND
+              NEW.id=OLD.id AND NEW.request_key=OLD.request_key AND NEW.input_hash=OLD.input_hash AND
+              NEW.target_type=OLD.target_type AND NEW.target_id=OLD.target_id AND NEW.target_revision=OLD.target_revision AND
+              NEW.statement=OLD.statement AND NEW.state=OLD.state AND NEW.assigned_to IS NOT DISTINCT FROM OLD.assigned_to AND
+              NEW.appeal_revision=OLD.appeal_revision AND NEW.created_at=OLD.created_at AND NEW.updated_at=OLD.updated_at OR
+            NEW.id=OLD.id AND NEW.owner_id IS NOT DISTINCT FROM OLD.owner_id AND NEW.request_key=OLD.request_key AND
+              NEW.input_hash=OLD.input_hash AND NEW.target_type=OLD.target_type AND NEW.target_id=OLD.target_id AND
+              NEW.target_revision=OLD.target_revision AND NEW.statement=OLD.statement AND NEW.created_at=OLD.created_at AND
+              NEW.appeal_revision=OLD.appeal_revision+1 AND NEW.updated_at>=OLD.updated_at
+          ) THEN RAISE EXCEPTION 'Community appeals allow only owner retirement or revision-fenced staff state changes.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER protect_community_appeal BEFORE UPDATE ON community_appeals
+        FOR EACH ROW EXECUTE FUNCTION protect_community_appeal();
+      CREATE FUNCTION initialize_community_appeal() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NEW.owner_id IS NULL OR NEW.state<>'open' OR NEW.assigned_to IS NOT NULL OR NEW.appeal_revision<>0 OR
+            NEW.created_at<>NEW.updated_at
+          THEN RAISE EXCEPTION 'New community appeals must begin as unassigned revision-zero owner records.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER initialize_community_appeal BEFORE INSERT ON community_appeals
+        FOR EACH ROW EXECUTE FUNCTION initialize_community_appeal();
+      CREATE FUNCTION validate_community_appeal_event() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NOT EXISTS(SELECT 1 FROM community_appeals appeal WHERE appeal.id=NEW.appeal_id AND
+            appeal.target_type=NEW.target_type AND appeal.target_id=NEW.target_id AND
+            appeal.appeal_revision=NEW.result_appeal_revision)
+          THEN RAISE EXCEPTION 'Appeal evidence must reference the resulting appeal revision.'; END IF;
+          IF NEW.result_target_revision IS NOT NULL AND NOT EXISTS(
+            SELECT 1 FROM community_moderation_targets target WHERE target.target_type=NEW.target_type AND
+              target.target_id=NEW.target_id AND target.revision=NEW.result_target_revision AND target.state='visible')
+          THEN RAISE EXCEPTION 'Upheld appeal evidence must reference the restored target revision.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER validate_community_appeal_event BEFORE INSERT ON community_appeal_events
+        FOR EACH ROW EXECUTE FUNCTION validate_community_appeal_event();
+      CREATE FUNCTION immutable_community_appeal_event() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN RAISE EXCEPTION 'Community appeal evidence is immutable.'; END;
+      $$;
+      CREATE TRIGGER immutable_community_appeal_event BEFORE UPDATE OR DELETE ON community_appeal_events
+        FOR EACH ROW EXECUTE FUNCTION immutable_community_appeal_event();
+      CREATE TRIGGER immutable_community_appeal_delete BEFORE DELETE ON community_appeals
+        FOR EACH ROW EXECUTE FUNCTION immutable_community_appeal_event();
+    `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

@@ -23,7 +23,7 @@ import { communityFeedPath, communityPostApi, communityPostPath, parseStudioAddr
 
 const databaseUrl=process.env.TEST_DATABASE_URL;
 if(!databaseUrl)throw new Error('TEST_DATABASE_URL must identify a dedicated community PostgreSQL fixture.');
-const fields=['author','body','company','createdAt','followed','id','isMine','kind','level','moderated','region','sample','title','track','voted','votes'].sort();
+const fields=['author','body','company','createdAt','followed','id','isMine','kind','level','moderated','moderationRevision','region','sample','title','track','voted','votes'].sort();
 async function fixture(t:TestContext,dialect:'sqlite'|'postgres'){
   let db:Database,url:string|undefined;
   const parent=path.resolve('data/community-tests');await mkdir(parent,{recursive:true});
@@ -73,7 +73,7 @@ test('community URL helpers preserve exact bounded data and reject malformed or 
   assert.deepEqual(parseStudioAddress('/community/questions/literal%252F','').segments,['community','questions','literal%2F']);
 });
 
-test('migrations 21-31 preserve actual legacy community data while adding deletion and moderation state',async t=>{
+test('migrations 21-32 preserve actual legacy community data while adding deletion, moderation and appeal state',async t=>{
   const f=await fixture(t,'postgres'),post=await f.add();
   await f.db.prepare('INSERT INTO votes(post_id,user_id) VALUES(?,?)').run(post.id,f.owners[0]);
   await f.db.prepare('INSERT INTO follows(post_id,user_id) VALUES(?,?)').run(post.id,f.owners[1]);
@@ -125,6 +125,8 @@ test('migrations 21-31 preserve actual legacy community data while adding deleti
   assert.deepEqual(await legacy.prepare('SELECT * FROM community_reports').all(),[]);
   assert.deepEqual(await legacy.prepare('SELECT * FROM community_moderation_targets').all(),[]);
   assert.deepEqual(await legacy.prepare('SELECT * FROM community_moderation_events').all(),[]);
+  assert.deepEqual(await legacy.prepare('SELECT * FROM community_appeals').all(),[]);
+  assert.deepEqual(await legacy.prepare('SELECT * FROM community_appeal_events').all(),[]);
   assert.equal((await legacy.prepare(`SELECT is_nullable FROM information_schema.columns
     WHERE table_schema=current_schema() AND table_name='comments' AND column_name='user_id'`).get())?.is_nullable,'YES');
   assert.equal((await legacy.prepare('SELECT revision FROM community_comment_revisions WHERE comment_id=?').get(commentId))?.revision,1);
@@ -136,7 +138,11 @@ test('migrations 21-31 preserve actual legacy community data while adding deleti
   const indexes=await legacy.prepare('SELECT indexname FROM pg_indexes WHERE schemaname=?').all(schema);
   for(const name of ['posts_owner_order','posts_created_order','follows_owner','comments_resource_cursor','community_comment_submissions_owner',
     'community_comment_submissions_resource','community_comment_deletions_owner','community_reports_owner_key','community_reports_queue',
-    'community_reports_owner_open','community_moderation_events_report'])assert.ok(indexes.some(row=>row.indexname===name));
+    'community_reports_owner_open','community_moderation_events_report','community_appeals_owner_key',
+    'community_appeals_owner_target_revision','community_appeals_queue','community_appeals_owner_order',
+    'community_appeal_events_appeal'])assert.ok(indexes.some(row=>row.indexname===name));
+  await legacy.prepare(`INSERT INTO identity_abuse_buckets(scope,fingerprint,attempts,started,expires)
+    VALUES('community-account',?,1,1,2)`).run('a'.repeat(64));
   assert.equal((await new CommunityReads(legacy).detail(post.id,{kind:'questions'},f.owners[0])).isMine,true);
 });
 
@@ -391,6 +397,37 @@ for(const dialect of ['sqlite','postgres'] as const){
     assert.equal(row?.reporter_id,user.id);assert.equal(row?.assigned_to,null);assert.equal(row?.state,'open');assert.equal(row?.report_revision,0);
   });
 
+  test(`${dialect}: contribution owners appeal one exact hidden revision and read minimized report and appeal status`,async t=>{
+    const f=await fixture(t,dialect),post=await f.add(),moderation=new CommunityModeration(f.db,null);
+    const owner={id:f.owners[0],name:'Synthetic author',email:`${f.owners[0]}@example.invalid`,demo:false};
+    const other={id:f.owners[1],name:'Other member',email:`${f.owners[1]}@example.invalid`,demo:false};
+    const reportTarget=await f.add({owner:f.owners[1],title:'Visible report status target'});
+    const reportDetails='A concrete policy concern is saved but must not appear in minimized member status.';
+    const report=await moderation.report(owner,{requestId:randomUUID(),targetType:'post',targetId:reportTarget.id,
+      category:'misinformation',details:reportDetails},async()=>{});
+    await f.db.prepare(`INSERT INTO community_moderation_targets(target_type,target_id,state,revision,updated_at)
+      VALUES('post',?,'hidden',1,?)`).run(post.id,new Date().toISOString());
+    const hidden=await f.reads.detail(post.id,{kind:'questions'},owner.id,true);
+    assert.equal(hidden.moderated,true);assert.equal(hidden.moderationRevision,1);
+    const input={requestId:randomUUID(),targetType:'post' as const,targetId:post.id,targetRevision:1,
+      statement:'The hidden contribution contains original context that should receive a second policy review.'};
+    let admissions=0;
+    const saved=await moderation.appeal(owner,input,async()=>{admissions++;});
+    assert.equal(saved.appealedTargetRevision,1);assert.equal(saved.delivery,'moderation-queue-only');assert.equal(admissions,2);
+    assert.deepEqual(await moderation.appeal(owner,input,async()=>{admissions++;}),saved);assert.equal(admissions,4);
+    await assert.rejects(()=>moderation.appeal(owner,{...input,statement:'A changed appeal statement cannot reuse the same exact request key.'},async()=>{}),status(409));
+    await assert.rejects(()=>moderation.appeal(owner,{...input,requestId:randomUUID()},async()=>{}),status(409));
+    await assert.rejects(()=>moderation.appeal(other,{...input,requestId:randomUUID()},async()=>{}),status(404));
+    const reports=await moderation.reportHistory(owner,{},async()=>{});
+    assert.equal(reports.reports[0]?.id,report.id);assert.ok(!JSON.stringify(reports).includes(reportDetails));
+    const appeals=await moderation.appealHistory(owner,{},async()=>{});
+    assert.equal(appeals.appeals[0]?.id,saved.id);assert.equal(appeals.appeals[0]?.targetState,'hidden');
+    assert.ok(!JSON.stringify(appeals).includes(input.statement));
+    await assert.rejects(()=>f.db.prepare('UPDATE community_appeals SET statement=? WHERE id=?')
+      .run('Direct appeal statement rewriting must fail.',saved.id));
+    await assert.rejects(()=>f.db.prepare('DELETE FROM community_appeals WHERE id=?').run(saved.id));
+  });
+
   test(`${dialect}: hidden comments are explicit non-repliable tombstones but remain owner-deletable`,async t=>{
     const f=await fixture(t,dialect),post=await f.add(),resource=`post/${post.id}`,parent=randomUUID();
     await f.db.prepare('INSERT INTO comments VALUES(?,?,?,?,?,?,?)').run(parent,resource,f.owners[0],'Synthetic author',
@@ -399,7 +436,7 @@ for(const dialect of ['sqlite','postgres'] as const){
       VALUES('comment',?,'hidden',1,?)`).run(parent,new Date().toISOString());
     const contributions=new CommunityContributions(f.db),publicComments=await contributions.comments(resource,f.owners[0]);
     assert.deepEqual(publicComments[0],{id:parent,resource,author:'Moderated',body:'This comment was hidden by moderation.',
-      createdAt:'2026-01-02T00:00:00.000Z',parentId:null,isMine:true,deleted:false,moderated:true});
+      createdAt:'2026-01-02T00:00:00.000Z',parentId:null,isMine:true,deleted:false,moderated:true,moderationRevision:1});
     await assert.rejects(()=>contributions.updateComment({id:parent,revision:0,body:'Hidden text must not be editable.'},f.owners[0],async()=>{}),status(409));
     const submissions=new CommunitySubmissions(f.db);
     await assert.rejects(()=>submissions.create({id:f.owners[1],name:'Synthetic author'},
@@ -473,6 +510,54 @@ for(const dialect of ['sqlite','postgres'] as const){
     assert.deepEqual(left,right);
     assert.equal(Number((await f.db.prepare('SELECT count(*) AS count FROM community_reports WHERE reporter_id=? AND request_key=?')
       .get(reporter.id,requestId))?.count),1);
+  });
+
+  if(dialect==='postgres')test('postgres: MFA-authorized appeal review atomically restores the exact hidden revision with minimized owner status',async t=>{
+    const f=await fixture(t,'postgres'),post=await f.add(),owner={id:f.owners[0],name:'Owner',email:`${f.owners[0]}@example.invalid`,demo:false};
+    const moderator={id:f.owners[1],name:'Moderator',email:`${f.owners[1]}@example.invalid`,demo:false};
+    const authority={assertStaff:async()=>{},staffRoles:async(id:string)=>id===moderator.id?['moderator']:[]} as unknown as ManagedIdentity;
+    const service=new CommunityModeration(f.db,authority);
+    const report=await service.report(moderator,{requestId:randomUUID(),targetType:'post',targetId:post.id,category:'harassment',
+      details:'The reviewed contribution contains a concrete harassment concern requiring moderation.'},async()=>{});
+    await service.act(moderator,report.id,{revision:0,targetRevision:0,action:'claim',
+      reason:'Claim this report before applying the reviewed hide decision.'});
+    await service.act(moderator,report.id,{revision:1,targetRevision:0,action:'hide',
+      reason:'The cited harassment concern supports hiding this contribution pending appeal.'});
+    const statement='The contribution context does not target a person and should receive a second review.';
+    const appeal=await service.appeal(owner,{requestId:randomUUID(),targetType:'post',targetId:post.id,targetRevision:1,statement},async()=>{});
+    const queue=await service.appealQueue(moderator,{});
+    assert.equal(queue.appeals[0]?.id,appeal.id);assert.ok(!JSON.stringify(queue).includes(owner.id));
+    const claimed=await service.actOnAppeal(moderator,appeal.id,{revision:0,targetRevision:1,action:'claim',
+      reason:'Claim this owner appeal for an independent second policy review.'});
+    assert.equal(claimed.assignment,'me');assert.equal(claimed.revision,1);
+    await assert.rejects(()=>service.actOnAppeal(moderator,appeal.id,{revision:0,targetRevision:1,action:'uphold',
+      reason:'A stale appeal revision must never restore this contribution.'}),status(409));
+    const upheld=await service.actOnAppeal(moderator,appeal.id,{revision:1,targetRevision:1,action:'uphold',
+      reason:'The second review finds the original hide unsupported and restores the contribution.'});
+    assert.equal(upheld.status,'upheld');assert.equal(upheld.targetState,'visible');assert.equal(upheld.targetRevision,2);
+    assert.equal((await f.reads.detail(post.id,{kind:'questions'},null)).id,post.id);
+    const history=await service.appealHistory(owner,{},async()=>{});
+    assert.equal(history.appeals[0]?.status,'upheld');assert.equal(history.appeals[0]?.targetRevision,2);
+    assert.ok(!JSON.stringify(history).includes(statement));assert.ok(!JSON.stringify(history).includes(moderator.id));
+    const events=await f.db.prepare('SELECT action,actor_ref,reason FROM community_appeal_events WHERE appeal_id=? ORDER BY created_at,id').all(appeal.id);
+    assert.deepEqual(events.map(value=>value.action),['claim','uphold']);assert.ok(events.every(value=>value.actor_ref===moderator.id));
+    await assert.rejects(()=>f.db.prepare('DELETE FROM community_appeal_events WHERE appeal_id=?').run(appeal.id));
+    const deniedPost=await f.add({title:'Appeal denial target'});
+    await f.db.prepare(`INSERT INTO community_moderation_targets(target_type,target_id,state,revision,updated_at)
+      VALUES('post',?,'hidden',1,?)`).run(deniedPost.id,new Date().toISOString());
+    const deniedAppeal=await service.appeal(owner,{requestId:randomUUID(),targetType:'post',targetId:deniedPost.id,targetRevision:1,
+      statement:'A second synthetic appeal exercises release and denial without restoring the target.'},async()=>{});
+    let denied=await service.actOnAppeal(moderator,deniedAppeal.id,{revision:0,targetRevision:1,action:'claim',
+      reason:'Claim the second appeal before rehearsing release and denial behavior.'});
+    denied=await service.actOnAppeal(moderator,deniedAppeal.id,{revision:denied.revision,targetRevision:1,action:'release',
+      reason:'Release the second appeal so assignment changes remain revision fenced.'});
+    denied=await service.actOnAppeal(moderator,deniedAppeal.id,{revision:denied.revision,targetRevision:1,action:'claim',
+      reason:'Reclaim the second appeal before recording the final reviewed decision.'});
+    denied=await service.actOnAppeal(moderator,deniedAppeal.id,{revision:denied.revision,targetRevision:1,action:'deny',
+      reason:'The second review confirms the hide decision and denies this appeal.'});
+    assert.equal(denied.status,'denied');assert.equal(denied.targetState,'hidden');assert.equal(denied.targetRevision,1);
+    assert.deepEqual((await f.db.prepare('SELECT action FROM community_appeal_events WHERE appeal_id=? ORDER BY created_at,id')
+      .all(deniedAppeal.id)).map(value=>value.action),['claim','release','claim','deny']);
   });
 
   test(`${dialect}: failed receipt insertion rolls back its comment/revision and original-key retry creates once`,async t=>{
@@ -575,7 +660,7 @@ for(const dialect of ['sqlite','postgres'] as const){
     const page=await first.json();assert.deepEqual(Object.keys(page).sort(),['comments','limit','nextCursor'].sort());
     assert.equal(page.limit,50);assert.equal(page.comments.length,50);assert.equal(page.comments[0].id,'page-0000');
     for(const [i,row] of page.comments.entries()){
-      assert.deepEqual(Object.keys(row).sort(),['author','body','createdAt','deleted','id','isMine','moderated','parentId','resource'].sort());
+      assert.deepEqual(Object.keys(row).sort(),['author','body','createdAt','deleted','id','isMine','moderated','moderationRevision','parentId','resource'].sort());
       assert.equal(row.resource,resource);assert.equal(row.isMine,i%2===0);assert.equal(row.moderated,false);
       assert.ok(!JSON.stringify(row).includes(owner));assert.ok(!JSON.stringify(row).includes(f.owners[1]));
     }
@@ -652,7 +737,7 @@ for(const dialect of ['sqlite','postgres'] as const){
     for(const [viewer,mine] of [[cookie,true],[otherCookie,false],['',false]] as const){
       const response=await api(`/api/comments?${new URLSearchParams({resource})}`,undefined,viewer);assert.equal(response.status,200);
       const row=(await response.json()).find((comment:{id:string})=>comment.id===id);
-      assert.equal(row.isMine,mine);assert.deepEqual(Object.keys(row).sort(),['author','body','createdAt','deleted','id','isMine','moderated','parentId','resource'].sort());
+      assert.equal(row.isMine,mine);assert.deepEqual(Object.keys(row).sort(),['author','body','createdAt','deleted','id','isMine','moderated','moderationRevision','parentId','resource'].sort());
       assert.ok(!JSON.stringify(row).includes(owner));assert.ok(!Object.hasOwn(row,'revision'));
     }
     assert.equal((await api(route)).status,401);assert.equal((await api(route,undefined,otherCookie)).status,404);
@@ -700,7 +785,7 @@ for(const dialect of ['sqlite','postgres'] as const){
     const result=await deleted.json();assert.equal(result.receipt.status,'tombstoned');assert.equal(result.receipt.requestId,requestId);
     assert.equal(result.receipt.priorRevision,0);assert.equal(result.receipt.resultRevision,1);
     assert.deepEqual(result.comment,{id:root.id,resource,author:'Deleted',body:'This comment was removed by its author.',
-      createdAt:root.createdAt,parentId:null,isMine:false,deleted:true,moderated:false});
+      createdAt:root.createdAt,parentId:null,isMine:false,deleted:true,moderated:false,moderationRevision:0});
     assert.deepEqual(await(await api('/api/comments/owned',input,cookie,'DELETE')).json(),result);
     assert.equal((await api('/api/comments/owned',{...input,requestId:randomUUID()},cookie,'DELETE')).status,404);
     const second=await api('/api/comments/submissions',{requestId:randomUUID(),resource,body:'A second owned comment remains live.',parentId:null},cookie);

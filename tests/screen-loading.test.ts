@@ -173,7 +173,7 @@ test('local owner editing preserves conflicting drafts and deletion is an explic
   assert.equal(f.documents.length,1);
 });
 
-test('community reporting and hidden-comment controls stay in-page and preserve an exact private report receipt',async t=>{
+test('community reports, owner appeals and hidden controls stay in-page with exact private receipts',async t=>{
   const f=await fixture(t),{page}=f,db=localConnection(f.directory);t.after(()=>db.close());
   const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);
   const owner=(await login.json()).user.id,post=randomUUID(),hiddenPost=randomUUID(),comment=randomUUID(),resource=`post/${post}`;
@@ -202,12 +202,20 @@ test('community reporting and hidden-comment controls stay in-page and preserve 
   const hidden=page.locator('.comment').filter({hasText:'This comment was hidden by moderation.'});
   await expect(hidden).toBeVisible();await expect(hidden.getByRole('button',{name:'Reply',exact:true})).toHaveCount(0);
   await expect(hidden.getByRole('button',{name:'Report comment',exact:true})).toHaveCount(0);
+  await hidden.getByRole('button',{name:'Appeal moderation decision',exact:true}).click();
+  await hidden.getByLabel('Why should this contribution be restored?').fill('The comment context should receive an independent second policy review.');
+  await hidden.getByRole('button',{name:'Submit appeal',exact:true}).click();
+  await expect(hidden.getByText(/Appeal saved for hidden revision 1/)).toBeVisible();
   await hidden.getByRole('button',{name:'Manage hidden comment',exact:true}).click();
   await expect(hidden.getByText('Moderation hid this comment',{exact:false})).toBeVisible();
   await page.goto(`${f.url}${communityPostPath({kind:'discussion',id:hiddenPost})}`);
   await expect(page.getByText('Hidden by moderation',{exact:true})).toBeVisible();
   await expect(page.getByRole('button',{name:'Report post',exact:true})).toHaveCount(0);
   await expect(page.getByRole('heading',{name:/Discussion/})).toHaveCount(0);
+  await page.getByRole('button',{name:'Appeal moderation decision',exact:true}).click();
+  await page.getByLabel('Why should this contribution be restored?').fill('The post context should receive an independent second policy review.');
+  await page.getByRole('button',{name:'Submit appeal',exact:true}).click();
+  await expect(page.getByText(/Appeal saved for hidden revision 1/)).toBeVisible();
   await page.getByRole('button',{name:'Manage hidden post',exact:true}).click();
   const editor=page.locator('#owned-contribution');
   await expect(editor.getByText('Moderation hid this post',{exact:false})).toBeVisible();
@@ -216,6 +224,11 @@ test('community reporting and hidden-comment controls stay in-page and preserve 
   await editor.getByRole('button',{name:'Delete my local post',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Ask the community',exact:true})).toBeVisible();
   assert.equal(await db.prepare('SELECT id FROM posts WHERE id=?').get(hiddenPost),undefined);
+  await page.getByRole('button',{name:'My moderation status',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'My reports',exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'My appeals',exact:true})).toBeVisible();
+  await expect(page.getByText('privacy',{exact:true})).toBeVisible();
+  assert.equal(Number((await db.prepare('SELECT count(*) AS count FROM community_appeals WHERE owner_id=?').get(owner))?.count),2);
   await expect(page.locator('[role="dialog"]')).toHaveCount(0);
 });
 

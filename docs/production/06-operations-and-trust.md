@@ -104,9 +104,19 @@ dismiss, hide and restore actions. Migration 31 fences report and target
 revisions, preserves immutable staff evidence, filters hidden posts from every
 reader and projects hidden comments as non-repliable moderation tombstones.
 The [moderation runbook](40-mfa-community-reports-moderation.md) records the
-minimized DTO, privacy export and concurrency contract. Appeals, notifications,
-automated enforcement, staffed targets, approved retention and managed writing
-remain separate launch gates.
+minimized DTO, privacy export and concurrency contract.
+
+**Implemented community appeal/admission checkpoint (W11):** exact owners can
+appeal one current hidden target revision with an exact UUID key, members can
+read minimized bounded report/appeal status, and MFA/fresh moderators can
+claim/release/deny/uphold with immutable evidence. Uphold restores the exact
+hidden revision atomically. Managed report/appeal writes consume shared
+PostgreSQL account and canonical-network admission buckets and fail closed when
+that protection is unavailable. The
+[appeal runbook](41-community-appeals-status-admission.md) records migration 32,
+privacy export and failure behavior. External delivery, block/mute,
+repeat-abuse restrictions, automated enforcement, staffed targets, approved
+retention and managed writing remain separate launch gates.
 
 **Implemented managed staff-administration checkpoint (W10):** verified OIDC
 `amr` can establish explicit MFA evidence for a managed session; privileged
@@ -235,9 +245,11 @@ The shared paged reader and its loaded-only search now follow
 [runbook 33](33-bounded-discussion-pages.md); live cursors are not privacy exports.
 Authenticated reports and reviewed in-app hide/restore operations now follow
 [runbook 40](40-mfa-community-reports-moderation.md). This provides the
-provider-neutral queue and visibility mechanics, but not appeals, author
-notices, abuse operations, retention approval or authority to enable managed
-contribution writes.
+provider-neutral queue and visibility mechanics. Owner appeals, minimized
+member status and shared managed report/appeal admission now follow
+[runbook 41](41-community-appeals-status-admission.md). These provide no
+external notices, block/mute, repeat-abuse operations, retention approval or
+authority to enable managed contribution writes.
 
 Launch requirements:
 

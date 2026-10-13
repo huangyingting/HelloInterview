@@ -25,6 +25,7 @@ const commentDto = z.strictObject({
   createdAt: z.string(), parentId: z.string().nullable(), isMine: z.union([z.literal(0),z.literal(1)]).transform(value => value === 1),
   deleted:z.union([z.literal(0),z.literal(1)]).transform(value=>value===1),
   moderated:z.union([z.literal(0),z.literal(1)]).transform(value=>value===1),
+  moderationRevision:z.coerce.number().int().nonnegative(),
 });
 export { commentProjection, commentDto };
 const commentPageQuery = z.strictObject({
@@ -64,10 +65,11 @@ export class CommunityContributions {
     await this.assertDiscussionVisible(resource);
     const rows = await this.db.prepare(`SELECT ${commentProjection},CASE WHEN comments.user_id=? THEN 1 ELSE 0 END AS "isMine",
       CASE WHEN comments.user_id IS NOT NULL THEN 0 ELSE 1 END AS deleted,
-      CASE WHEN moderation.state='hidden' THEN 1 ELSE 0 END AS moderated FROM comments
+      CASE WHEN moderation.state='hidden' THEN 1 ELSE 0 END AS moderated,
+      CASE WHEN comments.user_id=? AND moderation.state='hidden' THEN moderation.revision ELSE 0 END AS "moderationRevision" FROM comments
       LEFT JOIN community_comment_tombstones tombstone ON tombstone.comment_id=comments.id
       LEFT JOIN community_moderation_targets moderation ON moderation.target_type='comment' AND moderation.target_id=comments.id
-      WHERE comments.resource=? ORDER BY comments.created_at ASC LIMIT 500`).all(owner,resource);
+      WHERE comments.resource=? ORDER BY comments.created_at ASC LIMIT 500`).all(owner,owner,resource);
     return rows.map(row => commentDto.parse(row));
   }
   async commentPage(input: unknown, owner: string | null): Promise<CommunityCommentPage> {
@@ -78,12 +80,13 @@ export class CommunityContributions {
     const hash = digest(encodePayload({ query, viewer: owner })), cursor = communityPageCursor(encoded,commentCursor,hash);
     const rows = await this.db.prepare(`SELECT ${commentProjection},CASE WHEN comments.user_id=? THEN 1 ELSE 0 END AS "isMine",
       CASE WHEN comments.user_id IS NOT NULL THEN 0 ELSE 1 END AS deleted,
-      CASE WHEN moderation.state='hidden' THEN 1 ELSE 0 END AS moderated FROM comments
+      CASE WHEN moderation.state='hidden' THEN 1 ELSE 0 END AS moderated,
+      CASE WHEN comments.user_id=? AND moderation.state='hidden' THEN moderation.revision ELSE 0 END AS "moderationRevision" FROM comments
       LEFT JOIN community_comment_tombstones tombstone ON tombstone.comment_id=comments.id
       LEFT JOIN community_moderation_targets moderation ON moderation.target_type='comment' AND moderation.target_id=comments.id
       WHERE comments.resource=? ${cursor ? 'AND (comments.created_at,comments.id)>(?,?)' : ''}
       ORDER BY comments.created_at ASC,comments.id ASC LIMIT ?`)
-      .all(owner,query.resource,...(cursor ? [cursor.createdAt,cursor.id] : []),query.limit+1);
+      .all(owner,owner,query.resource,...(cursor ? [cursor.createdAt,cursor.id] : []),query.limit+1);
     const comments = rows.slice(0,query.limit).map(row => commentDto.parse(row)), last = comments.at(-1);
     const nextCursor = rows.length > query.limit && last ? Buffer.from(JSON.stringify(commentCursor.parse({
       version:'community-comments-v1',hash,id:last.id,createdAt:last.createdAt,
@@ -91,7 +94,7 @@ export class CommunityContributions {
     return { comments, limit:query.limit, nextCursor };
   }
   async createdComment(id: string, owner: string): Promise<Comment> {
-    const row = await this.db.prepare(`SELECT ${liveCommentProjection},1 AS "isMine",0 AS deleted,0 AS moderated
+    const row = await this.db.prepare(`SELECT ${liveCommentProjection},1 AS "isMine",0 AS deleted,0 AS moderated,0 AS "moderationRevision"
       FROM comments WHERE comments.id=? AND comments.user_id=?`).get(id,owner);
     if (!row) throw new Error('The admitted comment was not found after insertion.');
     return commentDto.parse(row);
@@ -106,7 +109,8 @@ export class CommunityContributions {
         throw new HttpError(404, 'This discussion is no longer available.');
     }
     const row = await this.db.prepare(`SELECT ${commentProjection},1 AS "isMine",0 AS deleted,
-      CASE WHEN moderation.state='hidden' THEN 1 ELSE 0 END AS moderated
+      CASE WHEN moderation.state='hidden' THEN 1 ELSE 0 END AS moderated,
+      CASE WHEN moderation.state='hidden' THEN moderation.revision ELSE 0 END AS "moderationRevision"
       FROM comments LEFT JOIN community_moderation_targets moderation
         ON moderation.target_type='comment' AND moderation.target_id=comments.id
       WHERE comments.id=? AND comments.user_id=?
@@ -168,7 +172,7 @@ export class CommunityContributions {
       request_id:z.uuid(),comment_id:communityIdentifierSchema,resource:z.string().min(1).max(205),
       prior_revision:revision,result_revision:revision,deleted_at:z.iso.datetime(),input_hash:z.string(),
     }).parse(value);
-    const row=await this.db.prepare(`SELECT ${commentProjection},0 AS "isMine",1 AS deleted,0 AS moderated FROM comments
+    const row=await this.db.prepare(`SELECT ${commentProjection},0 AS "isMine",1 AS deleted,0 AS moderated,0 AS "moderationRevision" FROM comments
       JOIN community_comment_tombstones tombstone ON tombstone.comment_id=comments.id
       LEFT JOIN community_moderation_targets moderation ON moderation.target_type='comment' AND moderation.target_id=comments.id
       WHERE comments.id=?`).get(receipt.comment_id);

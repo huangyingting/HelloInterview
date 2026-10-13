@@ -255,6 +255,8 @@ export class PrivacyExports {
           FROM community_comment_deletions WHERE user_id=? ORDER BY deleted_at,request_id`,owner),
         reports:await all(`SELECT id,request_key,target_type,target_id,category,details,state,report_revision,created_at,updated_at
           FROM community_reports WHERE reporter_id=? ORDER BY created_at,id`,owner),
+        appeals:await all(`SELECT id,request_key,target_type,target_id,target_revision,statement,state,appeal_revision,created_at,updated_at
+          FROM community_appeals WHERE owner_id=? ORDER BY created_at,id`,owner),
       },
       support:await Promise.all((await all(`SELECT id,email,body,created_at,handling_status,support_revision,support_updated_at
         FROM support WHERE user_id=? ORDER BY created_at,id`,owner)).map(async ticket=>({

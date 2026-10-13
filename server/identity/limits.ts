@@ -7,7 +7,8 @@ import { HttpError } from '../http-error';
 
 const windowMs = 900000, maximum = 30;
 const clock = 'floor(extract(epoch from clock_timestamp())*1000)::bigint';
-const scopes = ['network', 'legacy-account', 'account-security', 'billing', 'support-network', 'support-account'] as const;
+const scopes = ['network', 'legacy-account', 'account-security', 'billing', 'support-network', 'support-account',
+  'community-network', 'community-account'] as const;
 type Scope = typeof scopes[number];
 const decisionSchema = z.object({
   attempts: z.number().int().min(1).max(maximum + 1),
@@ -47,7 +48,9 @@ export class IdentityLimits {
       console.error(JSON.stringify({ event: 'identity.admission.unavailable', scope, code: error.code }));
       throw new HttpError(503, scope.startsWith('support-') ?
         'Shared support protection is unavailable. Try again later; no support request was stored.' :
-        'Shared sign-in protection is unavailable. Try again later; no new sign-in or security action was admitted.');
+        scope.startsWith('community-') ?
+          'Shared community protection is unavailable. Try again later; no report or appeal was stored.' :
+          'Shared sign-in protection is unavailable. Try again later; no new sign-in or security action was admitted.');
     }
     const result = decisionSchema.parse(row);
     return { allowed: result.attempts <= maximum, retryAfter: result.retry_after };

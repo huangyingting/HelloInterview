@@ -247,9 +247,14 @@ helpdesk delivery, SLA and staffing claims remain disabled.
 The [community moderation checkpoint](docs/production/40-mfa-community-reports-moderation.md)
 adds authenticated exact-retry reports, an MFA/role-gated bounded staff queue,
 revision-fenced hide/restore state, immutable evidence and consistent public
-visibility. Appeals, notices, staffing, retention approval and managed
+visibility.
+The [community appeal checkpoint](docs/production/41-community-appeals-status-admission.md)
+adds exact owner/key/hidden-revision appeals, minimized in-app report/appeal
+status, revision-fenced uphold/deny decisions, atomic restoration and shared
+PostgreSQL account/network admission for report and appeal writes. External
+delivery, repeat-abuse restrictions, staffing, retention approval and managed
 community writing remain disabled.
-Controlled PostgreSQL deployments must apply **migration 31 and maintained queue
+Controlled PostgreSQL deployments must apply **migration 32 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 

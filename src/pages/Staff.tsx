@@ -1,7 +1,8 @@
 import {useEffect,useState} from 'react';
 import {Link} from 'react-router-dom';
 import type {
-  StaffAccount,StaffAuditPage,StaffCommunityReport,StaffCommunityReportPage,StaffRole,StaffSupportPage,StaffSupportTicket,
+  StaffAccount,StaffAuditPage,StaffCommunityAppeal,StaffCommunityAppealPage,StaffCommunityReport,StaffCommunityReportPage,
+  StaffRole,StaffSupportPage,StaffSupportTicket,
 } from '../../shared/types';
 import {Badge,PageHeading} from '../components';
 import {request,useStudio} from '../store';
@@ -119,12 +120,45 @@ function StaffModerationCard({value,administrator,onChange}:{value:StaffCommunit
   </article>;
 }
 
+function StaffAppealCard({value,administrator,onChange}:{value:StaffCommunityAppeal;administrator:boolean;onChange:(appeal:StaffCommunityAppeal)=>void}) {
+  const {notify}=useStudio(),[reason,setReason]=useState(''),[pending,setPending]=useState(false);
+  async function apply(action:'claim'|'release'|'deny'|'uphold') {
+    setPending(true);
+    try{
+      const appeal=await request<StaffCommunityAppeal>(`/api/staff/community/appeals/${value.id}`,
+        {revision:value.revision,targetRevision:value.targetRevision,action,reason},'PATCH');
+      onChange(appeal);setReason('');notify('Appeal state updated with immutable staff evidence.');
+    }catch(cause){notify(cause instanceof Error?cause.message:'Appeal action failed.',true);}
+    finally{setPending(false);}
+  }
+  const available=administrator||value.assignment!=='other';
+  return <article className="panel">
+    <h3>{value.target.title??`${value.targetType} appeal`}</h3>
+    <p><Badge tone={value.status==='open'?'amber':'green'}>{value.status}</Badge>{' '}
+      {value.assignment==='me'?'Assigned to you':value.assignment==='other'?'Assigned to another moderator':'Unassigned'} · appeal revision {value.revision} · target revision {value.targetRevision}</p>
+    <p>{value.target.body}</p>
+    <p className="fine-print">{value.targetType} by {value.target.author}{value.target.resource?` · ${value.target.resource}`:''} · currently {value.targetState} · appealed hidden revision {value.appealedTargetRevision}</p>
+    <strong>Owner appeal</strong><p>{value.statement}</p>
+    <label>Required appeal reason
+      <textarea minLength={20} maxLength={500} value={reason} onChange={event=>setReason(event.target.value)}
+        placeholder="Record the policy and evidence used for this second review."/>
+    </label>
+    {available&&<button className="button secondary small" disabled={pending||reason.trim().length<20}
+      onClick={()=>void apply(value.assignment==='me'?'release':'claim')}>{value.assignment==='me'?'Release appeal':'Claim appeal'}</button>}
+    {available&&value.assignment!==null&&value.status==='open'&&<><button className="button secondary small" disabled={pending||reason.trim().length<20}
+      onClick={()=>void apply('uphold')}>Uphold and restore contribution</button>
+      <button className="button secondary small" disabled={pending||reason.trim().length<20}
+        onClick={()=>void apply('deny')}>Deny appeal</button></>}
+  </article>;
+}
+
 export function StaffPage() {
   const {data,notify}=useStudio(),[roles,setRoles]=useState<StaffRole[]|null>(null),[error,setError]=useState(''),[email,setEmail]=useState('');
   const [accounts,setAccounts]=useState<StaffAccount[]>([]),[searching,setSearching]=useState(false),[audit,setAudit]=useState<StaffAuditPage>();
   const [auditError,setAuditError]=useState(''),[loadingAudit,setLoadingAudit]=useState(false);
   const [support,setSupport]=useState<StaffSupportPage>(),[supportError,setSupportError]=useState(''),[loadingSupport,setLoadingSupport]=useState(false);
   const [moderation,setModeration]=useState<StaffCommunityReportPage>(),[moderationError,setModerationError]=useState(''),[loadingModeration,setLoadingModeration]=useState(false);
+  const [appeals,setAppeals]=useState<StaffCommunityAppealPage>(),[appealsError,setAppealsError]=useState(''),[loadingAppeals,setLoadingAppeals]=useState(false);
   useEffect(()=>{
     const controller=new AbortController();
     request<{roles:StaffRole[]}>('/api/staff/session',undefined,'GET',controller.signal)
@@ -166,6 +200,14 @@ export function StaffPage() {
     }catch(cause){setModerationError(cause instanceof Error?cause.message:'Moderation queue could not be loaded.');}
     finally{setLoadingModeration(false);}
   }
+  async function loadAppeals(cursor?:string) {
+    setLoadingAppeals(true);
+    try{
+      const page=await request<StaffCommunityAppealPage>(`/api/staff/community/appeals${cursor?`?${new URLSearchParams({cursor})}`:''}`);
+      setAppeals(current=>cursor&&current?{appeals:[...current.appeals,...page.appeals],nextCursor:page.nextCursor}:page);setAppealsError('');
+    }catch(cause){setAppealsError(cause instanceof Error?cause.message:'Appeal queue could not be loaded.');}
+    finally{setLoadingAppeals(false);}
+  }
   return <>
     <PageHeading eyebrow="STAFF OPERATIONS" title="Account access, without impersonation." description="Privileged actions require a current managed session, verified MFA, a fresh sign-in, an active time-bounded role and an explicit reason."/>
     {error&&<section className="panel"><h2>Confirm privileged access</h2><p role="alert">{error}</p><p>Use an MFA-enabled identity provider and confirm that sign-in again. Fresh authentication alone is not treated as MFA.</p><Link className="button secondary small" to="/account">Open sign-in security</Link></section>}
@@ -189,7 +231,7 @@ export function StaffPage() {
         {support?.nextCursor&&<button className="button secondary small" disabled={loadingSupport} onClick={()=>void loadSupport(support.nextCursor!)}>Load older support requests</button>}
       </section>}
       {canModerate&&<section className="panel"><h2>Community moderation queue</h2>
-        <p>Reports and actions stay inside the authenticated Studio. Automated enforcement, appeals, external notifications and a staffed SLA are not connected.</p>
+        <p>Reports and actions stay inside the authenticated Studio. Automated enforcement, external notifications and a staffed SLA are not connected.</p>
         {!moderation&&<button className="button secondary small" disabled={loadingModeration} onClick={()=>void loadModeration()}>Load moderation queue</button>}
         {moderationError&&<><p role="alert">{moderationError}</p><button className="button secondary small" disabled={loadingModeration} onClick={()=>void loadModeration()}>Retry moderation queue</button></>}
         {moderation?.reports.map(report=><StaffModerationCard key={report.id} value={report} administrator={administrator}
@@ -197,6 +239,16 @@ export function StaffPage() {
         {moderation&&!moderation.reports.length&&<p>No community reports are saved.</p>}
         {moderation?.nextCursor&&<button className="button secondary small" disabled={loadingModeration}
           onClick={()=>void loadModeration(moderation.nextCursor!)}>Load older community reports</button>}
+      </section>}
+      {canModerate&&<section className="panel"><h2>Community appeal queue</h2>
+        <p>Appeals provide a revision-fenced second review. Decisions remain in-app; no external delivery or response SLA is claimed.</p>
+        {!appeals&&<button className="button secondary small" disabled={loadingAppeals} onClick={()=>void loadAppeals()}>Load appeal queue</button>}
+        {appealsError&&<><p role="alert">{appealsError}</p><button className="button secondary small" disabled={loadingAppeals} onClick={()=>void loadAppeals()}>Retry appeal queue</button></>}
+        {appeals?.appeals.map(appeal=><StaffAppealCard key={appeal.id} value={appeal} administrator={administrator}
+          onChange={updated=>setAppeals(current=>current&&({...current,appeals:current.appeals.map(item=>item.id===updated.id?updated:item)}))}/>)}
+        {appeals&&!appeals.appeals.length&&<p>No community appeals are saved.</p>}
+        {appeals?.nextCursor&&<button className="button secondary small" disabled={loadingAppeals}
+          onClick={()=>void loadAppeals(appeals.nextCursor!)}>Load older community appeals</button>}
       </section>}
       {administrator&&<section className="panel"><h2>Immutable staff audit</h2>
         {!audit&&<button className="button secondary small" disabled={loadingAudit} onClick={()=>void loadAudit()}>View recent staff audit</button>}

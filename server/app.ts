@@ -1032,7 +1032,21 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   });
   app.post('/api/community/reports',async(req,res)=>{
     const user=await requireUser(req);
+    if(identity)await identity.admitCommunity(req,user,res);
     res.status(201).json(await moderation.report(user,req.body,()=>identity?identity.assertWritable(user):assertLocalCommunitySession(req,user)));
+  });
+  app.get('/api/community/reports',async(req,res)=>{
+    const user=await requireUser(req);
+    res.json(await moderation.reportHistory(user,req.query,()=>identity?identity.assertWritable(user):assertLocalCommunitySession(req,user)));
+  });
+  app.post('/api/community/appeals',async(req,res)=>{
+    const user=await requireUser(req);
+    if(identity)await identity.admitCommunity(req,user,res);
+    res.status(201).json(await moderation.appeal(user,req.body,()=>identity?identity.assertWritable(user):assertLocalCommunitySession(req,user)));
+  });
+  app.get('/api/community/appeals',async(req,res)=>{
+    const user=await requireUser(req);
+    res.json(await moderation.appealHistory(user,req.query,()=>identity?identity.assertWritable(user):assertLocalCommunitySession(req,user)));
   });
   app.post('/api/comments', async (req, res) => {
     const user = (await requireUser(req)), body = record(req.body);
@@ -1167,6 +1181,12 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     });
     app.patch('/api/staff/community/reports/:id',async(req,res)=>{
       const user=await requireUser(req);await identity.admitStaff(user,res);res.json(await moderation.act(user,req.params.id,req.body));
+    });
+    app.get('/api/staff/community/appeals',async(req,res)=>{
+      const user=await requireUser(req);await identity.admitStaff(user,res);res.json(await moderation.appealQueue(user,req.query));
+    });
+    app.patch('/api/staff/community/appeals/:id',async(req,res)=>{
+      const user=await requireUser(req);await identity.admitStaff(user,res);res.json(await moderation.actOnAppeal(user,req.params.id,req.body));
     });
   }
   app.use('/api', (_req, res) => res.status(404).json({ error: 'API endpoint not found.' }));

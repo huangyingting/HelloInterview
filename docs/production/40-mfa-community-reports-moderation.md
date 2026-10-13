@@ -1,6 +1,7 @@
 # 40 - MFA-gated community reports and moderation
 
-**Status: implemented W11 engineering checkpoint, not appeals, automated
+**Status: implemented W11 engineering checkpoint, with appeals delivered by
+[runbook 41](41-community-appeals-status-admission.md); not automated
 enforcement, external notification, staffed moderation, approved retention,
 managed-writing or public-launch approval.**
 
@@ -158,8 +159,9 @@ does not enter public cold JavaScript graphs.
 - Database guard failures and authorization failures are explicit; there is no
   success-shaped fallback.
 
-No email, push, webhook, helpdesk, author notice, reporter notice or appeal is
-sent. Operators must not infer a response SLA from a saved report or queue row.
+No email, push, webhook or helpdesk notification is sent. Runbook 41 adds
+bounded in-app member status and owner appeals, but operators must not infer a
+response SLA from a saved report, appeal or queue row.
 
 ## Evidence
 
@@ -182,7 +184,7 @@ The repository verifies:
 W11 remains open for:
 
 - approved community rules, retention and takedown policy;
-- author/reporter notices and a durable appeal workflow;
+- external author/reporter delivery and published response targets;
 - block/mute, repeat-abuse and shared rate-limit operations;
 - reviewed automated triage that cannot make irreversible decisions;
 - moderation staffing, escalation ownership and published response targets;
