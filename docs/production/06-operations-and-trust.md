@@ -55,6 +55,17 @@ compatibility and managed denial, semantic query navigation and HTTP 400
 document recovery. Ordered writes, historic comment repair, moderation and
 customer-migration approval remain separate.
 
+**Implemented bounded browser-runner checkpoint (W12):** client-only
+synchronous JavaScript examples now have exact source/case/input/result/
+structure limits, a private worker reply port, independent parent validation,
+network denial and deterministic cleanup. Practice/project UI explicitly says
+the visible examples are not authoritative grading and the browser is not a
+reliable memory sandbox. The
+[runner runbook](47-bounded-browser-example-runner.md) records the residual
+renderer-memory boundary and disable-rather-than-overclaim fallback. D10
+frontend/security acceptance, broader browser/device evidence and launch
+approval remain open.
+
 **Implemented local owner-contribution checkpoint (W11):** private owned
 snapshots, current-session/revision-fenced title/body edits, exact discussion
 deletion and serialized post-comment admission are available. The

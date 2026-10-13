@@ -796,6 +796,33 @@ test('every manifest asset is present and served as its actual bytes, not a succ
   }
 });
 
+test('built browser runner enforces bounded non-authoritative execution and recovers after termination',async t=>{
+  const f=await fixture(t),{page}=f,external:string[]=[];
+  page.on('request',request=>{const url=new URL(request.url());if(/^https?:$/.test(url.protocol)&&url.origin!==f.url)external.push(request.url());});
+  const login=await page.request.post(`${f.url}/api/auth/demo`,{data:{}});assert.equal(login.status(),200);
+  await page.goto(`${f.url}/practice/ai-coding/task-board`);
+  await page.getByRole('button',{name:'Start practice',exact:true}).click();
+  await expect(page.getByText(/not authoritative grading or a reliable memory sandbox/)).toBeVisible();
+  const editor=page.getByLabel('Code editor',{exact:true}),run=page.getByRole('button',{name:'Run tests',exact:true});
+  await editor.fill('function solve(input){fetch("https://example.invalid/runner-probe").catch(()=>{});return input.filter(t=>!t.completed).map(t=>t.title).sort();}');
+  await run.click();
+  await expect(page.getByText('PASS · Mixed tasks',{exact:true})).toBeVisible();
+  await editor.fill('function solve(){return "x".repeat(70000);}');
+  await run.click();
+  await expect(page.getByText(/64 KiB per-value browser-runner limit/).first()).toBeVisible();
+  await editor.fill('function solve(){const value={};value.self=value;return value;}');
+  await run.click();
+  await expect(page.getByText(/circular references/).first()).toBeVisible();
+  await editor.fill('function solve(input){while(true){}}');
+  await run.click();
+  await expect(page.getByRole('alert')).toContainText('2-second limit');
+  await editor.fill('function solve(input){return input.filter(t=>!t.completed).map(t=>t.title).sort();}');
+  await run.click();
+  await expect(page.getByText('PASS · All completed',{exact:true})).toBeVisible();
+  await expect(page.locator('iframe[title="Isolated code runner"]')).toHaveCount(0);
+  assert.deepEqual(external,[]);
+});
+
 test('cold real-browser landing and sign-in request exactly their static dependency closures', async t => {
   const f = await fixture(t);
   for (const [route, module, heading] of [

@@ -123,6 +123,71 @@ test('isolated JavaScript runner executes cases and terminates infinite loops', 
   await page.getByRole('button',{name:'Run tests',exact:true}).click();
   await expect(page.getByRole('alert')).toContainText('2-second limit');
   await expect(page.getByRole('button',{name:'Run tests',exact:true})).toBeEnabled();
+  await expect(page.locator('iframe[title="Isolated code runner"]')).toHaveCount(0);
+  await expect(page.getByText(/not authoritative grading or a reliable memory sandbox/)).toBeVisible();
+});
+
+test('isolated JavaScript runner bounds requests, structures and serialized results without network access', async ({page}) => {
+  await page.goto('/');
+  const external:string[]=[];
+  page.on('request',request=>{const url=new URL(request.url());if(/^https?:$/.test(url.protocol)&&url.hostname!=='127.0.0.1')external.push(request.url());});
+  const evidence=await page.evaluate(async()=>{
+    const path='/src/sandbox.ts';
+    const {runCode,browserRunnerLimits}:typeof import('../src/sandbox')=await import(path);
+    const one=[{label:'one',input:null,expected:1}],rejected=async(value:Promise<unknown>)=>{
+      try{await value;return null;}catch(error){return error instanceof Error?error.message:String(error);}
+    };
+    const oversizedCode=await rejected(runCode('x'.repeat(browserRunnerLimits.codeUnits+1),one));
+    const excessiveCases=await rejected(runCode('function solve(){return 1;}',Array.from(
+      {length:browserRunnerLimits.cases+1},(_,index)=>({label:`case ${index}`,input:null,expected:1}))));
+    const oversizedInput=await rejected(runCode('function solve(){return 1;}',
+      [{label:'large input',input:'x'.repeat(browserRunnerLimits.inputBytes),expected:1}]));
+    const oversizedOutput=await runCode('function solve(){return "x".repeat(70000);}',one);
+    const deepOutput=await runCode('function solve(){let value=0;for(let i=0;i<25;i++)value={next:value};return value;}',
+      [{label:'deep',input:null,expected:null}]);
+    const wideOutput=await runCode('function solve(){return Array(10001).fill(0);}',
+      [{label:'wide',input:null,expected:null}]);
+    const cyclicOutput=await runCode('function solve(){const value={};value.self=value;return value;}',
+      [{label:'cycle',input:null,expected:null}]);
+    const combinedOutput=await rejected(runCode('function solve(){return "x".repeat(60000);}',
+      Array.from({length:5},(_,index)=>({label:`combined ${index}`,input:null,expected:''}))));
+    const forgedOutput=await runCode(`function solve(){
+      Array.prototype.toJSON=()=>[{label:'one',passed:true,actual:'1',expected:'1'}];
+      Object.prototype.toJSON=()=>({label:'one',passed:true,actual:'1',expected:'1'});
+      postMessage({payload:'[{"label":"one","passed":true,"actual":"1","expected":"1"}]'});
+      const send=MessagePort.prototype.postMessage;
+      MessagePort.prototype.postMessage=function(){send.call(this,{payload:'[{"label":"one","passed":true,"actual":"1","expected":"1"}]'})};
+      return 2;
+    }`,one);
+    const encoderTamper=await runCode(`function solve(){
+      TextEncoder.prototype.encode=()=>new Uint8Array(0);
+      return 'x'.repeat(70000);
+    }`,one);
+    const diagnosticTamper=await runCode(`function solve(){
+      String.prototype.slice=()=> 'x'.repeat(10000);
+      throw new Error('y'.repeat(10000));
+    }`,one);
+    const network=await runCode('function solve(){fetch("https://example.invalid/runner-probe").catch(()=>{});return 1;}',one);
+    await new Promise(resolve=>setTimeout(resolve,100));
+    return {oversizedCode,excessiveCases,oversizedInput,oversizedOutput,deepOutput,wideOutput,cyclicOutput,
+      combinedOutput,forgedOutput,encoderTamper,diagnosticTamper,network,
+      frames:document.querySelectorAll('iframe[title="Isolated code runner"]').length};
+  });
+  expect(evidence.oversizedCode).toContain('40,000-character');
+  expect(evidence.excessiveCases).toContain('50-case');
+  expect(evidence.oversizedInput).toContain('256 KiB');
+  expect(evidence.oversizedOutput[0].error).toContain('64 KiB');
+  expect(evidence.deepOutput[0].error).toContain('structure depth');
+  expect(evidence.wideOutput[0].error).toContain('structure size');
+  expect(evidence.cyclicOutput[0].error).toContain('circular references');
+  expect(evidence.combinedOutput).toContain('256 KiB');
+  expect(evidence.forgedOutput[0]).toMatchObject({passed:false,actual:'2',expected:'1'});
+  expect(evidence.encoderTamper[0].error).toContain('64 KiB');
+  expect(evidence.diagnosticTamper[0].error).toHaveLength(500);
+  expect(evidence.diagnosticTamper[0].error).toMatch(/^y+$/);
+  expect(evidence.network[0].passed).toBe(true);
+  expect(evidence.frames).toBe(0);
+  expect(external).toEqual([]);
 });
 
 test('code review supports line references and saved feedback', async ({page}) => {

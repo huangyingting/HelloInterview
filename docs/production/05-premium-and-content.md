@@ -356,6 +356,12 @@ Retain network-disabled opaque-origin execution and the two-second execution
 deadline. Validate message source/token, bound input/output serialization and
 terminate on errors/timeouts. Evaluate memory-pressure behavior and cleanup in
 supported browsers; a CPU timeout alone is not a reliable memory sandbox.
+The implemented client-only boundary is specified in
+[runbook 47](47-bounded-browser-example-runner.md): source/case/input admission,
+bounded JSON-only result traversal, a private worker reply port, independent
+parent result validation and deterministic URL/port/worker/frame cleanup. Its
+limits reduce result amplification but do not create a portable worker heap
+quota.
 
 Keep runner-specific CSP allowances isolated from the application origin's
 policy. Do not loosen app-wide CSP to `unsafe-eval` just because the isolated

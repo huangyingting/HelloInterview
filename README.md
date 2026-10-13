@@ -518,9 +518,15 @@ with a real key. Reference-site cookies are never used as provider credentials.
   Do not publish the data directory.
 
 The JavaScript runner uses a network-disabled worker in an opaque-origin
-sandboxed iframe, with a two-second execution deadline. Submitted code is never
-executed on the backend. Only synchronous JavaScript is supported; this is not
-a production sandbox security audit.
+sandboxed iframe, with a two-second execution deadline and explicit source,
+case, serialized-input, result-size, depth and node limits. A private message
+port and parent-side schema validation prevent submitted code from publishing
+unchecked success-shaped results, and all frames/workers are removed after
+success or failure. Submitted code is never executed on the backend. Only
+synchronous JavaScript and client-visible examples are supported; results are
+not authoritative grading, the browser has no reliable per-worker memory
+quota, and this is not an independent sandbox security approval. See
+[the runner boundary](docs/production/47-bounded-browser-example-runner.md).
 
 ## Validation and screenshots
 
