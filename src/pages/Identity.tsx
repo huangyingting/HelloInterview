@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Download, ShieldCheck } from 'lucide-react';
-import type { IdentitySecurity, PrivacyExportHistory } from '../../shared/types';
+import { Download, ShieldCheck, Trash2 } from 'lucide-react';
+import type { IdentitySecurity, PrivacyDeletionView, PrivacyExportHistory } from '../../shared/types';
 import { proCapabilities } from '../../shared/access';
 import { AuthPrompt } from '../components/access';
 import { Badge, PageHeading } from '../components/primitives';
@@ -64,6 +64,7 @@ export function ManagedAccountPage() {
   const status = data.user?.identity?.status;
   const [name, setName] = useState(data.user?.name ?? ''), [security, setSecurity] = useState<IdentitySecurity | null>(null), [error, setError] = useState('');
   const [exports,setExports]=useState<PrivacyExportHistory|null>(null);
+  const [deletion,setDeletion]=useState<PrivacyDeletionView|null>(null),[deleteConfirmation,setDeleteConfirmation]=useState('');
   const loadSecurity = async () => {
     const result = await request<IdentitySecurity>('/api/identity/security');
     setSecurity(result); setError('');
@@ -81,20 +82,60 @@ export function ManagedAccountPage() {
     return () => controller.abort();
   }, [status]);
   useEffect(()=>{
+    if(!data.user||!['active','deletion-pending'].includes(status??''))return;
+    const controller=new AbortController();
+    request<PrivacyDeletionView>('/api/privacy/deletion',undefined,undefined,controller.signal)
+      .then(value=>{if(!controller.signal.aborted)setDeletion(value);})
+      .catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Deletion status could not be loaded.');});
+    return()=>controller.abort();
+  },[status,data.user]);
+  useEffect(()=>{
     if(!exports?.exports.some(item=>['requested','processing'].includes(item.status)))return;
     const timer=window.setInterval(()=>{void loadExports().catch(cause=>setError(cause instanceof Error?cause.message:'Privacy export status could not be refreshed.'));},3000);
     return()=>window.clearInterval(timer);
   },[exports]);
   if (!data.user) return <AuthPrompt/>;
+  const redirect = async (path: string, provider: Provider) => {
+    const result = await request<{ url: string }>(path, { provider });
+    window.location.assign(result.url);
+  };
+  if(status==='deletion-pending'){
+    const current=deletion?.deletion;
+    return <>
+      <PageHeading eyebrow="YOUR ACCOUNT" title="Account deletion is pending." description="Product access and other Studio sessions are disabled while this request is open."/>
+      <section className="panel">
+        <h2>{current?.status==='blocked'?'Deletion needs reviewed external work':'Seven-day cooling-off period'}</h2>
+        {!current&&<p role="status">Loading deletion status...</p>}
+        {current&&<>
+          <p>Requested {new Date(current.requestedAt).toLocaleString()}. The cooling-off deadline is {new Date(current.cancelBefore).toLocaleString()}.</p>
+          {current.status==='cooling-off'&&<p>No active data has been erased. You may cancel after confirming an existing sign-in method within ten minutes.</p>}
+          {current.status==='processing'&&<p>The durable coordinator is evaluating the request. It cannot claim completion while required external authorities are unavailable.</p>}
+          {current.status==='incomplete'&&<p role="alert">The deletion coordinator did not publish a reviewed blocked state. Operations must inspect and reconcile the durable request; no erasure completion is claimed.</p>}
+          {current.status==='blocked'&&<>
+            <p role="alert">Deletion is incomplete. Studio has not claimed processor erasure, paid billing cancellation, approved retention handling, or deletion-on-restore reconciliation.</p>
+            <ul>{current.blockers.map(blocker=><li key={blocker}>{blocker.replaceAll('-',' ')}</li>)}</ul>
+          </>}
+          {current.status==='cooling-off'&&!current.fresh&&<>
+            <p>Confirm with a sign-in method already connected to this account:</p>
+            {providers.map(provider=><button className="button secondary small" key={provider} disabled={pending}
+              onClick={()=>act(()=>redirect('/api/identity/reauth',provider))}>Confirm with {labels[provider]}</button>)}
+          </>}
+          {current.status==='cooling-off'&&current.fresh&&
+            <button className="button secondary small" disabled={pending} onClick={()=>act(async()=>{
+              await request('/api/privacy/deletion/cancel',{requestId:current.id});
+              await refresh();notify('Account deletion request cancelled. Product access is restored.');
+            })}>Cancel deletion request</button>}
+        </>}
+        {error&&<p role="alert">{error}</p>}
+        <p><Link className="text-link" to="/support">Contact support about this request</Link></p>
+      </section>
+    </>;
+  }
   if (status !== 'active' && status !== 'pending-verification') return <>
     <PageHeading eyebrow="YOUR ACCOUNT" title="Account access is restricted." description="Product access is unavailable for this account. Email verification does not remove a suspension or deletion request."/>
     <section className="panel"><p>Contact support for account review. You can sign out of this Studio session from navigation.</p><Link className="button secondary" to="/support">Contact support</Link></section>
   </>;
   const active = data.user.identity?.status === 'active';
-  const redirect = async (path: string, provider: Provider) => {
-    const result = await request<{ url: string }>(path, { provider });
-    window.location.assign(result.url);
-  };
   return <>
     <PageHeading eyebrow="YOUR ACCOUNT" title="Sign-in and security." description="Your identity settings are separate from your preparation archive and subscriptions."/>
     {!active && <section className="panel"><h2>A verified contact email is needed</h2><p>{data.user.email ? `${data.user.email} has not been verified for product access.` : 'Your provider did not supply a verified contact address. No substitute address was invented.'} Connect a verified email or Google sign-in method below, or verify your address with your existing provider and sign in again.</p></section>}
@@ -125,6 +166,17 @@ export function ManagedAccountPage() {
           {item.status==='ready'&&!security?.fresh&&<p className="fine-print">Confirm a sign-in method again before downloading this private artifact.</p>}
           {item.status==='failed'&&<p className="fine-print">The worker did not publish an artifact. Request a new export after operations review.</p>}
         </div>)}
+        <h3>Delete account</h3>
+        <p>Deletion immediately disables product access and revokes every other Studio session. A seven-day cooling-off period permits cancellation. After that deadline, completion remains blocked until billing, processor, retention, and backup-restore authorities are genuinely connected and approved.</p>
+        {deletion?.deletion?.status==='cancelled'&&<p className="fine-print">Your previous deletion request was cancelled {deletion.deletion.cancelledAt?new Date(deletion.deletion.cancelledAt).toLocaleString():''}.</p>}
+        <label>Type DELETE to request account deletion
+          <input value={deleteConfirmation} onChange={event=>setDeleteConfirmation(event.target.value)} autoComplete="off"/>
+        </label>
+        <button className="button secondary small" disabled={pending||!active||!security?.fresh||deleteConfirmation!=='DELETE'} onClick={()=>act(async()=>{
+          await request('/api/privacy/deletion',{requestId:crypto.randomUUID()});
+          setDeleteConfirmation('');await refresh();notify('Account deletion requested. Product access is disabled during the cooling-off period.');
+        })}><Trash2 size={15}/> Request account deletion</button>
+        {!security?.fresh&&<p className="fine-print">Confirm an existing sign-in method again before requesting deletion.</p>}
       </section>
     </div>
     <section className="panel"><h2>Connected sign-in methods</h2>

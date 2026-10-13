@@ -87,10 +87,10 @@ export class ManagedIdentity {
     this.contexts.set(user, session);
     return user;
   }
-  private async requireSession(req: express.Request, fresh = false) {
+  private async requireSession(req: express.Request, fresh = false, allowDeletion = false) {
     const session = await this.session(req);
     if (!session) throw new HttpError(401, 'Sign in again to manage account security.');
-    if (!['active', 'pending-verification'].includes(session.status)) throw new HttpError(403, 'This account is not available for product access. Contact support.');
+    if (![...['active', 'pending-verification'], ...(allowDeletion ? ['deletion-pending'] : [])].includes(session.status)) throw new HttpError(403, 'This account is not available for product access. Contact support.');
     if (fresh && await this.now() - session.authenticated_at > freshness) throw new HttpError(403, 'Confirm your identity again before changing security settings or exporting data.');
     return session;
   }
@@ -114,6 +114,42 @@ export class ManagedIdentity {
   }
   async assertSupport(user: User) {
     await this.assertOwnedSession(user, statusSchema.options);
+  }
+  async deletionAccess(user:User,fresh=false) {
+    await this.assertOwnedSession(user,['active','deletion-pending'],fresh);
+    const context=this.contexts.get(user);
+    if(!context)throw new HttpError(401,'Sign in again before managing account deletion.');
+    return {fresh:await this.now()-context.authenticated_at<=freshness};
+  }
+  async enterDeletion<T>(user:User,mutation:()=>Promise<T>) {
+    const context=this.contexts.get(user);
+    if(!context)throw new HttpError(401,'Sign in again before requesting account deletion.');
+    return this.db.transaction(async()=>{
+      await this.assertOwnedSession(user,['active'],true);
+      const result=await mutation();
+      const changed=await this.db.prepare(`UPDATE managed_accounts SET status='deletion-pending',
+        session_epoch=session_epoch+1,admin_revision=admin_revision+1 WHERE user_id=? AND status='active'`).run(user.id);
+      if(changed!==1)throw new HttpError(409,'The account changed before deletion could be requested.');
+      await this.db.prepare('DELETE FROM sessions WHERE user_id=? AND token<>?').run(user.id,context.token);
+      await this.db.prepare('UPDATE managed_sessions SET epoch=epoch+1 WHERE token=?').run(context.token);
+      await this.audit(user.id,'deletion-requested');
+      return result;
+    });
+  }
+  async cancelDeletion<T>(user:User,mutation:()=>Promise<T>) {
+    const context=this.contexts.get(user);
+    if(!context)throw new HttpError(401,'Sign in again before cancelling account deletion.');
+    return this.db.transaction(async()=>{
+      await this.assertOwnedSession(user,['deletion-pending'],true);
+      const result=await mutation();
+      const changed=await this.db.prepare(`UPDATE managed_accounts SET status='active',
+        session_epoch=session_epoch+1,admin_revision=admin_revision+1 WHERE user_id=? AND status='deletion-pending'`).run(user.id);
+      if(changed!==1)throw new HttpError(409,'The account changed before deletion could be cancelled.');
+      await this.db.prepare('DELETE FROM sessions WHERE user_id=? AND token<>?').run(user.id,context.token);
+      await this.db.prepare('UPDATE managed_sessions SET epoch=epoch+1 WHERE token=?').run(context.token);
+      await this.audit(user.id,'deletion-cancelled');
+      return result;
+    });
   }
   async admitSupport(req: express.Request, user: User | null, res: express.Response) {
     await this.limits.enforce('support-network', networkAddress(req.ip ?? ''), res);
@@ -167,7 +203,7 @@ export class ManagedIdentity {
   private async issue(userId: string, identityId: string, authenticatedAt: number, mfa: boolean) {
     const now = await this.now(), token = random(), csrf = random();
     const account = await this.db.prepare('SELECT session_epoch,status FROM managed_accounts WHERE user_id=?').get(userId);
-    if (!account || !['active', 'pending-verification'].includes(String(account.status))) throw new HttpError(403, 'This account is not available. Contact support.');
+    if (!account || !['active', 'pending-verification', 'deletion-pending'].includes(String(account.status))) throw new HttpError(403, 'This account is not available. Contact support.');
     await this.db.prepare('DELETE FROM sessions WHERE user_id=? AND expires<=?').run(userId, now);
     await this.db.prepare('DELETE FROM sessions WHERE token IN (SELECT s.token FROM sessions s JOIN managed_sessions m ON m.token=s.token WHERE s.user_id=? ORDER BY m.created_at DESC,m.id DESC OFFSET 49)').run(userId);
     await this.db.prepare('INSERT INTO sessions (token,user_id,expires) VALUES (?,?,?)').run(hash(token), userId, now + lifetime);
@@ -183,7 +219,7 @@ export class ManagedIdentity {
     const selected = provider(body?.provider), returnTo = destination(body?.returnTo);
     let sessionHash: string | null = null;
     if (purpose === 'reauth' || purpose === 'link') {
-      const session = await this.requireSession(req, purpose === 'link');
+      const session = await this.requireSession(req, purpose === 'link', purpose === 'reauth');
       userId = session.id;
       sessionHash = session.token;
     }
@@ -215,11 +251,13 @@ export class ManagedIdentity {
     await this.db.prepare('SELECT id FROM users WHERE id IN (?,?) ORDER BY id FOR UPDATE').all(userId, preceding?.id ?? null);
     if (this.lifecycle && facts) await this.lifecycle.assertProof(proof, facts, userId);
     if (initiating) {
-      const current = await this.requireSession(initiating.req, purpose === 'link');
+      const current = await this.requireSession(initiating.req, purpose === 'link', purpose === 'reauth');
       if (current.token !== initiating.token || current.id !== userId) throw new HttpError(403, 'Your account session changed while you were confirming it. Start again.');
     }
     const account = await this.db.prepare('SELECT status,contact_email,contact_verified,contact_identity_id FROM managed_accounts WHERE user_id=? FOR UPDATE').get(userId);
-    if (account && !['active', 'pending-verification'].includes(String(account.status))) throw new HttpError(403, 'This account is not available. Contact support.');
+    const deletionRecovery=account?.status==='deletion-pending'&&['login','reauth'].includes(purpose);
+    if (account && !['active', 'pending-verification'].includes(String(account.status)) && !deletionRecovery)
+      throw new HttpError(403, 'This account is not available. Contact support.');
     if (purpose === 'legacy-link') {
       if (!this.settings.legacyLinkUntil || await this.now() >= this.settings.legacyLinkUntil || account) throw new HttpError(403, 'The legacy migration window is closed or this account has already migrated.');
       const legacy = await this.db.prepare('SELECT password,demo FROM users WHERE id=?').get(userId);
@@ -237,7 +275,7 @@ export class ManagedIdentity {
     else await this.db.prepare('UPDATE managed_identities SET email=?,verified=?,available=1 WHERE id=?').run(proof.email, Number(proof.verified), identityId);
     const status = proof.verified ? 'active' : 'pending-verification';
     if (!account) await this.db.prepare('INSERT INTO managed_accounts (user_id,status,contact_email,contact_verified,contact_identity_id) VALUES (?,?,?,?,?)').run(userId, status, proof.email, Number(proof.verified), identityId);
-    else if (account.contact_identity_id === identityId || account.contact_verified !== 1 && proof.verified) {
+    else if (!deletionRecovery&&(account.contact_identity_id === identityId || account.contact_verified !== 1 && proof.verified)) {
       const changed = account.contact_email !== proof.email || account.contact_verified !== Number(proof.verified);
       await this.db.prepare('UPDATE managed_accounts SET status=?,contact_email=?,contact_verified=?,contact_identity_id=?,session_epoch=session_epoch+? WHERE user_id=?').run(status, proof.email, Number(proof.verified), identityId, Number(changed), userId);
       if (changed) await this.db.prepare('DELETE FROM sessions WHERE user_id=?').run(userId);
@@ -252,7 +290,7 @@ export class ManagedIdentity {
       next();
     };
     const accountLimit: express.RequestHandler = async (req, res, next) => {
-      const session = await this.requireSession(req);
+      const session = await this.requireSession(req, false, req.path === '/api/identity/reauth');
       await this.limits.enforce('account-security', session.id, res);
       next();
     };
@@ -270,7 +308,7 @@ export class ManagedIdentity {
       if (!row) throw new HttpError(400, 'This sign-in request expired or was already used. Start again.');
       const transaction = transactionSchema.parse(row);
       if (transaction.session_hash) {
-        const session = await this.requireSession(req, transaction.purpose === 'link');
+        const session = await this.requireSession(req, transaction.purpose === 'link', transaction.purpose === 'reauth');
         if (session.token !== transaction.session_hash || session.id !== transaction.user_id) throw new HttpError(403, 'Your account session changed. Start this security action again.');
       }
       const callback = new URL('/auth/callback', this.origin);

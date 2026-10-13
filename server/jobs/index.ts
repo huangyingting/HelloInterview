@@ -49,7 +49,9 @@ export class DurableJobs {
     const row = await this.db.prepare('SELECT u.id,a.status,a.contact_verified FROM users u LEFT JOIN managed_accounts a ON a.user_id=u.id WHERE u.id=?').get(ownerId);
     if (!row) return false;
     if (row.status === null) return true;
-    if (row.status !== 'active' || row.contact_verified !== 1) return false;
+    if (row.contact_verified !== 1) return false;
+    if (kind === 'privacy.delete') return row.status === 'deletion-pending';
+    if (row.status !== 'active') return false;
     return kind !== 'ai.evaluate' || new Entitlements(this.db).allows(ownerId, 'ai.feedback.consume');
   }
   private async assertAuthority(operation: Operation) {

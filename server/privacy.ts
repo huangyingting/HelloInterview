@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import type { PrivacyExportHistory, PrivacyExportStatus } from '../shared/types';
+import type { PrivacyDeletionStatus, PrivacyDeletionView, PrivacyExportHistory, PrivacyExportStatus } from '../shared/types';
 import { ContentRepository } from './content/repository';
 import type { Database, DatabaseRow } from './db/connection';
 import { StateRepository } from './db/state-repository';
@@ -10,6 +10,18 @@ import { DurableJobs, TerminalJobFailure, type JobClaim } from './jobs';
 
 const requestSchema=z.strictObject({requestId:z.uuid().transform(value=>value.toLowerCase())});
 const payloadSchema=z.strictObject({exportId:z.uuid()});
+const deletionPayloadSchema=z.strictObject({deletionId:z.uuid()});
+const deletionBlockers=[
+  'billing-cancellation-unapproved',
+  'processor-erasure-unavailable',
+  'retention-policy-unapproved',
+  'backup-restore-reconciliation-unavailable',
+] as const;
+const deletionRowSchema=z.object({
+  id:z.uuid(),user_id:z.string(),operation_id:z.uuid().nullable(),state:z.enum(['cooling-off','cancelled','blocked']),
+  requested_at:z.date(),cancel_before:z.date(),cancelled_at:z.date().nullable(),blocked_at:z.date().nullable(),
+  blockers:z.array(z.string()),
+});
 const rowSchema=z.object({
   id:z.uuid(),user_id:z.string(),operation_id:z.uuid(),state:z.enum(['requested','ready','expired']),
   requested_at:z.date(),ready_at:z.date().nullable(),expires_at:z.date().nullable(),
@@ -87,6 +99,78 @@ export class PrivacyExports {
       createHash('sha256').update(row.artifact).digest('hex')!==row.artifact_hash)throw new Error('The saved privacy export failed its integrity check.');
     return {artifact:row.artifact,status};
   }
+  private async deletionStatus(owner:string,row:z.infer<typeof deletionRowSchema>,fresh:boolean):Promise<PrivacyDeletionStatus> {
+    let status:PrivacyDeletionStatus['status']=row.state;
+    if(row.state==='cooling-off'&&row.operation_id){
+      const operation=await this.jobs.ownedStatus(owner,row.operation_id);
+      status=['created','retry','active'].includes(operation.status)?'processing':'incomplete';
+    }
+    return {
+      id:row.id,status,requestedAt:row.requested_at.toISOString(),cancelBefore:row.cancel_before.toISOString(),
+      cancelledAt:row.cancelled_at?.toISOString()??null,blockedAt:row.blocked_at?.toISOString()??null,
+      blockers:row.blockers,fresh,
+    };
+  }
+  async deletion(owner:string,fresh:boolean):Promise<PrivacyDeletionView> {
+    const row=await this.db.prepare(`SELECT * FROM privacy_deletions WHERE user_id=?
+      ORDER BY requested_at DESC,id DESC LIMIT 1`).get(owner);
+    return {deletion:row?await this.deletionStatus(owner,deletionRowSchema.parse(row),fresh):null};
+  }
+  async requestDeletion(owner:string,input:unknown,transition:<T>(mutation:()=>Promise<T>)=>Promise<T>) {
+    const {requestId}=requestSchema.parse(input);
+    return transition(async()=>{
+      const inserted=await this.db.prepare(`INSERT INTO privacy_deletions(id,user_id,requested_at,cancel_before)
+        SELECT ?,?,clock.at,clock.at+interval '7 days' FROM (SELECT clock_timestamp() AS at) clock
+        ON CONFLICT DO NOTHING RETURNING id`).get(requestId,owner);
+      const row=await this.db.prepare('SELECT * FROM privacy_deletions WHERE user_id=? AND id=?').get(owner,requestId);
+      if(!row)throw new HttpError(409,'Another account deletion request is already open.');
+      const parsed=deletionRowSchema.parse(row);
+      if(!inserted&&parsed.state!=='cooling-off')throw new HttpError(409,'This deletion request ID is already terminal.');
+      return this.deletionStatus(owner,parsed,true);
+    });
+  }
+  async cancelDeletion(owner:string,input:unknown,transition:<T>(mutation:()=>Promise<T>)=>Promise<T>) {
+    const parsed=z.strictObject({requestId:z.uuid()}).safeParse(input);
+    if(!parsed.success)throw new HttpError(400,'Provide the active deletion request ID.');
+    return transition(async()=>{
+      const changed=await this.db.prepare(`UPDATE privacy_deletions SET state='cancelled',cancelled_at=clock_timestamp()
+        WHERE user_id=? AND id=? AND state='cooling-off' AND operation_id IS NULL AND clock_timestamp()<=cancel_before
+        RETURNING *`).get(owner,parsed.data.requestId);
+      if(!changed)throw new HttpError(409,'The deletion cooling-off period ended or this request is no longer cancellable.');
+      return this.deletionStatus(owner,deletionRowSchema.parse(changed),true);
+    });
+  }
+  async enqueueDueDeletion() {
+    return this.db.transaction(async()=>{
+      const due=await this.db.prepare(`SELECT id,user_id FROM privacy_deletions WHERE state='cooling-off'
+        AND operation_id IS NULL AND cancel_before<=clock_timestamp() ORDER BY cancel_before,id
+        FOR UPDATE SKIP LOCKED LIMIT 1`).get();
+      if(!due)return false;
+      const deletionId=z.uuid().parse(due.id),owner=z.string().parse(due.user_id);
+      const operation=await this.jobs.enqueue({principal:{type:'user',id:owner},kind:'privacy.delete',key:deletionId,
+        resource:`privacy-deletion:${deletionId}`,payload:{deletionId},retryMode:'idempotent'});
+      const changed=await this.db.prepare(`UPDATE privacy_deletions SET operation_id=? WHERE user_id=? AND id=?
+        AND state='cooling-off' AND operation_id IS NULL`).run(operation.id,owner,deletionId);
+      if(changed!==1)throw new Error('A due deletion request changed before its durable operation was bound.');
+      return true;
+    });
+  }
+  async runDeletionClaim(claim:JobClaim,signal?:AbortSignal) {
+    const operation=await this.jobs.operation(claim.data.operationId);
+    if(operation.kind!=='privacy.delete'||operation.principal.type!=='user'||operation.ownerId!==operation.principal.id)
+      throw new TerminalJobFailure('not-eligible');
+    const {deletionId}=deletionPayloadSchema.parse(operation.payload);
+    await this.jobs.finish(claim,async db=>{
+      const row=deletionRowSchema.parse(await db.prepare(`SELECT * FROM privacy_deletions
+        WHERE user_id=? AND id=? FOR UPDATE`).get(operation.principal.id,deletionId));
+      if(row.operation_id!==operation.id||row.state!=='cooling-off')throw new TerminalJobFailure('invalid-result');
+      const changed=await db.prepare(`UPDATE privacy_deletions SET state='blocked',blocked_at=clock_timestamp(),blockers=?::jsonb
+        WHERE user_id=? AND id=? AND state='cooling-off' AND operation_id=?`).run(
+          JSON.stringify(deletionBlockers),operation.principal.id,deletionId,operation.id);
+      if(changed!==1)throw new TerminalJobFailure('invalid-result');
+      return {deletionId,status:'blocked',blockers:[...deletionBlockers]};
+    },signal);
+  }
   async runClaim(claim:JobClaim,signal?:AbortSignal) {
     const operation=await this.jobs.operation(claim.data.operationId);
     if(operation.kind!=='privacy.process'||operation.principal.type!=='user'||operation.ownerId!==operation.principal.id)
@@ -131,6 +215,8 @@ export class PrivacyExports {
           WHERE user_id=? ORDER BY created_at,id`,owner),
         staffRoleEvents:await all(`SELECT id,role,state,starts_at,ends_at,created_at FROM staff_role_events
           WHERE user_id=? ORDER BY created_at,id`,owner),
+        deletionRequests:parsedRows(await all(`SELECT id,state,requested_at,cancel_before,cancelled_at,blocked_at,blockers
+          FROM privacy_deletions WHERE user_id=? ORDER BY requested_at,id`,owner),'blockers'),
       },
       preparation:{
         state,

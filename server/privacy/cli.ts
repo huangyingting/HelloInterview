@@ -9,7 +9,7 @@ import { PrivacyExports } from '../privacy';
 export async function runPrivacyCommand(command:string) {
   if(!['process','worker'].includes(command))throw new Error('Choose privacy process or worker.');
   const config=loadConfig();
-  if(!config.databaseUrl||!config.identity)throw new Error('Privacy export processing requires managed identity and controlled PostgreSQL.');
+  if(!config.databaseUrl||!config.identity)throw new Error('Privacy operation processing requires managed identity and controlled PostgreSQL.');
   const db=postgresConnection(config.databaseUrl),shutdown=new AbortController();
   let privacy:PrivacyExports|undefined;
   const stop=()=>shutdown.abort();
@@ -19,21 +19,28 @@ export async function runPrivacyCommand(command:string) {
     privacy=await PrivacyExports.open(db,true);
     let completed=0,nextSweep=0;
     while(!shutdown.signal.aborted){
-      if(Date.now()>=nextSweep){await privacy.expire();nextSweep=Date.now()+60000;}
-      const claim=await privacy.jobs.claim('privacy.process');
+      if(Date.now()>=nextSweep){await privacy.expire();while(await privacy.enqueueDueDeletion()){}nextSweep=Date.now()+60000;}
+      const exportClaim=await privacy.jobs.claim('privacy.process');
+      const deletionClaim=exportClaim?undefined:await privacy.jobs.claim('privacy.delete');
+      const claim=exportClaim??deletionClaim;
       if(claim){
-        try{await privacy.runClaim(claim,shutdown.signal);completed++;}
+        try{
+          if(claim.name==='privacy-delete')await privacy.runDeletionClaim(claim,shutdown.signal);
+          else await privacy.runClaim(claim,shutdown.signal);
+          completed++;
+        }
         catch(error){
           await privacy.jobs.fail(claim,error instanceof TerminalJobFailure?'reconciliation-required':'handler-failed');
           if(shutdown.signal.aborted)return;
           throw error;
         }
       }else if(command==='process'){
-        await privacy.expire();
+        await privacy.expire();while(await privacy.enqueueDueDeletion()){}
         const row=await db.prepare(`SELECT count(*)::integer AS pending FROM durable_operations
-          WHERE kind='privacy.process' AND completed_at IS NULL`).get();
+          WHERE kind IN ('privacy.process','privacy.delete') AND completed_at IS NULL`).get();
         if(row?.pending!==0)throw new Error('The privacy export pass has deferred, active or failed operations. Inspect queue diagnostics; processing is incomplete.');
-        console.log(JSON.stringify({event:'privacy.exports.processed',completed,delivery:'database-artifact-only'}));
+        console.log(JSON.stringify({event:'privacy.operations.processed',completed,delivery:'database-artifact-only',
+          deletionCompletion:'blocked-without-external-approvals'}));
         return;
       }else{
         try{await delay(1000,undefined,{signal:shutdown.signal});}
@@ -47,7 +54,7 @@ export async function runPrivacyCommand(command:string) {
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   runPrivacyCommand(process.argv[2]??'').catch(()=>{
-    console.error('Privacy export processing failed. Inspect private queue diagnostics; no export readiness or delivery was claimed.');
+    console.error('Privacy operation processing failed. Inspect private queue diagnostics; no export readiness, deletion completion or delivery was claimed.');
     process.exitCode=1;
   });
 }

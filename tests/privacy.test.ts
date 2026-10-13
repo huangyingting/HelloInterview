@@ -137,3 +137,64 @@ test('restriction before a privacy worker claim prevents artifact publication',a
   assert.equal((await f.db.prepare('SELECT state,artifact FROM privacy_exports WHERE id=?').get(requestId))?.state,'requested');
   assert.equal((await f.db.prepare('SELECT artifact FROM privacy_exports WHERE id=?').get(requestId))?.artifact,null);
 });
+
+test('owner deletion enters a restricted cooling-off session, revokes peers and can be freshly cancelled',async t=>{
+  const f=await fixture(t),first=await login(f),peer=f.browser();
+  await login(f,peer);
+  assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM sessions WHERE user_id=?').get(first.owner))?.count,2);
+  const exportId=randomUUID();
+  assert.equal((await first.browser.request('/api/privacy/exports',{requestId:exportId})).status,202);
+  const requestId=randomUUID();
+  const requested=await first.browser.request('/api/privacy/deletion',{requestId});
+  assert.equal(requested.status,202,await requested.text());
+  const after=await first.browser.bootstrap();
+  assert.equal(after.user?.identity?.status,'deletion-pending');
+  assert.equal((await peer.bootstrap()).user,null);
+  const exportClaim=await f.privacy.jobs.claim('privacy.process');assert.ok(exportClaim);
+  await assert.rejects(f.privacy.runClaim(exportClaim),error=>error instanceof TerminalJobFailure&&error.code==='not-eligible');
+  assert.equal((await f.db.prepare('SELECT artifact FROM privacy_exports WHERE user_id=? AND id=?').get(first.owner,exportId))?.artifact,null);
+  const recovery=await login(f,f.browser());
+  assert.equal((await recovery.browser.bootstrap()).user?.identity?.status,'deletion-pending');
+  assert.equal((await first.browser.request('/api/privacy/deletion')).status,200);
+  assert.equal((await first.browser.request('/api/privacy/exports')).status,403);
+  const row=await f.db.prepare('SELECT state,operation_id FROM privacy_deletions WHERE user_id=? AND id=?').get(first.owner,requestId);
+  assert.deepEqual(row,{state:'cooling-off',operation_id:null});
+  await f.db.prepare('UPDATE managed_sessions SET authenticated_at=? WHERE token IN (SELECT token FROM sessions WHERE user_id=?)')
+    .run(Date.now()-600001,first.owner);
+  assert.equal((await first.browser.request('/api/privacy/deletion/cancel',{requestId})).status,403);
+  const started=await first.browser.request('/api/identity/reauth',{provider:'google'});
+  assert.equal(started.status,200);
+  const completed=await f.complete(first.browser,new URL((await started.json() as {url:string}).url),{sub:'google-oauth2|privacy-owner',email:'privacy@example.invalid'});
+  assert.equal(completed.headers.get('location'),'/account');
+  assert.equal((await first.browser.bootstrap()).user?.identity?.status,'deletion-pending');
+  const cancelled=await first.browser.request('/api/privacy/deletion/cancel',{requestId});
+  assert.equal(cancelled.status,200);
+  assert.equal((await first.browser.bootstrap()).user?.identity?.status,'active');
+  assert.equal((await f.db.prepare('SELECT state FROM privacy_deletions WHERE user_id=? AND id=?').get(first.owner,requestId))?.state,'cancelled');
+  assert.equal((await f.db.prepare(`SELECT count(*)::integer AS count FROM identity_security_events
+    WHERE user_id=? AND action IN ('deletion-requested','deletion-cancelled')`).get(first.owner))?.count,2);
+});
+
+test('due deletion work publishes only explicit external blockers and cannot be reopened',async t=>{
+  const f=await fixture(t),{owner}=await login(f),deletionId=randomUUID();
+  await f.db.transaction(async()=>{
+    await f.db.prepare(`UPDATE managed_accounts SET status='deletion-pending',session_epoch=session_epoch+1 WHERE user_id=?`).run(owner);
+    await f.db.prepare('DELETE FROM sessions WHERE user_id=?').run(owner);
+    await f.db.prepare(`INSERT INTO privacy_deletions(id,user_id,requested_at,cancel_before)
+      SELECT ?,?,clock.at-interval '8 days',clock.at-interval '1 day' FROM (SELECT clock_timestamp() AS at) clock`).run(deletionId,owner);
+  });
+  assert.equal(await f.privacy.enqueueDueDeletion(),true);
+  assert.equal(await f.privacy.enqueueDueDeletion(),false);
+  const claim=await f.privacy.jobs.claim('privacy.delete');assert.ok(claim);
+  await f.privacy.runDeletionClaim(claim);
+  const row=await f.db.prepare('SELECT state,blockers,blocked_at IS NOT NULL AS blocked FROM privacy_deletions WHERE user_id=? AND id=?').get(owner,deletionId);
+  assert.equal(row?.state,'blocked');assert.equal(row?.blocked,true);
+  assert.deepEqual(row?.blockers,[
+    'billing-cancellation-unapproved','processor-erasure-unavailable',
+    'retention-policy-unapproved','backup-restore-reconciliation-unavailable',
+  ]);
+  assert.equal((await f.db.prepare('SELECT status FROM managed_accounts WHERE user_id=?').get(owner))?.status,'deletion-pending');
+  assert.ok(await f.db.prepare('SELECT id FROM users WHERE id=?').get(owner));
+  await assert.rejects(f.db.prepare(`UPDATE privacy_deletions SET state='cancelled',cancelled_at=clock_timestamp(),
+    blocked_at=NULL,blockers='[]'::jsonb WHERE user_id=? AND id=?`).run(owner,deletionId),/timely cancellation/);
+});

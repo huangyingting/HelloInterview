@@ -212,7 +212,9 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
       if (!['GET', 'HEAD'].includes(req.method)) await identity.checkMutation(req);
       const user = await identity.user(req);
       const publicRead = ['GET', 'HEAD'].includes(req.method) && !/^\/api\/(?:(?:posts|comments)\/owned\/?$|comments\/submissions(?:\/|$))/.test(req.originalUrl.split('?')[0]) && ['/api/content/', ...communityPaths].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix));
-      const accountRoute = ['/api/bootstrap', '/api/entitlements', '/api/logout', '/api/support', '/api/support/requests', '/api/profile', '/api/ready'].includes(req.originalUrl.split('?')[0]) || req.originalUrl.startsWith('/api/identity/');
+      const accountPath=req.originalUrl.split('?')[0];
+      const accountRoute = ['/api/bootstrap', '/api/entitlements', '/api/logout', '/api/support', '/api/support/requests', '/api/profile', '/api/ready'].includes(accountPath) ||
+        accountPath.startsWith('/api/identity/') || accountPath.startsWith('/api/privacy/deletion');
       if (user?.identity?.status !== undefined && user.identity.status !== 'active' && !publicRead && !accountRoute) throw new HttpError(403, 'This account needs verified contact information or account review. Open Account or contact support.');
       if (['/api/auth/', '/api/plan', '/api/gift', '/api/profile/password'].some(prefix => req.originalUrl.split('?')[0].startsWith(prefix))) throw new HttpError(404, 'Local authentication, demo commerce and local passwords are disabled for managed identity.');
       if (!['GET', 'HEAD'].includes(req.method) && communityPaths.some(prefix => req.originalUrl.split('?')[0].startsWith(prefix))) throw new HttpError(503, 'Community contributions are read-only until production moderation is enabled.');
@@ -408,6 +410,21 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
       });
       res.setHeader('Content-Disposition',`attachment; filename="interview-studio-owner-export-${result.status.id}.json"`);
       res.type('application/json').send(result.artifact);
+    });
+    app.get('/api/privacy/deletion',async(req,res)=>{
+      const user=await currentUser(req);
+      if(!user)throw new HttpError(401,'Sign in again before managing account deletion.');
+      const access=await identity.deletionAccess(user);
+      res.json(await privacy.deletion(user.id,access.fresh));
+    });
+    app.post('/api/privacy/deletion',async(req,res)=>{
+      const user=await requireUser(req);
+      res.status(202).json(await privacy.requestDeletion(user.id,req.body,mutation=>identity.enterDeletion(user,mutation)));
+    });
+    app.post('/api/privacy/deletion/cancel',async(req,res)=>{
+      const user=await currentUser(req);
+      if(!user)throw new HttpError(401,'Sign in again before cancelling account deletion.');
+      res.json(await privacy.cancelDeletion(user.id,req.body,mutation=>identity.cancelDeletion(user,mutation)));
     });
   }
   app.get('/api/export', async (req, res) => {

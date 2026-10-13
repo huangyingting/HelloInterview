@@ -46,7 +46,7 @@ test('the compiled release runs with runtime-only dependencies, loads .env, pers
     cwd: release, env: { NODE_ENV: 'test' },
   }), error => {
     assert.ok(error instanceof Error && 'code' in error && error.code === 1 && 'stderr' in error);
-    assert.match(String(error.stderr), /Privacy export processing failed/);
+    assert.match(String(error.stderr), /Privacy operation processing failed/);
     return true;
   });
   await writeFile(path.join(release, '.env'), 'HOST=127.0.0.1\nPORT=0\nDATA_DIR=private-data\nCOOKIE_SECURE=false\nOPENAI_API_KEY=\nOPENAI_MODEL=fixture-model\n');

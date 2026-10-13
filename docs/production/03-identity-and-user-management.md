@@ -249,6 +249,15 @@ delivery, approved retention and download audit are still unimplemented. The
 local SQLite `/api/export` remains a preparation archive rather than this
 managed privacy workflow.
 
+The [owner deletion foundation](37-owner-deletion-cooling-off-foundation.md)
+implements the first three admission controls below through migration 28:
+fresh UUID-keyed requests, immediate `deletion-pending` restriction, other-
+session revocation, restricted identity recovery and seven-day fresh
+cancellation. Due requests bind to `privacy.delete` and publish `blocked`,
+never `completed`, while billing cancellation, processor erasure, approved
+retention and restore reconciliation are unavailable. No active owner data is
+physically deleted by this checkpoint.
+
 Proposed deletion lifecycle, subject to market/legal review:
 
 1. Re-authenticate, show exactly what is deleted/retained and how billing is

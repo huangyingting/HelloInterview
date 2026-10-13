@@ -229,7 +229,13 @@ integrity metadata and explicit failure/expiry states. Artifacts are
 inaccessible after 24 hours and the operated worker erases expired bytes;
 external storage, email delivery, approved retention, processor erasure and
 account deletion are not claimed.
-Controlled PostgreSQL deployments must apply **migration 27 and maintained queue
+The [owner deletion foundation](docs/production/37-owner-deletion-cooling-off-foundation.md)
+adds fresh owner requests, immediate product restriction and peer-session
+revocation, restricted sign-in, seven-day in-page cancellation and durable due
+work that publishes explicit external blockers instead of false completion.
+It performs no physical erasure and does not claim billing, processor,
+retention or backup-restore completion.
+Controlled PostgreSQL deployments must apply **migration 28 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 

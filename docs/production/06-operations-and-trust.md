@@ -95,7 +95,7 @@ time-bounded append-only roles, exact masked lookup, revision-fenced account
 status changes, epoch session revocation and transactional immutable audit. No
 role is granted by default. Impersonation, other-staff changes, direct billing
 or private-content authority, operated helpdesk delivery and comprehensive
-privacy deletion remains unavailable.
+physical privacy erasure remain unavailable.
 
 **Implemented durable privacy-export checkpoint (W10):** migration 27 binds one
 fresh-authenticated owner request to one `privacy.process` operation and one
@@ -106,6 +106,15 @@ processing/ready/failed/expired states, integrity checks and the compiled
 `privacy:process` / `privacy:worker` commands. External object storage, email
 delivery, approved retention, processor erasure and account deletion remain
 unavailable.
+
+**Implemented owner deletion foundation (W10):** migration 28 records one open
+owner request, immediately moves the account to restricted
+`deletion-pending`, revokes peer sessions and permits a seven-day
+fresh-authenticated cancellation path. The
+[deletion runbook](37-owner-deletion-cooling-off-foundation.md) defines
+restricted sign-in, `privacy.delete` due work and immutable explicit blockers.
+The worker does not erase owner data or claim completion; billing, processor,
+retention and backup-restore authorities remain required.
 
 ## Operating model
 

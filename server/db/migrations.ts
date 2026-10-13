@@ -832,6 +832,53 @@ export const migrations = [{
     CREATE TRIGGER protect_privacy_export_update BEFORE UPDATE ON privacy_exports
       FOR EACH ROW EXECUTE FUNCTION protect_privacy_export();
   `,
+}, {
+  version:28,
+  name:'owner-privacy-deletion-foundation',
+  sql:`
+    CREATE TABLE privacy_deletions (
+      id TEXT NOT NULL CHECK (id ~ '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'),
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      operation_id TEXT UNIQUE REFERENCES durable_operations(id),
+      state TEXT NOT NULL DEFAULT 'cooling-off' CHECK (state IN ('cooling-off','cancelled','blocked')),
+      requested_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+      cancel_before TIMESTAMPTZ NOT NULL,
+      cancelled_at TIMESTAMPTZ,blocked_at TIMESTAMPTZ,
+      blockers JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(blockers)='array' AND jsonb_array_length(blockers)<=8),
+      PRIMARY KEY(user_id,id),
+      CHECK (cancel_before=requested_at+interval '7 days'),
+      CHECK ((state='cancelled')=(cancelled_at IS NOT NULL)),
+      CHECK ((state='blocked')=(blocked_at IS NOT NULL)),
+      CHECK (state='blocked' OR blockers='[]'::jsonb),
+      CHECK (operation_id IS NULL OR state IN ('cooling-off','blocked'))
+    );
+    CREATE UNIQUE INDEX privacy_deletions_open_owner ON privacy_deletions(user_id)
+      WHERE state IN ('cooling-off','blocked');
+    CREATE INDEX privacy_deletions_due ON privacy_deletions(cancel_before,id)
+      WHERE state='cooling-off' AND operation_id IS NULL;
+    CREATE FUNCTION protect_privacy_deletion() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+      BEGIN
+        IF NEW.id<>OLD.id OR NEW.user_id<>OLD.user_id OR NEW.requested_at<>OLD.requested_at OR
+          NEW.cancel_before<>OLD.cancel_before OR NOT (
+            OLD.state='cooling-off' AND OLD.operation_id IS NULL AND NEW.state='cancelled' AND
+              NEW.operation_id IS NULL AND NEW.cancelled_at>=OLD.requested_at AND NEW.cancelled_at<=OLD.cancel_before AND
+              NEW.blocked_at IS NULL AND NEW.blockers='[]'::jsonb OR
+            OLD.state='cooling-off' AND OLD.operation_id IS NULL AND NEW.state='cooling-off' AND
+              NEW.operation_id IS NOT NULL AND OLD.cancel_before<=clock_timestamp() AND
+              NEW.cancelled_at IS NULL AND NEW.blocked_at IS NULL AND NEW.blockers='[]'::jsonb OR
+            OLD.state='cooling-off' AND OLD.operation_id IS NOT NULL AND NEW.operation_id=OLD.operation_id AND
+              NEW.state='blocked' AND NEW.cancelled_at IS NULL AND NEW.blocked_at>=OLD.cancel_before AND
+              NEW.blockers='["billing-cancellation-unapproved","processor-erasure-unavailable",
+                "retention-policy-unapproved","backup-restore-reconciliation-unavailable"]'::jsonb
+          ) THEN
+          RAISE EXCEPTION 'Privacy deletion records allow only timely cancellation, due operation binding and blocked publication.';
+        END IF;
+        RETURN NEW;
+      END;
+    $$;
+    CREATE TRIGGER protect_privacy_deletion_update BEFORE UPDATE ON privacy_deletions
+      FOR EACH ROW EXECUTE FUNCTION protect_privacy_deletion();
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

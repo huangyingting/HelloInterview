@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 
-export const jobKinds = ['billing.reconcile', 'billing.customer', 'billing.checkout', 'billing.checkout.refresh', 'billing.subscription.cancel', 'billing.subscription.resume', 'billing.customer.snapshot', 'notification.deliver', 'ai.evaluate', 'privacy.process', 'identity.reconcile'] as const;
+export const jobKinds = ['billing.reconcile', 'billing.customer', 'billing.checkout', 'billing.checkout.refresh', 'billing.subscription.cancel', 'billing.subscription.resume', 'billing.customer.snapshot', 'notification.deliver', 'ai.evaluate', 'privacy.process', 'privacy.delete', 'identity.reconcile'] as const;
 export const queueNames = {
   'billing.reconcile': 'billing-reconcile',
   'billing.customer': 'billing-customer',
@@ -13,6 +13,7 @@ export const queueNames = {
   'notification.deliver': 'notification-deliver',
   'ai.evaluate': 'ai-evaluate',
   'privacy.process': 'privacy-process',
+  'privacy.delete': 'privacy-delete',
   'identity.reconcile': 'identity-reconcile',
 } as const;
 export const deadLetterQueue = 'dead-letter';

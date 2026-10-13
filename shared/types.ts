@@ -371,6 +371,17 @@ export interface PrivacyExportStatus {
   requestedAt:string;readyAt:string|null;expiresAt:string|null;bytes:number|null;sha256:string|null;
 }
 export interface PrivacyExportHistory {exports:PrivacyExportStatus[]}
+export interface PrivacyDeletionStatus {
+  id:string;
+  status:'cooling-off'|'processing'|'incomplete'|'blocked'|'cancelled';
+  requestedAt:string;
+  cancelBefore:string;
+  cancelledAt:string|null;
+  blockedAt:string|null;
+  blockers:string[];
+  fresh:boolean;
+}
+export interface PrivacyDeletionView {deletion:PrivacyDeletionStatus|null}
 export interface Bootstrap {
   csrf?: string;
   user: User | null;

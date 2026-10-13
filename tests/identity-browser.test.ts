@@ -122,6 +122,27 @@ test('managed browser signs in, saves profile with CSRF, links/unlinks a fresh m
   await expect(page.getByRole('button', { name: 'Save profile' })).toHaveCount(0);
 });
 
+test('managed browser requests and cancels deletion in-page without claiming erasure',async t=>{
+  const f=await fixture(t),{page}=f;
+  await page.goto(`${f.origin}/auth`);
+  await page.getByRole('link',{name:'Continue with Google'}).click();
+  await expect(page.getByRole('heading',{name:'Sign-in and security.'})).toBeVisible();
+  const bootstrap:Bootstrap=await page.evaluate(async()=>(await fetch('/api/bootstrap')).json());
+  assert.ok(bootstrap.user);
+  await page.getByLabel('Type DELETE to request account deletion').fill('DELETE');
+  await page.getByRole('button',{name:'Request account deletion'}).click();
+  await expect(page.getByRole('heading',{name:'Account deletion is pending.'})).toBeVisible();
+  await expect(page.getByText('No active data has been erased.',{exact:false})).toBeVisible();
+  await expect(page.locator('[role="dialog"]')).toHaveCount(0);
+  assert.equal((await f.db.prepare('SELECT status FROM managed_accounts WHERE user_id=?').get(bootstrap.user.id))?.status,'deletion-pending');
+  assert.ok(await f.db.prepare('SELECT id FROM users WHERE id=?').get(bootstrap.user.id));
+  await page.getByRole('button',{name:'Cancel deletion request'}).click();
+  await expect(page.getByRole('heading',{name:'Sign-in and security.'})).toBeVisible();
+  await expect(page.getByText('Your previous deletion request was cancelled',{exact:false})).toBeVisible();
+  assert.equal((await f.db.prepare('SELECT status FROM managed_accounts WHERE user_id=?').get(bootstrap.user.id))?.status,'active');
+  assert.equal((await f.db.prepare('SELECT state FROM privacy_deletions WHERE user_id=?').get(bootstrap.user.id))?.state,'cancelled');
+});
+
 test('staff UI is deferred, capability-gated and applies an audited in-page suspension without dialogs',async t=>{
   const f=await fixture(t),{page}=f;
   f.setClaims({amr:['pwd','mfa']});
