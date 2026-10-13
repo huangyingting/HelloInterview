@@ -32,6 +32,7 @@ import { CommunityContributions } from './community-contributions';
 import { CommunitySubmissions } from './community-submissions';
 import { CommunityModeration } from './community-moderation';
 import {CommunityMutes} from './community-mutes';
+import {CommunityRestrictions} from './community-restrictions';
 import { StaffAdministration } from './staff';
 import type { PrivacyExports } from './privacy';
 function localSessionHash(req: express.Request) {
@@ -87,6 +88,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   const identity = config.identity && config.publicOrigin ? new ManagedIdentity(db, config.identity, config.publicOrigin, shutdown, identityTransport, lifecycle) : null;
   const moderation = new CommunityModeration(db, identity);
   const mutes = new CommunityMutes(db);
+  const restrictions = new CommunityRestrictions(db,identity);
   const entitlements = identity ? new Entitlements(db) : null;
   const support = identity ? new SupportRequests(db, identity) : null;
   const staff = identity ? new StaffAdministration(db, identity) : null;
@@ -157,6 +159,11 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   async function requireLocalContributor(req: express.Request) {
     if (identity) throw new HttpError(503, 'Owned contribution management is disabled until production moderation is enabled.');
     return requireUser(req);
+  }
+  async function assertCommunityWrite(req:express.Request,user:User,scope:'participation'|'reporting') {
+    if(identity)await identity.assertWritable(user);
+    else await assertLocalCommunitySession(req,user);
+    await restrictions.assertAllowed(user.id,scope);
   }
   async function assertAccess(user: User, capability: Capability) {
     if (entitlements) await entitlements.assert(user.id, capability);
@@ -957,6 +964,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     const kind = choice(body.kind, communityKinds, 'community section');
     const id = randomUUID();
     await db.transaction(async () => {
+      await assertCommunityWrite(req,user,'participation');
       await db.prepare('INSERT INTO posts VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(id, kind, text(body.title, 'Title', 5, 200), text(body.body, 'Details', 20, 10000), text(body.company ?? '', 'Company', 0, 80), choice(body.track, [...tracks.map(t => t.id), 'code-review'], 'interview type'), choice(body.level, levels, 'level'), choice(body.region, regions, 'region'), kind === 'questions' ? 'Anonymous' : user.name, user.id, new Date().toISOString(), 0);
       await mutate(user, state => { state.recognition += 3; });
     });
@@ -964,6 +972,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   });
   async function postMembership(user: User, id: string, action: 'vote' | 'follow', desired?: boolean) {
     await db.transaction(async () => {
+      await restrictions.assertAllowed(user.id,'participation');
       if (!(await db.prepare(`SELECT id FROM users WHERE id=?${db.dialect === 'postgres' ? ' FOR UPDATE' : ''}`).get(user.id))) throw new HttpError(401, 'Sign in to update this community contribution.');
       if (!(await db.prepare(`SELECT p.id FROM posts p WHERE p.id=? AND NOT EXISTS(
         SELECT 1 FROM community_moderation_targets moderation
@@ -982,7 +991,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   });
   app.put('/api/posts/owned', async (req, res) => {
     const user = await requireLocalContributor(req);
-    res.json(await contributions.update(req.body, user.id, () => assertLocalCommunitySession(req, user)));
+    res.json(await contributions.update(req.body, user.id, () => assertCommunityWrite(req,user,'participation')));
   });
   app.delete('/api/posts/owned', async (req, res) => {
     const user = await requireLocalContributor(req);
@@ -1010,7 +1019,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   });
   app.post('/api/comments/submissions', async (req,res)=>{
     const user=await requireLocalContributor(req);
-    res.json(await submissions.create(user,req.body,()=>assertLocalCommunitySession(req,user)));
+    res.json(await submissions.create(user,req.body,()=>assertCommunityWrite(req,user,'participation')));
   });
   app.get('/api/comments/submissions/receipt', async (req,res)=>{
     const user=await requireLocalContributor(req);
@@ -1026,7 +1035,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   });
   app.put('/api/comments/owned', async (req, res) => {
     const user = await requireLocalContributor(req);
-    res.json(await contributions.updateComment(req.body,user.id,() => assertLocalCommunitySession(req,user)));
+    res.json(await contributions.updateComment(req.body,user.id,() => assertCommunityWrite(req,user,'participation')));
   });
   app.delete('/api/comments/owned',async(req,res)=>{
     const user=await requireLocalContributor(req);
@@ -1035,7 +1044,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   app.post('/api/community/reports',async(req,res)=>{
     const user=await requireUser(req);
     if(identity)await identity.admitCommunity(req,user,res);
-    res.status(201).json(await moderation.report(user,req.body,()=>identity?identity.assertWritable(user):assertLocalCommunitySession(req,user)));
+    res.status(201).json(await moderation.report(user,req.body,()=>assertCommunityWrite(req,user,'reporting')));
   });
   app.get('/api/community/reports',async(req,res)=>{
     const user=await requireUser(req);
@@ -1059,6 +1068,9 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     const user=await requireUser(req);
     res.json(await mutes.history(user,req.query,()=>identity?identity.assertWritable(user):assertLocalCommunitySession(req,user)));
   });
+  app.get('/api/community/restrictions',async(req,res)=>{
+    res.json(await restrictions.status(await requireUser(req)));
+  });
   app.post('/api/comments', async (req, res) => {
     const user = (await requireUser(req)), body = record(req.body);
     const resource = commentResource(body.resource);
@@ -1066,6 +1078,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     const id = randomUUID();
     const comment = text(body.body, 'Comment', 2, 3000);
     const saved = await db.transaction(async () => {
+      await assertCommunityWrite(req,user,'participation');
       if (resource.startsWith('post/')) {
         if (!await db.prepare(`SELECT id FROM users WHERE id=?${db.dialect === 'postgres' ? ' FOR UPDATE' : ''}`).get(user.id)) throw new HttpError(401, 'Sign in to join this discussion.');
         await assertLocalCommunitySession(req, user);
@@ -1196,6 +1209,16 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     });
     app.patch('/api/staff/community/reports/:id',async(req,res)=>{
       const user=await requireUser(req);await identity.admitStaff(user,res);res.json(await moderation.act(user,req.params.id,req.body));
+    });
+    app.post('/api/staff/community/reports/:id/restrictions',async(req,res)=>{
+      const user=await requireUser(req);await identity.admitStaff(user,res);
+      res.status(201).json(await restrictions.apply(user,req.params.id,req.body));
+    });
+    app.get('/api/staff/community/restrictions',async(req,res)=>{
+      const user=await requireUser(req);await identity.admitStaff(user,res);res.json(await restrictions.queue(user,req.query));
+    });
+    app.patch('/api/staff/community/restrictions/:id',async(req,res)=>{
+      const user=await requireUser(req);await identity.admitStaff(user,res);res.json(await restrictions.change(user,req.params.id,req.body));
     });
     app.get('/api/staff/community/appeals',async(req,res)=>{
       const user=await requireUser(req);await identity.admitStaff(user,res);res.json(await moderation.appealQueue(user,req.query));

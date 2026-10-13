@@ -419,6 +419,20 @@ export interface CommunityCommentDeletion {
   };
   comment:Comment|null;
 }
+export type CommunityRestrictionScope='participation'|'reporting';
+export interface CommunityRestriction {
+  id:string;scope:CommunityRestrictionScope;status:'active'|'lifted'|'expired';revision:number;
+  startsAt:string;expiresAt:string;updatedAt:string;
+}
+export interface CommunityRestrictionStatus {restrictions:CommunityRestriction[]}
+export interface StaffCommunityRestriction extends CommunityRestriction {
+  subject:'author'|'reporter';lastActor:'me'|'other';sourceReportId:string;
+  targetType:'post'|'comment';targetId:string;
+  target:{title:string|null;body:string;author:string;resource:string|null};
+}
+export interface StaffCommunityRestrictionPage {
+  restrictions:StaffCommunityRestriction[];nextCursor:string|null;
+}
 export interface StaffAccount {
   id:string;maskedEmail:string;status:'pending-verification'|'active'|'suspended'|'deletion-pending';
   verified:boolean;revision:number;activeSessions:number;

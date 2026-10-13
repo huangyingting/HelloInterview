@@ -123,6 +123,17 @@ test('privacy artifacts cover owned preparation, identity, grants, usage, contri
     (owner_id,request_key,input_hash,mute_id,target_type,target_id,muted,prior_revision,result_revision,created_at)
     VALUES(?,?,?,?,'post','privacy-muted-post',TRUE,0,1,'2026-10-13T00:00:01.950Z')`)
     .run(owner,muteKey,'b'.repeat(64),muteId);
+  const restrictionId=randomUUID(),restrictionActor='private-restriction-moderator';
+  await f.db.prepare(`INSERT INTO community_restrictions
+    (id,subject_id,source_report_id,scope,state,revision,starts_at,expires_at,created_at,updated_at)
+    VALUES(?,?,?,'reporting','active',1,'2026-10-13T00:00:01.975Z','2999-10-13T00:00:01.975Z',
+      '2026-10-13T00:00:01.975Z','2026-10-13T00:00:01.975Z')`).run(restrictionId,owner,reportId);
+  await f.db.prepare(`INSERT INTO community_restriction_events
+    (id,restriction_id,source_report_id,actor_ref,actor_role,action,reason,prior_revision,result_revision,
+      prior_expires_at,result_expires_at,result_state,created_at)
+    VALUES(?,?,?,?,?,'restrict',?,0,1,NULL,'2999-10-13T00:00:01.975Z','active','2026-10-13T00:00:01.975Z')`)
+    .run(randomUUID(),restrictionId,reportId,restrictionActor,'moderator',
+      'Private internal restriction reason excluded from the owner export.');
   await f.db.prepare(`INSERT INTO comments(id,resource,user_id,author,body,created_at,parent_id)
     VALUES(?,?,?,?,?,?,NULL)`).run('privacy-deleted-comment','post/privacy-post',owner,'Owner private name','Removed private comment bytes.','2026-10-13T00:00:02.000Z');
   const deletionKey=randomUUID();
@@ -171,12 +182,14 @@ test('privacy artifacts cover owned preparation, identity, grants, usage, contri
   assert.match(text,new RegExp(appealKey));
   assert.match(text,new RegExp(muteKey));
   assert.match(text,/privacy-muted-post/);
+  assert.match(text,new RegExp(restrictionId));
+  assert.match(text,/reporting|2999-10-13T00:00:01.975Z/);
   assert.doesNotMatch(text,new RegExp(mutedSubject));
   assert.doesNotMatch(text,/Removed private comment bytes|Owner private name/);
   assert.match(text,/premium-read-v1|privacy-reservation|pro_monthly|sub_privacy|in_privacy/);
   assert.doesNotMatch(text,new RegExp(String(token.token)));
   assert.doesNotMatch(text,new RegExp(String(token.csrf_hash)));
-  assert.doesNotMatch(text,/fixture-operator|private-moderator-ref|Private internal moderation reason|private-appeal-moderator|Private internal appeal reason|assigned_to|request_hash|hosted_url|provider_session_id|job_id/);
+  assert.doesNotMatch(text,/fixture-operator|private-moderator-ref|Private internal moderation reason|private-appeal-moderator|Private internal appeal reason|private-restriction-moderator|Private internal restriction reason|assigned_to|request_hash|hosted_url|provider_session_id|job_id/);
   assert.equal((exported.artifact.notices as {scope:string}).scope.includes('does not claim'),true);
 });
 

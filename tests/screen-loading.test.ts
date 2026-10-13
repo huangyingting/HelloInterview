@@ -260,8 +260,28 @@ test('personal author muting hides posts, publishes comment tombstones and un-mu
   const muteId=String(saved?.id);assert.match(muteId,/^[a-f0-9-]{36}$/);
   await page.goto(`${f.url}/community/discussion`);
   await expect(page.getByRole('heading',{name:'Post hidden by personal mute',exact:true})).toHaveCount(0);
+  const reportId=randomUUID(),reportKey=randomUUID(),restrictionId=randomUUID();
+  await db.prepare(`INSERT INTO community_reports
+    (id,reporter_id,request_key,input_hash,target_type,target_id,category,details,created_at,updated_at)
+    VALUES(?,?,?,?,? ,?,'spam',?,?,?)`).run(reportId,viewer,reportKey,'c'.repeat(64),'post',subjectPost,
+      'A local browser report provides reviewed evidence for a minimized restriction status fixture.',
+      '2026-01-03T01:00:00.000Z','2026-01-03T01:00:00.000Z');
+  await db.prepare(`INSERT INTO community_restrictions
+    (id,subject_id,source_report_id,scope,state,revision,starts_at,expires_at,created_at,updated_at)
+    VALUES(?,?,?,'reporting','active',1,'2026-01-03T02:00:00.000Z','2999-01-03T02:00:00.000Z',
+      '2026-01-03T02:00:00.000Z','2026-01-03T02:00:00.000Z')`).run(restrictionId,viewer,reportId);
+  await db.prepare(`INSERT INTO community_restriction_events
+    (id,restriction_id,source_report_id,actor_ref,actor_role,action,reason,prior_revision,result_revision,
+      prior_expires_at,result_expires_at,result_state,created_at)
+    VALUES(?,?,?,?,?,'restrict',?,0,1,NULL,'2999-01-03T02:00:00.000Z','active','2026-01-03T02:00:00.000Z')`)
+    .run(randomUUID(),restrictionId,reportId,'private-browser-moderator','moderator',
+      'Private browser restriction evidence must not appear in member status.');
   await page.getByRole('button',{name:'My moderation status',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Authors muted for me',exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'My community restrictions',exact:true})).toBeVisible();
+  await expect(page.getByText('Report submission restricted',{exact:true})).toBeVisible();
+  await expect(page.getByText('private-browser-moderator',{exact:true})).toHaveCount(0);
+  await expect(page.getByText(/Reading, deletion, appeals, personal mutes/)).toBeVisible();
   await expect(page.getByText(comment,{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Unmute author',exact:true}).click();
   await expect(page.getByText('No authors are currently muted for you.',{exact:true})).toBeVisible();

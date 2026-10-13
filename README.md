@@ -252,14 +252,20 @@ The [community appeal checkpoint](docs/production/41-community-appeals-status-ad
 adds exact owner/key/hidden-revision appeals, minimized in-app report/appeal
 status, revision-fenced uphold/deny decisions, atomic restoration and shared
 PostgreSQL account/network admission for report and appeal writes. External
-delivery, repeat-abuse restrictions, staffing, retention approval and managed
+delivery, automated abuse decisions, staffing, retention approval and managed
 community writing remain disabled.
 The [personal author-muting checkpoint](docs/production/42-privacy-safe-personal-author-muting.md)
 adds exact private mute/unmute receipts, central per-viewer post filtering,
 non-interactive muted-comment tombstones, minimized history/privacy exports and
 shared managed admission without exposing the muted account. Account blocking,
-repeat-abuse policy, notifications and managed community writing remain open.
-Controlled PostgreSQL deployments must apply **migration 33 and maintained queue
+notifications and managed community writing remain open.
+The [reviewed community-restriction checkpoint](docs/production/43-reviewed-expiring-community-restrictions.md)
+adds report-bound, MFA/role-gated author-participation and reporter-submission
+restrictions with fixed expiry, revision-fenced extension/lift, minimized
+member/staff/privacy surfaces and immutable evidence. It does not add automated
+enforcement, permanent/global suspension, restriction notices, an approved
+abuse policy or managed writing.
+Controlled PostgreSQL deployments must apply **migration 34 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 

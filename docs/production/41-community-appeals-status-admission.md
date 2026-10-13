@@ -1,8 +1,11 @@
 # 41 - Community appeals, member status and shared admission
 
-**Status: implemented W11 engineering checkpoint, not external notification,
-automated enforcement, account blocking, repeat-abuse restriction, staffed moderation,
-approved retention, managed writing or public-launch approval.**
+**Status: implemented W11 engineering checkpoint, with reviewed expiring staff
+restrictions delivered separately by
+[runbook 43](43-reviewed-expiring-community-restrictions.md); not external
+notification, automated enforcement, relationship-wide account blocking,
+staffed moderation, approved retention, managed writing or public-launch
+approval.**
 
 This checkpoint implements
 [#34](https://github.com/huangyingting/HelloInterview/issues/34) under W11
@@ -183,7 +186,7 @@ W11 remains open for:
 
 - approved rules, legal retention and takedown policy;
 - external author/reporter delivery and published response targets;
-- account blocking, repeat-abuse restrictions and reviewed spam triage;
+- relationship-wide account blocking, restriction notices/appeals and reviewed automated spam triage;
 - moderation staffing and escalation ownership;
 - managed contribution writing or explicit read-only operating approval;
 - complete privacy erasure and backup/processor handling;

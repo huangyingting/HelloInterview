@@ -219,6 +219,19 @@ test('staff UI is deferred, capability-gated and applies an audited in-page susp
   await moderationCard.getByLabel('Required moderation reason').fill('Claim this report for a bounded reviewed browser moderation check.');
   await moderationCard.getByRole('button',{name:'Claim report'}).click();
   await expect(moderationCard.getByText('Assigned to you',{exact:false})).toBeVisible();
+  await moderationCard.getByLabel('Required moderation reason').fill('Restrict author participation after reviewing the exact browser report evidence.');
+  await moderationCard.getByRole('button',{name:'Restrict author participation'}).click();
+  await expect(page.getByText('Author participation restricted with an expiring reviewed record.',{exact:true})).toBeVisible();
+  await moderationCard.getByLabel('Required moderation reason').fill('Restrict reporter submissions after reviewing abuse of the report workflow.');
+  await moderationCard.getByRole('button',{name:'Restrict reporter submissions'}).click();
+  await expect(page.getByText('Reporter submission restricted with an expiring reviewed record.',{exact:true})).toBeVisible();
+  const ownerRestriction=await target.request('/api/community/restrictions');assert.equal(ownerRestriction.status,200);
+  const ownerRestrictionStatus=await ownerRestriction.json();
+  assert.deepEqual(ownerRestrictionStatus.restrictions.map((value:{scope:string})=>value.scope).sort(),['participation','reporting']);
+  assert.ok(!JSON.stringify(ownerRestrictionStatus).includes(targetData.user.id));
+  const blockedReport=await target.request('/api/community/reports',{requestId:randomUUID(),targetType:'post',targetId:randomUUID(),
+    category:'spam',details:'A new report must be denied by the current narrow reporting restriction.'});
+  assert.equal(blockedReport.status,403);
   await moderationCard.getByLabel('Required moderation reason').fill('Hide this synthetic contribution after reviewing the reported policy concern.');
   await moderationCard.getByRole('button',{name:'Hide contribution'}).click();
   await expect(moderationCard.getByText('currently hidden',{exact:false})).toBeVisible();
@@ -246,6 +259,20 @@ test('staff UI is deferred, capability-gated and applies an audited in-page susp
     .all(reportReceipt.id)).map(row=>row.action),['claim','hide']);
   assert.deepEqual((await f.db.prepare('SELECT action FROM community_appeal_events WHERE appeal_id=? ORDER BY created_at,id')
     .all(appealReceipt.id)).map(row=>row.action),['claim','uphold']);
+  await page.getByRole('button',{name:'Load active restrictions'}).click();
+  const participationCard=page.getByRole('heading',{name:'Author participation restriction',exact:true}).locator('..');
+  const reportingCard=page.getByRole('heading',{name:'Reporter submission restriction',exact:true}).locator('..');
+  await expect(participationCard).toBeVisible();await expect(reportingCard).toBeVisible();
+  await expect(participationCard.getByText(targetData.user.id,{exact:true})).toHaveCount(0);
+  await participationCard.getByLabel('Required restriction reason').fill('Lift this browser participation restriction after the reviewed appeal restored the contribution.');
+  await participationCard.getByRole('button',{name:'Lift restriction'}).click();
+  await expect(participationCard).toHaveCount(0);
+  await reportingCard.getByLabel('Required restriction reason').fill('Lift this browser reporting restriction after a separate reviewed resolution.');
+  await reportingCard.getByRole('button',{name:'Lift restriction'}).click();
+  await expect(reportingCard).toHaveCount(0);
+  assert.deepEqual((await(await target.request('/api/community/restrictions')).json()).restrictions,[]);
+  assert.deepEqual((await f.db.prepare('SELECT action,count(*)::integer AS count FROM community_restriction_events GROUP BY action ORDER BY action')
+    .all()),[{action:'lift',count:2},{action:'restrict',count:2}]);
   assert.deepEqual((await f.db.prepare(`SELECT scope FROM identity_abuse_buckets
     WHERE scope IN ('community-network','community-account') ORDER BY scope`).all()).map(row=>row.scope),['community-account','community-network']);
   await page.getByLabel('Exact contact email').fill('staff.target@example.invalid');

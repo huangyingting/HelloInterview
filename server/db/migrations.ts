@@ -1313,6 +1313,96 @@ export const migrations = [{
       CREATE TRIGGER immutable_community_mute_intent BEFORE UPDATE OR DELETE ON community_mute_intents
         FOR EACH ROW EXECUTE FUNCTION immutable_community_mute_intent();
     `,
+  }, {
+    version: 34,
+    name: 'reviewed-expiring-community-restrictions',
+    sql: `
+      CREATE TABLE community_restrictions (
+        id UUID PRIMARY KEY,
+        subject_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+        source_report_id UUID NOT NULL REFERENCES community_reports(id) ON DELETE RESTRICT,
+        scope TEXT NOT NULL CHECK(scope IN ('participation','reporting')),
+        state TEXT NOT NULL CHECK(state IN ('active','lifted','expired')),
+        revision INTEGER NOT NULL CHECK(revision>0),
+        starts_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        CHECK(expires_at>starts_at)
+      );
+      CREATE UNIQUE INDEX community_restrictions_active_subject_scope
+        ON community_restrictions(subject_id,scope) WHERE state='active' AND subject_id IS NOT NULL;
+      CREATE INDEX community_restrictions_subject_order
+        ON community_restrictions(subject_id,updated_at DESC,id DESC);
+      CREATE INDEX community_restrictions_staff_queue
+        ON community_restrictions(state,expires_at,updated_at DESC,id DESC);
+      CREATE TABLE community_restriction_events (
+        id UUID PRIMARY KEY,
+        restriction_id UUID NOT NULL REFERENCES community_restrictions(id) ON DELETE RESTRICT,
+        source_report_id UUID NOT NULL REFERENCES community_reports(id) ON DELETE RESTRICT,
+        actor_ref TEXT NOT NULL,
+        actor_role TEXT NOT NULL CHECK(actor_role IN ('moderator','administrator')),
+        action TEXT NOT NULL CHECK(action IN ('restrict','extend','lift','expire')),
+        reason TEXT NOT NULL CHECK(length(reason) BETWEEN 20 AND 500),
+        prior_revision INTEGER NOT NULL CHECK(prior_revision>=0),
+        result_revision INTEGER NOT NULL CHECK(result_revision=prior_revision+1),
+        prior_expires_at TEXT,
+        result_expires_at TEXT NOT NULL,
+        result_state TEXT NOT NULL CHECK(result_state IN ('active','lifted','expired')),
+        created_at TEXT NOT NULL,
+        CHECK((prior_revision=0 AND prior_expires_at IS NULL AND action='restrict') OR
+          (prior_revision>0 AND prior_expires_at IS NOT NULL AND action<>'restrict'))
+      );
+      CREATE INDEX community_restriction_events_restriction
+        ON community_restriction_events(restriction_id,created_at,id);
+      CREATE FUNCTION initialize_community_restriction() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NEW.subject_id IS NULL OR NEW.state<>'active' OR NEW.revision<>1 OR
+            NEW.starts_at<>NEW.created_at OR NEW.created_at<>NEW.updated_at
+          THEN RAISE EXCEPTION 'New community restrictions must begin as active revision-one subject records.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER initialize_community_restriction BEFORE INSERT ON community_restrictions
+        FOR EACH ROW EXECUTE FUNCTION initialize_community_restriction();
+      CREATE FUNCTION protect_community_restriction() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NOT (
+            OLD.subject_id IS NOT NULL AND NEW.subject_id IS NULL AND NEW.id=OLD.id AND
+              NEW.source_report_id=OLD.source_report_id AND NEW.scope=OLD.scope AND NEW.state=OLD.state AND
+              NEW.revision=OLD.revision AND NEW.starts_at=OLD.starts_at AND NEW.expires_at=OLD.expires_at AND
+              NEW.created_at=OLD.created_at AND NEW.updated_at=OLD.updated_at OR
+            NEW.id=OLD.id AND NEW.subject_id=OLD.subject_id AND NEW.source_report_id=OLD.source_report_id AND
+              NEW.scope=OLD.scope AND NEW.revision=OLD.revision+1 AND NEW.starts_at=OLD.starts_at AND
+              NEW.created_at=OLD.created_at AND NEW.updated_at>=OLD.updated_at AND (
+                OLD.state='active' AND NEW.state IN ('lifted','expired') AND NEW.expires_at=OLD.expires_at OR
+                OLD.state='active' AND NEW.state='active' AND NEW.expires_at>OLD.expires_at
+              )
+          ) THEN RAISE EXCEPTION 'Community restrictions allow only subject retirement or one revision-fenced active transition.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER protect_community_restriction BEFORE UPDATE ON community_restrictions
+        FOR EACH ROW EXECUTE FUNCTION protect_community_restriction();
+      CREATE FUNCTION validate_community_restriction_event() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NOT EXISTS(SELECT 1 FROM community_restrictions restriction WHERE restriction.id=NEW.restriction_id AND
+            restriction.source_report_id=NEW.source_report_id AND restriction.revision=NEW.result_revision AND
+            restriction.state=NEW.result_state AND restriction.expires_at=NEW.result_expires_at)
+          THEN RAISE EXCEPTION 'Restriction evidence must reference the resulting state and revision.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER validate_community_restriction_event BEFORE INSERT ON community_restriction_events
+        FOR EACH ROW EXECUTE FUNCTION validate_community_restriction_event();
+      CREATE FUNCTION immutable_community_restriction_record() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN RAISE EXCEPTION 'Community restriction evidence is immutable.'; END;
+      $$;
+      CREATE TRIGGER immutable_community_restriction_event BEFORE UPDATE OR DELETE ON community_restriction_events
+        FOR EACH ROW EXECUTE FUNCTION immutable_community_restriction_record();
+      CREATE TRIGGER immutable_community_restriction_delete BEFORE DELETE ON community_restrictions
+        FOR EACH ROW EXECUTE FUNCTION immutable_community_restriction_record();
+    `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

@@ -1,8 +1,11 @@
 # 42 - Privacy-safe personal author muting
 
-**Status: implemented W11 engineering checkpoint, not account blocking,
-automated abuse enforcement, approved retention, staffed moderation, managed
-community writing or public-launch approval.**
+**Status: implemented W11 engineering checkpoint, with reviewed expiring staff
+restrictions delivered separately by
+[runbook 43](43-reviewed-expiring-community-restrictions.md); not
+relationship-wide account blocking, automated abuse enforcement, approved
+retention, staffed moderation, managed community writing or public-launch
+approval.**
 
 This checkpoint implements
 [#35](https://github.com/huangyingting/HelloInterview/issues/35) under W11
@@ -137,7 +140,7 @@ W11 remains open for:
 - account blocking and relationship-wide interaction policy;
 - approved community rules, legal retention and takedown policy;
 - external author/reporter delivery and published response targets;
-- repeat-abuse restrictions, reviewed spam triage and escalation;
+- external restriction notices/appeals and reviewed automated spam triage;
 - moderation staffing and ownership;
 - managed contribution writing or explicit read-only operating approval;
 - complete privacy erasure and backup/processor handling;

@@ -2,7 +2,7 @@ import {useEffect,useState} from 'react';
 import {Link} from 'react-router-dom';
 import type {
   StaffAccount,StaffAuditPage,StaffCommunityAppeal,StaffCommunityAppealPage,StaffCommunityReport,StaffCommunityReportPage,
-  StaffRole,StaffSupportPage,StaffSupportTicket,
+  StaffCommunityRestriction,StaffCommunityRestrictionPage,StaffRole,StaffSupportPage,StaffSupportTicket,
 } from '../../shared/types';
 import {Badge,PageHeading} from '../components';
 import {request,useStudio} from '../store';
@@ -90,6 +90,7 @@ function StaffSupportCard({value,onChange}:{value:StaffSupportTicket;onChange:(t
 
 function StaffModerationCard({value,administrator,onChange}:{value:StaffCommunityReport;administrator:boolean;onChange:(report:StaffCommunityReport)=>void}) {
   const {notify}=useStudio(),[reason,setReason]=useState(''),[pending,setPending]=useState(false);
+  const [durationHours,setDurationHours]=useState<24|168|720>(168);
   async function apply(action:'claim'|'release'|'dismiss'|'hide'|'restore') {
     setPending(true);
     try{
@@ -97,6 +98,17 @@ function StaffModerationCard({value,administrator,onChange}:{value:StaffCommunit
         {revision:value.revision,targetRevision:value.targetRevision,action,reason},'PATCH');
       onChange(report);setReason('');notify('Moderation state updated with immutable staff evidence.');
     }catch(cause){notify(cause instanceof Error?cause.message:'Moderation action failed.',true);}
+    finally{setPending(false);}
+  }
+  async function restrict(subject:'author'|'reporter',scope:'participation'|'reporting') {
+    setPending(true);
+    try{
+      await request<StaffCommunityRestriction>(`/api/staff/community/reports/${value.id}/restrictions`,
+        {reportRevision:value.revision,targetRevision:value.targetRevision,subject,scope,durationHours,reason});
+      setReason('');notify(subject==='author'
+        ?'Author participation restricted with an expiring reviewed record.'
+        :'Reporter submission restricted with an expiring reviewed record.');
+    }catch(cause){notify(cause instanceof Error?cause.message:'Community restriction failed.',true);}
     finally{setPending(false);}
   }
   const available=administrator||value.assignment!=='other',targetAction=value.targetState==='hidden'?'restore':'hide';
@@ -111,12 +123,57 @@ function StaffModerationCard({value,administrator,onChange}:{value:StaffCommunit
       <textarea minLength={20} maxLength={500} value={reason} onChange={event=>setReason(event.target.value)}
         placeholder="Record the specific policy and evidence reviewed."/>
     </label>
+    {available&&value.assignment!==null&&<label>Restriction duration
+      <select value={durationHours} onChange={event=>setDurationHours(Number(event.target.value) as 24|168|720)}>
+        <option value={24}>24 hours</option><option value={168}>7 days</option><option value={720}>30 days</option>
+      </select>
+    </label>}
     {available&&<button className="button secondary small" disabled={pending||reason.trim().length<20}
       onClick={()=>void apply(value.assignment==='me'?'release':'claim')}>{value.assignment==='me'?'Release report':'Claim report'}</button>}
     {available&&value.assignment!==null&&<><button className="button secondary small" disabled={pending||reason.trim().length<20}
       onClick={()=>void apply(targetAction)}>{targetAction==='hide'?'Hide contribution':'Restore contribution'}</button>
       {value.status!=='dismissed'&&<button className="button secondary small" disabled={pending||reason.trim().length<20}
-        onClick={()=>void apply('dismiss')}>Dismiss report</button>}</>}
+        onClick={()=>void apply('dismiss')}>Dismiss report</button>}
+      <button className="button secondary small" disabled={pending||reason.trim().length<20}
+        onClick={()=>void restrict('author','participation')}>Restrict author participation</button>
+      <button className="button secondary small" disabled={pending||reason.trim().length<20}
+        onClick={()=>void restrict('reporter','reporting')}>Restrict reporter submissions</button></>}
+  </article>;
+}
+
+function StaffRestrictionCard({value,administrator,onChange}:{value:StaffCommunityRestriction;administrator:boolean;
+  onChange:(restriction:StaffCommunityRestriction)=>void}) {
+  const {notify}=useStudio(),[reason,setReason]=useState(''),[durationHours,setDurationHours]=useState<24|168|720>(720);
+  const [pending,setPending]=useState(false),allowed=administrator||value.lastActor==='me';
+  async function apply(action:'extend'|'lift') {
+    setPending(true);
+    try{
+      const restriction=await request<StaffCommunityRestriction>(`/api/staff/community/restrictions/${value.id}`,
+        action==='extend'?{action,revision:value.revision,durationHours,reason}:{action,revision:value.revision,reason},'PATCH');
+      onChange(restriction);setReason('');notify(action==='extend'?'Community restriction extended.':'Community restriction lifted.');
+    }catch(cause){notify(cause instanceof Error?cause.message:'Community restriction update failed.',true);}
+    finally{setPending(false);}
+  }
+  return <article className="panel">
+    <h3>{value.scope==='participation'?'Author participation restriction':'Reporter submission restriction'}</h3>
+    <p><Badge tone="amber">active</Badge>{' '}revision {value.revision} · expires {new Date(value.expiresAt).toLocaleString()}</p>
+    <p>{value.target.body}</p>
+    <p className="fine-print">Evidence report {value.sourceReportId} · {value.targetType} by {value.target.author}
+      {value.target.resource?` · ${value.target.resource}`:''}. The subject account identifier and staff reason are not returned.</p>
+    {allowed?<><label>Required restriction reason
+      <textarea minLength={20} maxLength={500} value={reason} onChange={event=>setReason(event.target.value)}
+        placeholder="Record the reviewed policy and evidence for this change."/>
+    </label>
+    <label>New duration from now
+      <select value={durationHours} onChange={event=>setDurationHours(Number(event.target.value) as 24|168|720)}>
+        <option value={24}>24 hours</option><option value={168}>7 days</option><option value={720}>30 days</option>
+      </select>
+    </label>
+    <button className="button secondary small" disabled={pending||reason.trim().length<20}
+      onClick={()=>void apply('extend')}>Extend restriction</button>
+    <button className="button secondary small" disabled={pending||reason.trim().length<20}
+      onClick={()=>void apply('lift')}>Lift restriction</button></>
+    :<p className="fine-print">Only the latest restricting moderator or an administrator can change this restriction.</p>}
   </article>;
 }
 
@@ -159,6 +216,8 @@ export function StaffPage() {
   const [support,setSupport]=useState<StaffSupportPage>(),[supportError,setSupportError]=useState(''),[loadingSupport,setLoadingSupport]=useState(false);
   const [moderation,setModeration]=useState<StaffCommunityReportPage>(),[moderationError,setModerationError]=useState(''),[loadingModeration,setLoadingModeration]=useState(false);
   const [appeals,setAppeals]=useState<StaffCommunityAppealPage>(),[appealsError,setAppealsError]=useState(''),[loadingAppeals,setLoadingAppeals]=useState(false);
+  const [restrictions,setRestrictions]=useState<StaffCommunityRestrictionPage>(),[restrictionError,setRestrictionError]=useState('');
+  const [loadingRestrictions,setLoadingRestrictions]=useState(false);
   useEffect(()=>{
     const controller=new AbortController();
     request<{roles:StaffRole[]}>('/api/staff/session',undefined,'GET',controller.signal)
@@ -208,6 +267,15 @@ export function StaffPage() {
     }catch(cause){setAppealsError(cause instanceof Error?cause.message:'Appeal queue could not be loaded.');}
     finally{setLoadingAppeals(false);}
   }
+  async function loadRestrictions(cursor?:string) {
+    setLoadingRestrictions(true);
+    try{
+      const page=await request<StaffCommunityRestrictionPage>(`/api/staff/community/restrictions${cursor?`?${new URLSearchParams({cursor})}`:''}`);
+      setRestrictions(current=>cursor&&current?{restrictions:[...current.restrictions,...page.restrictions],nextCursor:page.nextCursor}:page);
+      setRestrictionError('');
+    }catch(cause){setRestrictionError(cause instanceof Error?cause.message:'Community restrictions could not be loaded.');}
+    finally{setLoadingRestrictions(false);}
+  }
   return <>
     <PageHeading eyebrow="STAFF OPERATIONS" title="Account access, without impersonation." description="Privileged actions require a current managed session, verified MFA, a fresh sign-in, an active time-bounded role and an explicit reason."/>
     {error&&<section className="panel"><h2>Confirm privileged access</h2><p role="alert">{error}</p><p>Use an MFA-enabled identity provider and confirm that sign-in again. Fresh authentication alone is not treated as MFA.</p><Link className="button secondary small" to="/account">Open sign-in security</Link></section>}
@@ -249,6 +317,20 @@ export function StaffPage() {
         {appeals&&!appeals.appeals.length&&<p>No community appeals are saved.</p>}
         {appeals?.nextCursor&&<button className="button secondary small" disabled={loadingAppeals}
           onClick={()=>void loadAppeals(appeals.nextCursor!)}>Load older community appeals</button>}
+      </section>}
+      {canModerate&&<section className="panel"><h2>Active community restrictions</h2>
+        <p>Restrictions are narrow, expiring and report-bound. They do not suspend accounts, revoke sessions or block learning, billing, support, privacy, appeals or personal mutes.</p>
+        {!restrictions&&<button className="button secondary small" disabled={loadingRestrictions}
+          onClick={()=>void loadRestrictions()}>Load active restrictions</button>}
+        {restrictionError&&<><p role="alert">{restrictionError}</p><button className="button secondary small"
+          disabled={loadingRestrictions} onClick={()=>void loadRestrictions()}>Retry active restrictions</button></>}
+        {restrictions?.restrictions.map(value=><StaffRestrictionCard key={value.id} value={value} administrator={administrator}
+          onChange={updated=>setRestrictions(current=>current&&({...current,
+            restrictions:updated.status==='active'?current.restrictions.map(item=>item.id===updated.id?updated:item)
+              :current.restrictions.filter(item=>item.id!==updated.id)}))}/>)}
+        {restrictions&&!restrictions.restrictions.length&&<p>No active community restrictions are saved.</p>}
+        {restrictions?.nextCursor&&<button className="button secondary small" disabled={loadingRestrictions}
+          onClick={()=>void loadRestrictions(restrictions.nextCursor!)}>Load older active restrictions</button>}
       </section>}
       {administrator&&<section className="panel"><h2>Immutable staff audit</h2>
         {!audit&&<button className="button secondary small" disabled={loadingAudit} onClick={()=>void loadAudit()}>View recent staff audit</button>}

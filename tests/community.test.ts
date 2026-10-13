@@ -11,6 +11,7 @@ import { CommunityReads } from '../server/community';
 import { CommunityContributions } from '../server/community-contributions';
 import { CommunityModeration } from '../server/community-moderation';
 import { CommunityMutes } from '../server/community-mutes';
+import { CommunityRestrictions } from '../server/community-restrictions';
 import { CommunitySubmissions } from '../server/community-submissions';
 import { localConnection, postgresConnection, type Database } from '../server/db/connection';
 import { assertDatabaseVersion, migrateDatabase, migrations } from '../server/db/migrations';
@@ -74,7 +75,7 @@ test('community URL helpers preserve exact bounded data and reject malformed or 
   assert.deepEqual(parseStudioAddress('/community/questions/literal%252F','').segments,['community','questions','literal%2F']);
 });
 
-test('migrations 21-33 preserve actual legacy community data while adding deletion, moderation, appeal and personal-mute state',async t=>{
+test('migrations 21-34 preserve actual legacy community data while adding deletion, moderation, appeal, mute and restriction state',async t=>{
   const f=await fixture(t,'postgres'),post=await f.add();
   await f.db.prepare('INSERT INTO votes(post_id,user_id) VALUES(?,?)').run(post.id,f.owners[0]);
   await f.db.prepare('INSERT INTO follows(post_id,user_id) VALUES(?,?)').run(post.id,f.owners[1]);
@@ -130,6 +131,8 @@ test('migrations 21-33 preserve actual legacy community data while adding deleti
   assert.deepEqual(await legacy.prepare('SELECT * FROM community_appeal_events').all(),[]);
   assert.deepEqual(await legacy.prepare('SELECT * FROM community_mutes').all(),[]);
   assert.deepEqual(await legacy.prepare('SELECT * FROM community_mute_intents').all(),[]);
+  assert.deepEqual(await legacy.prepare('SELECT * FROM community_restrictions').all(),[]);
+  assert.deepEqual(await legacy.prepare('SELECT * FROM community_restriction_events').all(),[]);
   assert.equal((await legacy.prepare(`SELECT is_nullable FROM information_schema.columns
     WHERE table_schema=current_schema() AND table_name='comments' AND column_name='user_id'`).get())?.is_nullable,'YES');
   assert.equal((await legacy.prepare('SELECT revision FROM community_comment_revisions WHERE comment_id=?').get(commentId))?.revision,1);
@@ -143,7 +146,9 @@ test('migrations 21-33 preserve actual legacy community data while adding deleti
     'community_comment_submissions_resource','community_comment_deletions_owner','community_reports_owner_key','community_reports_queue',
     'community_reports_owner_open','community_moderation_events_report','community_appeals_owner_key',
     'community_appeals_owner_target_revision','community_appeals_queue','community_appeals_owner_order',
-    'community_appeal_events_appeal','community_mutes_owner_state','community_mutes_subject','community_mute_intents_owner_order'])
+    'community_appeal_events_appeal','community_mutes_owner_state','community_mutes_subject','community_mute_intents_owner_order',
+    'community_restrictions_active_subject_scope','community_restrictions_subject_order','community_restrictions_staff_queue',
+    'community_restriction_events_restriction'])
     assert.ok(indexes.some(row=>row.indexname===name));
   await legacy.prepare(`INSERT INTO identity_abuse_buckets(scope,fingerprint,attempts,started,expires)
     VALUES('community-account',?,1,1,2)`).run('a'.repeat(64));
@@ -477,6 +482,62 @@ for(const dialect of ['sqlite','postgres'] as const){
       .run('tampered-target',viewer.id));
     await assert.rejects(()=>f.db.prepare('DELETE FROM community_mute_intents WHERE owner_id=?').run(viewer.id));
     await assert.rejects(()=>f.db.prepare(`UPDATE community_mutes SET state='unmuted' WHERE id=?`).run(saved.id));
+  });
+
+  test(`${dialect}: reviewed community restrictions are narrow, expiring, revision-fenced and privacy-minimized`,async t=>{
+    const f=await fixture(t,dialect),reporter={id:f.owners[0],name:'Reporter',email:`${f.owners[0]}@example.invalid`,demo:false};
+    const author=f.owners[1],post=await f.add({owner:author,title:'Restriction evidence target'});
+    const moderation=new CommunityModeration(f.db,null);
+    const report=await moderation.report(reporter,{requestId:randomUUID(),targetType:'post',targetId:post.id,
+      category:'harassment',details:'A concrete repeated-abuse concern requiring a reviewed scoped restriction.'},async()=>{});
+    const staff={id:randomUUID(),name:'Staff reviewer',email:'staff-reviewer@example.invalid',demo:false};
+    await f.db.prepare('INSERT INTO users(id,name,email,password,demo) VALUES(?,?,?,NULL,0)')
+      .run(staff.id,staff.name,staff.email);
+    const identity={assertStaff:async()=>{},staffRoles:async(owner:string)=>owner===staff.id?['administrator']:[]} as unknown as ManagedIdentity;
+    const restrictions=new CommunityRestrictions(f.db,identity);
+    const participation=await restrictions.apply(staff,report.id,{reportRevision:0,targetRevision:0,subject:'author',
+      scope:'participation',durationHours:24,reason:'Restrict author participation after reviewing the exact report evidence.'});
+    assert.equal(participation.scope,'participation');assert.equal(participation.subject,'author');assert.equal(participation.revision,1);
+    assert.ok(!JSON.stringify(participation).includes(author));assert.ok(!Object.hasOwn(participation,'subjectId'));
+    await assert.rejects(()=>restrictions.assertAllowed(author,'participation'),status(403));
+    await restrictions.assertAllowed(author,'reporting');
+    const member=await restrictions.status({id:author,name:'Author',email:`${author}@example.invalid`,demo:false});
+    assert.equal(member.restrictions.length,1);assert.equal(member.restrictions[0]?.scope,'participation');
+    assert.ok(!JSON.stringify(member).includes(report.id));assert.ok(!JSON.stringify(member).includes(staff.id));
+    const queue=await restrictions.queue(staff,{});
+    assert.equal(queue.restrictions[0]?.id,participation.id);assert.equal(queue.restrictions[0]?.lastActor,'me');
+    assert.ok(!JSON.stringify(queue).includes(author));
+    await assert.rejects(()=>restrictions.apply(staff,report.id,{reportRevision:0,targetRevision:0,subject:'author',
+      scope:'participation',durationHours:24,reason:'A duplicate active restriction must require current-state review.'}),status(409));
+    await assert.rejects(()=>restrictions.change(staff,participation.id,{action:'lift',revision:2,
+      reason:'A stale restriction revision cannot lift the current reviewed state.'}),status(409));
+    const extended=await restrictions.change(staff,participation.id,{action:'extend',revision:1,durationHours:720,
+      reason:'Extend the reviewed restriction because the current evidence still requires it.'});
+    assert.equal(extended.revision,2);assert.ok(Date.parse(extended.expiresAt)>Date.parse(participation.expiresAt));
+    const lifted=await restrictions.change(staff,participation.id,{action:'lift',revision:2,
+      reason:'Lift the participation restriction after a separate reviewed resolution.'});
+    assert.equal(lifted.status,'lifted');assert.equal(lifted.revision,3);
+    await restrictions.assertAllowed(author,'participation');
+    assert.equal((await restrictions.status({id:author,name:'Author',email:`${author}@example.invalid`,demo:false})).restrictions.length,0);
+
+    const reporting=await restrictions.apply(staff,report.id,{reportRevision:0,targetRevision:0,subject:'reporter',
+      scope:'reporting',durationHours:168,reason:'Restrict new reports after reviewing abuse of the reporting workflow.'});
+    assert.equal(reporting.subject,'reporter');await assert.rejects(()=>restrictions.assertAllowed(reporter.id,'reporting'),status(403));
+    await restrictions.assertAllowed(reporter.id,'participation');
+    const settled=await Promise.allSettled([
+      restrictions.apply(staff,report.id,{reportRevision:0,targetRevision:0,subject:'author',scope:'participation',
+        durationHours:24,reason:'Issue one current participation restriction after the prior lift.'}),
+      restrictions.apply(staff,report.id,{reportRevision:0,targetRevision:0,subject:'author',scope:'participation',
+        durationHours:24,reason:'A concurrent duplicate must not create another active restriction.'}),
+    ]);
+    assert.deepEqual(settled.map(value=>value.status).sort(),['fulfilled','rejected']);
+    assert.equal(Number((await f.db.prepare(`SELECT count(*) AS count FROM community_restrictions
+      WHERE subject_id=? AND scope='participation' AND state='active'`).get(author))?.count),1);
+    assert.deepEqual((await f.db.prepare('SELECT action FROM community_restriction_events WHERE restriction_id=? ORDER BY created_at,id')
+      .all(participation.id)).map(value=>value.action),['restrict','extend','lift']);
+    await assert.rejects(()=>f.db.prepare('UPDATE community_restriction_events SET reason=? WHERE restriction_id=?')
+      .run('Tampering with reviewed restriction evidence must fail.',reporting.id));
+    await assert.rejects(()=>f.db.prepare('DELETE FROM community_restrictions WHERE id=?').run(reporting.id));
   });
 
   test(`${dialect}: hidden comments are explicit non-repliable tombstones but remain owner-deletable`,async t=>{

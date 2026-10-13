@@ -115,8 +115,9 @@ PostgreSQL account and canonical-network admission buckets and fail closed when
 that protection is unavailable. The
 [appeal runbook](41-community-appeals-status-admission.md) records migration 32,
 privacy export and failure behavior. External delivery, account blocking,
-repeat-abuse restrictions, automated enforcement, staffed targets, approved
-retention and managed writing remain separate launch gates.
+automated enforcement, staffed targets, approved retention and managed writing
+remain separate launch gates; reviewed expiring restrictions are added by
+runbook 43.
 
 **Implemented personal author-muting checkpoint (W11):** authenticated members
 can privately mute one live contribution author with an exact UUID key, hide
@@ -125,8 +126,20 @@ non-interactive personal tombstones. Exact revision-fenced unmute, bounded
 minimized history, privacy exports without subject account IDs and shared
 managed admission are included in migration 33. The
 [mute runbook](42-privacy-safe-personal-author-muting.md) records concurrency,
-privacy and failure behavior. Account blocking, repeat-abuse policy, external
-notification, staffing, approved retention and managed writing remain gates.
+privacy and failure behavior. Relationship-wide account blocking, automated
+abuse policy, external notification, staffing, approved retention and managed
+writing remain gates; reviewed expiring restrictions are added by runbook 43.
+
+**Implemented reviewed community-restriction checkpoint (W11):** fresh
+MFA-authorized moderators or administrators can issue one exact report-bound
+author-participation or reporter-submission restriction for 24 hours, seven days
+or 30 days. Subject IDs stay server-only; admission is scope-specific; extension
+and lift are revision-fenced; member status/privacy exports are minimized; and
+staff reasons remain immutable private evidence in migration 34. The
+[restriction runbook](43-reviewed-expiring-community-restrictions.md) records
+lock order, expiry and failure behavior. Automated enforcement, permanent/global
+suspension, relationship-wide blocking, external notices, approved policy,
+staffing and managed writing remain gates.
 
 **Implemented managed staff-administration checkpoint (W10):** verified OIDC
 `amr` can establish explicit MFA evidence for a managed session; privileged
@@ -257,11 +270,14 @@ Authenticated reports and reviewed in-app hide/restore operations now follow
 [runbook 40](40-mfa-community-reports-moderation.md). This provides the
 provider-neutral queue and visibility mechanics. Owner appeals, minimized
 member status and shared managed report/appeal admission now follow
-[runbook 41](41-community-appeals-status-admission.md). These provide no
-external notices, repeat-abuse operations, retention approval or authority to
-enable managed contribution writes. Private personal author muting now follows
+[runbook 41](41-community-appeals-status-admission.md). Private personal author muting now follows
 [runbook 42](42-privacy-safe-personal-author-muting.md); it is not account
-blocking or a substitute for staffed abuse response.
+blocking or a substitute for staffed abuse response. Reviewed expiring
+participation/reporting restrictions now follow
+[runbook 43](43-reviewed-expiring-community-restrictions.md); they are not
+automated punishment, global suspension or an approved abuse/appeal policy, and
+none of these checkpoints authorizes external notices or managed contribution
+writes.
 
 Launch requirements:
 

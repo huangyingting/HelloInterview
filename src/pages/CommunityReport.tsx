@@ -1,7 +1,7 @@
 import {useState} from 'react';
 import type {
   CommunityAppealReceipt,CommunityAppealStatusPage,CommunityMute,CommunityMutePage,CommunityMuteReceipt,
-  CommunityReportCategory,CommunityReportReceipt,CommunityReportStatusPage,
+  CommunityReportCategory,CommunityReportReceipt,CommunityReportStatusPage,CommunityRestrictionStatus,
 } from '../../shared/types';
 import {request,useStudio} from '../store';
 
@@ -132,18 +132,20 @@ function CommunityUnmuteControl({mute,onSaved}:{mute:CommunityMute;onSaved:()=>v
 export function CommunityModerationHistory() {
   const {data}=useStudio(),[open,setOpen]=useState(false),[reports,setReports]=useState<CommunityReportStatusPage>();
   const [appeals,setAppeals]=useState<CommunityAppealStatusPage>(),[mutes,setMutes]=useState<CommunityMutePage>();
+  const [restrictions,setRestrictions]=useState<CommunityRestrictionStatus>();
   const [pending,setPending]=useState(false),[error,setError]=useState('');
   if(!data.user)return null;
   async function load(kind:'initial'|'reports'|'appeals'|'mutes') {
     setPending(true);setError('');
     try{
       if(kind==='initial'){
-        const [reportPage,appealPage,mutePage]=await Promise.all([
+        const [reportPage,appealPage,mutePage,restrictionStatus]=await Promise.all([
           request<CommunityReportStatusPage>('/api/community/reports'),
           request<CommunityAppealStatusPage>('/api/community/appeals'),
           request<CommunityMutePage>('/api/community/mutes'),
+          request<CommunityRestrictionStatus>('/api/community/restrictions'),
         ]);
-        setReports(reportPage);setAppeals(appealPage);setMutes(mutePage);
+        setReports(reportPage);setAppeals(appealPage);setMutes(mutePage);setRestrictions(restrictionStatus);
       }else if(kind==='reports'&&reports?.nextCursor){
         const page=await request<CommunityReportStatusPage>(`/api/community/reports?${new URLSearchParams({cursor:reports.nextCursor})}`);
         setReports({reports:[...reports.reports,...page.reports],nextCursor:page.nextCursor});
@@ -162,8 +164,8 @@ export function CommunityModerationHistory() {
       const next=!open;setOpen(next);if(next&&!reports&&!appeals)void load('initial');
     }}>My moderation status</button>
     {open&&<div>
-      <p className="fine-print">Only your report, appeal and active personal-mute receipts are shown. Staff identities, internal reasons, account identifiers and other members' activity remain private.</p>
-      {pending&&!reports&&!appeals&&!mutes&&<p role="status">Loading moderation status...</p>}
+      <p className="fine-print">Only your report, appeal, active personal-mute and current restriction status is shown. Staff identities, internal reasons, account identifiers and other members' activity remain private.</p>
+      {pending&&!reports&&!appeals&&!mutes&&!restrictions&&<p role="status">Loading moderation status...</p>}
       {error&&<p className="error-text" role="alert">{error}</p>}
       {reports&&<><h3>My reports</h3>{reports.reports.map(value=><p key={value.id}>
         <strong>{value.category.replaceAll('-',' ')}</strong> · {value.status} · target {value.targetState} at revision {value.targetRevision}
@@ -182,6 +184,10 @@ export function CommunityModerationHistory() {
         <CommunityUnmuteControl mute={value} onSaved={()=>setMutes(current=>current?{...current,mutes:current.mutes.filter(row=>row.id!==value.id)}:current)}/>
       </div>)}{!mutes.mutes.length&&<p>No authors are currently muted for you.</p>}
       {mutes.nextCursor&&<button className="button secondary small" disabled={pending} onClick={()=>void load('mutes')}>Load older active mutes</button>}</>}
+      {restrictions&&<><h3>My community restrictions</h3>{restrictions.restrictions.map(value=><p key={value.id}>
+        <strong>{value.scope==='participation'?'Participation restricted':'Report submission restricted'}</strong> · revision {value.revision}
+        <br/><span className="fine-print">Expires {new Date(value.expiresAt).toLocaleString()}. Reading, deletion, appeals, personal mutes and non-community account features remain available.</span>
+      </p>)}{!restrictions.restrictions.length&&<p>No active community restrictions apply to your account.</p>}</>}
     </div>}
   </section>;
 }
