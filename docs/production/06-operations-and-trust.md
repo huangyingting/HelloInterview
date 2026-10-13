@@ -116,6 +116,14 @@ restricted sign-in, `privacy.delete` due work and immutable explicit blockers.
 The worker does not erase owner data or claim completion; billing, processor,
 retention and backup-restore authorities remain required.
 
+**Implemented in-app support operations (W10):** migration 29 adds a bounded
+MFA/role-gated staff queue, revision-fenced assignment and handling state,
+idempotent owner-visible replies and append-only staff evidence. The
+[support operations runbook](38-mfa-in-app-support-operations.md) preserves
+masked/minimized queue data and excludes staff identities from owner history
+and exports. External email/helpdesk delivery, escalation, staffed SLA and
+approved support retention remain unavailable.
+
 ## Operating model
 
 Name accountable people before launch, even if one person initially fills

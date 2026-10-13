@@ -9,6 +9,7 @@ import { ManagedIdentity } from '../server/identity';
 import { SupportRequests } from '../server/support';
 import { HttpError } from '../server/http-error';
 import { openIdentityFixture, type IdentityBrowser } from './fixtures/identity';
+import { appendStaffRole } from '../server/staff';
 
 const body = 'A synthetic private support request about recovering my saved preparation.';
 const command = (): { key: string; email: string; body: string } => ({ key: randomUUID(), email: 'support-owner@example.invalid', body });
@@ -34,8 +35,9 @@ test('owned support replicas and exact retry pin one private receipt without pro
   const results = await Promise.all([save(f.browser, input), save(browser, input), save(f.browser, input)]);
   assert.deepEqual(results[0], results[1]); assert.deepEqual(results[1], results[2]);
   assert.deepEqual(await save(browser, { ...input, key: input.key.toUpperCase() }), results[0]);
-  assert.deepEqual(Object.keys(results[0]).sort(), ['body', 'createdAt', 'delivery', 'email', 'id', 'status']);
+  assert.deepEqual(Object.keys(results[0]).sort(), ['body', 'createdAt', 'delivery', 'email', 'handlingStatus', 'id', 'replies', 'status']);
   assert.equal(results[0].status, 'saved'); assert.equal(results[0].delivery, 'not-connected');
+  assert.equal(results[0].handlingStatus,'open');assert.deepEqual(results[0].replies,[]);
   assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM support').get())?.count, 1);
   assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM durable_operations').get())?.count, 0);
   assert.deepEqual((await history(browser)).tickets, [results[0]]);
@@ -157,13 +159,76 @@ test('anonymous support shares a network budget and a missing shared limiter fai
 
 test('support ownership nulling retires replay keys without granting email-based adoption or claiming full privacy erasure', async t => {
   const f = await fixture(t), input = command(), saved = await save(f.browser, input);
-  await assert.rejects(f.db.exec('UPDATE support SET request_hash=NULL'), /check constraint/);
+  await assert.rejects(f.db.exec('UPDATE support SET request_hash=NULL'), /check constraint|allow only ownership retirement/);
   await f.db.prepare('DELETE FROM users WHERE id=?').run(f.owner);
   const row = await f.db.prepare('SELECT * FROM support WHERE id=?').get(saved.id); assert.ok(row);
   assert.equal(row.user_id, null); assert.equal(row.request_key, null); assert.equal(row.request_hash, null);
   assert.equal(row.body, body);
   const other = f.newBrowser(); await f.complete(other, await f.begin(other), { sub: 'google-oauth2|support-after-deletion' }); assert.ok((await other.bootstrap()).user);
   assert.equal((await history(other)).tickets.length, 0);
+});
+
+test('MFA support staff claim revision-fenced tickets, publish idempotent in-app replies and expose no staff identity to owners',async t=>{
+  const f=await fixture(t),saved=await save(f.browser),staffBrowser=f.newBrowser();
+  const signed=await f.complete(staffBrowser,await f.begin(staffBrowser),{
+    sub:'google-oauth2|support-operator',email:'operator@example.invalid',amr:['pwd','mfa'],
+  });
+  assert.equal(signed.headers.get('location'),'/account');
+  const staffData=await staffBrowser.bootstrap();assert.ok(staffData.user);
+  await appendStaffRole(f.db,{userId:staffData.user.id,role:'support-agent',state:'granted',actorRef:'fixture-bootstrap',
+    reason:'Grant bounded support operations for this synthetic acceptance test.',
+    endsAt:new Date(Date.now()+86400000).toISOString()});
+  const queue=await staffBrowser.request('/api/staff/support');assert.equal(queue.status,200);
+  const page=await queue.json(),ticket=page.tickets.find((value:{id:string})=>value.id===saved.id);assert.ok(ticket);
+  assert.equal(ticket.status,'open');assert.equal(ticket.revision,0);assert.equal(ticket.assignment,null);
+  assert.equal(ticket.ownerAccess,true);
+  assert.notEqual(ticket.maskedEmail,saved.email);assert.doesNotMatch(JSON.stringify(ticket),new RegExp(f.owner));
+  const reason='Assign this request after reviewing the bounded in-app support queue.';
+  const assigned=await staffBrowser.request(`/api/staff/support/${saved.id}`,{revision:0,assignment:'me',reason},'PATCH');
+  assert.equal(assigned.status,200);assert.equal((await assigned.json()).revision,1);
+  const otherBrowser=f.newBrowser();
+  await f.complete(otherBrowser,await f.begin(otherBrowser),{
+    sub:'google-oauth2|support-operator-other',email:'operator.other@example.invalid',amr:['pwd','mfa'],
+  });
+  const otherData=await otherBrowser.bootstrap();assert.ok(otherData.user);
+  await appendStaffRole(f.db,{userId:otherData.user.id,role:'support-agent',state:'granted',actorRef:'fixture-bootstrap',
+    reason:'Grant a second bounded support role to verify assignment isolation.',
+    endsAt:new Date(Date.now()+86400000).toISOString()});
+  const otherQueue=await (await otherBrowser.request('/api/staff/support')).json();
+  assert.equal(otherQueue.tickets.find((value:{id:string})=>value.id===saved.id).assignment,'other');
+  assert.equal((await otherBrowser.request(`/api/staff/support/${saved.id}`,
+    {revision:1,status:'resolved',reason:'Reject another support agent changing this assigned request.'},'PATCH')).status,409);
+  assert.equal((await otherBrowser.request(`/api/staff/support/${saved.id}/replies`,
+    {requestId:randomUUID(),revision:1,body:'This other agent must not publish into an assigned request.'})).status,409);
+  assert.equal((await staffBrowser.request(`/api/staff/support/${saved.id}`,
+    {revision:0,status:'resolved',reason:'Reject a stale support state transition after assignment.'},'PATCH')).status,409);
+  const requestId=randomUUID(),replyBody='We received your request and preserved your saved preparation. Please confirm whether sign-in now succeeds.';
+  const first=await staffBrowser.request(`/api/staff/support/${saved.id}/replies`,
+    {requestId,revision:1,body:replyBody});
+  assert.equal(first.status,201);const firstResult=await first.json(),firstReply=firstResult.reply;
+  const replay=await staffBrowser.request(`/api/staff/support/${saved.id}/replies`,
+    {requestId,revision:1,body:replyBody});
+  assert.equal(replay.status,201);assert.deepEqual(await replay.json(),firstResult);
+  assert.equal((await staffBrowser.request(`/api/staff/support/${saved.id}/replies`,
+    {requestId,revision:2,body:`${replyBody} Changed.`})).status,409);
+  const ownerHistory=await history(f.browser),ownerTicket=ownerHistory.tickets.find(value=>value.id===saved.id);assert.ok(ownerTicket);
+  assert.equal(ownerTicket.handlingStatus,'pending');assert.deepEqual(ownerTicket.replies,[firstReply]);
+  assert.doesNotMatch(JSON.stringify(ownerTicket),/support-operator|operator@example/);
+  const resolved=await staffBrowser.request(`/api/staff/support/${saved.id}`,
+    {revision:2,status:'resolved',reason:'Resolve after publishing the reviewed owner-visible response.'},'PATCH');
+  assert.equal(resolved.status,200);assert.equal((await resolved.json()).revision,3);
+  const events=await f.db.prepare('SELECT action,prior_revision,result_revision FROM support_staff_events WHERE ticket_id=? ORDER BY prior_revision').all(saved.id);
+  assert.deepEqual(events.map(value=>value.action),['assigned','replied','status.resolved']);
+  assert.deepEqual(events.map(value=>[value.prior_revision,value.result_revision]),[[0,1],[1,2],[2,3]]);
+  await assert.rejects(f.db.prepare('UPDATE support_replies SET body=? WHERE id=?').run('Changed immutable reply.',firstReply.id),/append-only/);
+  await assert.rejects(f.db.prepare('DELETE FROM support_staff_events WHERE ticket_id=?').run(saved.id),/append-only/);
+  const anonymousId=randomUUID();
+  await f.db.prepare('INSERT INTO support(id,user_id,email,body,created_at) VALUES(?,NULL,?,?,?)')
+    .run(anonymousId,'anonymous@example.invalid','An anonymous request can be triaged but has no authenticated in-app inbox.','2026-10-13T00:00:00.000Z');
+  const refreshed=await (await staffBrowser.request('/api/staff/support')).json();
+  assert.equal(refreshed.tickets.find((value:{id:string})=>value.id===anonymousId).ownerAccess,false);
+  assert.equal((await staffBrowser.request(`/api/staff/support/${anonymousId}/replies`,
+    {requestId:randomUUID(),revision:0,body:'This reply must not claim delivery to an unavailable owner inbox.'})).status,409);
 });
 
 test('migration 20 preserves actual migration-19 support and admission facts without invented replay keys or delivery', async t => {

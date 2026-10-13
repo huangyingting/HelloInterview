@@ -203,8 +203,12 @@ scoped member receipts/history and shared support-write admission. The
 [staff administration checkpoint](35-mfa-staff-account-administration.md)
 adds verified OIDC MFA evidence, expiring append-only role grants, exact masked
 account lookup, revision-fenced suspension/reactivation, session revocation and
-immutable minimal audit. It adds no impersonation, external support delivery,
-private preparation access, role-management UI or completed privacy deletion.
+immutable minimal audit. The
+[in-app support operations checkpoint](38-mfa-in-app-support-operations.md)
+adds an MFA/role-gated bounded queue, assignment/status revisions and
+owner-visible replies without exposing staff identities. These checkpoints add
+no impersonation, external email/helpdesk delivery, private preparation access,
+role-management UI, staffed SLA or completed privacy deletion.
 
 | Role | Permitted actions | Explicit exclusions |
 | --- | --- | --- |

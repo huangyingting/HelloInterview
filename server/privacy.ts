@@ -252,7 +252,11 @@ export class PrivacyExports {
         commentSubmissions:await all(`SELECT request_id,comment_id,resource,created_at FROM community_comment_submissions
           WHERE user_id=? ORDER BY created_at,request_id`,owner),
       },
-      support:(await all(`SELECT id,email,body,created_at FROM support WHERE user_id=? ORDER BY created_at,id`,owner)),
+      support:await Promise.all((await all(`SELECT id,email,body,created_at,handling_status,support_revision,support_updated_at
+        FROM support WHERE user_id=? ORDER BY created_at,id`,owner)).map(async ticket=>({
+          ...ticket,replies:await all(`SELECT id,body,created_at FROM support_replies WHERE ticket_id=? ORDER BY created_at,id`,
+            z.string().parse(ticket.id)),
+        }))),
       billing:customerRef?{
         customer:without(customer!,'id'),
         checkouts:await all(`SELECT id,request_key,offer_key,state,payment_status,currency,unit_amount,expires_at,created_at,observed_at

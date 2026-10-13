@@ -14,12 +14,20 @@ export interface SupportReceipt {
   createdAt: string;
   status: 'saved';
   delivery: 'not-connected';
+  handlingStatus:'open'|'pending'|'resolved';
+  replies:SupportReply[];
 }
+export interface SupportReply {id:string;body:string;createdAt:string}
 export interface SupportHistory {
   tickets: SupportReceipt[];
   nextCursor: string | null;
   delivery: 'not-connected';
 }
+export interface StaffSupportTicket {
+  id:string;maskedEmail:string;body:string;createdAt:string;updatedAt:string;
+  status:'open'|'pending'|'resolved';revision:number;assignment:'me'|'other'|null;ownerAccess:boolean;
+}
+export interface StaffSupportPage {tickets:StaffSupportTicket[];nextCursor:string|null;delivery:'in-app-only'}
 
 export interface ContentSection {
   title: string;

@@ -1,6 +1,6 @@
 import {useEffect,useState} from 'react';
 import {Link} from 'react-router-dom';
-import type {StaffAccount,StaffAuditPage,StaffRole} from '../../shared/types';
+import type {StaffAccount,StaffAuditPage,StaffRole,StaffSupportPage,StaffSupportTicket} from '../../shared/types';
 import {Badge,PageHeading} from '../components';
 import {request,useStudio} from '../store';
 
@@ -20,6 +20,7 @@ function StaffAccountCard({value,administrator,onChange}:{value:StaffAccount;adm
     }catch(error){notify(error instanceof Error?error.message:'The staff action failed.',true);}
     finally{setPending(false);}
   }
+
   return <article className="panel">
     <h3>{value.maskedEmail}</h3>
     <p><Badge tone={value.status==='active'?'green':'amber'}>{value.status.replaceAll('-',' ')}</Badge>{' '}
@@ -37,10 +38,57 @@ function StaffAccountCard({value,administrator,onChange}:{value:StaffAccount;adm
   </article>;
 }
 
+function StaffSupportCard({value,onChange}:{value:StaffSupportTicket;onChange:(ticket:StaffSupportTicket)=>void}) {
+  const {notify}=useStudio(),[reason,setReason]=useState(''),[status,setStatus]=useState(value.status);
+  const [reply,setReply]=useState(''),[replyKey,setReplyKey]=useState(()=>crypto.randomUUID()),[pending,setPending]=useState(false);
+  async function update(input:{assignment?:'me'|'none';status?:StaffSupportTicket['status']}) {
+    setPending(true);
+    try{
+      const ticket=await request<StaffSupportTicket>(`/api/staff/support/${value.id}`,
+        {revision:value.revision,reason,...input},'PATCH');
+      onChange(ticket);setStatus(ticket.status);setReason('');notify('Support ticket state updated.');
+    }catch(cause){notify(cause instanceof Error?cause.message:'Support ticket update failed.',true);}
+    finally{setPending(false);}
+  }
+  async function respond() {
+    setPending(true);
+    try{
+      const result=await request<{ticket:StaffSupportTicket}>(`/api/staff/support/${value.id}/replies`,
+        {requestId:replyKey,revision:value.revision,body:reply});
+      onChange(result.ticket);setStatus(result.ticket.status);setReply('');setReplyKey(crypto.randomUUID());
+      notify('In-app reply published. No email or helpdesk delivery was claimed.');
+    }catch(cause){notify(cause instanceof Error?cause.message:'Support reply failed.',true);}
+    finally{setPending(false);}
+  }
+  return <article className="panel">
+    <h3>{value.maskedEmail}</h3>
+    <p><Badge tone={value.status==='resolved'?'green':'amber'}>{value.status}</Badge>{' '}
+      {value.assignment==='me'?'Assigned to you':value.assignment==='other'?'Assigned to another agent':'Unassigned'} · revision {value.revision}</p>
+    {!value.ownerAccess&&<p className="fine-print">No authenticated owner inbox is attached. Triage is available, but in-app reply delivery is not.</p>}
+    <p>{value.body}</p><p className="fine-print">Saved {new Date(value.createdAt).toLocaleString()} · updated {new Date(value.updatedAt).toLocaleString()}</p>
+    <label>Required support reason<textarea minLength={20} maxLength={500} value={reason} onChange={event=>setReason(event.target.value)}/></label>
+    {value.assignment!=='other'&&<button className="button secondary small" disabled={pending||reason.trim().length<20}
+      onClick={()=>void update({assignment:value.assignment==='me'?'none':'me'})}>{value.assignment==='me'?'Release assignment':'Assign to me'}</button>}
+    <form onSubmit={event=>{event.preventDefault();void update({status});}}>
+      <label>Handling status<select value={status} onChange={event=>setStatus(event.target.value as StaffSupportTicket['status'])}>
+        <option value="open">Open</option><option value="pending">Pending owner</option><option value="resolved">Resolved</option>
+      </select></label>
+      <button className="button secondary small" disabled={pending||reason.trim().length<20||status===value.status}>Apply status</button>
+    </form>
+    {value.ownerAccess&&value.assignment!=='other'&&<form onSubmit={event=>{event.preventDefault();void respond();}}>
+      <label>Owner-visible in-app reply<textarea required minLength={1} maxLength={10000} value={reply} onChange={event=>setReply(event.target.value)}
+        placeholder="Reply without including secrets or unsupported delivery promises."/>
+      </label>
+      <button className="button small" disabled={pending||!reply.trim()}>Publish in-app reply</button>
+    </form>}
+  </article>;
+}
+
 export function StaffPage() {
   const {data,notify}=useStudio(),[roles,setRoles]=useState<StaffRole[]|null>(null),[error,setError]=useState(''),[email,setEmail]=useState('');
   const [accounts,setAccounts]=useState<StaffAccount[]>([]),[searching,setSearching]=useState(false),[audit,setAudit]=useState<StaffAuditPage>();
   const [auditError,setAuditError]=useState(''),[loadingAudit,setLoadingAudit]=useState(false);
+  const [support,setSupport]=useState<StaffSupportPage>(),[supportError,setSupportError]=useState(''),[loadingSupport,setLoadingSupport]=useState(false);
   useEffect(()=>{
     const controller=new AbortController();
     request<{roles:StaffRole[]}>('/api/staff/session',undefined,'GET',controller.signal)
@@ -65,6 +113,14 @@ export function StaffPage() {
     }catch(cause){setAuditError(cause instanceof Error?cause.message:'Staff audit history could not be loaded.');}
     finally{setLoadingAudit(false);}
   }
+  async function loadSupport(cursor?:string) {
+    setLoadingSupport(true);
+    try{
+      const page=await request<StaffSupportPage>(`/api/staff/support${cursor?`?${new URLSearchParams({cursor})}`:''}`);
+      setSupport(current=>cursor&&current?{...page,tickets:[...current.tickets,...page.tickets]}:page);setSupportError('');
+    }catch(cause){setSupportError(cause instanceof Error?cause.message:'Support queue could not be loaded.');}
+    finally{setLoadingSupport(false);}
+  }
   return <>
     <PageHeading eyebrow="STAFF OPERATIONS" title="Account access, without impersonation." description="Privileged actions require a current managed session, verified MFA, a fresh sign-in, an active time-bounded role and an explicit reason."/>
     {error&&<section className="panel"><h2>Confirm privileged access</h2><p role="alert">{error}</p><p>Use an MFA-enabled identity provider and confirm that sign-in again. Fresh authentication alone is not treated as MFA.</p><Link className="button secondary small" to="/account">Open sign-in security</Link></section>}
@@ -78,6 +134,15 @@ export function StaffPage() {
       </section>}
       {!!accounts.length&&<div className="account-grid">{accounts.map(value=><StaffAccountCard key={value.id} value={value} administrator={administrator}
         onChange={updated=>setAccounts(current=>current.map(item=>item.id===updated.id?updated:item))}/>)}</div>}
+      {canSearch&&<section className="panel"><h2>In-app support queue</h2>
+        <p>Requests and replies remain inside the authenticated Studio. No email, helpdesk delivery, staffed SLA or escalation is connected.</p>
+        {!support&&<button className="button secondary small" disabled={loadingSupport} onClick={()=>void loadSupport()}>Load support queue</button>}
+        {supportError&&<><p role="alert">{supportError}</p><button className="button secondary small" disabled={loadingSupport} onClick={()=>void loadSupport()}>Retry support queue</button></>}
+        {support?.tickets.map(ticket=><StaffSupportCard key={ticket.id} value={ticket}
+          onChange={updated=>setSupport(current=>current&&({...current,tickets:current.tickets.map(item=>item.id===updated.id?updated:item)}))}/>)}
+        {support&&!support.tickets.length&&<p>No support requests are saved.</p>}
+        {support?.nextCursor&&<button className="button secondary small" disabled={loadingSupport} onClick={()=>void loadSupport(support.nextCursor!)}>Load older support requests</button>}
+      </section>}
       {administrator&&<section className="panel"><h2>Immutable staff audit</h2>
         {!audit&&<button className="button secondary small" disabled={loadingAudit} onClick={()=>void loadAudit()}>View recent staff audit</button>}
         {auditError&&<><p role="alert">{auditError}</p><button className="button secondary small" disabled={loadingAudit} onClick={()=>void loadAudit()}>Retry audit history</button></>}

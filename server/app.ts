@@ -1132,6 +1132,15 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     app.get('/api/staff/audit',async(req,res)=>{
       const user=await requireUser(req);await identity.admitStaff(user,res);res.json(await staff.history(user,req.query));
     });
+    app.get('/api/staff/support',async(req,res)=>{
+      const user=await requireUser(req);await identity.admitStaff(user,res);res.json(await support!.queue(user,req.query));
+    });
+    app.patch('/api/staff/support/:id',async(req,res)=>{
+      const user=await requireUser(req);await identity.admitStaff(user,res);res.json(await support!.update(user,req.params.id,req.body));
+    });
+    app.post('/api/staff/support/:id/replies',async(req,res)=>{
+      const user=await requireUser(req);await identity.admitStaff(user,res);res.status(201).json(await support!.respond(user,req.params.id,req.body));
+    });
   }
   app.use('/api', (_req, res) => res.status(404).json({ error: 'API endpoint not found.' }));
   return app;

@@ -235,7 +235,11 @@ revocation, restricted sign-in, seven-day in-page cancellation and durable due
 work that publishes explicit external blockers instead of false completion.
 It performs no physical erasure and does not claim billing, processor,
 retention or backup-restore completion.
-Controlled PostgreSQL deployments must apply **migration 28 and maintained queue
+The [in-app support operations checkpoint](docs/production/38-mfa-in-app-support-operations.md)
+adds an MFA-gated bounded staff queue, revision-fenced assignment/status and
+idempotent owner-visible replies with immutable evidence. External email,
+helpdesk delivery, SLA and staffing claims remain disabled.
+Controlled PostgreSQL deployments must apply **migration 29 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 

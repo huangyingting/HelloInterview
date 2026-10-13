@@ -78,8 +78,12 @@ test('privacy artifacts cover owned preparation, identity, grants, usage, contri
     startsAt:Date.now()-1000,endsAt:Date.now()+86300000,
     evidence:{actor:'fixture-operator',reason:'Synthetic privacy export grant evidence.'},
   });
+  const supportId=randomUUID();
   await f.db.prepare(`INSERT INTO support(id,user_id,email,body,created_at) VALUES(?,?,?,?,?)`).run(
-    randomUUID(),owner,'privacy@example.invalid','A private support request included in the owner export.','2026-10-13T00:00:00.000Z');
+    supportId,owner,'privacy@example.invalid','A private support request included in the owner export.','2026-10-13T00:00:00.000Z');
+  await f.db.prepare(`INSERT INTO support_replies(id,ticket_id,request_key,request_hash,actor_ref,body)
+    VALUES(?,?,?,?,?,?)`).run(randomUUID(),supportId,randomUUID(),'7'.repeat(64),'fixture-operator',
+      'An owner-visible in-app support reply included without its staff identity.');
   await f.db.prepare(`INSERT INTO posts(id,kind,title,body,company,track,level,region,author,author_id,created_at,sample)
     VALUES(?,?,?,?,?,?,?,?,?,?,?,0)`).run('privacy-post','questions','Owned privacy post','A complete private-owner community contribution.','Example','system-design','Senior','Global','Owner',owner,'2026-10-13T00:00:00.000Z');
   await f.db.prepare(`INSERT INTO comments(id,resource,user_id,author,body,created_at,parent_id)
@@ -120,7 +124,7 @@ test('privacy artifacts cover owned preparation, identity, grants, usage, contri
   const token=[...(await f.db.prepare('SELECT token,csrf_hash FROM managed_sessions').all())][0];
   const exported=await completedPrivacyExport(browser,f.privacy);
   const text=JSON.stringify(exported.artifact);
-  assert.match(text,/A private owned story|Owned privacy post|Owned privacy comment|private support request|private export prompt/);
+  assert.match(text,/A private owned story|Owned privacy post|Owned privacy comment|private support request|owner-visible in-app support reply|private export prompt/);
   assert.match(text,/premium-read-v1|privacy-reservation|pro_monthly|sub_privacy|in_privacy/);
   assert.doesNotMatch(text,new RegExp(String(token.token)));
   assert.doesNotMatch(text,new RegExp(String(token.csrf_hash)));

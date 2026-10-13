@@ -879,6 +879,68 @@ export const migrations = [{
     CREATE TRIGGER protect_privacy_deletion_update BEFORE UPDATE ON privacy_deletions
       FOR EACH ROW EXECUTE FUNCTION protect_privacy_deletion();
   `,
+}, {
+  version:29,
+  name:'mfa-in-app-support-operations',
+  sql:`
+    ALTER TABLE support ADD COLUMN handling_status TEXT NOT NULL DEFAULT 'open'
+      CHECK (handling_status IN ('open','pending','resolved'));
+    ALTER TABLE support ADD COLUMN support_revision INTEGER NOT NULL DEFAULT 0 CHECK (support_revision>=0);
+    ALTER TABLE support ADD COLUMN assigned_to TEXT REFERENCES users(id);
+    ALTER TABLE support ADD COLUMN support_updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp();
+    CREATE INDEX support_staff_queue ON support(handling_status,support_updated_at DESC,id DESC);
+    CREATE INDEX support_assignee_queue ON support(assigned_to,handling_status,support_updated_at DESC,id DESC);
+    CREATE TABLE support_replies (
+      id TEXT PRIMARY KEY CHECK (id ~ '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'),
+      ticket_id TEXT NOT NULL REFERENCES support(id) ON DELETE CASCADE,
+      request_key TEXT NOT NULL CHECK (request_key ~ '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'),
+      request_hash TEXT NOT NULL CHECK (request_hash ~ '^[a-f0-9]{64}$'),
+      actor_ref TEXT NOT NULL CHECK (length(actor_ref) BETWEEN 1 AND 200),
+      body TEXT NOT NULL CHECK (length(body) BETWEEN 1 AND 10000),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+      UNIQUE(ticket_id,request_key)
+    );
+    CREATE INDEX support_replies_ticket_order ON support_replies(ticket_id,created_at,id);
+    CREATE TABLE support_staff_events (
+      id TEXT PRIMARY KEY CHECK (id ~ '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'),
+      ticket_id TEXT NOT NULL REFERENCES support(id) ON DELETE CASCADE,
+      actor_ref TEXT NOT NULL CHECK (length(actor_ref) BETWEEN 1 AND 200),
+      actor_role TEXT NOT NULL CHECK (actor_role IN ('support-agent','administrator')),
+      action TEXT NOT NULL CHECK (action IN ('assigned','unassigned','status.open','status.pending','status.resolved','replied')),
+      reason TEXT NOT NULL CHECK (length(reason) BETWEEN 20 AND 500),
+      prior_revision INTEGER NOT NULL CHECK (prior_revision>=0),
+      result_revision INTEGER NOT NULL CHECK (result_revision=prior_revision+1),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+    );
+    CREATE INDEX support_staff_events_ticket_order ON support_staff_events(ticket_id,created_at,id);
+    CREATE FUNCTION immutable_support_record() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+      BEGIN RAISE EXCEPTION 'Support replies and staff events are append-only.'; END;
+    $$;
+    CREATE TRIGGER immutable_support_reply BEFORE UPDATE OR DELETE ON support_replies
+      FOR EACH ROW EXECUTE FUNCTION immutable_support_record();
+    CREATE TRIGGER immutable_support_staff_event BEFORE UPDATE OR DELETE ON support_staff_events
+      FOR EACH ROW EXECUTE FUNCTION immutable_support_record();
+    CREATE FUNCTION protect_support_ticket() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+      BEGIN
+        IF NOT (
+          OLD.user_id IS NOT NULL AND NEW.user_id IS NULL AND NEW.request_key IS NULL AND NEW.request_hash IS NULL AND
+            NEW.id=OLD.id AND NEW.email=OLD.email AND NEW.body=OLD.body AND NEW.created_at=OLD.created_at AND
+            NEW.handling_status=OLD.handling_status AND NEW.support_revision=OLD.support_revision AND
+            NEW.assigned_to IS NOT DISTINCT FROM OLD.assigned_to AND NEW.support_updated_at=OLD.support_updated_at OR
+          NEW.id=OLD.id AND NEW.user_id IS NOT DISTINCT FROM OLD.user_id AND NEW.email=OLD.email AND
+            NEW.body=OLD.body AND NEW.created_at=OLD.created_at AND NEW.request_key IS NOT DISTINCT FROM OLD.request_key AND
+            NEW.request_hash IS NOT DISTINCT FROM OLD.request_hash AND NEW.support_revision=OLD.support_revision+1 AND
+            NEW.support_updated_at>=OLD.support_updated_at AND
+            (NEW.handling_status<>OLD.handling_status OR NEW.assigned_to IS DISTINCT FROM OLD.assigned_to)
+        ) THEN
+          RAISE EXCEPTION 'Support tickets allow only ownership retirement or revision-fenced staff state changes.';
+        END IF;
+        RETURN NEW;
+      END;
+    $$;
+    CREATE TRIGGER zz_protect_support_ticket BEFORE UPDATE ON support
+      FOR EACH ROW EXECUTE FUNCTION protect_support_ticket();
+  `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }
