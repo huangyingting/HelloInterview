@@ -86,6 +86,16 @@ token corrections, image-background failure behavior and exemptions. Broad
 WCAG, forced-colors, assistive-technology, alternate-engine, physical-device
 and launch approval remain open.
 
+**Implemented critical-form semantics checkpoint (W12):** compiled local
+authentication, account and support forms expose accessible names and stable
+instruction references, retain native invalid-control focus and issue no API
+request for invalid submissions. Acceptance also exercises a real rejected
+login `alert` and a saved local-support `status` that explicitly denies external
+delivery. The [form-semantics runbook](50-critical-form-semantics.md) records
+the contract and rollback boundary. Complete managed identity/payment, staff,
+community/editor, screen-reader/IME, localization and launch approval remain
+open.
+
 **Implemented local owner-contribution checkpoint (W11):** private owned
 snapshots, current-session/revision-fenced title/body edits, exact discussion
 deletion and serialized post-comment admission are available. The

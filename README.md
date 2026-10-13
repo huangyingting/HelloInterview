@@ -85,6 +85,10 @@ changing compact fine-pointer layouts; see the
 Those same compiled flows now have computed light/dark text, placeholder and
 keyboard-focus contrast checks with shared-token corrections; see the
 [contrast boundaries](docs/production/49-critical-flow-contrast.md).
+Compiled local authentication, account and support forms also expose stable
+instruction associations, preserve native invalid focus without issuing
+requests, and announce rejected credentials and locally saved support outcomes;
+see the [form-semantics boundaries](docs/production/50-critical-form-semantics.md).
 This is not a complete accessibility assessment or real-device/browser approval.
 
 **This is a production-format runtime, not a production-ready paid service.**
@@ -306,6 +310,12 @@ background layers and gradient stops, checks the shared keyboard focus outline,
 and verifies alert/current-page semantics. Shared muted, accent, error and
 placeholder tokens were corrected; broad WCAG, screen-reader, forced-colors,
 image-content and alternate-engine approval remain open.
+The [critical-form semantics checkpoint](docs/production/50-critical-form-semantics.md)
+associates persistent instructions with compiled local auth, profile/password
+and support forms, verifies native invalid focus and zero invalid-submit API
+requests, and checks live rejected-login and local-support outcomes. It is not
+a complete form inventory or hosted identity/payment, assistive-technology,
+IME, localization or launch approval.
 Controlled PostgreSQL deployments must apply **migration 37 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.

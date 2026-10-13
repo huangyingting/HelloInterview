@@ -1010,6 +1010,89 @@ test('critical flows meet computed text and focus contrast in both themes',async
   }
 });
 
+test('critical forms expose names, associated instructions, native invalid focus and announced outcomes',async t=>{
+  const f=await fixture(t),context=await f.browser.newContext({viewport:{width:1280,height:900}});
+  t.after(()=>context.close());
+  const page=await context.newPage(),requests:string[]=[];
+  page.on('request',request=>requests.push(`${request.method()} ${new URL(request.url()).pathname}`));
+  async function inspect(label:string) {
+    const result=await page.locator('body').evaluate(body=>{
+      const helper={visible(element:HTMLElement){
+        const style=getComputedStyle(element),rect=element.getBoundingClientRect();
+        return style.display!=='none'&&style.visibility!=='hidden'&&rect.width>0&&rect.height>0;
+      }};
+      const unnamed=Array.from(body.querySelectorAll<HTMLInputElement|HTMLSelectElement|HTMLTextAreaElement>('input:not([type="hidden"]),select,textarea'))
+        .filter(element=>helper.visible(element)).filter(element=>!element.getAttribute('aria-label')&&!Array.from(element.labels??[]).some(label=>label.textContent?.trim()))
+        .map(element=>`${element.tagName.toLowerCase()}:${element.type||''}`);
+      const missing=Array.from(body.querySelectorAll<HTMLElement>('[aria-describedby]')).filter(element=>helper.visible(element)).flatMap(element=>
+        (element.getAttribute('aria-describedby')??'').split(/\s+/).filter(Boolean).filter(id=>!document.getElementById(id))
+          .map(id=>`${element.tagName.toLowerCase()}:${id}`));
+      return {unnamed,missing};
+    });
+    assert.deepEqual(result,{unnamed:[],missing:[]},`${label}: form semantics`);
+  }
+  await page.goto(`${f.url}/auth`);
+  await expect(page.getByRole('heading',{name:'Welcome back.',exact:true})).toBeVisible();
+  await inspect('login');
+  let before=requests.length;
+  await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await page.waitForTimeout(50);
+  assert.equal(requests.length,before,'blank login issued a request');
+  const email=page.getByLabel('Email'),password=page.getByLabel('Password');
+  await expect(email).toBeFocused();
+  assert.equal(await email.evaluate(element=>(element as HTMLInputElement).validity.valueMissing),true);
+  await email.fill('nobody@example.invalid');await password.fill('wrong-password');
+  await page.getByRole('button',{name:'Sign in',exact:true}).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  assert.ok((await page.getByRole('alert').innerText()).trim().length>0);
+  await page.getByRole('button',{name:'Create account'}).click();
+  await inspect('signup');
+  await expect(page.getByLabel('Password')).toHaveAttribute('aria-describedby','local-password-help');
+  await expect(page.locator('#local-password-help')).toContainText('at least 10 characters');
+  await page.getByLabel('Your name').fill('Alex');
+  await page.getByLabel('Email').fill('alex.forms@example.invalid');
+  await page.getByLabel('Password').fill('short');
+  before=requests.length;
+  await page.getByRole('button',{name:'Create account',exact:true}).click();
+  await page.waitForTimeout(50);
+  assert.equal(requests.length,before,'short signup password issued a request');
+  await expect(page.getByLabel('Password')).toBeFocused();
+  assert.equal(await page.getByLabel('Password').evaluate(element=>(element as HTMLInputElement).validity.tooShort),true);
+  const signup=await page.request.post(`${f.url}/api/auth/signup`,{data:{name:'Alex',email:'alex.forms@example.invalid',password:'correct-horse-staple'}});
+  assert.equal(signup.status(),200);
+  await page.goto(`${f.url}/account`);
+  await expect(page.locator('main')).toContainText('A few things about you.');
+  await inspect('account');
+  await expect(page.getByLabel('New password')).toHaveAttribute('aria-describedby','local-new-password-help');
+  const displayName=page.getByLabel('Display name');
+  await displayName.fill('');
+  before=requests.length;
+  await page.getByRole('button',{name:'Save profile'}).click();
+  await page.waitForTimeout(50);
+  assert.equal(requests.length,before,'blank display name issued a request');
+  await expect(displayName).toBeFocused();
+  await page.goto(`${f.url}/support`);
+  await expect(page.locator('main')).toContainText('What’s getting in your way?');
+  await inspect('support');
+  const contact=page.getByLabel('Contact email'),question=page.getByLabel('Support question');
+  await expect(question).toHaveAttribute('aria-describedby','support-question-help');
+  await contact.fill('');await question.fill('This support question is long enough to submit.');
+  before=requests.length;
+  await page.getByRole('button',{name:'Save local ticket'}).click();
+  await page.waitForTimeout(50);
+  assert.equal(requests.length,before,'missing support email issued a request');
+  await expect(contact).toBeFocused();
+  await contact.fill('alex.forms@example.invalid');await question.fill('too short');
+  before=requests.length;
+  await page.getByRole('button',{name:'Save local ticket'}).click();
+  await page.waitForTimeout(50);
+  assert.equal(requests.length,before,'short support question issued a request');
+  await expect(question).toBeFocused();
+  await question.fill('This support question is long enough and contains no confidential details.');
+  await page.getByRole('button',{name:'Save local ticket'}).click();
+  await expect(page.getByRole('status')).toContainText('No external delivery occurred.');
+});
+
 test('cold real-browser landing and sign-in request exactly their static dependency closures', async t => {
   const f = await fixture(t);
   for (const [route, module, heading] of [
