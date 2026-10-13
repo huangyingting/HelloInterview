@@ -2,7 +2,8 @@ import {useEffect,useState} from 'react';
 import {Link} from 'react-router-dom';
 import type {
   StaffAccount,StaffAuditPage,StaffCommunityAppeal,StaffCommunityAppealPage,StaffCommunityReport,StaffCommunityReportPage,
-  StaffCommunityRestriction,StaffCommunityRestrictionPage,StaffRole,StaffSupportPage,StaffSupportTicket,
+  StaffCommunityRestriction,StaffCommunityRestrictionAppeal,StaffCommunityRestrictionAppealPage,
+  StaffCommunityRestrictionPage,StaffRole,StaffSupportPage,StaffSupportTicket,
 } from '../../shared/types';
 import {Badge,PageHeading} from '../components';
 import {request,useStudio} from '../store';
@@ -177,6 +178,48 @@ function StaffRestrictionCard({value,administrator,onChange}:{value:StaffCommuni
   </article>;
 }
 
+function StaffRestrictionAppealCard({value,administrator,onChange}:{value:StaffCommunityRestrictionAppeal;
+  administrator:boolean;onChange:(appeal:StaffCommunityRestrictionAppeal)=>void}) {
+  const {notify}=useStudio(),[reason,setReason]=useState(''),[pending,setPending]=useState(false);
+  async function apply(action:'claim'|'release'|'deny'|'uphold'|'resolve') {
+    setPending(true);
+    try{
+      const appeal=await request<StaffCommunityRestrictionAppeal>(
+        `/api/staff/community/restriction-appeals/${value.id}`,
+        {revision:value.revision,restrictionRevision:value.restrictionRevision,action,reason},'PATCH');
+      onChange(appeal);setReason('');notify('Restriction appeal updated with immutable review evidence.');
+    }catch(cause){notify(cause instanceof Error?cause.message:'Restriction appeal action failed.',true);}
+    finally{setPending(false);}
+  }
+  const available=administrator||value.assignment!=='other',reviewReady=administrator||value.assignment==='me';
+  const current=value.restrictionState==='active'&&value.restrictionRevision===value.appealedRestrictionRevision;
+  const independent=administrator||value.restrictionActor==='other';
+  return <article className="panel">
+    <h3>{value.scope==='participation'?'Participation restriction appeal':'Reporting restriction appeal'}</h3>
+    <p><Badge tone={value.status==='open'?'amber':'green'}>{value.status}</Badge>{' '}
+      {value.assignment==='me'?'Assigned to you':value.assignment==='other'?'Assigned to another moderator':'Unassigned'} · appeal revision {value.revision}</p>
+    <p>{value.target.body}</p>
+    <p className="fine-print">{value.targetType} by {value.target.author}{value.target.resource?` · ${value.target.resource}`:''} ·
+      appealed restriction revision {value.appealedRestrictionRevision} · now {value.restrictionState} at revision {value.restrictionRevision} ·
+      expires {new Date(value.expiresAt).toLocaleString()}. No restricted account identifier or prior staff reason is returned.</p>
+    <strong>Member appeal</strong><p>{value.statement}</p>
+    <label>Required restriction appeal reason
+      <textarea minLength={20} maxLength={500} value={reason} onChange={event=>setReason(event.target.value)}
+        placeholder="Record the policy and evidence used for this independent review."/>
+    </label>
+    {available&&value.status==='open'&&<button className="button secondary small" disabled={pending||reason.trim().length<20}
+      onClick={()=>void apply(value.assignment==='me'?'release':'claim')}>{value.assignment==='me'?'Release restriction appeal':'Claim restriction appeal'}</button>}
+    {reviewReady&&value.status==='open'&&current&&independent&&<><button className="button secondary small"
+      disabled={pending||reason.trim().length<20} onClick={()=>void apply('uphold')}>Uphold appeal and lift restriction</button>
+      <button className="button secondary small" disabled={pending||reason.trim().length<20}
+        onClick={()=>void apply('deny')}>Deny restriction appeal</button></>}
+    {reviewReady&&value.status==='open'&&current&&!independent&&
+      <p className="fine-print">A different moderator or an administrator must decide this restriction appeal.</p>}
+    {reviewReady&&value.status==='open'&&!current&&<button className="button secondary small"
+      disabled={pending||reason.trim().length<20} onClick={()=>void apply('resolve')}>Resolve superseded restriction appeal</button>}
+  </article>;
+}
+
 function StaffAppealCard({value,administrator,onChange}:{value:StaffCommunityAppeal;administrator:boolean;onChange:(appeal:StaffCommunityAppeal)=>void}) {
   const {notify}=useStudio(),[reason,setReason]=useState(''),[pending,setPending]=useState(false);
   async function apply(action:'claim'|'release'|'deny'|'uphold') {
@@ -218,6 +261,8 @@ export function StaffPage() {
   const [appeals,setAppeals]=useState<StaffCommunityAppealPage>(),[appealsError,setAppealsError]=useState(''),[loadingAppeals,setLoadingAppeals]=useState(false);
   const [restrictions,setRestrictions]=useState<StaffCommunityRestrictionPage>(),[restrictionError,setRestrictionError]=useState('');
   const [loadingRestrictions,setLoadingRestrictions]=useState(false);
+  const [restrictionAppeals,setRestrictionAppeals]=useState<StaffCommunityRestrictionAppealPage>();
+  const [restrictionAppealError,setRestrictionAppealError]=useState(''),[loadingRestrictionAppeals,setLoadingRestrictionAppeals]=useState(false);
   useEffect(()=>{
     const controller=new AbortController();
     request<{roles:StaffRole[]}>('/api/staff/session',undefined,'GET',controller.signal)
@@ -276,6 +321,16 @@ export function StaffPage() {
     }catch(cause){setRestrictionError(cause instanceof Error?cause.message:'Community restrictions could not be loaded.');}
     finally{setLoadingRestrictions(false);}
   }
+  async function loadRestrictionAppeals(cursor?:string) {
+    setLoadingRestrictionAppeals(true);
+    try{
+      const page=await request<StaffCommunityRestrictionAppealPage>(
+        `/api/staff/community/restriction-appeals${cursor?`?${new URLSearchParams({cursor})}`:''}`);
+      setRestrictionAppeals(current=>cursor&&current?{appeals:[...current.appeals,...page.appeals],nextCursor:page.nextCursor}:page);
+      setRestrictionAppealError('');
+    }catch(cause){setRestrictionAppealError(cause instanceof Error?cause.message:'Restriction appeals could not be loaded.');}
+    finally{setLoadingRestrictionAppeals(false);}
+  }
   return <>
     <PageHeading eyebrow="STAFF OPERATIONS" title="Account access, without impersonation." description="Privileged actions require a current managed session, verified MFA, a fresh sign-in, an active time-bounded role and an explicit reason."/>
     {error&&<section className="panel"><h2>Confirm privileged access</h2><p role="alert">{error}</p><p>Use an MFA-enabled identity provider and confirm that sign-in again. Fresh authentication alone is not treated as MFA.</p><Link className="button secondary small" to="/account">Open sign-in security</Link></section>}
@@ -331,6 +386,23 @@ export function StaffPage() {
         {restrictions&&!restrictions.restrictions.length&&<p>No active community restrictions are saved.</p>}
         {restrictions?.nextCursor&&<button className="button secondary small" disabled={loadingRestrictions}
           onClick={()=>void loadRestrictions(restrictions.nextCursor!)}>Load older active restrictions</button>}
+      </section>}
+      {canModerate&&<section className="panel"><h2>Restriction appeal queue</h2>
+        <p>Appeals bind one exact restriction revision. Uphold atomically lifts only that current revision; later, lifted or expired restrictions can only be resolved as superseded.</p>
+        {!restrictionAppeals&&<button className="button secondary small" disabled={loadingRestrictionAppeals}
+          onClick={()=>void loadRestrictionAppeals()}>Load restriction appeal queue</button>}
+        {restrictionAppealError&&<><p role="alert">{restrictionAppealError}</p><button className="button secondary small"
+          disabled={loadingRestrictionAppeals} onClick={()=>void loadRestrictionAppeals()}>Retry restriction appeal queue</button></>}
+        {restrictionAppeals?.appeals.map(value=><StaffRestrictionAppealCard key={value.id} value={value}
+          administrator={administrator} onChange={updated=>{
+            setRestrictionAppeals(current=>current&&({...current,
+              appeals:current.appeals.map(item=>item.id===updated.id?updated:item)}));
+            if(updated.status==='upheld')setRestrictions(current=>current&&({...current,
+              restrictions:current.restrictions.filter(item=>item.id!==updated.restrictionId)}));
+          }}/>)}
+        {restrictionAppeals&&!restrictionAppeals.appeals.length&&<p>No restriction appeals are saved.</p>}
+        {restrictionAppeals?.nextCursor&&<button className="button secondary small" disabled={loadingRestrictionAppeals}
+          onClick={()=>void loadRestrictionAppeals(restrictionAppeals.nextCursor!)}>Load older restriction appeals</button>}
       </section>}
       {administrator&&<section className="panel"><h2>Immutable staff audit</h2>
         {!audit&&<button className="button secondary small" disabled={loadingAudit} onClick={()=>void loadAudit()}>View recent staff audit</button>}

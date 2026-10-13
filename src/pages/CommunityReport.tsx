@@ -1,7 +1,8 @@
 import {useState} from 'react';
 import type {
   CommunityAppealReceipt,CommunityAppealStatusPage,CommunityMute,CommunityMutePage,CommunityMuteReceipt,
-  CommunityReportCategory,CommunityReportReceipt,CommunityReportStatusPage,CommunityRestrictionStatus,
+  CommunityReportCategory,CommunityReportReceipt,CommunityReportStatusPage,CommunityRestriction,
+  CommunityRestrictionAppealPage,CommunityRestrictionAppealReceipt,CommunityRestrictionStatus,
 } from '../../shared/types';
 import {request,useStudio} from '../store';
 
@@ -129,23 +130,63 @@ function CommunityUnmuteControl({mute,onSaved}:{mute:CommunityMute;onSaved:()=>v
   </div>;
 }
 
+function CommunityRestrictionAppealControl({restriction,onSaved}:{
+  restriction:CommunityRestriction;onSaved:()=>void;
+}) {
+  const {notify}=useStudio(),[open,setOpen]=useState(false),[statement,setStatement]=useState('');
+  const [requestId]=useState(()=>crypto.randomUUID()),[pending,setPending]=useState(false);
+  const [saved,setSaved]=useState<CommunityRestrictionAppealReceipt>(),[error,setError]=useState('');
+  async function submit() {
+    setPending(true);setError('');
+    try{
+      const receipt=await request<CommunityRestrictionAppealReceipt>('/api/community/restriction-appeals',
+        {requestId,restrictionId:restriction.id,restrictionRevision:restriction.revision,statement});
+      setSaved(receipt);setOpen(false);notify('Restriction appeal saved for independent in-app review. No response time is promised.');
+      onSaved();
+    }catch(cause){
+      const message=cause instanceof Error?cause.message:'The restriction appeal was not confirmed.';
+      setError(`${message} Retry only restriction appeal request ${requestId}.`);notify(message,true);
+    }finally{setPending(false);}
+  }
+  if(saved)return <p className="fine-print" role="status">
+    Appeal saved for restriction revision {saved.appealedRestrictionRevision} · request <code>{saved.requestId}</code>
+  </p>;
+  return <div className="community-report-control">
+    <button className="text-button" aria-expanded={open} onClick={()=>setOpen(value=>!value)}>Appeal this restriction</button>
+    {open&&<form className="panel" onSubmit={event=>{event.preventDefault();void submit();}}>
+      <label>Why should this restriction be lifted?
+        <textarea required minLength={20} maxLength={1000} value={statement} onChange={event=>setStatement(event.target.value)}
+          placeholder="Explain the specific context for an independent review without adding unrelated private information."/>
+      </label>
+      <p className="fine-print">This binds exact restriction revision {restriction.revision}. Staff identity, internal evidence, external delivery and a response SLA are not exposed.</p>
+      {error&&<p className="error-text" role="alert">{error}</p>}
+      <button className="button secondary small" disabled={pending||statement.trim().length<20}>
+        {pending?'Saving exact restriction appeal...':error?'Retry same restriction appeal':'Submit restriction appeal'}
+      </button>
+    </form>}
+  </div>;
+}
+
 export function CommunityModerationHistory() {
   const {data}=useStudio(),[open,setOpen]=useState(false),[reports,setReports]=useState<CommunityReportStatusPage>();
   const [appeals,setAppeals]=useState<CommunityAppealStatusPage>(),[mutes,setMutes]=useState<CommunityMutePage>();
   const [restrictions,setRestrictions]=useState<CommunityRestrictionStatus>();
+  const [restrictionAppeals,setRestrictionAppeals]=useState<CommunityRestrictionAppealPage>();
   const [pending,setPending]=useState(false),[error,setError]=useState('');
   if(!data.user)return null;
-  async function load(kind:'initial'|'reports'|'appeals'|'mutes') {
+  async function load(kind:'initial'|'reports'|'appeals'|'mutes'|'restrictionAppeals') {
     setPending(true);setError('');
     try{
       if(kind==='initial'){
-        const [reportPage,appealPage,mutePage,restrictionStatus]=await Promise.all([
+        const [reportPage,appealPage,mutePage,restrictionStatus,restrictionAppealPage]=await Promise.all([
           request<CommunityReportStatusPage>('/api/community/reports'),
           request<CommunityAppealStatusPage>('/api/community/appeals'),
           request<CommunityMutePage>('/api/community/mutes'),
           request<CommunityRestrictionStatus>('/api/community/restrictions'),
+          request<CommunityRestrictionAppealPage>('/api/community/restriction-appeals'),
         ]);
         setReports(reportPage);setAppeals(appealPage);setMutes(mutePage);setRestrictions(restrictionStatus);
+        setRestrictionAppeals(restrictionAppealPage);
       }else if(kind==='reports'&&reports?.nextCursor){
         const page=await request<CommunityReportStatusPage>(`/api/community/reports?${new URLSearchParams({cursor:reports.nextCursor})}`);
         setReports({reports:[...reports.reports,...page.reports],nextCursor:page.nextCursor});
@@ -155,6 +196,10 @@ export function CommunityModerationHistory() {
       }else if(kind==='mutes'&&mutes?.nextCursor){
         const page=await request<CommunityMutePage>(`/api/community/mutes?${new URLSearchParams({cursor:mutes.nextCursor})}`);
         setMutes({mutes:[...mutes.mutes,...page.mutes],nextCursor:page.nextCursor});
+      }else if(kind==='restrictionAppeals'&&restrictionAppeals?.nextCursor){
+        const page=await request<CommunityRestrictionAppealPage>(
+          `/api/community/restriction-appeals?${new URLSearchParams({cursor:restrictionAppeals.nextCursor})}`);
+        setRestrictionAppeals({appeals:[...restrictionAppeals.appeals,...page.appeals],nextCursor:page.nextCursor});
       }
     }catch(cause){setError(cause instanceof Error?cause.message:'Moderation status could not be loaded.');}
     finally{setPending(false);}
@@ -164,8 +209,8 @@ export function CommunityModerationHistory() {
       const next=!open;setOpen(next);if(next&&!reports&&!appeals)void load('initial');
     }}>My moderation status</button>
     {open&&<div>
-      <p className="fine-print">Only your report, appeal, active personal-mute and current restriction status is shown. Staff identities, internal reasons, account identifiers and other members' activity remain private.</p>
-      {pending&&!reports&&!appeals&&!mutes&&!restrictions&&<p role="status">Loading moderation status...</p>}
+      <p className="fine-print">Only your report, appeal, active personal-mute, current restriction and restriction-appeal status is shown. Staff identities, internal reasons, account identifiers and other members' activity remain private.</p>
+      {pending&&!reports&&!appeals&&!mutes&&!restrictions&&!restrictionAppeals&&<p role="status">Loading moderation status...</p>}
       {error&&<p className="error-text" role="alert">{error}</p>}
       {reports&&<><h3>My reports</h3>{reports.reports.map(value=><p key={value.id}>
         <strong>{value.category.replaceAll('-',' ')}</strong> · {value.status} · target {value.targetState} at revision {value.targetRevision}
@@ -184,10 +229,23 @@ export function CommunityModerationHistory() {
         <CommunityUnmuteControl mute={value} onSaved={()=>setMutes(current=>current?{...current,mutes:current.mutes.filter(row=>row.id!==value.id)}:current)}/>
       </div>)}{!mutes.mutes.length&&<p>No authors are currently muted for you.</p>}
       {mutes.nextCursor&&<button className="button secondary small" disabled={pending} onClick={()=>void load('mutes')}>Load older active mutes</button>}</>}
-      {restrictions&&<><h3>My community restrictions</h3>{restrictions.restrictions.map(value=><p key={value.id}>
-        <strong>{value.scope==='participation'?'Participation restricted':'Report submission restricted'}</strong> · revision {value.revision}
-        <br/><span className="fine-print">Expires {new Date(value.expiresAt).toLocaleString()}. Reading, deletion, appeals, personal mutes and non-community account features remain available.</span>
-      </p>)}{!restrictions.restrictions.length&&<p>No active community restrictions apply to your account.</p>}</>}
+      {restrictions&&<><h3>My community restrictions</h3>{restrictions.restrictions.map(value=>{
+        const existing=restrictionAppeals?.appeals.find(appeal=>
+          appeal.restrictionId===value.id&&appeal.appealedRestrictionRevision===value.revision);
+        return <div className="panel" key={value.id}><p>
+          <strong>{value.scope==='participation'?'Participation restricted':'Report submission restricted'}</strong> · revision {value.revision}
+          <br/><span className="fine-print">Expires {new Date(value.expiresAt).toLocaleString()}. Reading, deletion, contribution appeals, personal mutes and non-community account features remain available.</span>
+        </p>{existing?<p className="fine-print">This exact restriction revision has an <strong>{existing.status}</strong> appeal.</p>
+          :<CommunityRestrictionAppealControl restriction={value} onSaved={()=>void request<CommunityRestrictionAppealPage>(
+            '/api/community/restriction-appeals',undefined,'GET').then(setRestrictionAppeals)
+            .catch(cause=>setError(cause instanceof Error?cause.message:'Restriction appeal status could not be refreshed.'))}/>}</div>;
+      })}{!restrictions.restrictions.length&&<p>No active community restrictions apply to your account.</p>}</>}
+      {restrictionAppeals&&<><h3>My restriction appeals</h3>{restrictionAppeals.appeals.map(value=><p key={value.id}>
+        <strong>{value.status}</strong> · appealed restriction revision {value.appealedRestrictionRevision} · restriction now {value.restrictionState} at revision {value.restrictionRevision}
+        <br/><span className="fine-print">{value.scope} restriction <code>{value.restrictionId}</code> · request <code>{value.requestId}</code></span>
+      </p>)}{!restrictionAppeals.appeals.length&&<p>No restriction appeals are saved.</p>}
+      {restrictionAppeals.nextCursor&&<button className="button secondary small" disabled={pending}
+        onClick={()=>void load('restrictionAppeals')}>Load older restriction appeals</button>}</>}
     </div>}
   </section>;
 }

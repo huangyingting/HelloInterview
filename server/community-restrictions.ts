@@ -1,14 +1,16 @@
 import {randomUUID} from 'node:crypto';
 import {z} from 'zod';
 import type {
-  CommunityRestriction,CommunityRestrictionScope,CommunityRestrictionStatus,StaffCommunityRestriction,
+  CommunityRestriction,CommunityRestrictionAppealPage,CommunityRestrictionAppealReceipt,
+  CommunityRestrictionAppealStatus,CommunityRestrictionScope,CommunityRestrictionStatus,
+  StaffCommunityRestriction,StaffCommunityRestrictionAppeal,StaffCommunityRestrictionAppealPage,
   StaffCommunityRestrictionPage,StaffRole,User,
 } from '../shared/types';
 import type {Database} from './db/connection';
 import type {ManagedIdentity} from './identity';
 import {HttpError} from './http-error';
 import {communityPageCursor} from './community';
-import {digest} from './jobs/schema';
+import {digest,encodePayload} from './jobs/schema';
 
 const scope=z.enum(['participation','reporting']),duration=z.union([z.literal(24),z.literal(168),z.literal(720)]);
 const reason=z.string().trim().min(20).max(500).refine(value=>!value.includes('\0'));
@@ -34,6 +36,44 @@ const memberRow=restrictionRow.pick({
 });
 const queueCursor=z.strictObject({
   version:z.literal('community-restrictions-v1'),hash:z.literal('community-restrictions'),
+  updatedAt:z.iso.datetime(),id:z.uuid(),
+});
+const storedRestrictionRow=z.object({
+  id:z.uuid(),subject_id:z.string().nullable(),source_report_id:z.uuid(),scope,
+  state:z.enum(['active','lifted','expired']),revision:z.number().int().positive(),
+  starts_at:z.string(),expires_at:z.string(),created_at:z.string(),updated_at:z.string(),
+});
+const appealInput=z.strictObject({
+  requestId:z.uuid().transform(value=>value.toLowerCase()),restrictionId:z.uuid(),
+  restrictionRevision:z.number().int().positive(),
+  statement:z.string().trim().min(20).max(1000).refine(value=>!value.includes('\0')),
+});
+const appealRow=z.object({
+  id:z.uuid(),owner_id:z.string().nullable(),request_key:z.uuid(),input_hash:z.string().length(64),
+  restriction_id:z.uuid(),restriction_revision:z.number().int().positive(),statement:z.string(),
+  state:z.enum(['open','denied','upheld','resolved']),assigned_to:z.string().nullable(),
+  appeal_revision:z.number().int().nonnegative(),created_at:z.string(),updated_at:z.string(),
+});
+const appealStatusRow=appealRow.extend({
+  current_scope:scope,current_state:z.enum(['active','lifted','expired']),
+  current_revision:z.number().int().positive(),current_expires_at:z.string(),
+});
+const staffAppealRow=appealStatusRow.extend({
+  target_type:z.enum(['post','comment']),target_id:z.string(),target_title:z.string().nullable(),
+  target_body:z.string(),target_author:z.string(),target_resource:z.string().nullable(),
+  restriction_actor_ref:z.string(),
+});
+const appealActionInput=z.strictObject({
+  revision:z.number().int().nonnegative(),restrictionRevision:z.number().int().positive(),
+  action:z.enum(['claim','release','deny','uphold','resolve']),
+  reason:z.string().trim().min(20).max(500).refine(value=>!value.includes('\0')),
+});
+const appealHistoryCursor=z.strictObject({
+  version:z.literal('community-restriction-appeal-history-v1'),hash:z.string().length(64),
+  createdAt:z.iso.datetime(),id:z.uuid(),
+});
+const staffAppealCursor=z.strictObject({
+  version:z.literal('community-restriction-appeal-queue-v1'),hash:z.literal('community-restriction-appeals'),
   updatedAt:z.iso.datetime(),id:z.uuid(),
 });
 
@@ -62,6 +102,23 @@ export class CommunityRestrictions {
     const row=memberRow.parse(value);
     return {id:row.id,scope:row.scope,status:row.state,revision:row.revision,
       startsAt:row.starts_at,expiresAt:row.expires_at,updatedAt:row.updated_at};
+  }
+  private effectiveState(state:'active'|'lifted'|'expired',expiresAt:string,now:string) {
+    return state==='active'&&expiresAt<=now?'expired':state;
+  }
+  private appealReceipt(value:unknown):CommunityRestrictionAppealReceipt {
+    const row=appealRow.parse(value);
+    return {id:row.id,requestId:row.request_key,restrictionId:row.restriction_id,
+      appealedRestrictionRevision:row.restriction_revision,status:'saved',createdAt:row.created_at,
+      delivery:'restriction-review-queue-only'};
+  }
+  private appealStatus(value:unknown,now:string):CommunityRestrictionAppealStatus {
+    const row=appealStatusRow.parse(value);
+    return {id:row.id,requestId:row.request_key,restrictionId:row.restriction_id,scope:row.current_scope,
+      appealedRestrictionRevision:row.restriction_revision,status:row.state,revision:row.appeal_revision,
+      restrictionState:this.effectiveState(row.current_state,row.current_expires_at,now),
+      restrictionRevision:row.current_revision,expiresAt:row.current_expires_at,
+      createdAt:row.created_at,updatedAt:row.updated_at};
   }
   private staff(value:unknown,actor:string):StaffCommunityRestriction {
     const row=restrictionRow.parse(value);
@@ -121,6 +178,77 @@ export class CommunityRestrictions {
       FROM community_restrictions WHERE subject_id=? AND state='active' AND expires_at>?
       ORDER BY expires_at,id LIMIT 3`).all(user.id,now);
     return {restrictions:rows.map(value=>this.member(value))};
+  }
+  async appeal(user:User,input:unknown,admit:()=>Promise<void>):Promise<CommunityRestrictionAppealReceipt> {
+    const parsed=appealInput.safeParse(input);
+    if(!parsed.success)throw new HttpError(400,
+      'Provide one current restriction, its positive revision, a UUID request key and a 20-1,000 character appeal statement.');
+    const request=parsed.data,{requestId:_,...content}=request,hash=digest(encodePayload({owner:user.id,...content}));
+    return this.db.transaction(async()=>{
+      await admit();
+      const existing=await this.db.prepare(`SELECT * FROM community_restriction_appeals
+        WHERE owner_id=? AND request_key=?`).get(user.id,request.requestId);
+      if(existing){
+        if(existing.input_hash!==hash)throw new HttpError(409,'This restriction appeal key belongs to different appeal content.');
+        await admit();return this.appealReceipt(existing);
+      }
+      const seed=storedRestrictionRow.safeParse(await this.db.prepare(`SELECT * FROM community_restrictions
+        WHERE id=? AND subject_id=?`).get(request.restrictionId,user.id));
+      if(!seed.success)throw new HttpError(404,'This community restriction is unavailable for an owner appeal.');
+      await this.lock(user.id,seed.data.scope);
+      const concurrent=await this.db.prepare(`SELECT * FROM community_restriction_appeals
+        WHERE owner_id=? AND request_key=?`).get(user.id,request.requestId);
+      if(concurrent){
+        if(concurrent.input_hash!==hash)throw new HttpError(409,'This restriction appeal key belongs to different appeal content.');
+        await admit();return this.appealReceipt(concurrent);
+      }
+      const now=(await this.clock()).toISOString();
+      const current=storedRestrictionRow.safeParse(await this.db.prepare(`SELECT * FROM community_restrictions
+        WHERE id=? AND subject_id=?${this.db.dialect==='postgres'?' FOR UPDATE':''}`)
+        .get(request.restrictionId,user.id));
+      if(!current.success||current.data.state!=='active'||current.data.expires_at<=now||
+        current.data.revision!==request.restrictionRevision)
+        throw new HttpError(409,'Appeal the current active restriction revision after reloading your moderation status.');
+      if(await this.db.prepare(`SELECT id FROM community_restriction_appeals
+        WHERE owner_id=? AND restriction_id=? AND restriction_revision=?`)
+        .get(user.id,request.restrictionId,request.restrictionRevision))
+        throw new HttpError(409,'You already appealed this restriction revision.');
+      const count=await this.db.prepare(`SELECT count(*) AS count FROM community_restriction_appeals
+        WHERE owner_id=? AND state='open'`).get(user.id);
+      if(Number(count?.count)>=20)throw new HttpError(409,'Resolve existing restriction appeals before submitting another.');
+      const id=randomUUID();
+      await this.db.prepare(`INSERT INTO community_restriction_appeals
+        (id,owner_id,request_key,input_hash,restriction_id,restriction_revision,statement,created_at,updated_at)
+        VALUES(?,?,?,?,?,?,?,?,?)`).run(id,user.id,request.requestId,hash,request.restrictionId,
+          request.restrictionRevision,request.statement,now,now);
+      const saved=await this.db.prepare('SELECT * FROM community_restriction_appeals WHERE id=?').get(id);
+      if(!saved)throw new Error('The admitted restriction appeal was not found.');
+      await admit();return this.appealReceipt(saved);
+    });
+  }
+  async appealHistory(user:User,input:unknown,admit:()=>Promise<void>):Promise<CommunityRestrictionAppealPage> {
+    const parsed=z.strictObject({cursor:z.string().max(2048).optional()}).safeParse(input);
+    if(!parsed.success)throw new HttpError(400,'Provide only an optional restriction-appeal history cursor.');
+    const hash=digest(`community-restriction-appeal-history:${user.id}`);
+    let cursor:z.infer<typeof appealHistoryCursor>|undefined;
+    if(parsed.data.cursor)cursor=communityPageCursor(parsed.data.cursor,appealHistoryCursor,hash);
+    return this.db.transaction(async()=>{
+      await admit();
+      const rows=await this.db.prepare(`SELECT appeals.*,restriction.scope AS current_scope,
+        restriction.state AS current_state,restriction.revision AS current_revision,
+        restriction.expires_at AS current_expires_at
+        FROM community_restriction_appeals appeals JOIN community_restrictions restriction
+          ON restriction.id=appeals.restriction_id
+        WHERE appeals.owner_id=? ${cursor?'AND (appeals.created_at,appeals.id)<(?,?)':''}
+        ORDER BY appeals.created_at DESC,appeals.id DESC LIMIT 21`)
+        .all(user.id,...(cursor?[cursor.createdAt,cursor.id]:[]));
+      const page=rows.slice(0,20),last=page.at(-1)&&appealStatusRow.parse(page.at(-1)),
+        now=(await this.clock()).toISOString();
+      await admit();
+      return {appeals:page.map(value=>this.appealStatus(value,now)),nextCursor:rows.length>20&&last
+        ?Buffer.from(JSON.stringify({version:'community-restriction-appeal-history-v1',hash,
+          createdAt:last.created_at,id:last.id})).toString('base64url'):null};
+    });
   }
   async apply(user:User,id:unknown,input:unknown):Promise<StaffCommunityRestriction> {
     const reportId=z.uuid().safeParse(id),parsed=applyInput.safeParse(input);
@@ -222,6 +350,133 @@ export class CommunityRestrictions {
         action:parsed.data.action,reason:parsed.data.reason,priorRevision:revision,resultRevision:revision+1,
         priorExpires:expires,resultExpires,resultState,createdAt:nowText});
       return this.current(restrictionId.data,user.id);
+    });
+  }
+  private staffAppealSelect() {
+    return `SELECT appeals.*,restriction.scope AS current_scope,restriction.state AS current_state,
+      restriction.revision AS current_revision,restriction.expires_at AS current_expires_at,
+      report.target_type,report.target_id,
+      CASE WHEN report.target_type='post' THEN (SELECT title FROM posts WHERE id=report.target_id) ELSE NULL END AS target_title,
+      COALESCE(CASE WHEN report.target_type='post' THEN (SELECT body FROM posts WHERE id=report.target_id)
+        ELSE (SELECT body FROM comments WHERE id=report.target_id) END,'Contribution unavailable') AS target_body,
+      COALESCE(CASE WHEN report.target_type='post' THEN
+        (SELECT CASE WHEN kind='questions' THEN 'Anonymous' ELSE author END FROM posts WHERE id=report.target_id)
+        ELSE (SELECT author FROM comments WHERE id=report.target_id) END,'Unavailable') AS target_author,
+      CASE WHEN report.target_type='comment' THEN (SELECT resource FROM comments WHERE id=report.target_id) ELSE NULL END AS target_resource,
+      (SELECT event.actor_ref FROM community_restriction_events event
+        WHERE event.restriction_id=restriction.id ORDER BY event.result_revision DESC LIMIT 1) AS restriction_actor_ref
+      FROM community_restriction_appeals appeals
+      JOIN community_restrictions restriction ON restriction.id=appeals.restriction_id
+      JOIN community_reports report ON report.id=restriction.source_report_id`;
+  }
+  private staffAppeal(value:unknown,actor:string,now:string):StaffCommunityRestrictionAppeal {
+    const row=staffAppealRow.parse(value);
+    return {id:row.id,restrictionId:row.restriction_id,scope:row.current_scope,statement:row.statement,
+      appealedRestrictionRevision:row.restriction_revision,status:row.state,revision:row.appeal_revision,
+      assignment:row.assigned_to===null?null:row.assigned_to===actor?'me':'other',
+      restrictionActor:row.restriction_actor_ref===actor?'me':'other',
+      restrictionState:this.effectiveState(row.current_state,row.current_expires_at,now),
+      restrictionRevision:row.current_revision,expiresAt:row.current_expires_at,
+      targetType:row.target_type,targetId:row.target_id,createdAt:row.created_at,updatedAt:row.updated_at,
+      target:{title:row.target_title,body:row.target_body,author:row.target_author,resource:row.target_resource}};
+  }
+  async appealQueue(user:User,input:unknown):Promise<StaffCommunityRestrictionAppealPage> {
+    const parsed=z.strictObject({cursor:z.string().max(2048).optional()}).safeParse(input);
+    if(!parsed.success)throw new HttpError(400,'Provide only an optional restriction-appeal queue cursor.');
+    let cursor:z.infer<typeof staffAppealCursor>|undefined;
+    if(parsed.data.cursor)cursor=communityPageCursor(parsed.data.cursor,staffAppealCursor,'community-restriction-appeals');
+    return this.db.transaction(async()=>{
+      await this.authorize(user);
+      const rows=await this.db.prepare(`${this.staffAppealSelect()}
+        ${cursor?'WHERE (appeals.updated_at,appeals.id)<(?,?)':''}
+        ORDER BY appeals.updated_at DESC,appeals.id DESC LIMIT 21`).all(...(cursor?[cursor.updatedAt,cursor.id]:[]));
+      const page=rows.slice(0,20),now=(await this.clock()).toISOString(),
+        appeals=page.map(value=>this.staffAppeal(value,user.id,now)),
+        last=page.at(-1)&&staffAppealRow.parse(page.at(-1));
+      await this.authorize(user);
+      return {appeals,nextCursor:rows.length>20&&last?Buffer.from(JSON.stringify({
+        version:'community-restriction-appeal-queue-v1',hash:'community-restriction-appeals',
+        updatedAt:last.updated_at,id:last.id})).toString('base64url'):null};
+    });
+  }
+  async actOnAppeal(user:User,id:unknown,input:unknown):Promise<StaffCommunityRestrictionAppeal> {
+    const appealId=z.uuid().safeParse(id),parsed=appealActionInput.safeParse(input);
+    if(!appealId.success||!parsed.success)throw new HttpError(400,
+      'Choose one restriction appeal, current appeal/restriction revisions, one supported action and a 20-500 character reason.');
+    return this.db.transaction(async()=>{
+      const role=await this.authorize(user);
+      const seedAppeal=appealRow.safeParse(await this.db.prepare('SELECT * FROM community_restriction_appeals WHERE id=?')
+        .get(appealId.data));
+      if(!seedAppeal.success)throw new HttpError(404,'Community restriction appeal not found.');
+      const seedRestriction=storedRestrictionRow.safeParse(await this.db.prepare('SELECT * FROM community_restrictions WHERE id=?')
+        .get(seedAppeal.data.restriction_id));
+      if(!seedRestriction.success)throw new HttpError(409,'The appealed restriction is no longer stored.');
+      if(seedRestriction.data.subject_id)await this.lock(seedRestriction.data.subject_id,seedRestriction.data.scope);
+      const currentRestriction=storedRestrictionRow.safeParse(await this.db.prepare(`SELECT * FROM community_restrictions
+        WHERE id=?${this.db.dialect==='postgres'?' FOR UPDATE':''}`).get(seedAppeal.data.restriction_id));
+      if(!currentRestriction.success)throw new HttpError(409,'The appealed restriction is no longer stored.');
+      const restriction=currentRestriction.data;
+      const raw=await this.db.prepare(`${this.staffAppealSelect()} WHERE appeals.id=?
+        ${this.db.dialect==='postgres'?'FOR UPDATE OF appeals':''}`).get(appealId.data);
+      if(!raw)throw new HttpError(404,'Community restriction appeal not found.');
+      const current=staffAppealRow.parse(raw),now=(await this.clock()).toISOString();
+      if(current.appeal_revision!==parsed.data.revision||restriction.revision!==parsed.data.restrictionRevision)
+        throw new HttpError(409,'The restriction appeal or restriction changed. Review current revisions.');
+      if(role!=='administrator'){
+        if(current.assigned_to!==null&&current.assigned_to!==user.id)
+          throw new HttpError(409,'Another moderator owns this restriction appeal.');
+        if(parsed.data.action!=='claim'&&current.assigned_to!==user.id)
+          throw new HttpError(409,'Claim this restriction appeal before applying a review action.');
+      }
+      let assigned=current.assigned_to,state=current.state,resultRestrictionRevision:number|null=null;
+      const exactCurrent=restriction.subject_id!==null&&restriction.state==='active'&&restriction.expires_at>now&&
+        restriction.revision===current.restriction_revision;
+      if(parsed.data.action==='claim'){
+        if(state!=='open')throw new HttpError(409,'This restriction appeal already has a final decision.');
+        if(assigned===user.id)throw new HttpError(409,'This restriction appeal is already assigned to you.');
+        assigned=user.id;
+      }else if(parsed.data.action==='release'){
+        if(state!=='open')throw new HttpError(409,'This restriction appeal already has a final decision.');
+        if(assigned===null)throw new HttpError(409,'This restriction appeal is already unassigned.');
+        if(role!=='administrator'&&assigned!==user.id)
+          throw new HttpError(409,'Only the assigned moderator can release this restriction appeal.');
+        assigned=null;
+      }else{
+        if(state!=='open')throw new HttpError(409,'This restriction appeal already has a final decision.');
+        if(role!=='administrator'&&current.restriction_actor_ref===user.id)
+          throw new HttpError(409,'A different moderator or an administrator must decide this restriction appeal.');
+        if(parsed.data.action==='resolve'){
+          if(exactCurrent)throw new HttpError(409,'A current restriction appeal requires an uphold or deny decision.');
+          state='resolved';
+        }else{
+          if(!exactCurrent)
+            throw new HttpError(409,'This appeal no longer matches the current active restriction revision; resolve it after review.');
+          state=parsed.data.action==='deny'?'denied':'upheld';
+          if(parsed.data.action==='uphold'){
+            const changed=await this.db.prepare(`UPDATE community_restrictions
+              SET state='lifted',revision=revision+1,updated_at=?
+              WHERE id=? AND revision=? AND state='active'`).run(now,restriction.id,restriction.revision);
+            if(changed!==1)throw new HttpError(409,'The restriction changed before this appeal decision.');
+            resultRestrictionRevision=restriction.revision+1;
+            await this.evidence({restrictionId:restriction.id,reportId:restriction.source_report_id,actor:user.id,role,
+              action:'lift',reason:parsed.data.reason,priorRevision:restriction.revision,
+              resultRevision:resultRestrictionRevision,priorExpires:restriction.expires_at,
+              resultExpires:restriction.expires_at,resultState:'lifted',createdAt:now});
+          }
+        }
+      }
+      const changed=await this.db.prepare(`UPDATE community_restriction_appeals
+        SET assigned_to=?,state=?,appeal_revision=appeal_revision+1,updated_at=?
+        WHERE id=? AND appeal_revision=?`).run(assigned,state,now,current.id,current.appeal_revision);
+      if(changed!==1)throw new HttpError(409,'The restriction appeal changed before this action.');
+      await this.db.prepare(`INSERT INTO community_restriction_appeal_events
+        (id,appeal_id,restriction_id,actor_ref,actor_role,action,reason,prior_appeal_revision,result_appeal_revision,
+          prior_restriction_revision,result_restriction_revision,result_appeal_state,created_at)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(randomUUID(),current.id,restriction.id,user.id,role,parsed.data.action,
+          parsed.data.reason,current.appeal_revision,current.appeal_revision+1,restriction.revision,
+          resultRestrictionRevision,state,now);
+      const updated=await this.db.prepare(`${this.staffAppealSelect()} WHERE appeals.id=?`).get(current.id);
+      return this.staffAppeal(updated,user.id,now);
     });
   }
   async queue(user:User,input:unknown):Promise<StaffCommunityRestrictionPage> {

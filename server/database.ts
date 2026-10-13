@@ -286,6 +286,51 @@ export function openDatabase(dataDir: string): DatabaseSync {
       );
       CREATE INDEX IF NOT EXISTS community_restriction_events_restriction
         ON community_restriction_events(restriction_id,created_at,id);
+      CREATE TABLE IF NOT EXISTS community_restriction_appeals (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+        request_key TEXT NOT NULL,
+        input_hash TEXT NOT NULL CHECK(length(input_hash)=64 AND input_hash NOT GLOB '*[^0-9a-f]*'),
+        restriction_id TEXT NOT NULL REFERENCES community_restrictions(id) ON DELETE RESTRICT,
+        restriction_revision INTEGER NOT NULL CHECK(restriction_revision>0),
+        statement TEXT NOT NULL CHECK(length(statement) BETWEEN 20 AND 1000),
+        state TEXT NOT NULL DEFAULT 'open' CHECK(state IN ('open','denied','upheld','resolved')),
+        assigned_to TEXT REFERENCES users(id) ON DELETE RESTRICT,
+        appeal_revision INTEGER NOT NULL DEFAULT 0 CHECK(appeal_revision>=0),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS community_restriction_appeals_owner_key
+        ON community_restriction_appeals(owner_id,request_key) WHERE owner_id IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS community_restriction_appeals_owner_revision
+        ON community_restriction_appeals(owner_id,restriction_id,restriction_revision) WHERE owner_id IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS community_restriction_appeals_queue
+        ON community_restriction_appeals(updated_at DESC,id DESC);
+      CREATE INDEX IF NOT EXISTS community_restriction_appeals_owner_order
+        ON community_restriction_appeals(owner_id,created_at DESC,id DESC);
+      CREATE TABLE IF NOT EXISTS community_restriction_appeal_events (
+        id TEXT PRIMARY KEY,
+        appeal_id TEXT NOT NULL REFERENCES community_restriction_appeals(id) ON DELETE RESTRICT,
+        restriction_id TEXT NOT NULL REFERENCES community_restrictions(id) ON DELETE RESTRICT,
+        actor_ref TEXT NOT NULL,
+        actor_role TEXT NOT NULL CHECK(actor_role IN ('moderator','administrator')),
+        action TEXT NOT NULL CHECK(action IN ('claim','release','deny','uphold','resolve')),
+        reason TEXT NOT NULL CHECK(length(reason) BETWEEN 20 AND 500),
+        prior_appeal_revision INTEGER NOT NULL CHECK(prior_appeal_revision>=0),
+        result_appeal_revision INTEGER NOT NULL CHECK(result_appeal_revision=prior_appeal_revision+1),
+        prior_restriction_revision INTEGER NOT NULL CHECK(prior_restriction_revision>0),
+        result_restriction_revision INTEGER,
+        result_appeal_state TEXT NOT NULL CHECK(result_appeal_state IN ('open','denied','upheld','resolved')),
+        created_at TEXT NOT NULL,
+        CHECK((action='uphold' AND result_restriction_revision IS NOT NULL AND
+          result_restriction_revision=prior_restriction_revision+1 AND result_appeal_state='upheld') OR
+          (action<>'uphold' AND result_restriction_revision IS NULL)),
+        CHECK((action IN ('claim','release') AND result_appeal_state='open') OR
+          (action='deny' AND result_appeal_state='denied') OR
+          (action='resolve' AND result_appeal_state='resolved') OR action='uphold')
+      );
+      CREATE INDEX IF NOT EXISTS community_restriction_appeal_events_appeal
+        ON community_restriction_appeal_events(appeal_id,created_at,id);
       CREATE TABLE IF NOT EXISTS community_comment_deletions (
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         request_id TEXT NOT NULL,
@@ -428,6 +473,44 @@ export function openDatabase(dataDir: string): DatabaseSync {
       BEGIN SELECT RAISE(ABORT,'Community restriction evidence is immutable.'); END;
       CREATE TRIGGER IF NOT EXISTS immutable_community_restriction_event_delete BEFORE DELETE ON community_restriction_events
       BEGIN SELECT RAISE(ABORT,'Community restriction evidence is immutable.'); END;
+      CREATE TRIGGER IF NOT EXISTS protect_community_restriction_appeal BEFORE UPDATE ON community_restriction_appeals
+      WHEN NOT (
+        OLD.owner_id IS NOT NULL AND NEW.owner_id IS NULL AND NEW.id=OLD.id AND
+          NEW.request_key=OLD.request_key AND NEW.input_hash=OLD.input_hash AND
+          NEW.restriction_id=OLD.restriction_id AND NEW.restriction_revision=OLD.restriction_revision AND
+          NEW.statement=OLD.statement AND NEW.state=OLD.state AND NEW.assigned_to IS OLD.assigned_to AND
+          NEW.appeal_revision=OLD.appeal_revision AND NEW.created_at=OLD.created_at AND NEW.updated_at=OLD.updated_at OR
+        NEW.id=OLD.id AND NEW.owner_id IS OLD.owner_id AND NEW.request_key=OLD.request_key AND
+          NEW.input_hash=OLD.input_hash AND NEW.restriction_id=OLD.restriction_id AND
+          NEW.restriction_revision=OLD.restriction_revision AND NEW.statement=OLD.statement AND
+          OLD.state='open' AND NEW.state IN ('open','denied','upheld','resolved') AND
+          NEW.appeal_revision=OLD.appeal_revision+1 AND NEW.created_at=OLD.created_at AND NEW.updated_at>=OLD.updated_at AND
+          (NEW.state<>'upheld' OR EXISTS(SELECT 1 FROM community_restrictions restriction
+            WHERE restriction.id=OLD.restriction_id AND restriction.state='lifted' AND
+              restriction.revision=OLD.restriction_revision+1))
+      )
+      BEGIN SELECT RAISE(ABORT,'Restriction appeals allow only owner retirement or one revision-fenced staff review transition.'); END;
+      CREATE TRIGGER IF NOT EXISTS initialize_community_restriction_appeal BEFORE INSERT ON community_restriction_appeals
+      WHEN NEW.owner_id IS NULL OR NEW.state<>'open' OR NEW.assigned_to IS NOT NULL OR NEW.appeal_revision<>0 OR
+        NEW.created_at<>NEW.updated_at
+      BEGIN SELECT RAISE(ABORT,'New restriction appeals must begin as unassigned revision-zero owner records.'); END;
+      CREATE TRIGGER IF NOT EXISTS validate_community_restriction_appeal_event BEFORE INSERT ON community_restriction_appeal_events
+      WHEN NOT EXISTS(SELECT 1 FROM community_restriction_appeals appeal WHERE appeal.id=NEW.appeal_id AND
+        appeal.restriction_id=NEW.restriction_id AND appeal.appeal_revision=NEW.result_appeal_revision AND
+        appeal.state=NEW.result_appeal_state)
+      OR NEW.result_restriction_revision IS NULL AND NOT EXISTS(
+        SELECT 1 FROM community_restrictions restriction WHERE restriction.id=NEW.restriction_id AND
+          restriction.revision=NEW.prior_restriction_revision)
+      OR NEW.result_restriction_revision IS NOT NULL AND NOT EXISTS(
+        SELECT 1 FROM community_restrictions restriction WHERE restriction.id=NEW.restriction_id AND
+          restriction.revision=NEW.result_restriction_revision AND restriction.state='lifted')
+      BEGIN SELECT RAISE(ABORT,'Restriction appeal evidence must reference resulting appeal and restriction revisions.'); END;
+      CREATE TRIGGER IF NOT EXISTS immutable_community_restriction_appeal_event_update BEFORE UPDATE ON community_restriction_appeal_events
+      BEGIN SELECT RAISE(ABORT,'Community restriction appeal evidence is immutable.'); END;
+      CREATE TRIGGER IF NOT EXISTS immutable_community_restriction_appeal_event_delete BEFORE DELETE ON community_restriction_appeal_events
+      BEGIN SELECT RAISE(ABORT,'Community restriction appeal evidence is immutable.'); END;
+      CREATE TRIGGER IF NOT EXISTS immutable_community_restriction_appeal_delete BEFORE DELETE ON community_restriction_appeals
+      BEGIN SELECT RAISE(ABORT,'Community restriction appeal evidence is immutable.'); END;
       CREATE TRIGGER IF NOT EXISTS immutable_community_restriction_delete BEFORE DELETE ON community_restrictions
       BEGIN SELECT RAISE(ABORT,'Community restriction evidence is immutable.'); END;
       CREATE TRIGGER IF NOT EXISTS apply_community_comment_deletion AFTER INSERT ON community_comment_deletions

@@ -229,9 +229,20 @@ test('staff UI is deferred, capability-gated and applies an audited in-page susp
   const ownerRestrictionStatus=await ownerRestriction.json();
   assert.deepEqual(ownerRestrictionStatus.restrictions.map((value:{scope:string})=>value.scope).sort(),['participation','reporting']);
   assert.ok(!JSON.stringify(ownerRestrictionStatus).includes(targetData.user.id));
+  const reportingRestriction=ownerRestrictionStatus.restrictions.find((value:{scope:string})=>value.scope==='reporting');
+  assert.ok(reportingRestriction);
   const blockedReport=await target.request('/api/community/reports',{requestId:randomUUID(),targetType:'post',targetId:randomUUID(),
     category:'spam',details:'A new report must be denied by the current narrow reporting restriction.'});
   assert.equal(blockedReport.status,403);
+  const savedRestrictionAppeal=await target.request('/api/community/restriction-appeals',{requestId:randomUUID(),
+    restrictionId:reportingRestriction.id,restrictionRevision:reportingRestriction.revision,
+    statement:'The managed reporting restriction should receive an exact independent in-app review.'});
+  assert.equal(savedRestrictionAppeal.status,201);const restrictionAppealReceipt=await savedRestrictionAppeal.json();
+  const restrictionAppealHistory=await(await target.request('/api/community/restriction-appeals')).json();
+  assert.equal(restrictionAppealHistory.appeals[0].id,restrictionAppealReceipt.id);
+  assert.equal(restrictionAppealHistory.appeals[0].status,'open');
+  assert.ok(!JSON.stringify(restrictionAppealHistory).includes('exact independent in-app review'));
+  assert.ok(!JSON.stringify(restrictionAppealHistory).includes(targetData.user.id));
   await moderationCard.getByLabel('Required moderation reason').fill('Hide this synthetic contribution after reviewing the reported policy concern.');
   await moderationCard.getByRole('button',{name:'Hide contribution'}).click();
   await expect(moderationCard.getByText('currently hidden',{exact:false})).toBeVisible();
@@ -259,17 +270,28 @@ test('staff UI is deferred, capability-gated and applies an audited in-page susp
     .all(reportReceipt.id)).map(row=>row.action),['claim','hide']);
   assert.deepEqual((await f.db.prepare('SELECT action FROM community_appeal_events WHERE appeal_id=? ORDER BY created_at,id')
     .all(appealReceipt.id)).map(row=>row.action),['claim','uphold']);
+  await page.getByRole('button',{name:'Load restriction appeal queue'}).click();
+  const restrictionAppealSection=page.getByRole('heading',{name:'Restriction appeal queue',exact:true}).locator('..');
+  const restrictionAppealCard=restrictionAppealSection.getByRole('heading',{name:'Reporting restriction appeal',exact:true}).locator('..');
+  await expect(restrictionAppealCard.getByText(targetData.user.id,{exact:true})).toHaveCount(0);
+  await restrictionAppealCard.getByLabel('Required restriction appeal reason').fill(
+    'Claim this exact restriction appeal for a reviewed managed browser decision.');
+  await restrictionAppealCard.getByRole('button',{name:'Claim restriction appeal'}).click();
+  await expect(restrictionAppealCard.getByText('Assigned to you',{exact:false})).toBeVisible();
+  await restrictionAppealCard.getByLabel('Required restriction appeal reason').fill(
+    'Uphold this exact appeal and lift only the reviewed reporting restriction revision.');
+  await restrictionAppealCard.getByRole('button',{name:'Uphold appeal and lift restriction'}).click();
+  await expect(restrictionAppealCard.getByText('upheld',{exact:true})).toBeVisible();
+  assert.deepEqual((await f.db.prepare(`SELECT action FROM community_restriction_appeal_events
+    WHERE appeal_id=? ORDER BY created_at,id`).all(restrictionAppealReceipt.id)).map(row=>row.action),['claim','uphold']);
   await page.getByRole('button',{name:'Load active restrictions'}).click();
   const participationCard=page.getByRole('heading',{name:'Author participation restriction',exact:true}).locator('..');
   const reportingCard=page.getByRole('heading',{name:'Reporter submission restriction',exact:true}).locator('..');
-  await expect(participationCard).toBeVisible();await expect(reportingCard).toBeVisible();
+  await expect(participationCard).toBeVisible();await expect(reportingCard).toHaveCount(0);
   await expect(participationCard.getByText(targetData.user.id,{exact:true})).toHaveCount(0);
   await participationCard.getByLabel('Required restriction reason').fill('Lift this browser participation restriction after the reviewed appeal restored the contribution.');
   await participationCard.getByRole('button',{name:'Lift restriction'}).click();
   await expect(participationCard).toHaveCount(0);
-  await reportingCard.getByLabel('Required restriction reason').fill('Lift this browser reporting restriction after a separate reviewed resolution.');
-  await reportingCard.getByRole('button',{name:'Lift restriction'}).click();
-  await expect(reportingCard).toHaveCount(0);
   assert.deepEqual((await(await target.request('/api/community/restrictions')).json()).restrictions,[]);
   assert.deepEqual((await f.db.prepare('SELECT action,count(*)::integer AS count FROM community_restriction_events GROUP BY action ORDER BY action')
     .all()),[{action:'lift',count:2},{action:'restrict',count:2}]);

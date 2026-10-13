@@ -281,7 +281,18 @@ test('personal author muting hides posts, publishes comment tombstones and un-mu
   await expect(page.getByRole('heading',{name:'My community restrictions',exact:true})).toBeVisible();
   await expect(page.getByText('Report submission restricted',{exact:true})).toBeVisible();
   await expect(page.getByText('private-browser-moderator',{exact:true})).toHaveCount(0);
-  await expect(page.getByText(/Reading, deletion, appeals, personal mutes/)).toBeVisible();
+  await expect(page.getByText(/Reading, deletion, contribution appeals, personal mutes/)).toBeVisible();
+  await page.getByRole('button',{name:'Appeal this restriction',exact:true}).click();
+  await page.getByLabel('Why should this restriction be lifted?').fill(
+    'The reporting restriction should receive an independent review of the local browser context.');
+  await page.getByRole('button',{name:'Submit restriction appeal',exact:true}).click();
+  await expect(page.getByText(/This exact restriction revision has an open appeal/)).toBeVisible();
+  await expect(page.getByRole('heading',{name:'My restriction appeals',exact:true})).toBeVisible();
+  await expect(page.getByText(/appealed restriction revision 1/)).toBeVisible();
+  const restrictionAppeal=await db.prepare(`SELECT owner_id,restriction_id,restriction_revision,state
+    FROM community_restriction_appeals WHERE restriction_id=?`).get(restrictionId);
+  assert.equal(restrictionAppeal?.owner_id,viewer);assert.equal(restrictionAppeal?.restriction_id,restrictionId);
+  assert.equal(restrictionAppeal?.restriction_revision,1);assert.equal(restrictionAppeal?.state,'open');
   await expect(page.getByText(comment,{exact:true})).toBeVisible();
   await page.getByRole('button',{name:'Unmute author',exact:true}).click();
   await expect(page.getByText('No authors are currently muted for you.',{exact:true})).toBeVisible();

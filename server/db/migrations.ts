@@ -1403,6 +1403,114 @@ export const migrations = [{
       CREATE TRIGGER immutable_community_restriction_delete BEFORE DELETE ON community_restrictions
         FOR EACH ROW EXECUTE FUNCTION immutable_community_restriction_record();
     `,
+  }, {
+    version: 35,
+    name: 'exact-community-restriction-appeals',
+    sql: `
+      CREATE TABLE community_restriction_appeals (
+        id UUID PRIMARY KEY,
+        owner_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+        request_key UUID NOT NULL,
+        input_hash TEXT NOT NULL CHECK(input_hash ~ '^[0-9a-f]{64}$'),
+        restriction_id UUID NOT NULL REFERENCES community_restrictions(id) ON DELETE RESTRICT,
+        restriction_revision INTEGER NOT NULL CHECK(restriction_revision>0),
+        statement TEXT NOT NULL CHECK(length(statement) BETWEEN 20 AND 1000),
+        state TEXT NOT NULL DEFAULT 'open' CHECK(state IN ('open','denied','upheld','resolved')),
+        assigned_to TEXT REFERENCES users(id) ON DELETE RESTRICT,
+        appeal_revision INTEGER NOT NULL DEFAULT 0 CHECK(appeal_revision>=0),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX community_restriction_appeals_owner_key
+        ON community_restriction_appeals(owner_id,request_key) WHERE owner_id IS NOT NULL;
+      CREATE UNIQUE INDEX community_restriction_appeals_owner_revision
+        ON community_restriction_appeals(owner_id,restriction_id,restriction_revision) WHERE owner_id IS NOT NULL;
+      CREATE INDEX community_restriction_appeals_queue
+        ON community_restriction_appeals(updated_at DESC,id DESC);
+      CREATE INDEX community_restriction_appeals_owner_order
+        ON community_restriction_appeals(owner_id,created_at DESC,id DESC);
+      CREATE TABLE community_restriction_appeal_events (
+        id UUID PRIMARY KEY,
+        appeal_id UUID NOT NULL REFERENCES community_restriction_appeals(id) ON DELETE RESTRICT,
+        restriction_id UUID NOT NULL REFERENCES community_restrictions(id) ON DELETE RESTRICT,
+        actor_ref TEXT NOT NULL,
+        actor_role TEXT NOT NULL CHECK(actor_role IN ('moderator','administrator')),
+        action TEXT NOT NULL CHECK(action IN ('claim','release','deny','uphold','resolve')),
+        reason TEXT NOT NULL CHECK(length(reason) BETWEEN 20 AND 500),
+        prior_appeal_revision INTEGER NOT NULL CHECK(prior_appeal_revision>=0),
+        result_appeal_revision INTEGER NOT NULL CHECK(result_appeal_revision=prior_appeal_revision+1),
+        prior_restriction_revision INTEGER NOT NULL CHECK(prior_restriction_revision>0),
+        result_restriction_revision INTEGER,
+        result_appeal_state TEXT NOT NULL CHECK(result_appeal_state IN ('open','denied','upheld','resolved')),
+        created_at TEXT NOT NULL,
+        CHECK((action='uphold' AND result_restriction_revision IS NOT NULL AND
+          result_restriction_revision=prior_restriction_revision+1 AND result_appeal_state='upheld') OR
+          (action<>'uphold' AND result_restriction_revision IS NULL)),
+        CHECK((action IN ('claim','release') AND result_appeal_state='open') OR
+          (action='deny' AND result_appeal_state='denied') OR
+          (action='resolve' AND result_appeal_state='resolved') OR action='uphold')
+      );
+      CREATE INDEX community_restriction_appeal_events_appeal
+        ON community_restriction_appeal_events(appeal_id,created_at,id);
+      CREATE FUNCTION protect_community_restriction_appeal() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NOT (
+            OLD.owner_id IS NOT NULL AND NEW.owner_id IS NULL AND NEW.id=OLD.id AND
+              NEW.request_key=OLD.request_key AND NEW.input_hash=OLD.input_hash AND
+              NEW.restriction_id=OLD.restriction_id AND NEW.restriction_revision=OLD.restriction_revision AND
+              NEW.statement=OLD.statement AND NEW.state=OLD.state AND NEW.assigned_to IS NOT DISTINCT FROM OLD.assigned_to AND
+              NEW.appeal_revision=OLD.appeal_revision AND NEW.created_at=OLD.created_at AND NEW.updated_at=OLD.updated_at OR
+            NEW.id=OLD.id AND NEW.owner_id IS NOT DISTINCT FROM OLD.owner_id AND NEW.request_key=OLD.request_key AND
+              NEW.input_hash=OLD.input_hash AND NEW.restriction_id=OLD.restriction_id AND
+              NEW.restriction_revision=OLD.restriction_revision AND NEW.statement=OLD.statement AND
+              OLD.state='open' AND NEW.state IN ('open','denied','upheld','resolved') AND
+              NEW.appeal_revision=OLD.appeal_revision+1 AND NEW.created_at=OLD.created_at AND NEW.updated_at>=OLD.updated_at AND
+              (NEW.state<>'upheld' OR EXISTS(SELECT 1 FROM community_restrictions restriction
+                WHERE restriction.id=OLD.restriction_id AND restriction.state='lifted' AND
+                  restriction.revision=OLD.restriction_revision+1))
+          ) THEN RAISE EXCEPTION 'Restriction appeals allow only owner retirement or one revision-fenced staff review transition.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER protect_community_restriction_appeal BEFORE UPDATE ON community_restriction_appeals
+        FOR EACH ROW EXECUTE FUNCTION protect_community_restriction_appeal();
+      CREATE FUNCTION initialize_community_restriction_appeal() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NEW.owner_id IS NULL OR NEW.state<>'open' OR NEW.assigned_to IS NOT NULL OR NEW.appeal_revision<>0 OR
+            NEW.created_at<>NEW.updated_at
+          THEN RAISE EXCEPTION 'New restriction appeals must begin as unassigned revision-zero owner records.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER initialize_community_restriction_appeal BEFORE INSERT ON community_restriction_appeals
+        FOR EACH ROW EXECUTE FUNCTION initialize_community_restriction_appeal();
+      CREATE FUNCTION validate_community_restriction_appeal_event() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN
+          IF NOT EXISTS(SELECT 1 FROM community_restriction_appeals appeal WHERE appeal.id=NEW.appeal_id AND
+            appeal.restriction_id=NEW.restriction_id AND appeal.appeal_revision=NEW.result_appeal_revision AND
+            appeal.state=NEW.result_appeal_state)
+          THEN RAISE EXCEPTION 'Restriction appeal evidence must reference the resulting appeal revision and state.'; END IF;
+          IF NEW.result_restriction_revision IS NULL AND NOT EXISTS(
+            SELECT 1 FROM community_restrictions restriction WHERE restriction.id=NEW.restriction_id AND
+              restriction.revision=NEW.prior_restriction_revision)
+          THEN RAISE EXCEPTION 'Restriction appeal evidence must reference the reviewed restriction revision.'; END IF;
+          IF NEW.result_restriction_revision IS NOT NULL AND NOT EXISTS(
+            SELECT 1 FROM community_restrictions restriction WHERE restriction.id=NEW.restriction_id AND
+              restriction.revision=NEW.result_restriction_revision AND restriction.state='lifted')
+          THEN RAISE EXCEPTION 'Upheld restriction appeal evidence must reference the resulting lifted restriction.'; END IF;
+          RETURN NEW;
+        END;
+      $$;
+      CREATE TRIGGER validate_community_restriction_appeal_event BEFORE INSERT ON community_restriction_appeal_events
+        FOR EACH ROW EXECUTE FUNCTION validate_community_restriction_appeal_event();
+      CREATE FUNCTION immutable_community_restriction_appeal_record() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+        BEGIN RAISE EXCEPTION 'Community restriction appeal evidence is immutable.'; END;
+      $$;
+      CREATE TRIGGER immutable_community_restriction_appeal_event BEFORE UPDATE OR DELETE ON community_restriction_appeal_events
+        FOR EACH ROW EXECUTE FUNCTION immutable_community_restriction_appeal_record();
+      CREATE TRIGGER immutable_community_restriction_appeal_delete BEFORE DELETE ON community_restriction_appeals
+        FOR EACH ROW EXECUTE FUNCTION immutable_community_restriction_appeal_record();
+    `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

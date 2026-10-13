@@ -75,7 +75,7 @@ test('community URL helpers preserve exact bounded data and reject malformed or 
   assert.deepEqual(parseStudioAddress('/community/questions/literal%252F','').segments,['community','questions','literal%2F']);
 });
 
-test('migrations 21-34 preserve actual legacy community data while adding deletion, moderation, appeal, mute and restriction state',async t=>{
+test('migrations 21-35 preserve actual legacy community data while adding deletion, moderation, appeal, mute and restriction state',async t=>{
   const f=await fixture(t,'postgres'),post=await f.add();
   await f.db.prepare('INSERT INTO votes(post_id,user_id) VALUES(?,?)').run(post.id,f.owners[0]);
   await f.db.prepare('INSERT INTO follows(post_id,user_id) VALUES(?,?)').run(post.id,f.owners[1]);
@@ -133,6 +133,8 @@ test('migrations 21-34 preserve actual legacy community data while adding deleti
   assert.deepEqual(await legacy.prepare('SELECT * FROM community_mute_intents').all(),[]);
   assert.deepEqual(await legacy.prepare('SELECT * FROM community_restrictions').all(),[]);
   assert.deepEqual(await legacy.prepare('SELECT * FROM community_restriction_events').all(),[]);
+  assert.deepEqual(await legacy.prepare('SELECT * FROM community_restriction_appeals').all(),[]);
+  assert.deepEqual(await legacy.prepare('SELECT * FROM community_restriction_appeal_events').all(),[]);
   assert.equal((await legacy.prepare(`SELECT is_nullable FROM information_schema.columns
     WHERE table_schema=current_schema() AND table_name='comments' AND column_name='user_id'`).get())?.is_nullable,'YES');
   assert.equal((await legacy.prepare('SELECT revision FROM community_comment_revisions WHERE comment_id=?').get(commentId))?.revision,1);
@@ -148,7 +150,9 @@ test('migrations 21-34 preserve actual legacy community data while adding deleti
     'community_appeals_owner_target_revision','community_appeals_queue','community_appeals_owner_order',
     'community_appeal_events_appeal','community_mutes_owner_state','community_mutes_subject','community_mute_intents_owner_order',
     'community_restrictions_active_subject_scope','community_restrictions_subject_order','community_restrictions_staff_queue',
-    'community_restriction_events_restriction'])
+    'community_restriction_events_restriction','community_restriction_appeals_owner_key',
+    'community_restriction_appeals_owner_revision','community_restriction_appeals_queue',
+    'community_restriction_appeals_owner_order','community_restriction_appeal_events_appeal'])
     assert.ok(indexes.some(row=>row.indexname===name));
   await legacy.prepare(`INSERT INTO identity_abuse_buckets(scope,fingerprint,attempts,started,expires)
     VALUES('community-account',?,1,1,2)`).run('a'.repeat(64));
@@ -538,6 +542,110 @@ for(const dialect of ['sqlite','postgres'] as const){
     await assert.rejects(()=>f.db.prepare('UPDATE community_restriction_events SET reason=? WHERE restriction_id=?')
       .run('Tampering with reviewed restriction evidence must fail.',reporting.id));
     await assert.rejects(()=>f.db.prepare('DELETE FROM community_restrictions WHERE id=?').run(reporting.id));
+  });
+
+  test(`${dialect}: restriction appeals bind one exact revision and require independent reviewed lift`,async t=>{
+    const f=await fixture(t,dialect),owner={id:f.owners[0],name:'Restricted member',email:`${f.owners[0]}@example.invalid`,demo:false};
+    const author=f.owners[1],post=await f.add({owner:author,title:'Restriction appeal evidence target'});
+    const original={id:randomUUID(),name:'Original moderator',email:'original-moderator@example.invalid',demo:false};
+    const reviewer={id:randomUUID(),name:'Independent moderator',email:'independent-moderator@example.invalid',demo:false};
+    for(const user of [original,reviewer])await f.db.prepare('INSERT INTO users(id,name,email,password,demo) VALUES(?,?,?,NULL,0)')
+      .run(user.id,user.name,user.email);
+    const identity={assertStaff:async()=>{},staffRoles:async(id:string)=>
+      id===original.id||id===reviewer.id?['moderator']:[]} as unknown as ManagedIdentity;
+    const moderation=new CommunityModeration(f.db,null);
+    const report=await moderation.report(owner,{requestId:randomUUID(),targetType:'post',targetId:post.id,
+      category:'harassment',details:'A concrete report supports a reviewed restriction and independent appeal rehearsal.'},async()=>{});
+    await f.db.prepare(`UPDATE community_reports SET assigned_to=?,report_revision=1,updated_at=?
+      WHERE id=? AND report_revision=0`).run(original.id,new Date().toISOString(),report.id);
+    const restrictions=new CommunityRestrictions(f.db,identity);
+    const restricted=await restrictions.apply(original,report.id,{reportRevision:1,targetRevision:0,subject:'reporter',
+      scope:'reporting',durationHours:168,reason:'Restrict report submission after reviewing the exact report evidence.'});
+    const input={requestId:randomUUID(),restrictionId:restricted.id,restrictionRevision:1,
+      statement:'The reporting restriction should receive an independent review of the cited context.'};
+    let admissions=0;
+    const appeal=await restrictions.appeal(owner,input,async()=>{admissions++;});
+    assert.equal(appeal.appealedRestrictionRevision,1);assert.equal(admissions,2);
+    assert.deepEqual(await restrictions.appeal(owner,input,async()=>{admissions++;}),appeal);assert.equal(admissions,4);
+    await assert.rejects(()=>restrictions.appeal(owner,{...input,statement:'Different appeal content must not reuse the exact request key.'},async()=>{}),status(409));
+    await assert.rejects(()=>restrictions.appeal(owner,{...input,requestId:randomUUID()},async()=>{}),status(409));
+    const history=await restrictions.appealHistory(owner,{},async()=>{});
+    assert.equal(history.appeals[0]?.status,'open');assert.equal(history.appeals[0]?.scope,'reporting');
+    assert.ok(!JSON.stringify(history).includes(input.statement));assert.ok(!JSON.stringify(history).includes(original.id));
+    await assert.rejects(()=>f.db.prepare(`UPDATE community_restriction_appeals
+      SET state='upheld',appeal_revision=1,updated_at=? WHERE id=?`).run(new Date().toISOString(),appeal.id));
+    const queue=await restrictions.appealQueue(original,{});
+    assert.equal(queue.appeals[0]?.id,appeal.id);assert.equal(queue.appeals[0]?.restrictionActor,'me');
+    assert.ok(!JSON.stringify(queue).includes(owner.id));assert.ok(!Object.hasOwn(queue.appeals[0] ?? {},'ownerId'));
+    const claimed=await restrictions.actOnAppeal(original,appeal.id,{revision:0,restrictionRevision:1,action:'claim',
+      reason:'Claim this restriction appeal before the independent decision check.'});
+    assert.equal(claimed.revision,1);assert.equal(claimed.assignment,'me');
+    await assert.rejects(()=>restrictions.actOnAppeal(original,appeal.id,{revision:1,restrictionRevision:1,action:'deny',
+      reason:'The original restricting moderator must not decide the same restriction appeal.'}),status(409));
+    const released=await restrictions.actOnAppeal(original,appeal.id,{revision:1,restrictionRevision:1,action:'release',
+      reason:'Release this appeal so a different moderator can provide the required review.'});
+    assert.equal(released.revision,2);assert.equal(released.assignment,null);
+    const independentlyClaimed=await restrictions.actOnAppeal(reviewer,appeal.id,
+      {revision:2,restrictionRevision:1,action:'claim',
+        reason:'Claim this appeal as a moderator independent from the restricting actor.'});
+    assert.equal(independentlyClaimed.restrictionActor,'other');
+    const upheld=await restrictions.actOnAppeal(reviewer,appeal.id,{revision:3,restrictionRevision:1,action:'uphold',
+      reason:'Independent review supports lifting this exact reporting restriction revision.'});
+    assert.equal(upheld.status,'upheld');assert.equal(upheld.restrictionState,'lifted');assert.equal(upheld.restrictionRevision,2);
+    await restrictions.assertAllowed(owner.id,'reporting');
+    assert.deepEqual(await restrictions.appeal(owner,input,async()=>{}),appeal);
+    const finalHistory=await restrictions.appealHistory(owner,{},async()=>{});
+    assert.equal(finalHistory.appeals[0]?.status,'upheld');assert.equal(finalHistory.appeals[0]?.restrictionState,'lifted');
+    assert.deepEqual((await f.db.prepare(`SELECT action FROM community_restriction_appeal_events
+      WHERE appeal_id=? ORDER BY created_at,id`).all(appeal.id)).map(value=>value.action),['claim','release','claim','uphold']);
+    assert.deepEqual((await f.db.prepare(`SELECT action FROM community_restriction_events
+      WHERE restriction_id=? ORDER BY created_at,id`).all(restricted.id)).map(value=>value.action),['restrict','lift']);
+    await assert.rejects(()=>f.db.prepare('UPDATE community_restriction_appeals SET statement=? WHERE id=?')
+      .run('Direct restriction appeal rewriting must fail.',appeal.id));
+    await assert.rejects(()=>f.db.prepare('DELETE FROM community_restriction_appeal_events WHERE appeal_id=?').run(appeal.id));
+    await assert.rejects(()=>f.db.prepare('DELETE FROM community_restriction_appeals WHERE id=?').run(appeal.id));
+
+    const second=await restrictions.apply(original,report.id,{reportRevision:1,targetRevision:0,subject:'reporter',
+      scope:'reporting',durationHours:24,reason:'Issue a separately reviewed reporting restriction for stale appeal resolution.'});
+    const stale=await restrictions.appeal(owner,{requestId:randomUUID(),restrictionId:second.id,restrictionRevision:1,
+      statement:'This second restriction appeal will become superseded before a merits decision.'},async()=>{});
+    await restrictions.change(original,second.id,{action:'lift',revision:1,
+      reason:'Lift this restriction directly before its pending appeal receives review.'});
+    await restrictions.actOnAppeal(reviewer,stale.id,{revision:0,restrictionRevision:2,action:'claim',
+      reason:'Claim the superseded restriction appeal before recording its resolution.'});
+    const resolved=await restrictions.actOnAppeal(reviewer,stale.id,{revision:1,restrictionRevision:2,action:'resolve',
+      reason:'Resolve this appeal because the exact appealed restriction revision is no longer current.'});
+    assert.equal(resolved.status,'resolved');assert.equal(resolved.restrictionState,'lifted');
+
+    const racingRestriction=await restrictions.apply(original,report.id,{reportRevision:1,targetRevision:0,subject:'reporter',
+      scope:'reporting',durationHours:24,reason:'Issue a reviewed reporting restriction for the exact concurrency rehearsal.'});
+    const racingAppeal=await restrictions.appeal(owner,{requestId:randomUUID(),restrictionId:racingRestriction.id,
+      restrictionRevision:1,statement:'This exact appeal races one reviewed restriction extension.'},async()=>{});
+    await restrictions.actOnAppeal(reviewer,racingAppeal.id,{revision:0,restrictionRevision:1,action:'claim',
+      reason:'Claim the exact appeal before racing uphold against extension.'});
+    const racing=await Promise.allSettled([
+      restrictions.actOnAppeal(reviewer,racingAppeal.id,{revision:1,restrictionRevision:1,action:'uphold',
+        reason:'Uphold this exact appeal only if the appealed restriction revision remains current.'}),
+      restrictions.change(original,racingRestriction.id,{action:'extend',revision:1,durationHours:720,
+        reason:'Extend this restriction only if the same current revision remains authoritative.'}),
+    ]);
+    assert.equal(racing.filter(value=>value.status==='fulfilled').length,1);
+    const rejected=racing.find(value=>value.status==='rejected');assert.ok(rejected?.status==='rejected');
+    assert.ok(rejected.reason instanceof HttpError&&rejected.reason.status===409);
+    const racedAppeal=await f.db.prepare('SELECT state,appeal_revision FROM community_restriction_appeals WHERE id=?')
+      .get(racingAppeal.id);
+    const racedRestriction=await f.db.prepare('SELECT state,revision FROM community_restrictions WHERE id=?')
+      .get(racingRestriction.id);
+    if(racedAppeal?.state==='open'){
+      assert.equal(racedRestriction?.state,'active');assert.equal(racedRestriction?.revision,2);
+      const closed=await restrictions.actOnAppeal(reviewer,racingAppeal.id,
+        {revision:1,restrictionRevision:2,action:'resolve',
+          reason:'Resolve the concurrency appeal because the reviewed extension won the exact-revision race.'});
+      assert.equal(closed.status,'resolved');
+    }else{
+      assert.equal(racedAppeal?.state,'upheld');assert.equal(racedRestriction?.state,'lifted');
+      assert.equal(racedRestriction?.revision,2);
+    }
   });
 
   test(`${dialect}: hidden comments are explicit non-repliable tombstones but remain owner-deletable`,async t=>{

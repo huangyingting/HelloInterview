@@ -263,9 +263,14 @@ The [reviewed community-restriction checkpoint](docs/production/43-reviewed-expi
 adds report-bound, MFA/role-gated author-participation and reporter-submission
 restrictions with fixed expiry, revision-fenced extension/lift, minimized
 member/staff/privacy surfaces and immutable evidence. It does not add automated
-enforcement, permanent/global suspension, restriction notices, an approved
-abuse policy or managed writing.
-Controlled PostgreSQL deployments must apply **migration 34 and maintained queue
+enforcement, permanent/global suspension, external restriction notices, an
+approved abuse policy or managed writing.
+The [restriction-appeal checkpoint](docs/production/44-exact-community-restriction-appeals.md)
+adds owner/key/restriction-revision-bound in-app review, independent moderator
+decisions, exact atomic uphold/lift and minimized member/staff/privacy surfaces.
+It does not promise external delivery, response times, approved policy, staffing
+or managed writing.
+Controlled PostgreSQL deployments must apply **migration 35 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 

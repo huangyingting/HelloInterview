@@ -186,7 +186,9 @@ W11 remains open for:
 
 - approved rules, legal retention and takedown policy;
 - external author/reporter delivery and published response targets;
-- relationship-wide account blocking, restriction notices/appeals and reviewed automated spam triage;
+- relationship-wide account blocking, external restriction notices, approved
+  restriction-appeal policy and reviewed automated spam triage; exact in-app
+  restriction appeals follow in runbook 44;
 - moderation staffing and escalation ownership;
 - managed contribution writing or explicit read-only operating approval;
 - complete privacy erasure and backup/processor handling;

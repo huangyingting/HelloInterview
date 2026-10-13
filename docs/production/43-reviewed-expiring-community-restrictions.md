@@ -1,9 +1,11 @@
 # 43 - Reviewed expiring community account restrictions
 
-**Status: implemented W11 engineering checkpoint, not automated enforcement,
-permanent/global suspension, external notification, approved abuse policy or
-retention, staffed moderation, managed community writing or public-launch
-approval.**
+**Status: implemented W11 engineering checkpoint, with exact in-app appeals
+delivered separately by
+[runbook 44](44-exact-community-restriction-appeals.md); not automated
+enforcement, permanent/global suspension, external notification, approved abuse
+policy or retention, staffed moderation, managed community writing or
+public-launch approval.**
 
 This checkpoint implements
 [#36](https://github.com/huangyingting/HelloInterview/issues/36) under W11
@@ -158,7 +160,8 @@ W11 remains open for:
 
 - relationship-wide personal account blocking and direct-interaction policy;
 - approved community rules, legal retention and takedown policy;
-- external author/reporter restriction notices and a restriction appeal policy;
+- external author/reporter restriction notices and an approved restriction
+  appeal policy;
 - reviewed automated spam triage that cannot make irreversible decisions;
 - moderation staffing, escalation ownership and published response targets;
 - managed contribution writing or explicit read-only operating approval;

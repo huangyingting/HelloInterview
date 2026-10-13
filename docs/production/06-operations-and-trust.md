@@ -141,6 +141,18 @@ lock order, expiry and failure behavior. Automated enforcement, permanent/global
 suspension, relationship-wide blocking, external notices, approved policy,
 staffing and managed writing remain gates.
 
+**Implemented exact restriction-appeal checkpoint (W11):** a restricted member
+can submit one owner/key/restriction-revision-bound in-app appeal. A different
+MFA/fresh moderator or an administrator can claim and deny, uphold or resolve
+it. Uphold atomically lifts only the appealed active revision; stale, lifted or
+expired revisions can only be resolved without changing later authority.
+Migration 35 retains minimized member/staff/privacy surfaces and dual immutable
+appeal/restriction evidence. The
+[restriction-appeal runbook](44-exact-community-restriction-appeals.md) records
+lock order, independence and failure behavior. External notices, approved
+abuse/appeal policy, staffed response targets, managed writing and launch
+approval remain gates.
+
 **Implemented managed staff-administration checkpoint (W10):** verified OIDC
 `amr` can establish explicit MFA evidence for a managed session; privileged
 staff admission additionally requires an active verified account, a current
@@ -276,8 +288,10 @@ blocking or a substitute for staffed abuse response. Reviewed expiring
 participation/reporting restrictions now follow
 [runbook 43](43-reviewed-expiring-community-restrictions.md); they are not
 automated punishment, global suspension or an approved abuse/appeal policy, and
-none of these checkpoints authorizes external notices or managed contribution
-writes.
+exact in-app review now follows
+[runbook 44](44-exact-community-restriction-appeals.md). None of these
+checkpoints authorizes external notices, approved response commitments or
+managed contribution writes.
 
 Launch requirements:
 

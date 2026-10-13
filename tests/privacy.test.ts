@@ -134,6 +134,20 @@ test('privacy artifacts cover owned preparation, identity, grants, usage, contri
     VALUES(?,?,?,?,?,'restrict',?,0,1,NULL,'2999-10-13T00:00:01.975Z','active','2026-10-13T00:00:01.975Z')`)
     .run(randomUUID(),restrictionId,reportId,restrictionActor,'moderator',
       'Private internal restriction reason excluded from the owner export.');
+  const restrictionAppealId=randomUUID(),restrictionAppealKey=randomUUID();
+  await f.db.prepare(`INSERT INTO community_restriction_appeals
+    (id,owner_id,request_key,input_hash,restriction_id,restriction_revision,statement,created_at,updated_at)
+    VALUES(?,?,?,?,?,1,?,'2026-10-13T00:00:01.980Z','2026-10-13T00:00:01.980Z')`)
+    .run(restrictionAppealId,owner,restrictionAppealKey,'c'.repeat(64),restrictionId,
+      'Owner restriction appeal statement included without private staff review evidence.');
+  await f.db.prepare(`UPDATE community_restriction_appeals SET assigned_to=?,appeal_revision=1,updated_at=?
+    WHERE id=?`).run(owner,'2026-10-13T00:00:01.985Z',restrictionAppealId);
+  await f.db.prepare(`INSERT INTO community_restriction_appeal_events
+    (id,appeal_id,restriction_id,actor_ref,actor_role,action,reason,prior_appeal_revision,result_appeal_revision,
+      prior_restriction_revision,result_restriction_revision,result_appeal_state,created_at)
+    VALUES(?,?,?,?,?,'claim',?,0,1,1,NULL,'open','2026-10-13T00:00:01.985Z')`)
+    .run(randomUUID(),restrictionAppealId,restrictionId,'private-restriction-appeal-reviewer','moderator',
+      'Private restriction appeal review reason excluded from the owner export.');
   await f.db.prepare(`INSERT INTO comments(id,resource,user_id,author,body,created_at,parent_id)
     VALUES(?,?,?,?,?,?,NULL)`).run('privacy-deleted-comment','post/privacy-post',owner,'Owner private name','Removed private comment bytes.','2026-10-13T00:00:02.000Z');
   const deletionKey=randomUUID();
@@ -176,11 +190,12 @@ test('privacy artifacts cover owned preparation, identity, grants, usage, contri
   const token=[...(await f.db.prepare('SELECT token,csrf_hash FROM managed_sessions').all())][0];
   const exported=await completedPrivacyExport(browser,f.privacy);
   const text=JSON.stringify(exported.artifact);
-  assert.match(text,/A private owned story|Owned privacy post|Owned privacy comment|Owner-submitted private report details|Owner appeal statement included|private support request|owner-visible in-app support reply|private export prompt/);
+  assert.match(text,/A private owned story|Owned privacy post|Owned privacy comment|Owner-submitted private report details|Owner appeal statement included|Owner restriction appeal statement included|private support request|owner-visible in-app support reply|private export prompt/);
   assert.match(text,new RegExp(deletionKey));
   assert.match(text,new RegExp(reportKey));
   assert.match(text,new RegExp(appealKey));
   assert.match(text,new RegExp(muteKey));
+  assert.match(text,new RegExp(restrictionAppealKey));
   assert.match(text,/privacy-muted-post/);
   assert.match(text,new RegExp(restrictionId));
   assert.match(text,/reporting|2999-10-13T00:00:01.975Z/);
@@ -189,7 +204,7 @@ test('privacy artifacts cover owned preparation, identity, grants, usage, contri
   assert.match(text,/premium-read-v1|privacy-reservation|pro_monthly|sub_privacy|in_privacy/);
   assert.doesNotMatch(text,new RegExp(String(token.token)));
   assert.doesNotMatch(text,new RegExp(String(token.csrf_hash)));
-  assert.doesNotMatch(text,/fixture-operator|private-moderator-ref|Private internal moderation reason|private-appeal-moderator|Private internal appeal reason|private-restriction-moderator|Private internal restriction reason|assigned_to|request_hash|hosted_url|provider_session_id|job_id/);
+  assert.doesNotMatch(text,/fixture-operator|private-moderator-ref|Private internal moderation reason|private-appeal-moderator|Private internal appeal reason|private-restriction-moderator|Private internal restriction reason|private-restriction-appeal-reviewer|Private restriction appeal review reason|assigned_to|request_hash|hosted_url|provider_session_id|job_id/);
   assert.equal((exported.artifact.notices as {scope:string}).scope.includes('does not claim'),true);
 });
 

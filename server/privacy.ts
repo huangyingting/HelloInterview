@@ -263,6 +263,9 @@ export class PrivacyExports {
           FROM community_mute_intents WHERE owner_id=? ORDER BY created_at,request_key`,owner),
         restrictions:await all(`SELECT id,scope,state,revision,starts_at,expires_at,created_at,updated_at
           FROM community_restrictions WHERE subject_id=? ORDER BY created_at,id`,owner),
+        restrictionAppeals:await all(`SELECT id,request_key,restriction_id,restriction_revision,statement,state,
+          appeal_revision,created_at,updated_at FROM community_restriction_appeals
+          WHERE owner_id=? ORDER BY created_at,id`,owner),
       },
       support:await Promise.all((await all(`SELECT id,email,body,created_at,handling_status,support_revision,support_updated_at
         FROM support WHERE user_id=? ORDER BY created_at,id`,owner)).map(async ticket=>({

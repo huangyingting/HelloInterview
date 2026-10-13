@@ -1071,6 +1071,17 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   app.get('/api/community/restrictions',async(req,res)=>{
     res.json(await restrictions.status(await requireUser(req)));
   });
+  app.post('/api/community/restriction-appeals',async(req,res)=>{
+    const user=await requireUser(req);
+    if(identity)await identity.admitCommunity(req,user,res);
+    res.status(201).json(await restrictions.appeal(user,req.body,
+      ()=>identity?identity.assertWritable(user):assertLocalCommunitySession(req,user)));
+  });
+  app.get('/api/community/restriction-appeals',async(req,res)=>{
+    const user=await requireUser(req);
+    res.json(await restrictions.appealHistory(user,req.query,
+      ()=>identity?identity.assertWritable(user):assertLocalCommunitySession(req,user)));
+  });
   app.post('/api/comments', async (req, res) => {
     const user = (await requireUser(req)), body = record(req.body);
     const resource = commentResource(body.resource);
@@ -1219,6 +1230,13 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     });
     app.patch('/api/staff/community/restrictions/:id',async(req,res)=>{
       const user=await requireUser(req);await identity.admitStaff(user,res);res.json(await restrictions.change(user,req.params.id,req.body));
+    });
+    app.get('/api/staff/community/restriction-appeals',async(req,res)=>{
+      const user=await requireUser(req);await identity.admitStaff(user,res);res.json(await restrictions.appealQueue(user,req.query));
+    });
+    app.patch('/api/staff/community/restriction-appeals/:id',async(req,res)=>{
+      const user=await requireUser(req);await identity.admitStaff(user,res);
+      res.json(await restrictions.actOnAppeal(user,req.params.id,req.body));
     });
     app.get('/api/staff/community/appeals',async(req,res)=>{
       const user=await requireUser(req);await identity.admitStaff(user,res);res.json(await moderation.appealQueue(user,req.query));

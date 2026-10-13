@@ -433,6 +433,30 @@ export interface StaffCommunityRestriction extends CommunityRestriction {
 export interface StaffCommunityRestrictionPage {
   restrictions:StaffCommunityRestriction[];nextCursor:string|null;
 }
+export interface CommunityRestrictionAppealReceipt {
+  id:string;requestId:string;restrictionId:string;appealedRestrictionRevision:number;
+  status:'saved';createdAt:string;delivery:'restriction-review-queue-only';
+}
+export interface CommunityRestrictionAppealStatus {
+  id:string;requestId:string;restrictionId:string;scope:CommunityRestrictionScope;
+  appealedRestrictionRevision:number;status:'open'|'denied'|'upheld'|'resolved';revision:number;
+  restrictionState:'active'|'lifted'|'expired';restrictionRevision:number;expiresAt:string;
+  createdAt:string;updatedAt:string;
+}
+export interface CommunityRestrictionAppealPage {
+  appeals:CommunityRestrictionAppealStatus[];nextCursor:string|null;
+}
+export interface StaffCommunityRestrictionAppeal {
+  id:string;restrictionId:string;scope:CommunityRestrictionScope;statement:string;
+  appealedRestrictionRevision:number;status:'open'|'denied'|'upheld'|'resolved';revision:number;
+  assignment:'me'|'other'|null;restrictionActor:'me'|'other';
+  restrictionState:'active'|'lifted'|'expired';restrictionRevision:number;expiresAt:string;
+  targetType:'post'|'comment';targetId:string;createdAt:string;updatedAt:string;
+  target:{title:string|null;body:string;author:string;resource:string|null};
+}
+export interface StaffCommunityRestrictionAppealPage {
+  appeals:StaffCommunityRestrictionAppeal[];nextCursor:string|null;
+}
 export interface StaffAccount {
   id:string;maskedEmail:string;status:'pending-verification'|'active'|'suspended'|'deletion-pending';
   verified:boolean;revision:number;activeSessions:number;
