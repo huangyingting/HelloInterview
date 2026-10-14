@@ -28,12 +28,13 @@ not a launch or cutover:
   staff authority;
 - active-account progress, course enrollment/video completion, quiz sessions,
   quiz reports, direct quiz submission, interview targets and revision-fenced
-  behavioral stories, practice drafts and transparent local-rubric feedback
-  now use session-bound Route Handlers and the Prisma transaction authority;
+  behavioral stories, practice drafts, local-rubric feedback, mock interviews,
+  custom quizzes and study plans now use session-bound Route Handlers and the
+  Prisma transaction authority;
 - anonymous managed support remains fail-closed until trusted edge address
   handling can restore network-scoped abuse protection;
-- managed-AI feedback and the remaining premium/product-write surfaces still
-  block participant access;
+- projects, tutor, managed-AI feedback and the remaining product-write
+  surfaces still block participant access;
 - Caddy must continue returning the hardened unavailable response.
 
 ## Final architecture
@@ -221,7 +222,10 @@ stale editors without overwriting newer text. Practice drafts also preserve
 revision fencing, diagram bounds, problem immutability and premium capability
 checks. Transparent local-rubric evaluation is migrated and idempotently grants
 recognition only on the first completion. External managed-AI feedback remains
-disabled until its provider and usage-ledger boundary moves together.
+disabled until its provider and usage-ledger boundary moves together. Premium
+mock interviews, custom quizzes and study plans now preserve entitlement
+checks before and after mutation, revision fencing, version-pinned questions
+and local-rubric provenance without granting client authority over access.
 
 Before participant launch, the remaining security surfaces must:
 

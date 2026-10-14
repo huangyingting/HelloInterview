@@ -36,6 +36,15 @@ import { POST as saveStoryRoute } from '../app/api/stories/route';
 import { DELETE as deleteStoryRoute } from '../app/api/stories/[id]/route';
 import { POST as saveAttemptRoute } from '../app/api/attempts/route';
 import { POST as evaluateAttemptRoute } from '../app/api/attempts/[id]/evaluate/route';
+import { POST as createMockRoute } from '../app/api/mocks/route';
+import { POST as saveMockDraftRoute } from '../app/api/mocks/[id]/draft/route';
+import { POST as respondToMockRoute } from '../app/api/mocks/[id]/respond/route';
+import { POST as createCustomQuizRoute } from '../app/api/custom-quizzes/route';
+import { GET as customQuizQuestionRoute } from '../app/api/custom-quizzes/[id]/question/route';
+import { POST as answerCustomQuizRoute } from '../app/api/custom-quizzes/[id]/answer/route';
+import { POST as finishCustomQuizRoute } from '../app/api/custom-quizzes/[id]/finish/route';
+import { POST as createStudyPlanRoute } from '../app/api/study-plans/route';
+import { POST as savePlanReflectionRoute } from '../app/api/study-plans/[id]/reflection/route';
 import { postgresConnection } from '../server/db/connection';
 import { migrateDatabase } from '../server/db/migrations';
 import { prismaConnection } from '../server/db/prisma';
@@ -46,6 +55,7 @@ import { completeSocialLink } from '../server/auth/linking';
 import { recordAuthAdmission, withAuthRequest } from '../server/auth/request-context';
 import { closeNextPrivacyService } from '../server/next/privacy';
 import { migrateJobs } from '../server/jobs';
+import { Entitlements } from '../server/entitlements';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 
@@ -444,6 +454,130 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     body: JSON.stringify({ ...attemptInput, problemId: 'team-chat' }),
   }));
   assert.equal(premiumAttempt.status, 403);
+  const entitlementNow = Number((await db.prepare(
+    'SELECT floor(extract(epoch FROM clock_timestamp())*1000)::bigint AS now',
+  ).get())?.now);
+  await new Entitlements(db).issue({
+    owner: authOwner,
+    source: { kind: 'engineering', key: 'next-runtime-premium' },
+    policy: 'pro-v1',
+    startsAt: entitlementNow - 1000,
+    endsAt: entitlementNow + 3600000,
+    evidence: { actor: 'next-runtime', reason: 'Exercise migrated premium learning Route Handlers.' },
+  });
+  const mockCreation = await createMockRoute(new Request('https://studio.fixture/api/mocks', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ problemId: 'short-links', company: 'Google', level: 'Senior', length: 3 }),
+  }));
+  const mockCreated = await mockCreation.json();
+  const mockId = mockCreated.session.id;
+  let mockSession = mockCreated.session;
+  while (!mockSession.completedAt) {
+    const draftStateResponse = await saveMockDraftRoute(new Request(
+      `https://studio.fixture/api/mocks/${mockId}/draft`,
+      {
+        method: 'POST',
+        headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify({
+          revision: mockSession.revision,
+          answer: 'I would define an idempotent key allocation contract, durable storage, cache behavior, and observable failure handling.',
+        }),
+      },
+    ), { params: Promise.resolve({ id: mockId }) });
+    mockSession = (await draftStateResponse.json()).mocks.find((mock: { id: string }) => mock.id === mockId);
+    const responseState = await respondToMockRoute(new Request(
+      `https://studio.fixture/api/mocks/${mockId}/respond`,
+      {
+        method: 'POST',
+        headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify({ revision: mockSession.revision }),
+      },
+    ), { params: Promise.resolve({ id: mockId }) });
+    mockSession = (await responseState.json()).mocks.find((mock: { id: string }) => mock.id === mockId);
+  }
+  assert.equal(mockSession.turns.length, 3);
+  assert.equal(mockSession.turns[0].feedback.source, 'rubric');
+  const customQuizCreation = await createCustomQuizRoute(new Request('https://studio.fixture/api/custom-quizzes', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ title: 'API decisions', topics: ['api-design'], mode: 'all', count: 1 }),
+  }));
+  const customQuizCreated = await customQuizCreation.json();
+  const customQuizId = customQuizCreated.quiz.id;
+  const customQuestionResponse = await customQuizQuestionRoute(new Request(
+    `https://studio.fixture/api/custom-quizzes/${customQuizId}/question`,
+    { headers: { Cookie: accountCookies } },
+  ), { params: Promise.resolve({ id: customQuizId }) });
+  const customQuestion = await customQuestionResponse.json();
+  const customAnswerResponse = await answerCustomQuizRoute(new Request(
+    `https://studio.fixture/api/custom-quizzes/${customQuizId}/answer`,
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ revision: 0, questionId: customQuestion.id, answer: -1 }),
+    },
+  ), { params: Promise.resolve({ id: customQuizId }) });
+  const answeredCustomQuizState = await customAnswerResponse.json();
+  const answeredCustomQuiz = answeredCustomQuizState.state.customQuizzes.find(
+    (quiz: { id: string }) => quiz.id === customQuizId,
+  );
+  const finishedCustomQuizResponse = await finishCustomQuizRoute(new Request(
+    `https://studio.fixture/api/custom-quizzes/${customQuizId}/finish`,
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ revision: answeredCustomQuiz.revision }),
+    },
+  ), { params: Promise.resolve({ id: customQuizId }) });
+  const finishedCustomQuiz = (await finishedCustomQuizResponse.json()).customQuizzes.find(
+    (quiz: { id: string }) => quiz.id === customQuizId,
+  );
+  assert.equal(finishedCustomQuiz.score, 0);
+  assert.equal(typeof finishedCustomQuiz.completedAt, 'string');
+  const planCreation = await createStudyPlanRoute(new Request('https://studio.fixture/api/study-plans', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({
+      company: 'Google',
+      level: 'Senior',
+      weeks: 2,
+      sessionsPerWeek: 5,
+      startOn: '2027-01-04',
+    }),
+  }));
+  const planCreated = await planCreation.json();
+  const planId = planCreated.plan.id;
+  const reflection = planCreated.plan.tasks.find((task: { kind: string }) => task.kind === 'reflection');
+  const reflectedPlanResponse = await savePlanReflectionRoute(new Request(
+    `https://studio.fixture/api/study-plans/${planId}/reflection`,
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({
+        taskId: reflection.id,
+        note: 'I would state the consistency boundary earlier and test the retry path explicitly.',
+        revision: 0,
+      }),
+    },
+  ), { params: Promise.resolve({ id: planId }) });
+  const reflectedPlan = (await reflectedPlanResponse.json()).studyPlans.find(
+    (plan: { id: string }) => plan.id === planId,
+  );
+  assert.equal(reflectedPlan.revision, 1);
+  const staleReflection = await savePlanReflectionRoute(new Request(
+    `https://studio.fixture/api/study-plans/${planId}/reflection`,
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({
+        taskId: reflection.id,
+        note: 'This stale reflection must not replace the newer saved note.',
+        revision: 0,
+      }),
+    },
+  ), { params: Promise.resolve({ id: planId }) });
+  assert.equal(staleReflection.status, 409);
   const otherToken = 'e'.repeat(64);
   await withAuthRequest(new Request('https://studio.fixture/api/auth/callback/google'), async () => {
     recordAuthAdmission({ userId: authOwner, identityId: identity });

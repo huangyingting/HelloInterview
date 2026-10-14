@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Capability } from '../../shared/access';
-import { getTrack, levels, problems, quizQuestions, quizTopics } from '../../shared/catalog';
+import { companies, getTrack, levels, problems, quizQuestions, quizTopics } from '../../shared/catalog';
 import { assessAnswer, courseCompletion } from '../../shared/domain';
 import { courses } from '../../shared/courses';
-import type { Attempt, UserState } from '../../shared/types';
+import { chooseQuestions, customQuestionPool, makePlanTasks, mockTurnProblem, nextMockQuestion } from '../../shared/premium';
+import type { Attempt, MockSession, QuizQuestion, UserState } from '../../shared/types';
 import type { ManagedAuthSession } from '../auth/adapter';
 import { assertCsrf } from '../auth/csrf';
 import { currentManagedAuthSession } from '../auth/session';
@@ -70,6 +71,39 @@ const attemptSchema = z.strictObject({
   edges: z.array(z.tuple([z.string().trim().min(1).max(80), z.string().trim().min(1).max(80)])).max(60)
     .optional().default([]),
   elapsed: z.number().finite().min(0).max(86400).optional().default(0),
+});
+const mockSchema = z.strictObject({
+  problemId: z.string().min(1).max(200),
+  company: z.enum(companies),
+  level: z.enum(levels),
+  length: z.union([z.literal(3), z.literal(5)]),
+});
+const mockDraftSchema = z.strictObject({
+  revision,
+  answer: z.string().trim().max(8000),
+});
+const customQuizSchema = z.strictObject({
+  title: z.string().trim().min(3).max(100),
+  topics: z.array(z.string().min(1).max(80)).min(1).max(quizTopics.length),
+  mode: z.enum(['all', 'missed']),
+  count: z.number().int().min(1).max(20),
+});
+const customAnswerSchema = z.strictObject({
+  revision,
+  questionId: identifier,
+  answer: z.number().int().min(-1).max(20),
+});
+const planSchema = z.strictObject({
+  company: z.enum(companies),
+  level: z.enum(levels),
+  weeks: z.union([z.literal(2), z.literal(4)]),
+  sessionsPerWeek: z.union([z.literal(3), z.literal(5)]),
+  startOn: z.string().length(10),
+});
+const reflectionSchema = z.strictObject({
+  taskId: identifier,
+  note: z.string().trim().min(20).max(3000),
+  revision,
 });
 
 function checked<T>(schema: z.ZodType<T>, input: unknown, message: string): T {
@@ -337,6 +371,248 @@ export async function evaluateAttempt(request: Request, id: string, input: unkno
     });
     if (problem.premium) await entitlements.assert(session.userId, 'practice.premium.create');
     return state;
+  });
+}
+
+export async function createMock(request: Request, input: unknown) {
+  const value = checked(mockSchema, input, 'Choose a known problem, company, level and three or five interview turns.');
+  const problem = problems.find(candidate => candidate.id === value.problemId);
+  if (!problem) throw new HttpError(404, 'Practice problem not found.');
+  const session: MockSession = {
+    id: randomUUID(),
+    problemId: problem.id,
+    company: value.company,
+    level: value.level,
+    length: value.length,
+    question: `${problem.description} ${problem.track === 'behavioral'
+      ? 'Explain your own actions and the outcome.'
+      : 'Start with the requirements, then walk through one concrete example.'}`,
+    focus: -1,
+    draft: '',
+    revision: 0,
+    turns: [],
+    createdAt: new Date().toISOString(),
+  };
+  const state = await mutateState(request, 'mock.create', current => {
+    if (current.mocks.length >= 100) throw new HttpError(400, 'Your mock interview archive has reached its limit.');
+    current.mocks.unshift(session);
+  });
+  return { state, session };
+}
+
+export async function saveMockDraft(request: Request, id: string, input: unknown) {
+  const mockId = checked(identifier, id, 'Invalid mock interview.');
+  const value = checked(mockDraftSchema, input, 'Provide the saved revision and a bounded interview answer.');
+  return mutateState(request, 'mock.create', state => {
+    const session = state.mocks.find(mock => mock.id === mockId);
+    if (!session) throw new HttpError(404, 'Interview not found.');
+    if (session.completedAt || session.revision !== value.revision) {
+      throw new HttpError(409, 'This interview changed. Reload the saved session before editing.');
+    }
+    session.draft = value.answer;
+    session.revision += 1;
+  });
+}
+
+export async function respondToMock(request: Request, id: string, input: unknown) {
+  const mockId = checked(identifier, id, 'Invalid mock interview.');
+  const value = checked(finishSchema, input, 'Provide the saved interview revision.');
+  return mutateState(request, 'mock.create', state => {
+    const session = state.mocks.find(mock => mock.id === mockId);
+    if (!session) throw new HttpError(404, 'Interview not found.');
+    if (session.completedAt || session.revision !== value.revision) {
+      throw new HttpError(409, 'This interview changed. Reload before continuing.');
+    }
+    if (session.draft.trim().length < 30) {
+      throw new HttpError(400, 'Save at least 30 characters before submitting an interview answer.');
+    }
+    const problem = problems.find(candidate => candidate.id === session.problemId);
+    if (!problem) throw new Error('The saved mock interview problem is unavailable.');
+    const feedback = assessAnswer(mockTurnProblem(problem, session), session.draft);
+    session.turns.push({
+      question: session.question,
+      focus: session.focus,
+      answer: session.draft,
+      feedback,
+    });
+    session.draft = '';
+    session.revision += 1;
+    if (session.turns.length === session.length) {
+      session.completedAt = new Date().toISOString();
+      state.recognition += 10;
+    } else {
+      Object.assign(session, nextMockQuestion(problem, session));
+    }
+  });
+}
+
+export async function createCustomQuiz(request: Request, input: unknown) {
+  const value = checked(customQuizSchema, input, 'Choose a title, distinct known topics, question pool and bounded count.');
+  if (new Set(value.topics).size !== value.topics.length
+    || value.topics.some(topic => !quizTopics.some(candidate => candidate.id === topic))) {
+    throw new HttpError(400, 'Choose at least one distinct known quiz topic.');
+  }
+  return accountOperation(request, true, async (db, session) => {
+    const entitlements = new Entitlements(db);
+    await entitlements.assert(session.userId, 'quiz.custom.create');
+    const states = new StateRepository(db);
+    const previous = await states.read(session.userId);
+    const pool = customQuestionPool(value.topics, value.mode, previous);
+    if (value.count > pool.length) {
+      throw new HttpError(400, `Only ${pool.length} questions match. Choose fewer questions or broaden the selection.`);
+    }
+    const questionIds = chooseQuestions(pool.map(question => question.id), value.count);
+    const content = new ContentRepository(db);
+    const contentVersion = await content.pin(questionIds.map(id => quizQuestions.find(question => question.id === id)!));
+    const quiz = {
+      id: randomUUID(),
+      title: value.title,
+      topics: value.topics,
+      mode: value.mode,
+      questionIds,
+      answers: {},
+      revision: 0,
+      createdAt: new Date().toISOString(),
+      contentVersion,
+    };
+    const state = await states.mutate(session.userId, current => {
+      if (current.customQuizzes.length >= 100) {
+        throw new HttpError(400, 'Your custom quiz archive has reached its limit.');
+      }
+      current.customQuizzes.unshift(quiz);
+      recordActivity(current);
+    });
+    await entitlements.assert(session.userId, 'quiz.custom.create');
+    return { state, quiz };
+  });
+}
+
+export async function customQuizQuestion(request: Request, id: string) {
+  const quizId = checked(identifier, id, 'Invalid custom quiz.');
+  return accountOperation(request, false, async (db, session) => {
+    const saved = (await new StateRepository(db).read(session.userId)).customQuizzes.find(quiz => quiz.id === quizId);
+    if (!saved) throw new HttpError(404, 'Custom quiz not found.');
+    const content = new ContentRepository(db);
+    const questions = await content.questions(saved.contentVersion, saved.questionIds);
+    const question = questions.find(candidate => !Object.hasOwn(saved.answers, candidate.id));
+    return question ? content.prompt(question) : null;
+  });
+}
+
+export async function answerCustomQuiz(request: Request, id: string, input: unknown) {
+  const quizId = checked(identifier, id, 'Invalid custom quiz.');
+  const value = checked(customAnswerSchema, input, 'Answer the next saved custom-quiz question with its revision.');
+  return accountOperation(request, true, async (db, session) => {
+    const entitlements = new Entitlements(db);
+    await entitlements.assert(session.userId, 'quiz.custom.create');
+    const states = new StateRepository(db);
+    const saved = (await states.read(session.userId)).customQuizzes.find(quiz => quiz.id === quizId);
+    if (!saved) throw new HttpError(404, 'Custom quiz not found.');
+    const content = new ContentRepository(db);
+    const questions = await content.questions(saved.contentVersion, saved.questionIds);
+    const contentVersion = saved.contentVersion ?? await content.pin(questions);
+    let feedback: QuizQuestion | undefined;
+    const state = await states.mutate(session.userId, current => {
+      const quiz = current.customQuizzes.find(candidate => candidate.id === quizId);
+      if (!quiz) throw new HttpError(404, 'Custom quiz not found.');
+      if (quiz.completedAt || quiz.revision !== value.revision) {
+        throw new HttpError(409, 'This quiz changed. Reload the saved session.');
+      }
+      const next = quiz.questionIds.find(questionId => !Object.hasOwn(quiz.answers, questionId));
+      if (value.questionId !== next) throw new HttpError(400, 'Answer the next question in this saved quiz.');
+      const question = questions.find(candidate => candidate.id === next);
+      if (!question || value.answer >= question.options.length) throw new HttpError(400, 'Invalid answer choice.');
+      quiz.answers[question.id] = value.answer;
+      quiz.contentVersion = contentVersion;
+      quiz.revision += 1;
+      feedback = question;
+      recordActivity(current);
+    });
+    await entitlements.assert(session.userId, 'quiz.custom.create');
+    if (!feedback) throw new Error('A saved custom quiz answer is missing its feedback.');
+    return { state, feedback };
+  });
+}
+
+export async function finishCustomQuiz(request: Request, id: string, input: unknown) {
+  const quizId = checked(identifier, id, 'Invalid custom quiz.');
+  const value = checked(finishSchema, input, 'Provide the saved custom-quiz revision.');
+  return accountOperation(request, true, async (db, session) => {
+    const entitlements = new Entitlements(db);
+    await entitlements.assert(session.userId, 'quiz.custom.create');
+    const states = new StateRepository(db);
+    const saved = (await states.read(session.userId)).customQuizzes.find(quiz => quiz.id === quizId);
+    if (!saved) throw new HttpError(404, 'Custom quiz not found.');
+    const questions = await new ContentRepository(db).questions(saved.contentVersion, saved.questionIds);
+    const state = await states.mutate(session.userId, current => {
+      const quiz = current.customQuizzes.find(candidate => candidate.id === quizId);
+      if (!quiz) throw new HttpError(404, 'Custom quiz not found.');
+      if (quiz.completedAt) return;
+      if (quiz.revision !== value.revision) throw new HttpError(409, 'This quiz changed. Reload the saved session.');
+      if (quiz.questionIds.some(questionId => !Object.hasOwn(quiz.answers, questionId))) {
+        throw new HttpError(400, 'Answer or skip every question before finishing.');
+      }
+      const result = gradeQuestions(questions, quiz.answers);
+      quiz.completedAt = new Date().toISOString();
+      quiz.score = result.score;
+      quiz.revision += 1;
+      current.review = [...new Set([
+        ...current.review.filter(questionId => !quiz.questionIds.includes(questionId)),
+        ...result.missed,
+      ])];
+      current.recognition += result.score;
+      recordActivity(current);
+    });
+    await entitlements.assert(session.userId, 'quiz.custom.create');
+    return state;
+  });
+}
+
+export async function createStudyPlan(request: Request, input: unknown) {
+  const value = checked(planSchema, input, 'Choose a company, level, supported duration, pace and valid start date.');
+  return accountOperation(request, true, async (db, session) => {
+    const entitlements = new Entitlements(db);
+    await entitlements.assert(session.userId, 'plan.create');
+    const states = new StateRepository(db);
+    const previous = await states.read(session.userId);
+    let tasks;
+    try {
+      tasks = makePlanTasks(value.company, value.level, value.weeks, value.sessionsPerWeek, value.startOn, previous);
+    } catch (error) {
+      throw new HttpError(400, error instanceof Error ? error.message : 'Invalid preparation schedule.');
+    }
+    const plan = {
+      id: randomUUID(),
+      company: value.company,
+      level: value.level,
+      weeks: value.weeks,
+      sessionsPerWeek: value.sessionsPerWeek,
+      tasks,
+      createdAt: new Date().toISOString(),
+      revision: 0,
+    };
+    const state = await states.mutate(session.userId, current => {
+      if (current.studyPlans.length >= 20) throw new HttpError(400, 'Your study plan archive has reached its limit.');
+      current.studyPlans.unshift(plan);
+      recordActivity(current);
+    });
+    await entitlements.assert(session.userId, 'plan.create');
+    return { state, plan };
+  });
+}
+
+export async function savePlanReflection(request: Request, id: string, input: unknown) {
+  const planId = checked(identifier, id, 'Invalid study plan.');
+  const value = checked(reflectionSchema, input, 'Provide a saved reflection task, note and plan revision.');
+  return mutateState(request, 'plan.create', state => {
+    const plan = state.studyPlans.find(candidate => candidate.id === planId);
+    const task = plan?.tasks.find(candidate => candidate.id === value.taskId && candidate.kind === 'reflection');
+    if (!task || !plan) throw new HttpError(404, 'Plan reflection not found.');
+    if (value.revision !== (plan.revision ?? 0)) {
+      throw new HttpError(409, 'This study plan changed. Your reflection is still in the editor; reload the saved plan before replacing it.');
+    }
+    task.note = value.note;
+    plan.revision = (plan.revision ?? 0) + 1;
   });
 }
 
