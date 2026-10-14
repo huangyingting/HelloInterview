@@ -85,6 +85,7 @@ service with defined recovery and support commitments.
 | [53 - Retained frontend assets](53-retained-frontend-assets.md) | Current-first immutable hashed assets with explicitly mounted prior-release overlays, startup validation and asset-shaped 404s; no operated CDN/load-balancer, retention-duration, field-performance or launch approval | Frontend and operations |
 | [54 - Azure OpenAI transport compatibility](54-azure-openai-transport.md) | Azure deployment routing, API-version/api-key support and authentic bounded `gpt-6.1-sol` application evidence; no managed dispatch authority | AI and backend |
 | [55 - Privacy-safe field performance telemetry](55-privacy-safe-field-performance.md) | Default-off native LCP/CLS/INP observation with allowlisted screen/navigation dimensions, strict normalization/rate limits and no raw URLs or identifiers; no operated field evidence, SLO or launch approval | Frontend and operations |
+| [56 - Approved invite-only private-beta boundary](56-approved-private-beta-boundary.md) | Approved free/read-only/no-managed-AI scope on the existing Azure Southeast Asia `WebStack` VM, USD 200 ceiling and named owner; explicit guest-database/no-SLA boundary with deployment, privacy and human-review evidence still open | Product and operations |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to
@@ -99,14 +100,15 @@ observable outcomes, not implementation checklists.
 | Commercial scope | Direct-to-consumer web subscriptions, one initial currency and a restricted supported-country list | Enabling live checkout |
 | Identity | Managed identity broker; Auth0 is the reference candidate, not an approved vendor purchase | Identity implementation |
 | Billing | Stripe Checkout, Billing, and Customer Portal, subject to merchant eligibility and jurisdiction | Billing implementation |
-| Hosting | Single primary region, managed database with high availability and point-in-time recovery | Infrastructure provisioning |
+| Hosting | Invite-only beta exception: existing Azure Southeast Asia `WebStack` VM with guest PostgreSQL and no RPO/RTO promise; public/paid target remains managed recovery-capable infrastructure | External testers and any public/paid expansion |
 | Team | Small product team; no dedicated platform organization assumed | Schedule commitment |
 | Existing data | Local data may be valuable; migration requires an explicit owner-approved inclusion policy | Any data migration |
 | Product promise | Preparation assistance, not hiring predictions, accreditation, or current insider company reports | Marketing publication |
 
-These are reversible planning defaults, not inferred business requirements.
-Actual prices, tax treatment, legal policies, identity-vendor plan eligibility,
-AI provider terms, and staffing remain approval gates in
+The private-beta choices recorded in
+[56](56-approved-private-beta-boundary.md) are approved; other rows remain
+planning defaults where noted. Actual prices, tax treatment, legal policies,
+identity-vendor plan eligibility, AI provider terms, and public-launch staffing remain approval gates in
 [the decision register](07-delivery-roadmap.md#decision-register).
 
 ## Delivery boundaries

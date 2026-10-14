@@ -11,6 +11,15 @@ An isolated fixture rehearses authenticated encryption and PostgreSQL restore.
 See [the platform runbook](09-platform-implementation.md). This is not managed
 hosting, durable backups/PITR, on-call coverage, or satisfaction of the launch SLOs.
 
+**Approved private-beta boundary (W00/W03):** the existing Azure `WebStack` VM
+in Southeast Asia, guest PostgreSQL, a USD 200 monthly application ceiling and
+`@huangyingting` as deployment/on-call/support owner are selected for
+invite-only free testing. Payments, managed external AI and managed community
+writing remain disabled. The
+[approval runbook](56-approved-private-beta-boundary.md) translates the absence
+of RPO/RTO into an explicit no-availability/no-durability promise; it is not
+backup, TLS, secret, cost-alert or operated deployment evidence.
+
 **Implemented job checkpoint (W07):** durable transactional delivery, maintained
 PostgreSQL workers, fenced finalization, bounded retry modes, verified-event
 storage and audited maintenance replay are available. The

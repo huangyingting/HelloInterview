@@ -13,10 +13,10 @@ production feature. An open package can therefore contain a closed checkpoint.
 
 | Package | Delivery issue | Published checkpoint |
 | --- | --- | --- |
-| W00 - Product/provider decisions | [#1](https://github.com/huangyingting/HelloInterview/issues/1) | [#15 - Blueprint](https://github.com/huangyingting/HelloInterview/issues/15) |
+| W00 - Product/provider decisions | [#1](https://github.com/huangyingting/HelloInterview/issues/1) | [#15 - Blueprint](https://github.com/huangyingting/HelloInterview/issues/15); [#49 - Approved private-beta boundary](https://github.com/huangyingting/HelloInterview/issues/49) |
 | W01 - Compiled runtime | [#2 - Completed](https://github.com/huangyingting/HelloInterview/issues/2) | Recorded in the delivery issue |
 | W02 - Persistence/cutover | [#3](https://github.com/huangyingting/HelloInterview/issues/3) | [#16 - Persistence foundation](https://github.com/huangyingting/HelloInterview/issues/16) |
-| W03 - Operated infrastructure | [#4](https://github.com/huangyingting/HelloInterview/issues/4) | [#17 - CI/container/recovery foundation](https://github.com/huangyingting/HelloInterview/issues/17) |
+| W03 - Operated infrastructure | [#4](https://github.com/huangyingting/HelloInterview/issues/4) | [#17 - CI/container/recovery foundation](https://github.com/huangyingting/HelloInterview/issues/17); [#49 - Approved private-beta boundary](https://github.com/huangyingting/HelloInterview/issues/49) |
 | W04 - Operated identity/recovery | [#5](https://github.com/huangyingting/HelloInterview/issues/5) | [#18 - Identity/session foundation](https://github.com/huangyingting/HelloInterview/issues/18) |
 | W05 - Governed content publication | [#6](https://github.com/huangyingting/HelloInterview/issues/6) | [#19 - Protected content/quiz history](https://github.com/huangyingting/HelloInterview/issues/19) |
 | W06 - Production premium authority | [#7](https://github.com/huangyingting/HelloInterview/issues/7) | [#20 - Immutable entitlement foundation](https://github.com/huangyingting/HelloInterview/issues/20) |
@@ -45,10 +45,10 @@ explicit gates; issue creation or closure cannot supply them.
 
 | Package | Status | Delivered boundary |
 | --- | --- | --- |
-| W00 | Business/provider approvals pending | Proceeding with reversible local engineering foundations; no provider purchase, data migration, or production-launch approval |
+| W00 | Invite-only free-beta scope approved; public/legal/retention details remain | Auth0-managed clean-data beta; payments, managed AI and community writing disabled; Azure Southeast Asia `WebStack`, USD 200 ceiling and owner selected |
 | W01 | Implemented | Separate configuration/application/database/process lifecycle; compiled Node.js runtime; lazy development Vite; runtime-only release verification; startup and bounded shutdown checks |
 | W02 | Persistence checkpoint implemented; real-data cutover pending D05 | Async SQLite/PostgreSQL boundary; controlled migrations; owned record tables; atomic writes and revision conflicts; explicit dry-run/reconciled import without demo or password authority; two-replica PostgreSQL tests |
-| W03 | Provider-neutral checkpoint implemented; managed deployment pending D04/D06 | Pinned CI and release artifacts; non-root/read-only container; migration-gated private staging; proxy/origin validation; fail-closed service mode; readiness/draining; private request telemetry; encrypted fixture dump/restore |
+| W03 | Azure single-VM beta target approved; operated deployment still pending | Existing Southeast Asia `WebStack` VM with guest PostgreSQL and no RPO/RTO promise selected; pinned artifacts/container/readiness/telemetry/recovery fixture exist, while TLS/secrets/cost alerts/guest operation remain unverified |
 | W05 | Content-delivery checkpoint implemented; editorial/service authority pending W06/W12 | Allowlisted browser discovery graph; private readers/briefs/media; version-pinned server quiz sessions/checks/reports; readable/exportable owned history; migration 2 and replica/bundle checks |
 | W07 | Durable-job checkpoint implemented; provider/worker composition pending W08-W10 | Maintained PostgreSQL queue, controlled schema/policies, atomic operation/inbox/outbox, fenced completion, safe retries, audited replay and actual worker-death recovery |
 | W04 | In progress; private identity, shared admission and credential-lifecycle checkpoints implemented | Maintained OIDC verification, email/Google/GitHub reference connections, secure sessions/CSRF, fresh linking, paired PostgreSQL legacy proof, shared admission, signed reset revocation, read-only canonical security facts and compiled maintained-queue reconciliation; live delivery, operated alerts, notifications, broker-native abuse controls and imported-account recovery remain |
@@ -501,16 +501,16 @@ forward repair for financial or destructive migration changes.
 
 | ID | Decision / recommended default | Accountable owner | Deadline and consequence |
 | --- | --- | --- | --- |
-| D01 | Managed identity: evaluate Auth0 against Google/GitHub/email, explicit app-owned linking, MFA, revocation, migration, regional and cost requirements | Tech lead + privacy | Before W04; substitute vendor if required capabilities are unavailable, not a homegrown OAuth shortcut |
-| D02 | Stripe versus merchant-of-record model; approved recurring prices, currency, refund/grace rules and payment methods | Product + finance/legal | Before W08/live configuration; no commercial claims without approval |
-| D03 | AI provider/model/retention, 100-unit draft allowance and operation weights, token/concurrency/spend ceilings, quality benchmark | Product + AI + privacy | Before W09/external AI beta; keep external AI disabled if unresolved |
-| D04 | Merchant/customer countries, operating entity, age policy, data region, tax responsibilities and legal terms | Business + legal | Before real accounts for privacy; before payment for commercial rules |
-| D05 | Whether any local accounts/data should migrate; ownership proof, sample/demo exclusion and courtesy-grant policy | Product + data owner | Before W02 import rehearsal; default is no unapproved production data import |
-| D06 | Hosting/provider accounts, budget, on-call/support/moderation staffing and actual published response targets | Engineering + operations | Before W03 production provisioning / GATE-A |
+| D01 | **Private-beta choice:** managed Auth0 email/Google/GitHub; authentic tenant/recovery evidence still required | @huangyingting | Approved 2026-10-14 for invite-only beta; no local-password public fallback |
+| D02 | **Private-beta choice:** payments and live subscriptions disabled | @huangyingting | Approved 2026-10-14; commercial policy remains required before any paid cohort |
+| D03 | **Private-beta choice:** managed external AI disabled; verified transport does not grant dispatch authority | @huangyingting | Approved 2026-10-14; model/retention/consent/spend policy required before external AI beta |
+| D04 | **Partial private-beta choice:** Azure Southeast Asia and invite-only free testing; participant age/controller/privacy terms remain required | @huangyingting | Hosting region approved 2026-10-14; unresolved notice facts block external testers |
+| D05 | **Private-beta choice:** clean database; migrate no local/demo/runtime data | @huangyingting | Approved 2026-10-14; any later import requires a new owned inclusion decision |
+| D06 | **Private-beta choice:** existing Azure `WebStack` VM, guest PostgreSQL, USD 200/month ceiling, @huangyingting owns deployment/on-call/support; no RPO/RTO or SLA | @huangyingting | Approved 2026-10-14; TLS/secrets/cost alert/guest operation evidence remains |
 | D07 | Retention/deletion/export scope, processor cleanup, audit duration, financial holds and recovery proof requirements | Privacy + support + finance | Before W10/GATE-A; no success claim while processor cleanup is unsupported |
-| D08 | Exact free/paid resource manifest, expert review, archive license, storage caps and marketing scope | Product + editorial | Before W12/GATE-B; retain current free access absent a separate approved change |
-| D09 | Community write launch versus read-only editorial scope | Product + trust | Before GATE-A; default read-only unless moderation is ready |
-| D10 | Accessibility support matrix and browser-runner acceptance; remote execution explicitly excluded | Frontend + security | Before exposed beta flows; disable unsupported execution rather than imply safety |
+| D08 | **Private-beta choice:** current curriculum may be evaluated free; @huangyingting is reviewer; public licensing/marketing manifest remains required | @huangyingting | Approved 2026-10-14 for invite-only evaluation only |
+| D09 | **Private-beta choice:** managed community is read-only | @huangyingting | Approved 2026-10-14; writing requires a new staffed moderation decision |
+| D10 | @huangyingting owns content/accessibility review; remote execution remains excluded | @huangyingting | Reviewer assigned 2026-10-14; actual human/browser/device evidence remains required |
 | D11 | Future cadence changes, promotions/trials, gifts, enterprise and IDE/native scope | Product | After paid stability; require separate state/price/abuse design before provider features are enabled |
 
 For each resolved decision, record date, chosen option, rationale, rejected

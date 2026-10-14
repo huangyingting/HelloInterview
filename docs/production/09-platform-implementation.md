@@ -1,9 +1,25 @@
 # 09 - Platform implementation and release runbook
 
-**Status: provider-neutral W03 checkpoint implemented.** Managed hosting/region,
-TLS/edge, secret services, backup retention/PITR, alert destinations, and operating
-owners still require D04/D06 approval. No cloud accounts, domains, certificates,
-or paid infrastructure were provisioned.
+**Status: provider-neutral W03 checkpoint implemented; an existing Azure
+private-beta target is approved, but deployment operation remains incomplete.**
+TLS/edge, secret services, cost alerts, guest-database operation, and human
+acceptance still require evidence. No domain, certificate, backup service or
+new paid infrastructure was provisioned by this repository.
+
+## Approved invite-only beta target
+
+The [private-beta decision](56-approved-private-beta-boundary.md) selects the
+existing running Azure `WebStack` VM in Southeast Asia, guest-OS PostgreSQL, a
+USD 200 monthly application ceiling and `@huangyingting` as the deployment,
+on-call and support owner. Azure management-plane verification confirmed only
+the VM name, running state and region; it did not inspect guest data, addresses
+or credentials.
+
+This is a single-host beta exception, not the managed HA/PITR target described
+for public or paid service. No formal RPO/RTO applies, so the beta promises no
+availability, recovery time or maximum data preservation. The VM and guest
+database remain one failure domain, and testers must be warned that data may be
+reset or lost.
 
 ## Shipped boundaries
 
@@ -188,9 +204,10 @@ provider metrics. This stdout boundary does not implement those services.
 4. Promote the same artifact/image, drain old replicas, verify application/
    provider reconciliation, and record the release/rollback decision.
 
-There is no auto-deploy job and no cloud IaC yet: D04 must select the hosting
-provider/region and D06 must identify operators/secrets/retention. Do not add a
-generic SSH deployment with unknown credentials as a substitute.
+There is no auto-deploy job or reviewed Azure IaC yet. D04/D06 now identify the
+private-beta provider, region, VM, budget and owner, but TLS, secret injection,
+guest database composition, cost alerts and deployment evidence remain open.
+Do not add a generic SSH deployment with unknown credentials as a substitute.
 
 Rollback is constrained by database history. A runtime that does not support
 the applied history refuses startup. Use an explicitly compatible release or
