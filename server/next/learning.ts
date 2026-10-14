@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Capability } from '../../shared/access';
-import { getTrack, problems, quizQuestions, quizTopics } from '../../shared/catalog';
+import { getTrack, levels, problems, quizQuestions, quizTopics } from '../../shared/catalog';
 import { courseCompletion } from '../../shared/domain';
 import { courses } from '../../shared/courses';
 import type { UserState } from '../../shared/types';
@@ -36,6 +36,22 @@ const videoSchema = z.strictObject({ resource: z.string().min(1).max(200) });
 const directQuizSchema = z.strictObject({
   topic: z.string().trim().min(1).max(80),
   answers: z.record(identifier, z.number().int().min(-1).max(20)),
+});
+const targetSchema = z.strictObject({
+  company: z.string().trim().min(2).max(80),
+  level: z.enum(levels),
+  role: z.string().trim().min(2).max(80),
+  date: z.string().trim().max(10).optional().default(''),
+});
+const storySchema = z.strictObject({
+  id: z.string().trim().min(1).max(80).optional(),
+  title: z.string().trim().min(3).max(120),
+  situation: z.string().trim().min(1).max(4000),
+  task: z.string().trim().min(1).max(4000),
+  action: z.string().trim().min(1).max(6000),
+  result: z.string().trim().min(1).max(4000),
+  tags: z.array(z.string().trim().min(1).max(40)).max(8).optional().default([]),
+  revision: revision.optional().default(0),
 });
 
 function checked<T>(schema: z.ZodType<T>, input: unknown, message: string): T {
@@ -148,6 +164,72 @@ export async function issueCourseCertificate(request: Request, id: string, input
     if (!state.certificates.some(certificate => certificate.courseId === value.id)) {
       state.certificates.push({ id: randomUUID(), courseId: value.id, issuedAt: new Date().toISOString() });
     }
+  });
+}
+
+export async function createTarget(request: Request, input: unknown) {
+  const value = checked(targetSchema, input, 'Provide a company, interview level, role and optional valid date.');
+  const parsedDate = Date.parse(`${value.date}T00:00:00.000Z`);
+  if (value.date && (!/^\d{4}-\d{2}-\d{2}$/.test(value.date)
+    || !Number.isFinite(parsedDate) || new Date(parsedDate).toISOString().slice(0, 10) !== value.date)) {
+    throw new HttpError(400, 'Enter a valid interview date.');
+  }
+  return mutateState(request, undefined, state => {
+    if (state.targets.length >= 20) throw new HttpError(400, 'You can save up to 20 target interviews.');
+    state.targets.push({ id: randomUUID(), ...value });
+  });
+}
+
+export async function deleteTarget(request: Request, id: string) {
+  const targetId = checked(identifier, id, 'Invalid target.');
+  return mutateState(request, undefined, state => {
+    if (!state.targets.some(target => target.id === targetId)) throw new HttpError(404, 'Target not found.');
+    state.targets = state.targets.filter(target => target.id !== targetId);
+  });
+}
+
+export async function saveStory(request: Request, input: unknown) {
+  const value = checked(storySchema, input, 'Provide a bounded story title, STAR fields, tags and saved revision.');
+  const id = value.id ?? randomUUID();
+  return mutateState(request, undefined, state => {
+    const index = state.stories.findIndex(story => story.id === id);
+    if (value.id && index < 0) throw new HttpError(404, 'Story not found.');
+    if (index >= 0) {
+      const savedRevision = state.stories[index].revision ?? 0;
+      if (value.revision !== savedRevision) {
+        throw new HttpError(409, 'This story changed. Your edits are still in the editor; reload the saved version before replacing it.');
+      }
+      state.stories[index] = {
+        id,
+        title: value.title,
+        situation: value.situation,
+        task: value.task,
+        action: value.action,
+        result: value.result,
+        tags: value.tags,
+        revision: savedRevision + 1,
+      };
+      return;
+    }
+    if (state.stories.length >= 100) throw new HttpError(400, 'Your story bank has reached its limit.');
+    state.stories.push({
+      id,
+      title: value.title,
+      situation: value.situation,
+      task: value.task,
+      action: value.action,
+      result: value.result,
+      tags: value.tags,
+      revision: 0,
+    });
+  });
+}
+
+export async function deleteStory(request: Request, id: string) {
+  const storyId = checked(z.string().min(1).max(80), id, 'Invalid story.');
+  return mutateState(request, undefined, state => {
+    if (!state.stories.some(story => story.id === storyId)) throw new HttpError(404, 'Story not found.');
+    state.stories = state.stories.filter(story => story.id !== storyId);
   });
 }
 

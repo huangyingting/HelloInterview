@@ -27,12 +27,13 @@ not a launch or cutover:
   suspended and deletion-pending sessions without granting product-write or
   staff authority;
 - active-account progress, course enrollment/video completion, quiz sessions,
-  quiz reports and direct quiz submission now use session-bound Route
-  Handlers and the Prisma transaction authority;
+  quiz reports, direct quiz submission, interview targets and revision-fenced
+  behavioral stories now use session-bound Route Handlers and the Prisma
+  transaction authority;
 - anonymous managed support remains fail-closed until trusted edge address
   handling can restore network-scoped abuse protection;
-- attempts, stories, targets and the remaining premium/product-write surfaces
-  still block participant access;
+- attempts and the remaining premium/product-write surfaces still block
+  participant access;
 - Caddy must continue returning the hardened unavailable response.
 
 ## Final architecture
@@ -214,7 +215,9 @@ premium progress, and record bounded daily activity with the saved state.
 Quiz creation, answer fencing, completion, version-pinned reports, course
 enrollment and video progress all use the same Prisma-backed adapter. State
 record writes explicitly bind JSON as `jsonb`, avoiding driver-dependent
-implicit casts.
+implicit casts. Interview targets enforce bounded calendar dates, while
+behavioral story replacements use the saved per-record revision and reject
+stale editors without overwriting newer text.
 
 Before participant launch, the remaining security surfaces must:
 

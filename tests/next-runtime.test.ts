@@ -30,6 +30,10 @@ import { GET as quizSessionRoute } from '../app/api/quiz-sessions/[id]/route';
 import { POST as answerQuizSessionRoute } from '../app/api/quiz-sessions/[id]/answer/route';
 import { POST as finishQuizSessionRoute } from '../app/api/quiz-sessions/[id]/finish/route';
 import { GET as quizReportRoute } from '../app/api/quiz-reports/[id]/route';
+import { POST as createTargetRoute } from '../app/api/targets/route';
+import { DELETE as deleteTargetRoute } from '../app/api/targets/[id]/route';
+import { POST as saveStoryRoute } from '../app/api/stories/route';
+import { DELETE as deleteStoryRoute } from '../app/api/stories/[id]/route';
 import { postgresConnection } from '../server/db/connection';
 import { migrateDatabase } from '../server/db/migrations';
 import { prismaConnection } from '../server/db/prisma';
@@ -317,6 +321,59 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     headers: { Cookie: accountCookies },
   }));
   assert.equal((await closedQuizList.json()).length, 0);
+  const targetResponse = await createTargetRoute(new Request('https://studio.fixture/api/targets', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ company: 'Fixture Company', level: 'Senior', role: 'Platform engineer', date: '2027-02-28' }),
+  }));
+  const targetState = await targetResponse.json();
+  const targetId = targetState.targets[0].id;
+  assert.equal(targetState.targets[0].company, 'Fixture Company');
+  const invalidTargetDate = await createTargetRoute(new Request('https://studio.fixture/api/targets', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ company: 'Invalid Date Company', level: 'Senior', role: 'Engineer', date: '2027-02-29' }),
+  }));
+  assert.equal(invalidTargetDate.status, 400);
+  const storyInput = {
+    title: 'Stabilizing a shared release',
+    situation: 'Two teams needed to publish through the same release path.',
+    task: 'I had to make ownership and rollback behavior explicit.',
+    action: 'I introduced a bounded checklist, exact artifact identity, and a rehearsed rollback.',
+    result: 'The release completed predictably and the next team reused the same evidence.',
+    tags: ['ownership', 'reliability'],
+    revision: 0,
+  };
+  const createdStoryResponse = await saveStoryRoute(new Request('https://studio.fixture/api/stories', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify(storyInput),
+  }));
+  const createdStoryState = await createdStoryResponse.json();
+  const storyId = createdStoryState.stories[0].id;
+  assert.equal(createdStoryState.stories[0].revision, 0);
+  const updatedStoryResponse = await saveStoryRoute(new Request('https://studio.fixture/api/stories', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ ...storyInput, id: storyId, title: 'Stabilizing a shared production release' }),
+  }));
+  assert.equal((await updatedStoryResponse.json()).stories[0].revision, 1);
+  const staleStory = await saveStoryRoute(new Request('https://studio.fixture/api/stories', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ ...storyInput, id: storyId, title: 'Stale replacement' }),
+  }));
+  assert.equal(staleStory.status, 409);
+  const deletedStory = await deleteStoryRoute(new Request(`https://studio.fixture/api/stories/${storyId}`, {
+    method: 'DELETE',
+    headers: { Cookie: accountCookies, 'X-CSRF-Token': csrf },
+  }), { params: Promise.resolve({ id: storyId }) });
+  assert.equal((await deletedStory.json()).stories.length, 0);
+  const deletedTarget = await deleteTargetRoute(new Request(`https://studio.fixture/api/targets/${targetId}`, {
+    method: 'DELETE',
+    headers: { Cookie: accountCookies, 'X-CSRF-Token': csrf },
+  }), { params: Promise.resolve({ id: targetId }) });
+  assert.equal((await deletedTarget.json()).targets.length, 0);
   const otherToken = 'e'.repeat(64);
   await withAuthRequest(new Request('https://studio.fixture/api/auth/callback/google'), async () => {
     recordAuthAdmission({ userId: authOwner, identityId: identity });
