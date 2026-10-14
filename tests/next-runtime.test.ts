@@ -9,6 +9,15 @@ import { GET as problem } from '../app/api/content/problems/[id]/route';
 import { GET as media } from '../app/api/content/media/[course]/[file]/route';
 import { GET as community } from '../app/api/community/posts/route';
 import { GET as communityPost } from '../app/api/community/posts/[id]/route';
+import { GET as communityReportsRoute, POST as saveCommunityReportRoute } from '../app/api/community/reports/route';
+import { GET as communityAppealsRoute, POST as saveCommunityAppealRoute } from '../app/api/community/appeals/route';
+import { GET as communityMutesRoute, PUT as setCommunityMuteRoute } from '../app/api/community/mutes/route';
+import { GET as communityBlocksRoute, PUT as setCommunityBlockRoute } from '../app/api/community/blocks/route';
+import { GET as communityRestrictionsRoute } from '../app/api/community/restrictions/route';
+import {
+  GET as communityRestrictionAppealsRoute,
+  POST as saveCommunityRestrictionAppealRoute,
+} from '../app/api/community/restriction-appeals/route';
 import { GET as comments } from '../app/api/comments/page/route';
 import { GET as posts } from '../app/api/posts/route';
 import { GET as identitySecurityRoute } from '../app/api/identity/security/route';
@@ -253,6 +262,134 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
   }));
   assert.equal(profileResponse.status, 200);
   assert.equal((await profileResponse.json()).name, 'Updated Next Owner');
+  const reportRequestId = randomUUID();
+  const reportResponse = await saveCommunityReportRoute(new Request('https://studio.fixture/api/community/reports', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({
+      requestId: reportRequestId,
+      targetType: 'post',
+      targetId: postId,
+      category: 'misinformation',
+      details: 'This fixture report records a concrete policy concern for review by the moderation queue.',
+    }),
+  }));
+  const reportReceipt = await reportResponse.json();
+  assert.equal(reportResponse.status, 201);
+  assert.equal(reportReceipt.requestId, reportRequestId);
+  assert.equal(reportReceipt.delivery, 'moderation-queue-only');
+  const reportHistory = await communityReportsRoute(new Request('https://studio.fixture/api/community/reports', {
+    headers: { Cookie: accountCookies },
+  }));
+  assert.equal((await reportHistory.json()).reports[0].id, reportReceipt.id);
+  const muteResponse = await setCommunityMuteRoute(new Request('https://studio.fixture/api/community/mutes', {
+    method: 'PUT',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ requestId: randomUUID(), muted: true, targetType: 'post', targetId: postId }),
+  }));
+  const muteReceipt = await muteResponse.json();
+  assert.equal(muteReceipt.muted, true);
+  const muteHistory = await communityMutesRoute(new Request('https://studio.fixture/api/community/mutes', {
+    headers: { Cookie: accountCookies },
+  }));
+  assert.equal((await muteHistory.json()).mutes[0].id, muteReceipt.id);
+  const unmuteResponse = await setCommunityMuteRoute(new Request('https://studio.fixture/api/community/mutes', {
+    method: 'PUT',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({
+      requestId: randomUUID(),
+      muted: false,
+      muteId: muteReceipt.id,
+      revision: muteReceipt.revision,
+    }),
+  }));
+  assert.equal((await unmuteResponse.json()).muted, false);
+  const blockResponse = await setCommunityBlockRoute(new Request('https://studio.fixture/api/community/blocks', {
+    method: 'PUT',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ requestId: randomUUID(), blocked: true, targetType: 'post', targetId: postId }),
+  }));
+  const blockReceipt = await blockResponse.json();
+  assert.equal(blockReceipt.blocked, true);
+  const blockHistory = await communityBlocksRoute(new Request('https://studio.fixture/api/community/blocks', {
+    headers: { Cookie: accountCookies },
+  }));
+  assert.equal((await blockHistory.json()).blocks[0].id, blockReceipt.id);
+  const unblockResponse = await setCommunityBlockRoute(new Request('https://studio.fixture/api/community/blocks', {
+    method: 'PUT',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({
+      requestId: randomUUID(),
+      blocked: false,
+      blockId: blockReceipt.id,
+      revision: blockReceipt.revision,
+    }),
+  }));
+  assert.equal((await unblockResponse.json()).blocked, false);
+  const hiddenPostId = 'next-owned-hidden-post';
+  await db.prepare(`INSERT INTO posts(id,kind,title,body,company,track,level,region,author,author_id,created_at,sample)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,0)`).run(hiddenPostId, 'questions', 'Owned hidden fixture post',
+      'This owned fixture post has enough original detail to exercise the member appeal workflow.',
+      'Fixture Company', 'system-design', 'Senior', 'Global', 'Anonymous', authOwner, new Date().toISOString());
+  await db.prepare(`INSERT INTO community_moderation_targets(target_type,target_id,state,revision,updated_at)
+    VALUES('post',?,'hidden',1,?)`).run(hiddenPostId, new Date().toISOString());
+  const appealResponse = await saveCommunityAppealRoute(new Request('https://studio.fixture/api/community/appeals', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({
+      requestId: randomUUID(),
+      targetType: 'post',
+      targetId: hiddenPostId,
+      targetRevision: 1,
+      statement: 'This original contribution should receive a second policy review with its full saved context.',
+    }),
+  }));
+  const appealReceipt = await appealResponse.json();
+  assert.equal(appealResponse.status, 201);
+  assert.equal(appealReceipt.appealedTargetRevision, 1);
+  const appealHistory = await communityAppealsRoute(new Request('https://studio.fixture/api/community/appeals', {
+    headers: { Cookie: accountCookies },
+  }));
+  assert.equal((await appealHistory.json()).appeals[0].id, appealReceipt.id);
+  const restrictionId = randomUUID();
+  const now = new Date();
+  await db.prepare(`INSERT INTO community_restrictions
+    (id,subject_id,source_report_id,scope,state,revision,starts_at,expires_at,created_at,updated_at)
+    VALUES(?::uuid,?,?::uuid,'participation','active',1,?,?,?,?)`).run(
+    restrictionId,
+    authOwner,
+    reportReceipt.id,
+    now.toISOString(),
+    new Date(now.getTime() + 3600000).toISOString(),
+    now.toISOString(),
+    now.toISOString(),
+  );
+  const restrictionStatus = await communityRestrictionsRoute(new Request(
+    'https://studio.fixture/api/community/restrictions',
+    { headers: { Cookie: accountCookies } },
+  ));
+  assert.equal((await restrictionStatus.json()).restrictions[0].id, restrictionId);
+  const restrictionAppealResponse = await saveCommunityRestrictionAppealRoute(new Request(
+    'https://studio.fixture/api/community/restriction-appeals',
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({
+        requestId: randomUUID(),
+        restrictionId,
+        restrictionRevision: 1,
+        statement: 'Please review this active restriction against the complete contribution and account context.',
+      }),
+    },
+  ));
+  const restrictionAppeal = await restrictionAppealResponse.json();
+  assert.equal(restrictionAppealResponse.status, 201);
+  assert.equal(restrictionAppeal.appealedRestrictionRevision, 1);
+  const restrictionAppealHistory = await communityRestrictionAppealsRoute(new Request(
+    'https://studio.fixture/api/community/restriction-appeals',
+    { headers: { Cookie: accountCookies } },
+  ));
+  assert.equal((await restrictionAppealHistory.json()).appeals[0].id, restrictionAppeal.id);
   const missingLearningCsrf = await updateProgressRoute(new Request('https://studio.fixture/api/progress', {
     method: 'POST',
     headers: { Cookie: accountCookies, 'Content-Type': 'application/json' },

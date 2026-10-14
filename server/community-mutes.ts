@@ -29,6 +29,9 @@ const muteRow=z.object({
 const cursor=z.strictObject({
   version:z.literal('community-mutes-v1'),hash:z.string().length(64),updatedAt:z.iso.datetime(),id:z.uuid(),
 });
+const uuid=(db:Database)=>db.dialect==='postgres'?'?::uuid':'?';
+const boolean=(db:Database)=>db.dialect==='postgres'?'?::boolean':'?';
+const flag=(db:Database,value:boolean)=>db.dialect==='postgres'?String(value):Number(value);
 
 export class CommunityMutes {
   constructor(private readonly db:Database) {}
@@ -65,7 +68,7 @@ export class CommunityMutes {
       await admit();
       const existing=await this.db.prepare(`SELECT intents.request_key,intents.mute_id,intents.target_type,intents.target_id,
         intents.muted,intents.result_revision,intents.created_at,intents.input_hash
-        FROM community_mute_intents intents WHERE intents.owner_id=? AND intents.request_key=?`)
+        FROM community_mute_intents intents WHERE intents.owner_id=? AND intents.request_key=${uuid(this.db)}`)
         .get(user.id,request.requestId);
       if(existing){
         if(existing.input_hash!==hash)throw new HttpError(409,'This community mute key belongs to different desired-state input.');
@@ -78,11 +81,11 @@ export class CommunityMutes {
         current=await this.db.prepare(`SELECT * FROM community_mutes WHERE owner_id=? AND subject_id=?
           ${this.db.dialect==='postgres'?'FOR UPDATE':''}`).get(user.id,subject);
       }else{
-        current=await this.db.prepare('SELECT * FROM community_mutes WHERE id=? AND owner_id=?').get(request.muteId,user.id);
+        current=await this.db.prepare(`SELECT * FROM community_mutes WHERE id=${uuid(this.db)} AND owner_id=?`).get(request.muteId,user.id);
         if(!current)throw new HttpError(404,'This personal mute is unavailable.');
         subject=z.string().parse(current.subject_id);
         await this.lock(user.id,subject);
-        current=await this.db.prepare(`SELECT * FROM community_mutes WHERE id=? AND owner_id=?
+        current=await this.db.prepare(`SELECT * FROM community_mutes WHERE id=${uuid(this.db)} AND owner_id=?
           ${this.db.dialect==='postgres'?'FOR UPDATE':''}`).get(request.muteId,user.id);
         if(!current)throw new HttpError(404,'This personal mute is unavailable.');
         if(Number(current.revision)!==request.revision)throw new HttpError(409,'This personal mute changed. Reload its current revision.');
@@ -99,20 +102,20 @@ export class CommunityMutes {
       if(!current){
         await this.db.prepare(`INSERT INTO community_mutes
           (id,owner_id,subject_id,target_type,target_id,state,revision,created_at,updated_at)
-          VALUES(?,?,?,?,?,'muted',1,?,?)`).run(muteId,user.id,subject,target.type,target.id,now,now);
+          VALUES(${uuid(this.db)},?,?,?,?,'muted',1,?,?)`).run(muteId,user.id,subject,target.type,target.id,now,now);
         result=1;
       }else if(current.state!==desired){
         const changed=await this.db.prepare(`UPDATE community_mutes SET state=?,revision=revision+1,updated_at=?
-          WHERE id=? AND owner_id=? AND revision=?`).run(desired,now,muteId,user.id,prior);
+          WHERE id=${uuid(this.db)} AND owner_id=? AND revision=?`).run(desired,now,muteId,user.id,prior);
         if(changed!==1)throw new HttpError(409,'This personal mute changed before the requested state was saved.');
         result=prior+1;
       }
       await this.db.prepare(`INSERT INTO community_mute_intents
         (owner_id,request_key,input_hash,mute_id,target_type,target_id,muted,prior_revision,result_revision,created_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?)`)
-        .run(user.id,request.requestId,hash,muteId,target.type,target.id,Number(request.muted),prior,result,now);
+        VALUES(?,${uuid(this.db)},?,${uuid(this.db)},?,?,${boolean(this.db)},?,?,?)`)
+        .run(user.id,request.requestId,hash,muteId,target.type,target.id,flag(this.db,request.muted),prior,result,now);
       const saved=await this.db.prepare(`SELECT request_key,mute_id,target_type,target_id,muted,result_revision,created_at
-        FROM community_mute_intents WHERE owner_id=? AND request_key=?`).get(user.id,request.requestId);
+        FROM community_mute_intents WHERE owner_id=? AND request_key=${uuid(this.db)}`).get(user.id,request.requestId);
       await admit();return this.receipt(saved);
     });
   }

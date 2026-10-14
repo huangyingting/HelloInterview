@@ -31,10 +31,14 @@ not a launch or cutover:
   behavioral stories, practice drafts, local-rubric feedback, mock interviews,
   custom quizzes, study plans, project workspaces and local tutor conversations
   now use session-bound Route Handlers and the Prisma transaction authority;
+- community reports, owner appeals, personal mutes and two-way blocks,
+  restriction status and restriction appeals now use managed Auth.js sessions,
+  CSRF, account-scoped admission limits and the existing PostgreSQL lock/CAS
+  domains;
 - anonymous managed support remains fail-closed until trusted edge address
   handling can restore network-scoped abuse protection;
-- managed-AI feedback and the remaining product-write surfaces still block
-  participant access;
+- community contribution writes, managed-AI feedback and the remaining
+  product-write surfaces still block participant access;
 - Caddy must continue returning the hardened unavailable response.
 
 ## Final architecture
@@ -234,6 +238,11 @@ The tutor remains explicitly retrieval-based and labels every response as
 local, not AI. It searches only lessons the account may access, fences premium
 matches with entitlement checks in the same Prisma transaction and retains at
 most 100 messages.
+Community safety controls retain UUID idempotency, immutable evidence,
+non-punitive spam triage, exact-revision appeals, bounded private histories and
+two-way interaction boundaries. Network-scoped admission remains fail-closed
+until the trusted Caddy address contract is explicit; migrated mutations apply
+the shared account-scoped limiter instead of trusting forwarded addresses.
 
 Before participant launch, the remaining security surfaces must:
 

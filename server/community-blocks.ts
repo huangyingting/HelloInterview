@@ -29,6 +29,9 @@ const blockRow=z.object({
 const cursor=z.strictObject({
   version:z.literal('community-blocks-v1'),hash:z.string().length(64),updatedAt:z.iso.datetime(),id:z.uuid(),
 });
+const uuid=(db:Database)=>db.dialect==='postgres'?'?::uuid':'?';
+const boolean=(db:Database)=>db.dialect==='postgres'?'?::boolean':'?';
+const flag=(db:Database,value:boolean)=>db.dialect==='postgres'?String(value):Number(value);
 
 export class CommunityBlocks {
   constructor(private readonly db:Database) {}
@@ -83,7 +86,7 @@ export class CommunityBlocks {
       await admit();
       const existing=await this.db.prepare(`SELECT intents.request_key,intents.block_id,intents.target_type,intents.target_id,
         intents.blocked,intents.result_revision,intents.created_at,intents.input_hash
-        FROM community_block_intents intents WHERE intents.owner_id=? AND intents.request_key=?`)
+        FROM community_block_intents intents WHERE intents.owner_id=? AND intents.request_key=${uuid(this.db)}`)
         .get(user.id,request.requestId);
       if(existing){
         if(existing.input_hash!==hash)throw new HttpError(409,'This community block key belongs to different desired-state input.');
@@ -98,11 +101,11 @@ export class CommunityBlocks {
         current=await this.db.prepare(`SELECT * FROM community_blocks WHERE owner_id=? AND subject_id=?
           ${this.db.dialect==='postgres'?'FOR UPDATE':''}`).get(user.id,subject);
       }else{
-        current=await this.db.prepare('SELECT * FROM community_blocks WHERE id=? AND owner_id=?').get(request.blockId,user.id);
+        current=await this.db.prepare(`SELECT * FROM community_blocks WHERE id=${uuid(this.db)} AND owner_id=?`).get(request.blockId,user.id);
         if(!current)throw new HttpError(404,'This personal block is unavailable.');
         subject=z.string().parse(current.subject_id);
         await this.lock(user.id,subject);
-        current=await this.db.prepare(`SELECT * FROM community_blocks WHERE id=? AND owner_id=?
+        current=await this.db.prepare(`SELECT * FROM community_blocks WHERE id=${uuid(this.db)} AND owner_id=?
           ${this.db.dialect==='postgres'?'FOR UPDATE':''}`).get(request.blockId,user.id);
         if(!current)throw new HttpError(404,'This personal block is unavailable.');
         if(Number(current.revision)!==request.revision)throw new HttpError(409,'This personal block changed. Reload its current revision.');
@@ -120,20 +123,20 @@ export class CommunityBlocks {
       if(!current){
         await this.db.prepare(`INSERT INTO community_blocks
           (id,owner_id,subject_id,target_type,target_id,state,revision,created_at,updated_at)
-          VALUES(?,?,?,?,?,'blocked',1,?,?)`).run(blockId,user.id,subject,target.type,target.id,now,now);
+          VALUES(${uuid(this.db)},?,?,?,?,'blocked',1,?,?)`).run(blockId,user.id,subject,target.type,target.id,now,now);
         result=1;
       }else if(current.state!==desired){
         const changed=await this.db.prepare(`UPDATE community_blocks SET state=?,revision=revision+1,updated_at=?
-          WHERE id=? AND owner_id=? AND revision=?`).run(desired,now,blockId,user.id,prior);
+          WHERE id=${uuid(this.db)} AND owner_id=? AND revision=?`).run(desired,now,blockId,user.id,prior);
         if(changed!==1)throw new HttpError(409,'This personal block changed before the requested state was saved.');
         result=prior+1;
       }
       await this.db.prepare(`INSERT INTO community_block_intents
         (owner_id,request_key,input_hash,block_id,target_type,target_id,blocked,prior_revision,result_revision,created_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?)`)
-        .run(user.id,request.requestId,hash,blockId,target.type,target.id,Number(request.blocked),prior,result,now);
+        VALUES(?,${uuid(this.db)},?,${uuid(this.db)},?,?,${boolean(this.db)},?,?,?)`)
+        .run(user.id,request.requestId,hash,blockId,target.type,target.id,flag(this.db,request.blocked),prior,result,now);
       const saved=await this.db.prepare(`SELECT request_key,block_id,target_type,target_id,blocked,result_revision,created_at
-        FROM community_block_intents WHERE owner_id=? AND request_key=?`).get(user.id,request.requestId);
+        FROM community_block_intents WHERE owner_id=? AND request_key=${uuid(this.db)}`).get(user.id,request.requestId);
       await admit();return this.receipt(saved);
     });
   }

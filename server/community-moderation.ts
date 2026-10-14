@@ -76,6 +76,9 @@ const appealHistoryCursor=z.strictObject({
 const staffAppealCursor=z.strictObject({
   version:z.literal('community-appeal-queue-v1'),hash:z.literal('community-appeals'),updatedAt:z.iso.datetime(),id:z.uuid(),
 });
+const uuid=(db:Database)=>db.dialect==='postgres'?'?::uuid':'?';
+const boolean=(db:Database)=>db.dialect==='postgres'?'?::boolean':'?';
+const flag=(db:Database,value:boolean)=>db.dialect==='postgres'?String(value):Number(value);
 
 export class CommunityModeration {
   constructor(private readonly db:Database,private readonly identity:ManagedIdentity|null) {}
@@ -122,10 +125,10 @@ export class CommunityModeration {
     await this.db.prepare(`INSERT INTO community_spam_triage
       (report_id,algorithm_version,input_hash,content_revision,input_truncated,score,classification,link_count,
         contact_solicitation,promotional_language,repetitive_content,state,outcome,revision,created_at,updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,'pending',NULL,0,?,?)`)
-      .run(reportId,snapshot.algorithmVersion,snapshot.inputHash,contentRevision,Number(snapshot.inputTruncated),snapshot.score,
-        snapshot.classification,snapshot.linkCount,Number(snapshot.contactSolicitation),Number(snapshot.promotionalLanguage),
-        Number(snapshot.repetitiveContent),now,now);
+      VALUES(${uuid(this.db)},?,?,?,${boolean(this.db)},?,?,?,${boolean(this.db)},${boolean(this.db)},${boolean(this.db)},'pending',NULL,0,?,?)`)
+      .run(reportId,snapshot.algorithmVersion,snapshot.inputHash,contentRevision,flag(this.db,snapshot.inputTruncated),snapshot.score,
+        snapshot.classification,snapshot.linkCount,flag(this.db,snapshot.contactSolicitation),flag(this.db,snapshot.promotionalLanguage),
+        flag(this.db,snapshot.repetitiveContent),now,now);
   }
   async report(user:User,input:unknown,admit:()=>Promise<void>):Promise<CommunityReportReceipt> {
     const parsed=reportInput.safeParse(input);
@@ -136,7 +139,7 @@ export class CommunityModeration {
       const existing=await this.db.prepare(`SELECT reports.*,target.state AS target_state,target.revision AS target_revision
         FROM community_reports reports LEFT JOIN community_moderation_targets target
           ON target.target_type=reports.target_type AND target.target_id=reports.target_id
-        WHERE reports.reporter_id=? AND reports.request_key=?`).get(user.id,request.requestId);
+        WHERE reports.reporter_id=? AND reports.request_key=${uuid(this.db)}`).get(user.id,request.requestId);
       if(existing){
         if(existing.input_hash!==hash)throw new HttpError(409,'This community report key belongs to different report content.');
         await admit();
@@ -146,7 +149,7 @@ export class CommunityModeration {
       const concurrent=await this.db.prepare(`SELECT reports.*,target.state AS target_state,target.revision AS target_revision
         FROM community_reports reports LEFT JOIN community_moderation_targets target
           ON target.target_type=reports.target_type AND target.target_id=reports.target_id
-        WHERE reports.reporter_id=? AND reports.request_key=?`).get(user.id,request.requestId);
+        WHERE reports.reporter_id=? AND reports.request_key=${uuid(this.db)}`).get(user.id,request.requestId);
       if(concurrent){
         if(concurrent.input_hash!==hash)throw new HttpError(409,'This community report key belongs to different report content.');
         await admit();
@@ -167,9 +170,9 @@ export class CommunityModeration {
       const id=randomUUID(),now=new Date().toISOString();
       await this.db.prepare(`INSERT INTO community_reports
         (id,reporter_id,request_key,input_hash,target_type,target_id,category,details,created_at,updated_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?)`).run(id,user.id,request.requestId,hash,request.targetType,request.targetId,request.category,request.details,now,now);
+        VALUES(${uuid(this.db)},?,${uuid(this.db)},?,?,?,?,?,?,?)`).run(id,user.id,request.requestId,hash,request.targetType,request.targetId,request.category,request.details,now,now);
       await this.recordSpamTriage(id,request.targetType,request.targetId,request.category);
-      const saved=await this.db.prepare(`SELECT reports.*,NULL AS target_state,NULL AS target_revision FROM community_reports reports WHERE id=?`).get(id);
+      const saved=await this.db.prepare(`SELECT reports.*,NULL AS target_state,NULL AS target_revision FROM community_reports reports WHERE id=${uuid(this.db)}`).get(id);
       if(!saved)throw new Error('The admitted community report was not found.');
       await admit();
       return this.receipt(saved);
@@ -222,13 +225,13 @@ export class CommunityModeration {
       const select=`SELECT appeals.*,target.state AS current_target_state,target.revision AS current_target_revision
         FROM community_appeals appeals LEFT JOIN community_moderation_targets target
           ON target.target_type=appeals.target_type AND target.target_id=appeals.target_id`;
-      const existing=await this.db.prepare(`${select} WHERE appeals.owner_id=? AND appeals.request_key=?`).get(user.id,request.requestId);
+      const existing=await this.db.prepare(`${select} WHERE appeals.owner_id=? AND appeals.request_key=${uuid(this.db)}`).get(user.id,request.requestId);
       if(existing){
         if(existing.input_hash!==hash)throw new HttpError(409,'This community appeal key belongs to different appeal content.');
         await admit();return this.appealReceipt(existing);
       }
       await this.lockTarget(request.targetType,request.targetId);
-      const concurrent=await this.db.prepare(`${select} WHERE appeals.owner_id=? AND appeals.request_key=?`).get(user.id,request.requestId);
+      const concurrent=await this.db.prepare(`${select} WHERE appeals.owner_id=? AND appeals.request_key=${uuid(this.db)}`).get(user.id,request.requestId);
       if(concurrent){
         if(concurrent.input_hash!==hash)throw new HttpError(409,'This community appeal key belongs to different appeal content.');
         await admit();return this.appealReceipt(concurrent);
@@ -248,9 +251,9 @@ export class CommunityModeration {
       const id=randomUUID(),now=new Date().toISOString();
       await this.db.prepare(`INSERT INTO community_appeals
         (id,owner_id,request_key,input_hash,target_type,target_id,target_revision,statement,created_at,updated_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?)`)
+        VALUES(${uuid(this.db)},?,${uuid(this.db)},?,?,?,?,?,?,?)`)
         .run(id,user.id,request.requestId,hash,request.targetType,request.targetId,request.targetRevision,request.statement,now,now);
-      const saved=await this.db.prepare(`${select} WHERE appeals.id=?`).get(id);
+      const saved=await this.db.prepare(`${select} WHERE appeals.id=${uuid(this.db)}`).get(id);
       if(!saved)throw new Error('The admitted community appeal was not found.');
       await admit();return this.appealReceipt(saved);
     });

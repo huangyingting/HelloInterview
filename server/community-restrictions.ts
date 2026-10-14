@@ -72,6 +72,7 @@ const appealHistoryCursor=z.strictObject({
   version:z.literal('community-restriction-appeal-history-v1'),hash:z.string().length(64),
   createdAt:z.iso.datetime(),id:z.uuid(),
 });
+const uuid=(db:Database)=>db.dialect==='postgres'?'?::uuid':'?';
 const staffAppealCursor=z.strictObject({
   version:z.literal('community-restriction-appeal-queue-v1'),hash:z.literal('community-restriction-appeals'),
   updatedAt:z.iso.datetime(),id:z.uuid(),
@@ -187,30 +188,30 @@ export class CommunityRestrictions {
     return this.db.transaction(async()=>{
       await admit();
       const existing=await this.db.prepare(`SELECT * FROM community_restriction_appeals
-        WHERE owner_id=? AND request_key=?`).get(user.id,request.requestId);
+        WHERE owner_id=? AND request_key=${uuid(this.db)}`).get(user.id,request.requestId);
       if(existing){
         if(existing.input_hash!==hash)throw new HttpError(409,'This restriction appeal key belongs to different appeal content.');
         await admit();return this.appealReceipt(existing);
       }
       const seed=storedRestrictionRow.safeParse(await this.db.prepare(`SELECT * FROM community_restrictions
-        WHERE id=? AND subject_id=?`).get(request.restrictionId,user.id));
+        WHERE id=${uuid(this.db)} AND subject_id=?`).get(request.restrictionId,user.id));
       if(!seed.success)throw new HttpError(404,'This community restriction is unavailable for an owner appeal.');
       await this.lock(user.id,seed.data.scope);
       const concurrent=await this.db.prepare(`SELECT * FROM community_restriction_appeals
-        WHERE owner_id=? AND request_key=?`).get(user.id,request.requestId);
+        WHERE owner_id=? AND request_key=${uuid(this.db)}`).get(user.id,request.requestId);
       if(concurrent){
         if(concurrent.input_hash!==hash)throw new HttpError(409,'This restriction appeal key belongs to different appeal content.');
         await admit();return this.appealReceipt(concurrent);
       }
       const now=(await this.clock()).toISOString();
       const current=storedRestrictionRow.safeParse(await this.db.prepare(`SELECT * FROM community_restrictions
-        WHERE id=? AND subject_id=?${this.db.dialect==='postgres'?' FOR UPDATE':''}`)
+        WHERE id=${uuid(this.db)} AND subject_id=?${this.db.dialect==='postgres'?' FOR UPDATE':''}`)
         .get(request.restrictionId,user.id));
       if(!current.success||current.data.state!=='active'||current.data.expires_at<=now||
         current.data.revision!==request.restrictionRevision)
         throw new HttpError(409,'Appeal the current active restriction revision after reloading your moderation status.');
       if(await this.db.prepare(`SELECT id FROM community_restriction_appeals
-        WHERE owner_id=? AND restriction_id=? AND restriction_revision=?`)
+        WHERE owner_id=? AND restriction_id=${uuid(this.db)} AND restriction_revision=?`)
         .get(user.id,request.restrictionId,request.restrictionRevision))
         throw new HttpError(409,'You already appealed this restriction revision.');
       const count=await this.db.prepare(`SELECT count(*) AS count FROM community_restriction_appeals
@@ -219,9 +220,9 @@ export class CommunityRestrictions {
       const id=randomUUID();
       await this.db.prepare(`INSERT INTO community_restriction_appeals
         (id,owner_id,request_key,input_hash,restriction_id,restriction_revision,statement,created_at,updated_at)
-        VALUES(?,?,?,?,?,?,?,?,?)`).run(id,user.id,request.requestId,hash,request.restrictionId,
+        VALUES(${uuid(this.db)},?,${uuid(this.db)},?,${uuid(this.db)},?,?,?,?)`).run(id,user.id,request.requestId,hash,request.restrictionId,
           request.restrictionRevision,request.statement,now,now);
-      const saved=await this.db.prepare('SELECT * FROM community_restriction_appeals WHERE id=?').get(id);
+      const saved=await this.db.prepare(`SELECT * FROM community_restriction_appeals WHERE id=${uuid(this.db)}`).get(id);
       if(!saved)throw new Error('The admitted restriction appeal was not found.');
       await admit();return this.appealReceipt(saved);
     });
