@@ -19,7 +19,24 @@ import {
   POST as saveCommunityRestrictionAppealRoute,
 } from '../app/api/community/restriction-appeals/route';
 import { GET as comments } from '../app/api/comments/page/route';
-import { GET as posts } from '../app/api/posts/route';
+import { POST as createCommentRoute } from '../app/api/comments/route';
+import {
+  DELETE as deleteOwnedCommentRoute,
+  GET as ownedCommentRoute,
+  PUT as updateOwnedCommentRoute,
+} from '../app/api/comments/owned/route';
+import {
+  GET as commentSubmissionHistoryRoute,
+  POST as createCommentSubmissionRoute,
+} from '../app/api/comments/submissions/route';
+import { GET as commentSubmissionReceiptRoute } from '../app/api/comments/submissions/receipt/route';
+import { GET as posts, POST as createPostRoute } from '../app/api/posts/route';
+import { POST as postActionRoute } from '../app/api/posts/actions/route';
+import {
+  DELETE as deleteOwnedPostRoute,
+  GET as ownedPostRoute,
+  PUT as updateOwnedPostRoute,
+} from '../app/api/posts/owned/route';
 import { GET as identitySecurityRoute } from '../app/api/identity/security/route';
 import { DELETE as revokeSessionRoute } from '../app/api/identity/sessions/[id]/route';
 import { DELETE as removeIdentityRoute } from '../app/api/identity/methods/[id]/route';
@@ -351,6 +368,111 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     headers: { Cookie: accountCookies },
   }));
   assert.equal((await appealHistory.json()).appeals[0].id, appealReceipt.id);
+  const createdPostResponse = await createPostRoute(new Request('https://studio.fixture/api/posts', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({
+      kind: 'questions',
+      title: 'How should retry-safe writes be explained?',
+      body: 'I want to explain idempotency keys, transaction boundaries, and the response-loss case without hiding trade-offs.',
+      company: '',
+      track: 'system-design',
+      level: 'Senior',
+      region: 'Global',
+    }),
+  }));
+  const createdPostId = (await createdPostResponse.json()).id;
+  assert.equal(createdPostResponse.status, 201);
+  const voteResponse = await postActionRoute(new Request('https://studio.fixture/api/posts/actions', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ id: createdPostId, action: 'vote', enabled: true }),
+  }));
+  assert.equal(voteResponse.status, 200);
+  const ownedPostResponse = await ownedPostRoute(new Request(
+    `https://studio.fixture/api/posts/owned?id=${createdPostId}`,
+    { headers: { Cookie: accountCookies } },
+  ));
+  const ownedPost = await ownedPostResponse.json();
+  assert.equal(ownedPost.revision, 0);
+  const updatedPostResponse = await updateOwnedPostRoute(new Request('https://studio.fixture/api/posts/owned', {
+    method: 'PUT',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({
+      id: createdPostId,
+      revision: ownedPost.revision,
+      title: 'How should retry-safe writes be explained clearly?',
+      body: 'I want to explain idempotency keys, transaction boundaries, durable receipts, and the response-loss case without hiding trade-offs.',
+    }),
+  }));
+  const updatedPost = await updatedPostResponse.json();
+  assert.equal(updatedPost.revision, 1);
+  const submissionRequestId = randomUUID();
+  const commentSubmissionResponse = await createCommentSubmissionRoute(new Request(
+    'https://studio.fixture/api/comments/submissions',
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({
+        requestId: submissionRequestId,
+        resource: `post/${createdPostId}`,
+        parentId: null,
+        body: 'Start with the persisted idempotency record, then explain why it must commit with the business mutation.',
+      }),
+    },
+  ));
+  const commentSubmission = await commentSubmissionResponse.json();
+  assert.equal(commentSubmission.receipt.requestId, submissionRequestId);
+  const commentId = commentSubmission.receipt.commentId;
+  const submissionReceipt = await commentSubmissionReceiptRoute(new Request(
+    `https://studio.fixture/api/comments/submissions/receipt?requestId=${submissionRequestId}`,
+    { headers: { Cookie: accountCookies } },
+  ));
+  assert.equal((await submissionReceipt.json()).receipt.commentId, commentId);
+  const submissionHistory = await commentSubmissionHistoryRoute(new Request(
+    `https://studio.fixture/api/comments/submissions?resource=${encodeURIComponent(`post/${createdPostId}`)}`,
+    { headers: { Cookie: accountCookies } },
+  ));
+  assert.equal((await submissionHistory.json()).submissions[0].receipt.commentId, commentId);
+  const ownedCommentResponse = await ownedCommentRoute(new Request(
+    `https://studio.fixture/api/comments/owned?id=${commentId}`,
+    { headers: { Cookie: accountCookies } },
+  ));
+  const ownedComment = await ownedCommentResponse.json();
+  assert.equal(ownedComment.revision, 0);
+  const updatedCommentResponse = await updateOwnedCommentRoute(new Request('https://studio.fixture/api/comments/owned', {
+    method: 'PUT',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({
+      id: commentId,
+      revision: ownedComment.revision,
+      body: 'Start with the persisted idempotency record, then explain why the receipt and business mutation commit together.',
+    }),
+  }));
+  const updatedComment = await updatedCommentResponse.json();
+  assert.equal(updatedComment.revision, 1);
+  const deletedCommentResponse = await deleteOwnedCommentRoute(new Request('https://studio.fixture/api/comments/owned', {
+    method: 'DELETE',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ id: commentId, revision: 1, requestId: randomUUID() }),
+  }));
+  assert.equal((await deletedCommentResponse.json()).receipt.status, 'tombstoned');
+  const directCommentResponse = await createCommentRoute(new Request('https://studio.fixture/api/comments', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({
+      resource: `post/${createdPostId}`,
+      parentId: null,
+      body: 'A second direct comment verifies the compatibility creation response.',
+    }),
+  }));
+  assert.equal((await directCommentResponse.json()).comment.isMine, true);
+  const deletedPostResponse = await deleteOwnedPostRoute(new Request('https://studio.fixture/api/posts/owned', {
+    method: 'DELETE',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ id: createdPostId, revision: updatedPost.revision }),
+  }));
+  assert.deepEqual(await deletedPostResponse.json(), { deleted: true });
   const restrictionId = randomUUID();
   const now = new Date();
   await db.prepare(`INSERT INTO community_restrictions
@@ -404,7 +526,7 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
   const progressState = await progressResponse.json();
   assert.equal(progressResponse.status, 200);
   assert.ok(progressState.read.includes('system-design/introduction'));
-  assert.equal(progressState.recognition, 2);
+  assert.equal(progressState.recognition, 5);
   const premiumProgress = await updateProgressRoute(new Request('https://studio.fixture/api/progress', {
     method: 'POST',
     headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },

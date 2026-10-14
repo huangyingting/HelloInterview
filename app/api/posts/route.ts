@@ -1,5 +1,5 @@
-import { legacyPosts } from '../../../server/next/community';
-import { queryInput, routeError } from '../../../server/next/response';
+import { createCommunityPost, legacyPosts } from '../../../server/next/community';
+import { queryInput, readJson, routeError } from '../../../server/next/response';
 
 export async function GET(request: Request) {
   try {
@@ -10,4 +10,15 @@ export async function GET(request: Request) {
       headers: { 'Cache-Control': 'private, no-store', 'X-Community-Truncated': String(result.truncated) },
     });
   } catch (error) { return routeError(error, 'community.legacy.failed'); }
+}
+
+export async function POST(request: Request) {
+  try {
+    return Response.json(await createCommunityPost(request, await readJson(request, 16384)), {
+      status: 201,
+      headers: { 'Cache-Control': 'private, no-store' },
+    });
+  } catch (error) {
+    return routeError(error, 'community.post-create.failed');
+  }
 }

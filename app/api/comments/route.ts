@@ -1,5 +1,5 @@
-import { discussionComments } from '../../../server/next/community';
-import { queryInput, routeError } from '../../../server/next/response';
+import { createCommunityComment, discussionComments } from '../../../server/next/community';
+import { queryInput, readJson, routeError } from '../../../server/next/response';
 
 export async function GET(request: Request) {
   try {
@@ -9,4 +9,15 @@ export async function GET(request: Request) {
       headers: { 'Cache-Control': 'private, no-store' },
     });
   } catch (error) { return routeError(error, 'community.comments.failed'); }
+}
+
+export async function POST(request: Request) {
+  try {
+    return Response.json(await createCommunityComment(request, await readJson(request, 8192)), {
+      status: 201,
+      headers: { 'Cache-Control': 'private, no-store' },
+    });
+  } catch (error) {
+    return routeError(error, 'community.comment-create.failed');
+  }
 }

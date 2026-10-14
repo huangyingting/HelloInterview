@@ -35,10 +35,13 @@ not a launch or cutover:
   restriction status and restriction appeals now use managed Auth.js sessions,
   CSRF, account-scoped admission limits and the existing PostgreSQL lock/CAS
   domains;
+- post creation, exact desired-state votes and follows, durable comment
+  submissions, direct compatibility comments and revision-fenced owner
+  editing/deletion now use Route Handlers and the same transaction adapter;
 - anonymous managed support remains fail-closed until trusted edge address
   handling can restore network-scoped abuse protection;
-- community contribution writes, managed-AI feedback and the remaining
-  product-write surfaces still block participant access;
+- staff community moderation, managed-AI feedback and the remaining
+  administrative and commercial surfaces still block participant access;
 - Caddy must continue returning the hardened unavailable response.
 
 ## Final architecture
@@ -243,6 +246,10 @@ non-punitive spam triage, exact-revision appeals, bounded private histories and
 two-way interaction boundaries. Network-scoped admission remains fail-closed
 until the trusted Caddy address contract is explicit; migrated mutations apply
 the shared account-scoped limiter instead of trusting forwarded addresses.
+Contribution routes preserve opaque identifiers, participation restrictions,
+anonymous question attribution, mute and block visibility, immutable comment
+submission receipts, owner-only revisions, tombstone deletion and atomic
+recognition updates.
 
 Before participant launch, the remaining security surfaces must:
 
