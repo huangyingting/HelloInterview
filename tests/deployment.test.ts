@@ -63,3 +63,18 @@ test('Azure VM database authority separates migration from runtime DML', async (
   assert.match(grants, /ALTER DEFAULT PRIVILEGES FOR ROLE interview_studio_migrator IN SCHEMA public_jobs/);
   assert.doesNotMatch(grants, /GRANT (?:ALL|CREATE).*interview_studio_runtime/);
 });
+
+test('Azure private-beta budget is conservative, bounded and owner-notified', async () => {
+  const budget = await readFile('deploy/azure/resource-group-budget.bicep', 'utf8');
+  assert.match(budget, /^targetScope = 'resourceGroup'$/m);
+  assert.match(budget, /param monthlyAmount int = 200/);
+  assert.match(budget, /category: 'Cost'/);
+  assert.match(budget, /timeGrain: 'Monthly'/);
+  for (const threshold of [50, 75, 90, 100]) {
+    assert.match(budget, new RegExp(`threshold: ${threshold}`));
+  }
+  assert.equal(budget.match(/thresholdType: 'Actual'/g)?.length, 4);
+  assert.equal(budget.match(/thresholdType: 'Forecasted'/g)?.length, 1);
+  assert.equal(budget.match(/contactGroups: \[/g)?.length, 5);
+  assert.doesNotMatch(budget, /subscriptions\/|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/);
+});
