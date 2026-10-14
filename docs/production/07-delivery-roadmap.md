@@ -16,7 +16,7 @@ production feature. An open package can therefore contain a closed checkpoint.
 | W00 - Product/provider decisions | [#1](https://github.com/huangyingting/HelloInterview/issues/1) | [#15 - Blueprint](https://github.com/huangyingting/HelloInterview/issues/15); [#49 - Approved private-beta boundary](https://github.com/huangyingting/HelloInterview/issues/49) |
 | W01 - Compiled runtime | [#2 - Completed](https://github.com/huangyingting/HelloInterview/issues/2) | Recorded in the delivery issue |
 | W02 - Persistence/cutover | [#3](https://github.com/huangyingting/HelloInterview/issues/3) | [#16 - Persistence foundation](https://github.com/huangyingting/HelloInterview/issues/16) |
-| W03 - Operated infrastructure | [#4](https://github.com/huangyingting/HelloInterview/issues/4) | [#17 - CI/container/recovery foundation](https://github.com/huangyingting/HelloInterview/issues/17); [#49 - Approved private-beta boundary](https://github.com/huangyingting/HelloInterview/issues/49); [#50 - Invite-only service runtime](https://github.com/huangyingting/HelloInterview/issues/50) |
+| W03 - Operated infrastructure | [#4](https://github.com/huangyingting/HelloInterview/issues/4) | [#17 - CI/container/recovery foundation](https://github.com/huangyingting/HelloInterview/issues/17); [#49 - Approved private-beta boundary](https://github.com/huangyingting/HelloInterview/issues/49); [#50 - Invite-only service runtime](https://github.com/huangyingting/HelloInterview/issues/50); [#51 - Canonical HTTPS ingress](https://github.com/huangyingting/HelloInterview/issues/51) |
 | W04 - Operated identity/recovery | [#5](https://github.com/huangyingting/HelloInterview/issues/5) | [#18 - Identity/session foundation](https://github.com/huangyingting/HelloInterview/issues/18); [#50 - Invite-only service runtime](https://github.com/huangyingting/HelloInterview/issues/50) |
 | W05 - Governed content publication | [#6](https://github.com/huangyingting/HelloInterview/issues/6) | [#19 - Protected content/quiz history](https://github.com/huangyingting/HelloInterview/issues/19) |
 | W06 - Production premium authority | [#7](https://github.com/huangyingting/HelloInterview/issues/7) | [#20 - Immutable entitlement foundation](https://github.com/huangyingting/HelloInterview/issues/20) |
@@ -48,7 +48,7 @@ explicit gates; issue creation or closure cannot supply them.
 | W00 | Invite-only free-beta scope approved; public/legal/retention details remain | Auth0-managed clean-data beta; payments, managed AI and community writing disabled; Azure Southeast Asia `WebStack`, USD 200 ceiling and owner selected |
 | W01 | Implemented | Separate configuration/application/database/process lifecycle; compiled Node.js runtime; lazy development Vite; runtime-only release verification; startup and bounded shutdown checks |
 | W02 | Persistence checkpoint implemented; real-data cutover pending D05 | Async SQLite/PostgreSQL boundary; controlled migrations; owned record tables; atomic writes and revision conflicts; explicit dry-run/reconciled import without demo or password authority; two-replica PostgreSQL tests |
-| W03 | Azure single-VM beta target and service authority implemented; operated deployment still pending | Existing Southeast Asia `WebStack` VM with guest PostgreSQL and no RPO/RTO promise selected; fail-closed service mode requires HTTPS/proxy/request logs and full identity lifecycle while rejecting billing/AI/demo authority; TLS/secrets/cost alerts/guest operation remain unverified |
+| W03 | Azure target, service authority and canonical TLS ingress implemented; application deployment still pending | Existing Southeast Asia `WebStack` VM with guest PostgreSQL and no RPO/RTO promise selected; exact `interview.genisisiq.com` Caddy ingress uses a public certificate, closed loopback upstream and truthful 503; secrets/cost alerts/guest database/application operation remain unverified |
 | W05 | Content-delivery checkpoint implemented; editorial/service authority pending W06/W12 | Allowlisted browser discovery graph; private readers/briefs/media; version-pinned server quiz sessions/checks/reports; readable/exportable owned history; migration 2 and replica/bundle checks |
 | W07 | Durable-job checkpoint implemented; provider/worker composition pending W08-W10 | Maintained PostgreSQL queue, controlled schema/policies, atomic operation/inbox/outbox, fenced completion, safe retries, audited replay and actual worker-death recovery |
 | W04 | In progress; private identity, credential lifecycle and invite-only service admission implemented | Maintained OIDC verification, email/Google/GitHub reference connections, secure sessions/CSRF, fresh linking, shared admission, signed reset revocation, read-only canonical security facts, compiled reconciliation and HMAC-normalized verified-email admission before new-owner creation; authentic tenant/delivery/recovery, operated alerts and broker-native abuse controls remain |
@@ -69,8 +69,9 @@ PostgreSQL records; scoped content/history response APIs remain later work.
 The [W02 implementation runbook](08-persistence-implementation.md) records
 schema and revision contracts. The
 [W03 platform runbook](09-platform-implementation.md) records deployment and
-recovery boundaries. Managed hosting, region, TLS/edge, durable secrets/backups,
-and operating approvals remain unresolved; no live infrastructure was provisioned.
+recovery boundaries. Azure hosting/region and canonical TLS ingress are now
+operated; durable secrets/backups, application deployment and remaining
+operating approvals are unresolved.
 W04 identity requires D01 provider approval; W05 content work can proceed
 independently. No existing user data may be imported without D05 owner approval.
 The [W05 content runbook](10-content-implementation.md) records the shipped

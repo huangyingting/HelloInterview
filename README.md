@@ -502,6 +502,10 @@ It does not enable live payments or managed identity.
 For private HTTPS staging, `PUBLIC_ORIGIN` fixes the expected canonical origin
 and requires `COOKIE_SECURE=true`. `TRUST_PROXY` accepts only explicit proxy
 IP/CIDR allowlists; forwarded protocol from untrusted peers is ignored.
+The approved private-beta origin is `https://interview.genisisiq.com`; its
+repository-owned Caddy route uses loopback port 10006 and returns an explicit
+503 until the service runtime is ready. See
+[the canonical-ingress runbook](docs/production/58-canonical-https-ingress.md).
 `LOG_REQUESTS` controls JSON request completion records (on by default for
 production-format serving). Records contain server-generated request IDs,
 route templates, status and duration, not bodies, cookies, emails or query strings.

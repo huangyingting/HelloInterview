@@ -38,6 +38,10 @@ application listener. A successful configuration parse proves only internal
 consistency; it does not prove DNS, certificate renewal, NSG/firewall rules or
 secret-file permissions on `WebStack`.
 
+The approved values are `PUBLIC_ORIGIN=https://interview.genisisiq.com`,
+`HOST=127.0.0.1`, `PORT=10006` and `TRUST_PROXY=127.0.0.1/32`, as operated in
+[checkpoint 58](58-canonical-https-ingress.md).
+
 ## Private invitation configuration
 
 `OIDC_INVITED_EMAILS` is a comma-separated operator secret, for example:

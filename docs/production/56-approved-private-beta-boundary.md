@@ -39,14 +39,17 @@ cohort or Azure guest deployment was configured by that code boundary.
 | Provider | Microsoft Azure |
 | Region | Southeast Asia |
 | Existing VM | `WebStack` |
+| Canonical published origin | `https://interview.genisisiq.com` |
 | Database topology | PostgreSQL in the VM guest OS |
 | Application budget ceiling | USD 200 per month |
 | Deployment/on-call/support owner | `@huangyingting` |
 | Content/accessibility reviewer | `@huangyingting` |
 
-The Azure management plane was checked without reading guest files or printing
-addresses, subscription identifiers or credentials. It confirmed that
-`WebStack` exists, is running and is located in `southeastasia`.
+The Azure management plane was checked without printing addresses, subscription
+identifiers or credentials. It confirmed that `WebStack` exists, is running and
+is located in `southeastasia`. A later bounded guest inspection verified the
+Caddy/PostgreSQL service topology without reading application secrets or
+database contents.
 
 The USD 200 value is an approved application ceiling, not proof of a matching
 Azure resource-group budget, alert recipient or automatic shutdown policy.
@@ -81,8 +84,7 @@ testers:
   retention/deletion notice;
 - the actual Auth0 tenant, email/Google/GitHub connections, callbacks,
   verification/reset delivery and recovery exercise;
-- canonical HTTPS ingress, certificate renewal, proxy trust, firewall/NSG
-  review and private secret injection on `WebStack`;
+- private secret injection and application-process composition on `WebStack`;
 - a scoped Azure cost alert or an explicit manual spend-review procedure that
   demonstrates the USD 200 ceiling;
 - guest PostgreSQL role separation, disk/volume ownership, startup/restart and

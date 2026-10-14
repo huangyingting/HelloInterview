@@ -1,10 +1,13 @@
 # 09 - Platform implementation and release runbook
 
-**Status: provider-neutral W03 checkpoint implemented; an existing Azure
-private-beta target is approved, but deployment operation remains incomplete.**
-TLS/edge, secret services, cost alerts, guest-database operation, and human
-acceptance still require evidence. No domain, certificate, backup service or
-new paid infrastructure was provisioned by this repository.
+**Status: provider-neutral W03 foundation and canonical Azure TLS ingress
+implemented; application deployment remains incomplete.** Secret services,
+cost alerts, guest-database operation and human acceptance still require
+evidence. No backup service or new paid infrastructure was provisioned.
+
+The canonical hostname is now approved and its Caddy ingress is operated; see
+[checkpoint 58](58-canonical-https-ingress.md). Application deployment, secret
+injection and guest database operation remain incomplete.
 
 ## Approved invite-only beta target
 
@@ -40,7 +43,7 @@ canonical HTTPS/secure cookies, explicit proxy trust, request telemetry, complet
 managed identity/password lifecycle and a private invite list. It rejects
 legacy migration, billing and external AI configuration. The
 [service-mode runbook](57-invite-only-service-runtime.md) defines the exact
-boundary. This does not configure the real tenant, edge or VM, and must not be
+boundary. This does not configure the real tenant or application process, and must not be
 weakened to expose a demonstration account/plan endpoint.
 
 ## CI and release artifacts
@@ -127,16 +130,16 @@ Docker resources as part of application deployment.
 
 ## Canonical origin and trusted proxy
 
-For an approved private HTTPS ingress:
+For the approved private HTTPS ingress:
 
 ```dotenv
-PUBLIC_ORIGIN=https://studio.example.com
+PUBLIC_ORIGIN=https://interview.genisisiq.com
 COOKIE_SECURE=true
-TRUST_PROXY=192.0.2.10
+TRUST_PROXY=127.0.0.1/32
 ```
 
-The address above is documentation-only; configure the actual ingress peer
-address/network. Proxy trust accepts explicit IPs or non-global CIDRs only.
+The application must bind to `127.0.0.1:10006`; Caddy is the only trusted peer.
+Proxy trust accepts explicit IPs or non-global CIDRs only.
 Booleans, hop counts, global `/0`, malformed addresses/prefixes, and hostnames
 are rejected. Restrict trust to the smallest actual proxy network.
 
@@ -150,8 +153,9 @@ credentials or paths.
 HTTPS public origins require secure cookies; secure cookies with an explicitly
 HTTP public origin are rejected. Top-level health/readiness GETs remain usable
 over the internal HTTP network for the orchestrator; they disclose no account
-data. Production TLS/certificate renewal, HSTS, WAF rules, and the full CSP/code
-sandbox policy still require the operated edge/launch assessment.
+data. Initial public TLS and a one-day HSTS policy are operated at the canonical
+origin. Observed certificate renewal, longer HSTS, WAF rules and the full
+CSP/code-sandbox policy still require the operated edge/launch assessment.
 
 ## Liveness, readiness and draining
 
@@ -208,8 +212,9 @@ provider metrics. This stdout boundary does not implement those services.
    provider reconciliation, and record the release/rollback decision.
 
 There is no auto-deploy job or reviewed Azure IaC yet. D04/D06 now identify the
-private-beta provider, region, VM, budget and owner, but TLS, secret injection,
-guest database composition, cost alerts and deployment evidence remain open.
+private-beta provider, region, VM, budget, owner and canonical Caddy ingress,
+but secret injection, guest database composition, cost alerts and application
+deployment evidence remain open.
 Do not add a generic SSH deployment with unknown credentials as a substitute.
 
 Rollback is constrained by database history. A runtime that does not support

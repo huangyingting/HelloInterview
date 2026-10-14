@@ -10,7 +10,7 @@
     "build:server": "esbuild server/index.ts server/db/cli.ts server/jobs/index.ts server/identity/cli.ts server/billing/cli.ts server/staff/cli.ts server/privacy/cli.ts server/usage/index.ts --bundle --platform=node --target=node24 --format=esm --packages=external --outdir=dist-server --outbase=server && tsx scripts/copy-private-media.ts",
     "start": "NODE_ENV=production node --env-file-if-exists=.env dist-server/index.js",
     "test": "playwright test",
-    "test:unit": "tsx --test tests/config.test.ts tests/domain.test.ts tests/premium.test.ts tests/content.test.ts tests/coding.test.ts tests/low-level-design.test.ts tests/access.test.ts tests/usage-calendar.test.ts tests/web-vitals.test.ts",
+    "test:unit": "tsx --test tests/config.test.ts tests/deployment.test.ts tests/domain.test.ts tests/premium.test.ts tests/content.test.ts tests/coding.test.ts tests/low-level-design.test.ts tests/access.test.ts tests/usage-calendar.test.ts tests/web-vitals.test.ts",
     "test:server": "npm run build && tsx --test tests/server.test.ts",
     "test:runtime": "npm run build && tsx --test tests/runtime.test.ts",
     "test:ai": "npm run build && tsx --test tests/ai.test.ts",

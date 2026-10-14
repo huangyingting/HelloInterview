@@ -1,0 +1,22 @@
+interview.genisisiq.com {
+    encode zstd gzip
+
+    header {
+        Strict-Transport-Security "max-age=86400"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "same-origin"
+        -Server
+    }
+
+    reverse_proxy 127.0.0.1:10006
+
+    handle_errors {
+        header {
+            Strict-Transport-Security "max-age=86400"
+            X-Content-Type-Options "nosniff"
+            Referrer-Policy "same-origin"
+            -Server
+        }
+        respond "Interview Studio private beta is not available." 503
+    }
+}
