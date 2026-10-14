@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from '../navigation';
 import { sandboxOffers, type SandboxBillingView, type SandboxOffer } from '../../shared/billing';
 import type { IdentitySecurity } from '../../shared/types';
 import { AuthPrompt, Badge, PageHeading } from '../components';

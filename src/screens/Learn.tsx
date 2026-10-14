@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronRight, Clock3, Code2, GraduationCap, LockKeyhole, Pause, Play, RotateCcw, SkipForward } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '../navigation';
 import { getTrack, problems, tracks } from "../../shared/public-catalog";
 import { AuthPrompt, Badge, BookmarkButton, CardLink, Comments, ContentSections, IconTile, NotFound, PageHeading, PremiumGate, Progress, ReadButton, SourceLinks } from '../components';
 import { useStudio } from '../store';

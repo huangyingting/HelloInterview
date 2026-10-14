@@ -1,8 +1,15 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
   build: { manifest: true },
+  resolve: {
+    alias: [{
+      find: /^\.\.?\/navigation$/,
+      replacement: fileURLToPath(new URL('./src/navigation.vite.ts', import.meta.url)),
+    }],
+  },
   plugins: [react(), {
     name: 'private-content-boundary',
     moduleParsed(module) {

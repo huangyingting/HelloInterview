@@ -1,6 +1,6 @@
 import { ArrowRight, Check, Sparkles, UserRound } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from '../navigation';
 import { IconTile } from '../components/primitives';
 import { request, useStudio } from '../store';
 import { ManagedAuthPage } from './Identity';

@@ -1,5 +1,5 @@
 import { ArrowRight, BookOpen, Check, CircleCheck, Code2, GraduationCap, Network, Rocket } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link } from '../navigation';
 import { navigationTracks as tracks } from '../../shared/public-navigation';
 import { CardLink, Footer, IconTile } from '../components/primitives';
 import { trackIcons } from '../track-icons';

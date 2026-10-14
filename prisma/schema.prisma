@@ -1,0 +1,1524 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ai_input_policies {
+  id                 String               @id
+  payload            String
+  request_hash       String
+  created_at         DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  ai_input_snapshots ai_input_snapshots[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ai_input_snapshots {
+  id                    String                @id
+  owner_ref             String
+  user_id               String?
+  request_key           String
+  request_payload       String
+  request_hash          String
+  policy_id             String
+  reservation_id        String                @unique
+  kind                  String
+  source_id             String
+  source_revision       Int
+  source_hash           String
+  input_hash            String
+  payload               String?
+  created_at            DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  ai_input_policies     ai_input_policies     @relation(fields: [policy_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ai_usage_reservations ai_usage_reservations @relation(fields: [reservation_id, owner_ref], references: [id, owner_ref], onDelete: NoAction, onUpdate: NoAction)
+  users                 users?                @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@unique([owner_ref, request_key])
+  @@unique([reservation_id, owner_ref])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ai_usage_budget_links {
+  reservation_id        String
+  kind                  String
+  starts_at             BigInt
+  ai_usage_cost_budgets ai_usage_cost_budgets @relation(fields: [kind, starts_at], references: [kind, starts_at], onDelete: NoAction, onUpdate: NoAction)
+  ai_usage_reservations ai_usage_reservations @relation(fields: [reservation_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([reservation_id, kind])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ai_usage_cost_budgets {
+  kind                  String
+  starts_at             BigInt
+  ends_at               BigInt
+  policy_id             String
+  cost_limit            BigInt
+  reserved              BigInt                  @default(0)
+  consumed              BigInt                  @default(0)
+  ai_usage_budget_links ai_usage_budget_links[]
+  ai_usage_policies     ai_usage_policies       @relation(fields: [policy_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([kind, starts_at])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ai_usage_events {
+  id                                                                                    String                @id
+  reservation_id                                                                        String
+  owner_ref                                                                             String
+  action                                                                                String
+  actor                                                                                 String
+  reason                                                                                String
+  created_at                                                                            DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  ai_usage_reservations_ai_usage_events_reservation_idToai_usage_reservations           ai_usage_reservations @relation("ai_usage_events_reservation_idToai_usage_reservations", fields: [reservation_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ai_usage_reservations_ai_usage_events_reservation_id_owner_refToai_usage_reservations ai_usage_reservations @relation("ai_usage_events_reservation_id_owner_refToai_usage_reservations", fields: [reservation_id, owner_ref], references: [id, owner_ref], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([reservation_id, action])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ai_usage_lineages {
+  id               String             @id
+  owner_ref        String
+  user_id          String?
+  anchor           BigInt
+  service_start    BigInt
+  service_end      BigInt
+  users            users?             @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  ai_usage_windows ai_usage_windows[]
+
+  @@unique([id, owner_ref])
+  @@index([owner_ref], map: "ai_usage_lineage_owner")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ai_usage_operations {
+  reservation_id         String                @id
+  owner_ref              String
+  operation_id           String                @unique
+  operation_scope        String
+  operation_kind         String
+  operation_request_hash String
+  job_id                 String                @unique
+  generation             Int
+  created_at             DateTime              @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  durable_operations     durable_operations    @relation(fields: [operation_id, operation_scope, operation_kind], references: [id, scope, kind], onDelete: NoAction, onUpdate: NoAction)
+  ai_usage_reservations  ai_usage_reservations @relation(fields: [reservation_id, owner_ref], references: [id, owner_ref], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([operation_id, operation_scope, operation_kind])
+  @@unique([reservation_id, owner_ref])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ai_usage_policies {
+  id                    String                  @id
+  payload               String
+  request_hash          String
+  created_at            DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  ai_usage_cost_budgets ai_usage_cost_budgets[]
+  ai_usage_reservations ai_usage_reservations[]
+  ai_usage_windows      ai_usage_windows[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ai_usage_reservations {
+  id                                                                              String                  @id
+  owner_ref                                                                       String
+  user_id                                                                         String?
+  request_key                                                                     String
+  window_id                                                                       String
+  policy_id                                                                       String
+  request_payload                                                                 String
+  request_hash                                                                    String
+  units                                                                           Int
+  cost_ceiling                                                                    BigInt
+  state                                                                           String                  @default("reserved")
+  created_at                                                                      DateTime                @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  dispatched_at                                                                   DateTime?               @db.Timestamptz(6)
+  finished_at                                                                     DateTime?               @db.Timestamptz(6)
+  result_hash                                                                     String?
+  actual_cost                                                                     BigInt?
+  settlement_hash                                                                 String?
+  ai_input_snapshots                                                              ai_input_snapshots?
+  ai_usage_budget_links                                                           ai_usage_budget_links[]
+  ai_usage_events_ai_usage_events_reservation_idToai_usage_reservations           ai_usage_events[]       @relation("ai_usage_events_reservation_idToai_usage_reservations")
+  ai_usage_events_ai_usage_events_reservation_id_owner_refToai_usage_reservations ai_usage_events[]       @relation("ai_usage_events_reservation_id_owner_refToai_usage_reservations")
+  ai_usage_operations                                                             ai_usage_operations?
+  ai_usage_policies                                                               ai_usage_policies       @relation(fields: [policy_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users                                                                           users?                  @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  ai_usage_windows                                                                ai_usage_windows        @relation(fields: [window_id, owner_ref], references: [id, owner_ref], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([id, owner_ref])
+  @@unique([owner_ref, request_key])
+  @@index([state, owner_ref], map: "ai_usage_inflight")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ai_usage_windows {
+  id                    String                  @id
+  owner_ref             String
+  lineage_id            String
+  policy_id             String
+  starts_at             BigInt
+  ends_at               BigInt
+  unit_limit            Int
+  reserved              Int                     @default(0)
+  consumed              Int                     @default(0)
+  ai_usage_reservations ai_usage_reservations[]
+  ai_usage_lineages     ai_usage_lineages       @relation(fields: [lineage_id, owner_ref], references: [id, owner_ref], onDelete: NoAction, onUpdate: NoAction)
+  ai_usage_policies     ai_usage_policies       @relation(fields: [policy_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([id, owner_ref])
+  @@unique([lineage_id, starts_at])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model assessment_sessions {
+  id               String           @id
+  user_id          String
+  topic            String
+  content_version  String
+  answers          String
+  revision         Int              @default(0)
+  completed_at     String?
+  content_versions content_versions @relation(fields: [content_version], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users            users            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id, completed_at], map: "assessment_sessions_owner")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model attempts {
+  user_id    String
+  id         String
+  value      Json
+  position   Int
+  revision   Int      @default(0)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, id])
+  @@index([user_id, position, id], map: "attempts_owner_order")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model auth_transactions {
+  state_hash             String  @id
+  binding_hash           String
+  verifier               String
+  nonce                  String
+  provider               String
+  purpose                String
+  user_id                String?
+  session_hash           String?
+  legacy_credential_hash String?
+  return_to              String
+  expires                BigInt
+  created_at             BigInt
+  requires_fresh         Int     @default(0)
+  users                  users?  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([binding_hash, expires], map: "auth_transactions_browser")
+  @@index([expires], map: "auth_transactions_expiry")
+}
+
+/// This model has constraints using non-default deferring rules and requires additional setup for migrations. Visit https://pris.ly/d/constraint-deferring for more info.
+model comments {
+  id                           String                        @id
+  resource                     String
+  user_id                      String?
+  author                       String
+  body                         String
+  created_at                   String
+  parent_id                    String?
+  comments                     comments?                     @relation("commentsTocomments", fields: [parent_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  other_comments               comments[]                    @relation("commentsTocomments")
+  users                        users?                        @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  community_comment_revisions  community_comment_revisions?
+  community_comment_tombstones community_comment_tombstones?
+
+  @@index([resource, created_at, id], map: "comments_resource_cursor")
+  @@index([resource, created_at, id], map: "comments_resource_order")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model community_appeal_events {
+  id                     String            @id @db.Uuid
+  appeal_id              String            @db.Uuid
+  target_type            String
+  target_id              String
+  actor_ref              String
+  actor_role             String
+  action                 String
+  reason                 String
+  prior_appeal_revision  Int
+  result_appeal_revision Int
+  prior_target_revision  Int?
+  result_target_revision Int?
+  created_at             String
+  community_appeals      community_appeals @relation(fields: [appeal_id], references: [id], onUpdate: NoAction)
+
+  @@index([appeal_id, created_at, id], map: "community_appeal_events_appeal")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model community_appeals {
+  id                                         String                    @id @db.Uuid
+  owner_id                                   String?
+  request_key                                String                    @db.Uuid
+  input_hash                                 String
+  target_type                                String
+  target_id                                  String
+  target_revision                            Int
+  statement                                  String
+  state                                      String                    @default("open")
+  assigned_to                                String?
+  appeal_revision                            Int                       @default(0)
+  created_at                                 String
+  updated_at                                 String
+  community_appeal_events                    community_appeal_events[]
+  users_community_appeals_assigned_toTousers users?                    @relation("community_appeals_assigned_toTousers", fields: [assigned_to], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  users_community_appeals_owner_idTousers    users?                    @relation("community_appeals_owner_idTousers", fields: [owner_id], references: [id], onUpdate: NoAction)
+
+  @@index([owner_id, created_at(sort: Desc), id(sort: Desc)], map: "community_appeals_owner_order")
+  @@index([updated_at(sort: Desc), id(sort: Desc)], map: "community_appeals_queue")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model community_block_intents {
+  owner_id         String
+  request_key      String           @db.Uuid
+  input_hash       String
+  block_id         String           @db.Uuid
+  target_type      String
+  target_id        String
+  blocked          Boolean
+  prior_revision   Int
+  result_revision  Int
+  created_at       String
+  community_blocks community_blocks @relation(fields: [block_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users            users            @relation(fields: [owner_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([owner_id, request_key])
+  @@index([owner_id, created_at(sort: Desc), request_key(sort: Desc)], map: "community_block_intents_owner_order")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model community_blocks {
+  id                                       String                    @id @db.Uuid
+  owner_id                                 String
+  subject_id                               String
+  target_type                              String
+  target_id                                String
+  state                                    String
+  revision                                 Int
+  created_at                               String
+  updated_at                               String
+  community_block_intents                  community_block_intents[]
+  users_community_blocks_owner_idTousers   users                     @relation("community_blocks_owner_idTousers", fields: [owner_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_community_blocks_subject_idTousers users                     @relation("community_blocks_subject_idTousers", fields: [subject_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([owner_id, subject_id])
+  @@index([owner_id, state, updated_at(sort: Desc), id(sort: Desc)], map: "community_blocks_owner_state")
+  @@index([subject_id, owner_id, state], map: "community_blocks_subject_owner")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model community_comment_deletions {
+  user_id         String
+  request_id      String
+  comment_id      String @unique
+  resource        String
+  input_hash      String
+  prior_revision  Int
+  result_revision Int
+  deleted_at      String
+  users           users  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, request_id])
+  @@index([user_id, deleted_at(sort: Desc), request_id(sort: Desc)], map: "community_comment_deletions_owner")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model community_comment_revisions {
+  comment_id String   @id
+  revision   Int      @default(0)
+  comments   comments @relation(fields: [comment_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model community_comment_submissions {
+  user_id    String
+  request_id String
+  comment_id String @unique
+  resource   String
+  input_hash String
+  created_at String
+  users      users  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, request_id])
+  @@index([user_id, created_at(sort: Desc), request_id(sort: Desc)], map: "community_comment_submissions_owner")
+  @@index([user_id, resource, created_at(sort: Desc), request_id(sort: Desc)], map: "community_comment_submissions_resource")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model community_comment_tombstones {
+  comment_id String   @id
+  deleted_at String
+  comments   comments @relation(fields: [comment_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model community_moderation_events {
+  id                     String            @id @db.Uuid
+  report_id              String            @db.Uuid
+  target_type            String
+  target_id              String
+  actor_ref              String
+  actor_role             String
+  action                 String
+  reason                 String
+  prior_report_revision  Int
+  result_report_revision Int
+  prior_target_revision  Int?
+  result_target_revision Int?
+  created_at             String
+  community_reports      community_reports @relation(fields: [report_id], references: [id], onUpdate: NoAction)
+
+  @@index([report_id, created_at, id], map: "community_moderation_events_report")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model community_moderation_targets {
+  target_type String
+  target_id   String
+  state       String
+  revision    Int
+  updated_at  String
+
+  @@id([target_type, target_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model community_mute_intents {
+  owner_id        String
+  request_key     String          @db.Uuid
+  input_hash      String
+  mute_id         String          @db.Uuid
+  target_type     String
+  target_id       String
+  muted           Boolean
+  prior_revision  Int
+  result_revision Int
+  created_at      String
+  community_mutes community_mutes @relation(fields: [mute_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users           users           @relation(fields: [owner_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([owner_id, request_key])
+  @@index([owner_id, created_at(sort: Desc), request_key(sort: Desc)], map: "community_mute_intents_owner_order")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model community_mutes {
+  id                                      String                   @id @db.Uuid
+  owner_id                                String
+  subject_id                              String
+  target_type                             String
+  target_id                               String
+  state                                   String
+  revision                                Int
+  created_at                              String
+  updated_at                              String
+  community_mute_intents                  community_mute_intents[]
+  users_community_mutes_owner_idTousers   users                    @relation("community_mutes_owner_idTousers", fields: [owner_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_community_mutes_subject_idTousers users                    @relation("community_mutes_subject_idTousers", fields: [subject_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([owner_id, subject_id])
+  @@index([owner_id, state, updated_at(sort: Desc), id(sort: Desc)], map: "community_mutes_owner_state")
+  @@index([subject_id, owner_id], map: "community_mutes_subject")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model community_post_revisions {
+  post_id  String @id
+  revision Int    @default(0)
+  posts    posts  @relation(fields: [post_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model community_reports {
+  id                                         String                         @id @db.Uuid
+  reporter_id                                String?
+  request_key                                String                         @db.Uuid
+  input_hash                                 String
+  target_type                                String
+  target_id                                  String
+  category                                   String
+  details                                    String
+  state                                      String                         @default("open")
+  assigned_to                                String?
+  report_revision                            Int                            @default(0)
+  created_at                                 String
+  updated_at                                 String
+  community_moderation_events                community_moderation_events[]
+  users_community_reports_assigned_toTousers users?                         @relation("community_reports_assigned_toTousers", fields: [assigned_to], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  users_community_reports_reporter_idTousers users?                         @relation("community_reports_reporter_idTousers", fields: [reporter_id], references: [id], onUpdate: NoAction)
+  community_restriction_events               community_restriction_events[]
+  community_restrictions                     community_restrictions[]
+  community_spam_triage                      community_spam_triage?
+
+  @@index([reporter_id, state], map: "community_reports_owner_open")
+  @@index([updated_at(sort: Desc), id(sort: Desc)], map: "community_reports_queue")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model community_restriction_appeal_events {
+  id                            String                        @id @db.Uuid
+  appeal_id                     String                        @db.Uuid
+  restriction_id                String                        @db.Uuid
+  actor_ref                     String
+  actor_role                    String
+  action                        String
+  reason                        String
+  prior_appeal_revision         Int
+  result_appeal_revision        Int
+  prior_restriction_revision    Int
+  result_restriction_revision   Int?
+  result_appeal_state           String
+  created_at                    String
+  community_restriction_appeals community_restriction_appeals @relation(fields: [appeal_id], references: [id], onUpdate: NoAction)
+  community_restrictions        community_restrictions        @relation(fields: [restriction_id], references: [id], onUpdate: NoAction)
+
+  @@index([appeal_id, created_at, id], map: "community_restriction_appeal_events_appeal")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model community_restriction_appeals {
+  id                                                     String                                @id @db.Uuid
+  owner_id                                               String?
+  request_key                                            String                                @db.Uuid
+  input_hash                                             String
+  restriction_id                                         String                                @db.Uuid
+  restriction_revision                                   Int
+  statement                                              String
+  state                                                  String                                @default("open")
+  assigned_to                                            String?
+  appeal_revision                                        Int                                   @default(0)
+  created_at                                             String
+  updated_at                                             String
+  community_restriction_appeal_events                    community_restriction_appeal_events[]
+  users_community_restriction_appeals_assigned_toTousers users?                                @relation("community_restriction_appeals_assigned_toTousers", fields: [assigned_to], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  users_community_restriction_appeals_owner_idTousers    users?                                @relation("community_restriction_appeals_owner_idTousers", fields: [owner_id], references: [id], onUpdate: NoAction)
+  community_restrictions                                 community_restrictions                @relation(fields: [restriction_id], references: [id], onUpdate: NoAction)
+
+  @@index([owner_id, created_at(sort: Desc), id(sort: Desc)], map: "community_restriction_appeals_owner_order")
+  @@index([updated_at(sort: Desc), id(sort: Desc)], map: "community_restriction_appeals_queue")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model community_restriction_events {
+  id                     String                 @id @db.Uuid
+  restriction_id         String                 @db.Uuid
+  source_report_id       String                 @db.Uuid
+  actor_ref              String
+  actor_role             String
+  action                 String
+  reason                 String
+  prior_revision         Int
+  result_revision        Int
+  prior_expires_at       String?
+  result_expires_at      String
+  result_state           String
+  created_at             String
+  community_restrictions community_restrictions @relation(fields: [restriction_id], references: [id], onUpdate: NoAction)
+  community_reports      community_reports      @relation(fields: [source_report_id], references: [id], onUpdate: NoAction)
+
+  @@index([restriction_id, created_at, id], map: "community_restriction_events_restriction")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model community_restrictions {
+  id                                  String                                @id @db.Uuid
+  subject_id                          String?
+  source_report_id                    String                                @db.Uuid
+  scope                               String
+  state                               String
+  revision                            Int
+  starts_at                           String
+  expires_at                          String
+  created_at                          String
+  updated_at                          String
+  community_restriction_appeal_events community_restriction_appeal_events[]
+  community_restriction_appeals       community_restriction_appeals[]
+  community_restriction_events        community_restriction_events[]
+  community_reports                   community_reports                     @relation(fields: [source_report_id], references: [id], onUpdate: NoAction)
+  users                               users?                                @relation(fields: [subject_id], references: [id], onUpdate: NoAction)
+
+  @@index([state, expires_at, updated_at(sort: Desc), id(sort: Desc)], map: "community_restrictions_staff_queue")
+  @@index([subject_id, updated_at(sort: Desc), id(sort: Desc)], map: "community_restrictions_subject_order")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model community_spam_triage {
+  report_id                    String                         @id @db.Uuid
+  algorithm_version            String
+  input_hash                   String
+  content_revision             Int
+  input_truncated              Boolean
+  score                        Int
+  classification               String
+  link_count                   Int
+  contact_solicitation         Boolean
+  promotional_language         Boolean
+  repetitive_content           Boolean
+  state                        String
+  outcome                      String?
+  revision                     Int
+  created_at                   String
+  updated_at                   String
+  community_reports            community_reports              @relation(fields: [report_id], references: [id], onUpdate: NoAction)
+  community_spam_triage_events community_spam_triage_events[]
+
+  @@index([state, classification, score(sort: Desc), updated_at(sort: Desc), report_id], map: "community_spam_triage_queue")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model community_spam_triage_events {
+  id                    String                @id @db.Uuid
+  report_id             String                @db.Uuid
+  actor_ref             String
+  actor_role            String
+  decision              String
+  reason                String
+  prior_revision        Int
+  result_revision       Int
+  created_at            String
+  community_spam_triage community_spam_triage @relation(fields: [report_id], references: [report_id], onUpdate: NoAction)
+
+  @@index([report_id, created_at, id], map: "community_spam_triage_events_report")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model completion_records {
+  user_id    String
+  id         String
+  value      Json
+  position   Int
+  revision   Int      @default(0)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, id])
+  @@index([user_id, position, id], map: "completion_records_owner_order")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model content_versions {
+  id                  String                @id
+  value               String
+  assessment_sessions assessment_sessions[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model custom_quizzes {
+  user_id    String
+  id         String
+  value      Json
+  position   Int
+  revision   Int      @default(0)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, id])
+  @@index([user_id, position, id], map: "custom_quizzes_owner_order")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model durable_operations {
+  id                                                                                         String                             @id
+  scope                                                                                      String
+  kind                                                                                       String
+  owner_id                                                                                   String?
+  request_key                                                                                String
+  request_hash                                                                               String
+  resource                                                                                   String
+  payload                                                                                    String
+  retry_mode                                                                                 String
+  job_id                                                                                     String                             @unique
+  generation                                                                                 Int                                @default(0)
+  created_at                                                                                 DateTime                           @default(now()) @db.Timestamptz(6)
+  completed_at                                                                               DateTime?                          @db.Timestamptz(6)
+  receipt                                                                                    String?
+  ai_usage_operations                                                                        ai_usage_operations?
+  users                                                                                      users?                             @relation(fields: [owner_id], references: [id], onUpdate: NoAction)
+  job_operator_events                                                                        job_operator_events[]
+  privacy_deletions                                                                          privacy_deletions?
+  privacy_exports                                                                            privacy_exports?
+  stripe_checkout_attempts_stripe_checkout_attempts_operation_idTodurable_operations         stripe_checkout_attempts?          @relation("stripe_checkout_attempts_operation_idTodurable_operations")
+  stripe_checkout_attempts_stripe_checkout_attempts_refresh_operation_idTodurable_operations stripe_checkout_attempts[]         @relation("stripe_checkout_attempts_refresh_operation_idTodurable_operations")
+  stripe_customer_ledger_snapshots                                                           stripe_customer_ledger_snapshots?
+  stripe_customer_ledger_state                                                               stripe_customer_ledger_state[]
+  stripe_event_notifications                                                                 stripe_event_notifications?
+  stripe_owned_customers                                                                     stripe_owned_customers?
+  stripe_subscription_cancellations                                                          stripe_subscription_cancellations?
+  stripe_subscription_resumptions                                                            stripe_subscription_resumptions?
+  verified_event_inbox                                                                       verified_event_inbox?
+
+  @@unique([id, scope, kind], map: "durable_operation_scoped_id")
+  @@unique([scope, kind, request_key])
+  @@index([owner_id, created_at(sort: Desc), id], map: "durable_operations_owner")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model entitlement_events {
+  id                 String              @id
+  user_id            String
+  grant_id           String?
+  action             String
+  actor              String
+  reason             String
+  source_kind        String
+  source_key         String
+  created_at         DateTime            @default(now()) @db.Timestamptz(6)
+  entitlement_grants entitlement_grants? @relation(fields: [grant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users              users               @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id, created_at], map: "entitlement_events_owner")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model entitlement_grants {
+  id                 String               @id
+  user_id            String
+  source_kind        String
+  source_key         String
+  policy             String
+  starts_at          BigInt
+  ends_at            BigInt
+  request_hash       String
+  created_at         DateTime             @default(now()) @db.Timestamptz(6)
+  entitlement_events entitlement_events[]
+  users              users                @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([source_kind, source_key])
+  @@index([user_id, ends_at, starts_at], map: "entitlement_owner_window")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model entitlement_revocations {
+  source_kind String
+  source_key  String
+  user_id     String
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@id([source_kind, source_key])
+}
+
+model follows {
+  post_id String
+  user_id String
+  posts   posts  @relation(fields: [post_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users   users  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([post_id, user_id])
+  @@index([user_id, post_id], map: "follows_owner")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model gifts {
+  hash                           String  @id
+  plan                           String
+  creator                        String
+  redeemed_by                    String?
+  created_at                     String
+  users_gifts_creatorTousers     users   @relation("gifts_creatorTousers", fields: [creator], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_gifts_redeemed_byTousers users?  @relation("gifts_redeemed_byTousers", fields: [redeemed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model identity_abuse_buckets {
+  scope       String
+  fingerprint String
+  attempts    Int
+  started     BigInt
+  expires     BigInt
+
+  @@id([scope, fingerprint])
+  @@index([expires], map: "identity_abuse_expiry")
+}
+
+model identity_security_events {
+  id          String   @id
+  user_id     String
+  action      String
+  identity_id String?
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  users       users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model identity_subject_security {
+  issuer            String
+  subject           String
+  auth_cutoff       BigInt @default(0)
+  canonical_version BigInt @default(0)
+  disabled          Int    @default(0)
+
+  @@id([issuer, subject])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model job_operator_events {
+  id                  String             @id
+  operation_id        String
+  actor               String
+  reason              String
+  previous_job_id     String
+  next_job_id         String
+  generation          Int
+  provider_reconciled Int
+  created_at          DateTime           @default(now()) @db.Timestamptz(6)
+  durable_operations  durable_operations @relation(fields: [operation_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model legacy_imports {
+  fingerprint            String                   @id
+  imported_at            DateTime                 @default(now()) @db.Timestamptz(6)
+  summary                Json
+  legacy_state_snapshots legacy_state_snapshots[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model legacy_state_snapshots {
+  user_id            String         @id
+  version            String
+  value              String
+  checksum           String
+  import_fingerprint String
+  legacy_imports     legacy_imports @relation(fields: [import_fingerprint], references: [fingerprint], onDelete: NoAction, onUpdate: NoAction)
+  users              users          @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model managed_accounts {
+  user_id             String              @id
+  status              String
+  contact_email       String?
+  contact_identity_id String?
+  contact_verified    Int                 @default(0)
+  session_epoch       Int                 @default(0)
+  security_cutoff     BigInt              @default(0)
+  admin_revision      Int                 @default(0)
+  users               users               @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  managed_identities  managed_identities? @relation(fields: [contact_identity_id, user_id], references: [id, user_id], onDelete: NoAction, onUpdate: NoAction, map: "managed_contact_owner")
+
+  @@unique([contact_identity_id, user_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model managed_identities {
+  id               String             @id
+  user_id          String
+  issuer           String
+  subject          String
+  provider         String
+  email            String?
+  verified         Int
+  created_at       DateTime           @default(now()) @db.Timestamptz(6)
+  available        Int                @default(1)
+  managed_accounts managed_accounts?
+  users            users              @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  managed_sessions managed_sessions[]
+
+  @@unique([id, user_id])
+  @@unique([issuer, subject])
+  @@index([user_id, id], map: "managed_identities_owner")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model managed_sessions {
+  token              String             @id
+  id                 String             @unique
+  identity_id        String
+  epoch              Int
+  csrf_hash          String
+  authenticated_at   BigInt
+  created_at         BigInt
+  last_used          BigInt
+  mfa_at             BigInt             @default(0)
+  managed_identities managed_identities @relation(fields: [identity_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sessions           sessions           @relation(fields: [token], references: [token], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model mock_sessions {
+  user_id    String
+  id         String
+  value      Json
+  position   Int
+  revision   Int      @default(0)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, id])
+  @@index([user_id, position, id], map: "mock_sessions_owner_order")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model posts {
+  id                       String                    @id
+  kind                     String
+  title                    String
+  body                     String
+  company                  String
+  track                    String
+  level                    String
+  region                   String
+  author                   String
+  author_id                String
+  created_at               String
+  sample                   Int                       @default(0)
+  community_post_revisions community_post_revisions?
+  follows                  follows[]
+  users                    users                     @relation(fields: [author_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  votes                    votes[]
+
+  @@index([created_at(sort: Desc), id(sort: Desc)], map: "posts_created_order")
+  @@index([kind, created_at(sort: Desc), id], map: "posts_kind_order")
+  @@index([author_id, created_at(sort: Desc), id(sort: Desc)], map: "posts_owner_order")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model privacy_deletions {
+  id                 String
+  user_id            String
+  operation_id       String?             @unique
+  state              String              @default("cooling-off")
+  requested_at       DateTime            @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  cancel_before      DateTime            @db.Timestamptz(6)
+  cancelled_at       DateTime?           @db.Timestamptz(6)
+  blocked_at         DateTime?           @db.Timestamptz(6)
+  blockers           Json                @default("[]")
+  durable_operations durable_operations? @relation(fields: [operation_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users              users               @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model privacy_exports {
+  id                 String
+  user_id            String
+  operation_id       String             @unique
+  state              String             @default("requested")
+  requested_at       DateTime           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  ready_at           DateTime?          @db.Timestamptz(6)
+  expires_at         DateTime?          @db.Timestamptz(6)
+  artifact           String?
+  artifact_hash      String?
+  artifact_bytes     Int?
+  durable_operations durable_operations @relation(fields: [operation_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users              users              @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, id])
+  @@index([user_id, requested_at(sort: Desc), id(sort: Desc)], map: "privacy_exports_owner_order")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model project_workspaces {
+  user_id    String
+  id         String
+  value      Json
+  position   Int
+  revision   Int      @default(0)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, id])
+  @@index([user_id, position, id], map: "project_workspaces_owner_order")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model quiz_attempts {
+  user_id    String
+  id         String
+  value      Json
+  position   Int
+  revision   Int      @default(0)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, id])
+  @@index([user_id, position, id], map: "quiz_attempts_owner_order")
+}
+
+model schema_migrations {
+  version    Int      @id
+  name       String
+  checksum   String
+  applied_at DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model sessions {
+  token            String            @id
+  user_id          String
+  expires          BigInt
+  created_at       DateTime          @default(now()) @db.Timestamptz(6)
+  managed_sessions managed_sessions?
+  users            users             @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([expires], map: "sessions_expiry")
+  @@index([user_id], map: "sessions_user")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model staff_audit_events {
+  id              String   @id
+  actor_ref       String
+  actor_role      String?
+  target_ref      String
+  action          String
+  reason          String
+  prior_revision  Int?
+  result_revision Int?
+  created_at      DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+
+  @@index([created_at(sort: Desc), id(sort: Desc)], map: "staff_audit_events_order")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model staff_role_events {
+  id         String    @id
+  user_id    String
+  role       String
+  state      String
+  actor_ref  String
+  reason     String
+  starts_at  DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  ends_at    DateTime? @db.Timestamptz(6)
+  created_at DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  users      users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id, role, created_at(sort: Desc), id(sort: Desc)], map: "staff_role_events_owner")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stories {
+  user_id    String
+  id         String
+  value      Json
+  position   Int
+  revision   Int      @default(0)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, id])
+  @@index([user_id, position, id], map: "stories_owner_order")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stripe_billing_reference {
+  singleton  Int      @id
+  account_id String
+  bound_at   DateTime @default(now()) @db.Timestamptz(6)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stripe_checkout_attempts {
+  id                                                                                   String                              @id
+  customer_ref                                                                         String
+  request_key                                                                          String
+  offer_key                                                                            String
+  price_id                                                                             String
+  origin                                                                               String
+  auth_epoch                                                                           BigInt
+  state                                                                                String
+  operation_id                                                                         String?                             @unique
+  refresh_operation_id                                                                 String?
+  session_id                                                                           String?                             @unique
+  subscription_id                                                                      String?
+  payment_status                                                                       String?
+  hosted_url                                                                           String?
+  currency                                                                             String?
+  unit_amount                                                                          BigInt?
+  expires_at                                                                           BigInt
+  created_at                                                                           DateTime                            @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  observed_at                                                                          DateTime?                           @db.Timestamptz(6)
+  previous_subscription_ref                                                            String?
+  previous_attempt_id                                                                  String?
+  previous_subscription_id                                                             String?
+  recheckout_acknowledged                                                              Int?
+  stripe_owned_customers                                                               stripe_owned_customers              @relation(fields: [customer_ref], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  durable_operations_stripe_checkout_attempts_operation_idTodurable_operations         durable_operations?                 @relation("stripe_checkout_attempts_operation_idTodurable_operations", fields: [operation_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  durable_operations_stripe_checkout_attempts_refresh_operation_idTodurable_operations durable_operations?                 @relation("stripe_checkout_attempts_refresh_operation_idTodurable_operations", fields: [refresh_operation_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  stripe_checkout_attempts                                                             stripe_checkout_attempts?           @relation("stripe_checkout_attemptsTostripe_checkout_attempts", fields: [previous_attempt_id, customer_ref], references: [id, customer_ref], onDelete: NoAction, onUpdate: NoAction, map: "stripe_recheckout_attempt")
+  other_stripe_checkout_attempts                                                       stripe_checkout_attempts[]          @relation("stripe_checkout_attemptsTostripe_checkout_attempts")
+  stripe_owned_subscription_ledger                                                     stripe_owned_subscription_ledger?   @relation(fields: [previous_subscription_ref, customer_ref], references: [id, customer_ref], onDelete: NoAction, onUpdate: NoAction, map: "stripe_recheckout_subscription")
+  stripe_customer_checkout_cursor                                                      stripe_customer_checkout_cursor?
+  stripe_subscription_cancellations                                                    stripe_subscription_cancellations[]
+  stripe_subscription_resumptions                                                      stripe_subscription_resumptions[]
+
+  @@unique([customer_ref, request_key])
+  @@unique([id, customer_ref], map: "stripe_checkout_scope")
+  @@index([state, observed_at], map: "stripe_checkout_refresh")
+}
+
+model stripe_customer_checkout_cursor {
+  customer_ref             String                   @id
+  attempt_id               String
+  stripe_checkout_attempts stripe_checkout_attempts @relation(fields: [attempt_id, customer_ref], references: [id, customer_ref], onDelete: NoAction, onUpdate: NoAction)
+  stripe_owned_customers   stripe_owned_customers   @relation(fields: [customer_ref], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([attempt_id, customer_ref])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stripe_customer_ledger_snapshots {
+  customer_ref           String
+  revision               BigInt
+  operation_id           String                 @unique
+  observed_at            DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  fingerprint            String
+  payload                String
+  stripe_owned_customers stripe_owned_customers @relation(fields: [customer_ref], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  durable_operations     durable_operations     @relation(fields: [operation_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([customer_ref, revision])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stripe_customer_ledger_state {
+  customer_ref           String                 @id
+  requested_revision     BigInt                 @default(0)
+  reconciled_revision    BigInt                 @default(0)
+  operation_id           String?
+  observed_at            DateTime?              @db.Timestamptz(6)
+  snapshot               String?
+  stripe_owned_customers stripe_owned_customers @relation(fields: [customer_ref], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  durable_operations     durable_operations?    @relation(fields: [operation_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stripe_event_notifications {
+  account_id                       String
+  event_id                         String
+  event_type                       String
+  object_id                        String
+  object_kind                      String
+  operation_id                     String                            @unique
+  classification                   String
+  state                            String                            @default("accepted")
+  payload                          String
+  observation                      String?
+  accepted_at                      DateTime                          @default(now()) @db.Timestamptz(6)
+  observed_at                      DateTime?                         @db.Timestamptz(6)
+  durable_operations               durable_operations                @relation(fields: [operation_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  stripe_ledger_notification_links stripe_ledger_notification_links?
+
+  @@id([account_id, event_id])
+  @@index([state, accepted_at], map: "stripe_notification_backlog")
+  @@index([account_id, object_kind, object_id], map: "stripe_notification_object")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stripe_invoice_charge_links {
+  account_id                  String
+  charge_id                   String
+  invoice_id                  String
+  customer_ref                String
+  first_revision              BigInt
+  stripe_owned_invoice_ledger stripe_owned_invoice_ledger @relation(fields: [account_id, invoice_id], references: [account_id, invoice_id], onDelete: NoAction, onUpdate: NoAction)
+  stripe_owned_customers      stripe_owned_customers      @relation(fields: [customer_ref], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([account_id, charge_id, invoice_id])
+  @@index([customer_ref, charge_id], map: "stripe_charge_customer")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stripe_invoice_service_evidence {
+  account_id                  String
+  invoice_id                  String
+  customer_ref                String
+  source_key                  String                      @unique
+  policy_version              String
+  revision                    BigInt
+  payload                     String
+  stripe_owned_invoice_ledger stripe_owned_invoice_ledger @relation(fields: [account_id, invoice_id], references: [account_id, invoice_id], onDelete: NoAction, onUpdate: NoAction)
+  stripe_owned_customers      stripe_owned_customers      @relation(fields: [customer_ref], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([account_id, invoice_id])
+  @@index([customer_ref], map: "stripe_service_customer")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stripe_ledger_notification_links {
+  account_id                 String
+  event_id                   String
+  customer_ref               String
+  revision                   BigInt
+  stripe_event_notifications stripe_event_notifications @relation(fields: [account_id, event_id], references: [account_id, event_id], onDelete: NoAction, onUpdate: NoAction)
+  stripe_owned_customers     stripe_owned_customers     @relation(fields: [customer_ref], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([account_id, event_id])
+  @@index([customer_ref, revision], map: "stripe_ledger_notifications_revision")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stripe_owned_customers {
+  id                                String                              @id
+  account_id                        String
+  user_id                           String?
+  customer_id                       String?
+  state                             String
+  auth_epoch                        BigInt
+  operation_id                      String                              @unique
+  created_at                        DateTime                            @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  stripe_checkout_attempts          stripe_checkout_attempts[]
+  stripe_customer_checkout_cursor   stripe_customer_checkout_cursor?
+  stripe_customer_ledger_snapshots  stripe_customer_ledger_snapshots[]
+  stripe_customer_ledger_state      stripe_customer_ledger_state?
+  stripe_invoice_charge_links       stripe_invoice_charge_links[]
+  stripe_invoice_service_evidence   stripe_invoice_service_evidence[]
+  stripe_ledger_notification_links  stripe_ledger_notification_links[]
+  durable_operations                durable_operations                  @relation(fields: [operation_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users                             users?                              @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  stripe_owned_invoice_ledger       stripe_owned_invoice_ledger[]
+  stripe_owned_subscription_ledger  stripe_owned_subscription_ledger[]
+  stripe_portal_access              stripe_portal_access[]
+  stripe_subscription_cancellations stripe_subscription_cancellations[]
+  stripe_subscription_resumptions   stripe_subscription_resumptions[]
+
+  @@unique([account_id, customer_id])
+  @@unique([account_id, user_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stripe_owned_invoice_ledger {
+  id                              String                           @id
+  customer_ref                    String
+  account_id                      String
+  invoice_id                      String
+  revision                        BigInt
+  created_at_seconds              BigInt
+  status                          String
+  payload                         String
+  stripe_invoice_charge_links     stripe_invoice_charge_links[]
+  stripe_invoice_service_evidence stripe_invoice_service_evidence?
+  stripe_owned_customers          stripe_owned_customers           @relation(fields: [customer_ref], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([account_id, invoice_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stripe_owned_subscription_ledger {
+  id                                String                              @id
+  customer_ref                      String
+  account_id                        String
+  subscription_id                   String
+  revision                          BigInt
+  status                            String
+  payload                           String
+  stripe_checkout_attempts          stripe_checkout_attempts[]
+  stripe_owned_customers            stripe_owned_customers              @relation(fields: [customer_ref], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  stripe_subscription_cancellations stripe_subscription_cancellations[]
+  stripe_subscription_resumptions   stripe_subscription_resumptions[]
+
+  @@unique([account_id, subscription_id])
+  @@unique([id, customer_ref], map: "stripe_subscription_scope")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stripe_portal_access {
+  id                     String                 @id
+  user_id                String?
+  customer_ref           String
+  customer_id            String
+  configuration_id       String
+  origin                 String
+  auth_epoch             BigInt
+  policy_version         String
+  state                  String
+  created_at             DateTime               @db.Timestamptz(6)
+  issued_at              DateTime?              @db.Timestamptz(6)
+  provider_session_id    String?                @unique
+  policy_proof           String?
+  stripe_owned_customers stripe_owned_customers @relation(fields: [customer_ref], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users                  users?                 @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@index([customer_ref, created_at], map: "stripe_portal_customer")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stripe_subscription_cancellations {
+  id                                                                                                                                                                 String                           @id
+  policy_version                                                                                                                                                     String
+  customer_ref                                                                                                                                                       String
+  subscription_ref                                                                                                                                                   String
+  attempt_id                                                                                                                                                         String
+  auth_epoch                                                                                                                                                         BigInt
+  operation_id                                                                                                                                                       String                           @unique
+  state                                                                                                                                                              String
+  created_at                                                                                                                                                         DateTime                         @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  confirmed_at                                                                                                                                                       DateTime?                        @db.Timestamptz(6)
+  result                                                                                                                                                             String?
+  cycle                                                                                                                                                              BigInt                           @default(0)
+  previous_resumption_id                                                                                                                                             String?                          @unique
+  stripe_subscription_resumptions_stripe_subscription_cancellations_previous_resumption_id_customer_ref_subscription_ref_attempt_idTostripe_subscription_resumptions stripe_subscription_resumptions? @relation("stripe_subscription_cancellations_previous_resumption_id_customer_ref_subscription_ref_attempt_idTostripe_subscription_resumptions", fields: [previous_resumption_id, customer_ref, subscription_ref, attempt_id], references: [id, customer_ref, subscription_ref, attempt_id], onDelete: NoAction, onUpdate: NoAction, map: "stripe_cancellation_predecessor")
+  stripe_checkout_attempts                                                                                                                                           stripe_checkout_attempts         @relation(fields: [attempt_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  stripe_owned_customers                                                                                                                                             stripe_owned_customers           @relation(fields: [customer_ref], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  durable_operations                                                                                                                                                 durable_operations               @relation(fields: [operation_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  stripe_owned_subscription_ledger                                                                                                                                   stripe_owned_subscription_ledger @relation(fields: [subscription_ref], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  stripe_subscription_resumptions_stripe_subscription_resumptions_cancellation_id_customer_ref_subscription_ref_attempt_idTostripe_subscription_cancellations        stripe_subscription_resumptions? @relation("stripe_subscription_resumptions_cancellation_id_customer_ref_subscription_ref_attempt_idTostripe_subscription_cancellations")
+
+  @@unique([subscription_ref, cycle], map: "stripe_cancellation_cycle")
+  @@unique([id, customer_ref, subscription_ref, attempt_id], map: "stripe_cancellation_scope")
+  @@unique([previous_resumption_id, customer_ref, subscription_ref, attempt_id])
+  @@index([customer_ref], map: "stripe_cancellation_customer")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stripe_subscription_resumptions {
+  id                                                                                                                                                                   String                             @id
+  policy_version                                                                                                                                                       String
+  customer_ref                                                                                                                                                         String
+  subscription_ref                                                                                                                                                     String
+  attempt_id                                                                                                                                                           String
+  cancellation_id                                                                                                                                                      String                             @unique
+  auth_epoch                                                                                                                                                           BigInt
+  price_id                                                                                                                                                             String
+  offer_key                                                                                                                                                            String
+  currency                                                                                                                                                             String
+  unit_amount                                                                                                                                                          BigInt
+  item_id                                                                                                                                                              String
+  period_start                                                                                                                                                         BigInt
+  period_end                                                                                                                                                           BigInt
+  billing_anchor                                                                                                                                                       BigInt
+  invoice_id                                                                                                                                                           String
+  eligibility_proof                                                                                                                                                    String
+  acknowledged                                                                                                                                                         Int
+  operation_id                                                                                                                                                         String                             @unique
+  state                                                                                                                                                                String
+  created_at                                                                                                                                                           DateTime                           @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  confirmed_at                                                                                                                                                         DateTime?                          @db.Timestamptz(6)
+  result                                                                                                                                                               String?
+  stripe_subscription_cancellations_stripe_subscription_cancellations_previous_resumption_id_customer_ref_subscription_ref_attempt_idTostripe_subscription_resumptions stripe_subscription_cancellations? @relation("stripe_subscription_cancellations_previous_resumption_id_customer_ref_subscription_ref_attempt_idTostripe_subscription_resumptions")
+  stripe_subscription_cancellations_stripe_subscription_resumptions_cancellation_id_customer_ref_subscription_ref_attempt_idTostripe_subscription_cancellations        stripe_subscription_cancellations  @relation("stripe_subscription_resumptions_cancellation_id_customer_ref_subscription_ref_attempt_idTostripe_subscription_cancellations", fields: [cancellation_id, customer_ref, subscription_ref, attempt_id], references: [id, customer_ref, subscription_ref, attempt_id], onDelete: NoAction, onUpdate: NoAction, map: "stripe_subscription_resumptio_cancellation_id_customer_ref_fkey")
+  stripe_checkout_attempts                                                                                                                                             stripe_checkout_attempts           @relation(fields: [attempt_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  stripe_owned_customers                                                                                                                                               stripe_owned_customers             @relation(fields: [customer_ref], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  durable_operations                                                                                                                                                   durable_operations                 @relation(fields: [operation_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  stripe_owned_subscription_ledger                                                                                                                                     stripe_owned_subscription_ledger   @relation(fields: [subscription_ref], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([id, customer_ref, subscription_ref, attempt_id], map: "stripe_subscription_resumptio_id_customer_ref_subscription__key")
+  @@unique([cancellation_id, customer_ref, subscription_ref, attempt_id])
+  @@index([customer_ref], map: "stripe_resumption_customer")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model study_plans {
+  user_id    String
+  id         String
+  value      Json
+  position   Int
+  revision   Int      @default(0)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, id])
+  @@index([user_id, position, id], map: "study_plans_owner_order")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model support {
+  id                               String                 @id
+  user_id                          String?
+  email                            String
+  body                             String
+  created_at                       String
+  request_key                      String?
+  request_hash                     String?
+  handling_status                  String                 @default("open")
+  support_revision                 Int                    @default(0)
+  assigned_to                      String?
+  support_updated_at               DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  users_support_assigned_toTousers users?                 @relation("support_assigned_toTousers", fields: [assigned_to], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_support_user_idTousers     users?                 @relation("support_user_idTousers", fields: [user_id], references: [id], onUpdate: NoAction)
+  support_replies                  support_replies[]
+  support_staff_events             support_staff_events[]
+
+  @@index([assigned_to, handling_status, support_updated_at(sort: Desc), id(sort: Desc)], map: "support_assignee_queue")
+  @@index([handling_status, support_updated_at(sort: Desc), id(sort: Desc)], map: "support_staff_queue")
+  @@index([user_id, created_at, id], map: "support_user")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model support_replies {
+  id           String   @id
+  ticket_id    String
+  request_key  String
+  request_hash String
+  actor_ref    String
+  body         String
+  created_at   DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  support      support  @relation(fields: [ticket_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([ticket_id, request_key])
+  @@index([ticket_id, created_at, id], map: "support_replies_ticket_order")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model support_staff_events {
+  id              String   @id
+  ticket_id       String
+  actor_ref       String
+  actor_role      String
+  action          String
+  reason          String
+  prior_revision  Int
+  result_revision Int
+  created_at      DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  support         support  @relation(fields: [ticket_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([ticket_id, created_at, id], map: "support_staff_events_ticket_order")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model targets {
+  user_id    String
+  id         String
+  value      Json
+  position   Int
+  revision   Int      @default(0)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, id])
+  @@index([user_id, position, id], map: "targets_owner_order")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tutor_messages {
+  user_id    String
+  id         String
+  value      Json
+  position   Int
+  revision   Int      @default(0)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, id])
+  @@index([user_id, position, id], map: "tutor_messages_owner_order")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model user_resources {
+  user_id  String
+  kind     String
+  resource String
+  position Int
+  users    users  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, kind, resource])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model user_settings {
+  user_id         String  @id
+  plan            String  @default("free")
+  plan_expires_at String?
+  recognition     Int     @default(0)
+  revision        Int     @default(0)
+  users           users   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model users {
+  id                                                                             String                          @id
+  name                                                                           String
+  email                                                                          String?                         @unique
+  password                                                                       String?
+  demo                                                                           Int                             @default(0)
+  created_at                                                                     DateTime                        @default(now()) @db.Timestamptz(6)
+  ai_input_snapshots                                                             ai_input_snapshots[]
+  ai_usage_lineages                                                              ai_usage_lineages[]
+  ai_usage_reservations                                                          ai_usage_reservations[]
+  assessment_sessions                                                            assessment_sessions[]
+  attempts                                                                       attempts[]
+  auth_transactions                                                              auth_transactions[]
+  comments                                                                       comments[]
+  community_appeals_community_appeals_assigned_toTousers                         community_appeals[]             @relation("community_appeals_assigned_toTousers")
+  community_appeals_community_appeals_owner_idTousers                            community_appeals[]             @relation("community_appeals_owner_idTousers")
+  community_block_intents                                                        community_block_intents[]
+  community_blocks_community_blocks_owner_idTousers                              community_blocks[]              @relation("community_blocks_owner_idTousers")
+  community_blocks_community_blocks_subject_idTousers                            community_blocks[]              @relation("community_blocks_subject_idTousers")
+  community_comment_deletions                                                    community_comment_deletions[]
+  community_comment_submissions                                                  community_comment_submissions[]
+  community_mute_intents                                                         community_mute_intents[]
+  community_mutes_community_mutes_owner_idTousers                                community_mutes[]               @relation("community_mutes_owner_idTousers")
+  community_mutes_community_mutes_subject_idTousers                              community_mutes[]               @relation("community_mutes_subject_idTousers")
+  community_reports_community_reports_assigned_toTousers                         community_reports[]             @relation("community_reports_assigned_toTousers")
+  community_reports_community_reports_reporter_idTousers                         community_reports[]             @relation("community_reports_reporter_idTousers")
+  community_restriction_appeals_community_restriction_appeals_assigned_toTousers community_restriction_appeals[] @relation("community_restriction_appeals_assigned_toTousers")
+  community_restriction_appeals_community_restriction_appeals_owner_idTousers    community_restriction_appeals[] @relation("community_restriction_appeals_owner_idTousers")
+  community_restrictions                                                         community_restrictions[]
+  completion_records                                                             completion_records[]
+  custom_quizzes                                                                 custom_quizzes[]
+  durable_operations                                                             durable_operations[]
+  entitlement_events                                                             entitlement_events[]
+  entitlement_grants                                                             entitlement_grants[]
+  follows                                                                        follows[]
+  gifts_gifts_creatorTousers                                                     gifts[]                         @relation("gifts_creatorTousers")
+  gifts_gifts_redeemed_byTousers                                                 gifts[]                         @relation("gifts_redeemed_byTousers")
+  identity_security_events                                                       identity_security_events[]
+  legacy_state_snapshots                                                         legacy_state_snapshots?
+  managed_accounts                                                               managed_accounts?
+  managed_identities                                                             managed_identities[]
+  mock_sessions                                                                  mock_sessions[]
+  posts                                                                          posts[]
+  privacy_deletions                                                              privacy_deletions[]
+  privacy_exports                                                                privacy_exports[]
+  project_workspaces                                                             project_workspaces[]
+  quiz_attempts                                                                  quiz_attempts[]
+  sessions                                                                       sessions[]
+  staff_role_events                                                              staff_role_events[]
+  stories                                                                        stories[]
+  stripe_owned_customers                                                         stripe_owned_customers[]
+  stripe_portal_access                                                           stripe_portal_access[]
+  study_plans                                                                    study_plans[]
+  support_support_assigned_toTousers                                             support[]                       @relation("support_assigned_toTousers")
+  support_support_user_idTousers                                                 support[]                       @relation("support_user_idTousers")
+  targets                                                                        targets[]
+  tutor_messages                                                                 tutor_messages[]
+  user_resources                                                                 user_resources[]
+  user_settings                                                                  user_settings?
+  votes                                                                          votes[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model verified_event_inbox {
+  source             String
+  event_id           String
+  payload_hash       String
+  payload            String
+  operation_id       String             @unique
+  received_at        DateTime           @default(now()) @db.Timestamptz(6)
+  durable_operations durable_operations @relation(fields: [operation_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([source, event_id])
+}
+
+model votes {
+  post_id String
+  user_id String
+  posts   posts  @relation(fields: [post_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users   users  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([post_id, user_id])
+}

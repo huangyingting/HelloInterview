@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight, CalendarDays, Check, ClipboardCheck, Code2, Download, MessageSquare, Target, Volume2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from '../navigation';
 import { companies, levels, practiceLabels, problems } from "../../shared/public-catalog";
 import { companyProblems, mockReport, planTaskComplete } from '../../shared/premium';
 import type { MockSession, PlanTask, StudyPlan, UserState } from '../../shared/types';

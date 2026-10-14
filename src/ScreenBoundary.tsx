@@ -1,5 +1,5 @@
 import { Component, useCallback, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from './navigation';
 
 interface ScreenFocusProps { focusKey: string; onReady: () => void }
 interface ScreenBoundaryProps extends ScreenFocusProps { children: ReactNode; resetKey: string }

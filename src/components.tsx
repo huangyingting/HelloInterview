@@ -34,13 +34,13 @@ export function BookmarkButton({ resource }: { resource: string }) {
   const saved = data.state.bookmarks.includes(resource);
   return <button className={`icon-button ${saved ? 'active' : ''}`} aria-label={saved ? 'Remove bookmark' : 'Bookmark lesson'} aria-pressed={saved} disabled={pending} onClick={() => act(async () => setState(await request<UserState>('/api/progress', { key: resource, field: 'bookmarks', enabled: !saved })))}><Bookmark size={19} fill={saved ? 'currentColor' : 'none'} /></button>;
 }
-const CommentOwner = lazy(() => import('./pages/CommunityOwner').then(module => ({ default: module.CommentOwner })));
-const CommentComposer = lazy(() => import('./pages/CommunitySubmissions').then(module => ({ default: module.CommentComposer })));
-const SubmissionHistory = lazy(() => import('./pages/CommunitySubmissions').then(module => ({ default: module.CommentSubmissionHistory })));
-const CommunityReportControl = lazy(() => import('./pages/CommunityReport').then(module => ({default:module.CommunityReportControl})));
-const CommunityAppealControl = lazy(() => import('./pages/CommunityReport').then(module => ({default:module.CommunityAppealControl})));
-const CommunityMuteControl = lazy(() => import('./pages/CommunityReport').then(module => ({default:module.CommunityMuteControl})));
-const CommunityBlockControl = lazy(() => import('./pages/CommunityReport').then(module => ({default:module.CommunityBlockControl})));
+const CommentOwner = lazy(() => import('./screens/CommunityOwner').then(module => ({ default: module.CommentOwner })));
+const CommentComposer = lazy(() => import('./screens/CommunitySubmissions').then(module => ({ default: module.CommentComposer })));
+const SubmissionHistory = lazy(() => import('./screens/CommunitySubmissions').then(module => ({ default: module.CommentSubmissionHistory })));
+const CommunityReportControl = lazy(() => import('./screens/CommunityReport').then(module => ({default:module.CommunityReportControl})));
+const CommunityAppealControl = lazy(() => import('./screens/CommunityReport').then(module => ({default:module.CommunityAppealControl})));
+const CommunityMuteControl = lazy(() => import('./screens/CommunityReport').then(module => ({default:module.CommunityMuteControl})));
+const CommunityBlockControl = lazy(() => import('./screens/CommunityReport').then(module => ({default:module.CommunityBlockControl})));
 export function CommentSubmissionHistory({resource}:{resource?:string}) {
   const [opened,setOpened]=useState(false);
   return opened?<Suspense fallback={<p role="status">Loading submission history controls...</p>}><SubmissionHistory resource={resource}/></Suspense>:<button className="text-button" onClick={()=>setOpened(true)}>View comment submission history</button>;

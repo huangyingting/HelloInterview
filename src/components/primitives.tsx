@@ -1,6 +1,6 @@
 import { ChevronRight, Sparkles, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '../navigation';
 
 export function IconTile({ icon: Icon, color = 'var(--accent)', small = false }: { icon: LucideIcon; color?: string; small?: boolean }) {
   return <span className={`icon-tile ${small ? 'small' : ''}`} style={{ color, background: `color-mix(in srgb, ${color} 11%, var(--surface))` }}><Icon size={small ? 18 : 23} strokeWidth={1.7} /></span>;

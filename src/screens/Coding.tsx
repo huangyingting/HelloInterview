@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, BookOpen, Code2 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link } from '../navigation';
 import { getTrack, problems } from "../../shared/public-catalog";
 import { Badge, ContentSections, NotFound, PageHeading, PremiumGate, SourceLinks } from '../components';
 import { useStudio } from '../store';

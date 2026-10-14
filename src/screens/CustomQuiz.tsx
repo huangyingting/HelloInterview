@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight, Check, ClipboardCheck } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from '../navigation';
 import { quizTopics } from "../../shared/public-catalog";
 import { customQuestionPool } from '../../shared/premium';
 import type { CustomQuiz, QuestionPrompt, QuizQuestion, UserState } from '../../shared/types';

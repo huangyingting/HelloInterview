@@ -1,5 +1,5 @@
 import {useEffect,useState} from 'react';
-import {Link} from 'react-router-dom';
+import {Link} from '../navigation';
 import type {
   StaffAccount,StaffAuditPage,StaffCommunityAppeal,StaffCommunityAppealPage,StaffCommunityReport,StaffCommunityReportPage,
   StaffCommunityRestriction,StaffCommunityRestrictionAppeal,StaffCommunityRestrictionAppealPage,

@@ -1,6 +1,6 @@
 import { ArrowRight, BookOpen, CalendarDays, Check, ChevronRight, CircleCheck, Code2, Flame, GraduationCap, Layers3, Lightbulb, MessageSquare, Network, Plus, Rocket, Sparkles, Target, Trash2, Trophy } from 'lucide-react';
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from '../navigation';
 import { companies, levels, tracks } from "../../shared/public-catalog";
 import { courseCompletion, courseStepComplete, currentStreak } from '../../shared/domain';
 import { courses } from "../../shared/public-catalog";

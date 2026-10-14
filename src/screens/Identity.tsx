@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from '../navigation';
 import { Download, ShieldCheck, Trash2 } from 'lucide-react';
 import type { IdentitySecurity, PrivacyDeletionView, PrivacyExportHistory } from '../../shared/types';
 import { proCapabilities } from '../../shared/access';

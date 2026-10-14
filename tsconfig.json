@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "react-jsx",
@@ -13,5 +17,6 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src", "server", "shared", "scripts", "tests", "*.ts"]
+  "include": ["src", "server", "shared", "scripts", "tests", "*.ts"],
+  "exclude": ["node_modules", "app", "next-env.d.ts", "next.config.ts", "tsconfig.next.json"]
 }

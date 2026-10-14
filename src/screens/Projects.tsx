@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight, Code2, Download, FileCode2, Plus, Save, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from '../navigation';
 import { problems } from "../../shared/public-catalog";
 import { projectPatch, sourcePathIssue } from '../../shared/premium';
 import type { PracticeProblem, ProjectFile, ProjectWorkspace, UserState } from '../../shared/types';

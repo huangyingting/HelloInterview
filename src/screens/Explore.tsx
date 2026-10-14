@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight, BookOpen, CalendarDays, Check, ChevronRight, Download, Gift, GraduationCap, KeyRound, LifeBuoy, LockKeyhole, Mail, MessageSquare, Search, Send, Settings2, ShieldCheck, Sparkles, Trash2, UserRound } from 'lucide-react';
 import { startTransition, useEffect, useOptimistic, useRef, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from '../navigation';
 import { companies, levels, practiceLabels, problems, tracks } from "../../shared/public-catalog";
 import { hasPremium } from '../../shared/domain';
 import { courses } from "../../shared/public-catalog";

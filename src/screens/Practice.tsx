@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowLeft, ArrowRight, BookOpen, Check, ChevronDown, Clock3, Code2, Download, History, Lightbulb, LockKeyhole, Maximize2, Network, Pause, Play, Plus, Save, Search, Send, Sparkles, Trash2, Volume2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from '../navigation';
 import { companies, levels, practiceLabels, practiceTracks, problems } from "../../shared/public-catalog";
 import type { Attempt, DiagramNode, PracticeProblem, Story, UserState } from '../../shared/types';
 import { AuthPrompt, Badge, Empty, IconTile, NotFound, PageHeading, PremiumGate, ReadButton } from '../components';

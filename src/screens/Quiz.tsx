@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight, Check, ChevronRight, ClipboardCheck, Clock3, History, RotateCcw, Sparkles, X } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from '../navigation';
 import { questionIndex, quizTopics } from "../../shared/public-catalog";
 import type { QuestionPrompt, QuizQuestion, QuizReport, QuizSessionView, UserState } from '../../shared/types';
 import { AuthPrompt, Badge, Empty, IconTile, NotFound, PageHeading, Progress, SourceLinks } from '../components';
