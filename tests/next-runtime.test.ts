@@ -35,6 +35,7 @@ import { DELETE as deleteTargetRoute } from '../app/api/targets/[id]/route';
 import { POST as saveStoryRoute } from '../app/api/stories/route';
 import { DELETE as deleteStoryRoute } from '../app/api/stories/[id]/route';
 import { POST as saveAttemptRoute } from '../app/api/attempts/route';
+import { POST as evaluateAttemptRoute } from '../app/api/attempts/[id]/evaluate/route';
 import { postgresConnection } from '../server/db/connection';
 import { migrateDatabase } from '../server/db/migrations';
 import { prismaConnection } from '../server/db/prisma';
@@ -402,6 +403,29 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     body: JSON.stringify({ ...attemptInput, id: attemptId, answer: `${attemptInput.answer} Cache hot redirects.` }),
   }));
   assert.equal((await updatedAttemptResponse.json()).attempt.revision, 1);
+  const evaluatedAttemptResponse = await evaluateAttemptRoute(new Request(
+    `https://studio.fixture/api/attempts/${attemptId}/evaluate`,
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: '{}',
+    },
+  ), { params: Promise.resolve({ id: attemptId }) });
+  const evaluatedAttemptState = await evaluatedAttemptResponse.json();
+  const evaluatedAttempt = evaluatedAttemptState.attempts.find((attempt: { id: string }) => attempt.id === attemptId);
+  assert.equal(evaluatedAttemptResponse.status, 200);
+  assert.equal(evaluatedAttempt.completed, true);
+  assert.equal(evaluatedAttempt.feedback.source, 'rubric');
+  const repeatedEvaluation = await evaluateAttemptRoute(new Request(
+    `https://studio.fixture/api/attempts/${attemptId}/evaluate`,
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: '{}',
+    },
+  ), { params: Promise.resolve({ id: attemptId }) });
+  const repeatedEvaluationState = await repeatedEvaluation.json();
+  assert.equal(repeatedEvaluationState.recognition, evaluatedAttemptState.recognition);
   const staleAttempt = await saveAttemptRoute(new Request('https://studio.fixture/api/attempts', {
     method: 'POST',
     headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },

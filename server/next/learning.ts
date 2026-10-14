@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Capability } from '../../shared/access';
 import { getTrack, levels, problems, quizQuestions, quizTopics } from '../../shared/catalog';
-import { courseCompletion } from '../../shared/domain';
+import { assessAnswer, courseCompletion } from '../../shared/domain';
 import { courses } from '../../shared/courses';
 import type { Attempt, UserState } from '../../shared/types';
 import type { ManagedAuthSession } from '../auth/adapter';
@@ -305,6 +305,39 @@ export async function saveAttempt(request: Request, input: unknown) {
     current.attempts.unshift(draft);
   });
   return { state, attempt: state.attempts.find(attempt => attempt.id === id)! };
+}
+
+export async function evaluateAttempt(request: Request, id: string, input: unknown) {
+  checked(z.strictObject({}), input, 'Use an empty request body to evaluate the saved practice draft.');
+  const attemptId = checked(z.string().min(1).max(80), id, 'Invalid attempt.');
+  return accountOperation(request, true, async (db, session) => {
+    const states = new StateRepository(db);
+    const current = await states.read(session.userId);
+    const attempt = current.attempts.find(candidate => candidate.id === attemptId);
+    if (!attempt) throw new HttpError(404, 'Attempt not found.');
+    const problem = problems.find(candidate => candidate.id === attempt.problemId);
+    if (!problem) throw new Error('The saved practice problem is unavailable.');
+    const entitlements = new Entitlements(db);
+    if (problem.premium) await entitlements.assert(session.userId, 'practice.premium.create');
+    const answer = [attempt.answer, attempt.code, attempt.nodes.map(node => node.label).join(', ')].join('\n');
+    if (answer.trim().length < 30) {
+      throw new HttpError(400, 'Add at least 30 characters of explanation or code before requesting feedback.');
+    }
+    const feedback = assessAnswer(problem, answer);
+    const state = await states.mutate(session.userId, savedState => {
+      const saved = savedState.attempts.find(candidate => candidate.id === attempt.id);
+      if (!saved || JSON.stringify(saved) !== JSON.stringify(attempt)) {
+        throw new HttpError(409, 'Your attempt changed while grading. Request feedback again for the saved version.');
+      }
+      if (!saved.completed) savedState.recognition += 5;
+      saved.feedback = feedback;
+      saved.completed = true;
+      saved.revision = (saved.revision ?? 0) + 1;
+      recordActivity(savedState);
+    });
+    if (problem.premium) await entitlements.assert(session.userId, 'practice.premium.create');
+    return state;
+  });
 }
 
 function quizTopic(value: string) {
