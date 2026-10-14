@@ -75,6 +75,14 @@ import { POST as createProjectRoute } from '../app/api/projects/route';
 import { POST as saveProjectRoute } from '../app/api/projects/[id]/save/route';
 import { POST as reviewProjectRoute } from '../app/api/projects/[id]/review/route';
 import { DELETE as clearTutorRoute, POST as askTutorRoute } from '../app/api/tutor/route';
+import { GET as staffSessionRoute } from '../app/api/staff/session/route';
+import { GET as staffAccountsRoute } from '../app/api/staff/accounts/route';
+import { GET as staffAuditRoute } from '../app/api/staff/audit/route';
+import { GET as staffSupportRoute } from '../app/api/staff/support/route';
+import { GET as staffReportsRoute } from '../app/api/staff/community/reports/route';
+import { GET as staffAppealsRoute } from '../app/api/staff/community/appeals/route';
+import { GET as staffRestrictionsRoute } from '../app/api/staff/community/restrictions/route';
+import { GET as staffRestrictionAppealsRoute } from '../app/api/staff/community/restriction-appeals/route';
 import { postgresConnection } from '../server/db/connection';
 import { migrateDatabase } from '../server/db/migrations';
 import { prismaConnection } from '../server/db/prisma';
@@ -475,6 +483,7 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
   assert.deepEqual(await deletedPostResponse.json(), { deleted: true });
   const restrictionId = randomUUID();
   const now = new Date();
+  const restrictionExpires = new Date(now.getTime() + 3600000).toISOString();
   await db.prepare(`INSERT INTO community_restrictions
     (id,subject_id,source_report_id,scope,state,revision,starts_at,expires_at,created_at,updated_at)
     VALUES(?::uuid,?,?::uuid,'participation','active',1,?,?,?,?)`).run(
@@ -482,8 +491,19 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     authOwner,
     reportReceipt.id,
     now.toISOString(),
-    new Date(now.getTime() + 3600000).toISOString(),
+    restrictionExpires,
     now.toISOString(),
+    now.toISOString(),
+  );
+  await db.prepare(`INSERT INTO community_restriction_events
+    (id,restriction_id,source_report_id,actor_ref,actor_role,action,reason,prior_revision,result_revision,
+      prior_expires_at,result_expires_at,result_state,created_at)
+    VALUES(?::uuid,?::uuid,?::uuid,'fixture.bootstrap','administrator','restrict',?,0,1,NULL,?,'active',?)`).run(
+    randomUUID(),
+    restrictionId,
+    reportReceipt.id,
+    'Record a reviewed fixture restriction before exercising staff queue reads.',
+    restrictionExpires,
     now.toISOString(),
   );
   const restrictionStatus = await communityRestrictionsRoute(new Request(
@@ -512,6 +532,61 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     { headers: { Cookie: accountCookies } },
   ));
   assert.equal((await restrictionAppealHistory.json()).appeals[0].id, restrictionAppeal.id);
+  await db.prepare(`INSERT INTO staff_role_events(id,user_id,role,state,actor_ref,reason,ends_at)
+    VALUES(?,?,'administrator','granted','fixture.bootstrap',?,clock_timestamp()+interval '1 day')`).run(
+    randomUUID(),
+    authOwner,
+    'Grant bounded fixture administration access for Next.js staff read acceptance.',
+  );
+  await db.prepare(`INSERT INTO staff_audit_events(id,actor_ref,actor_role,target_ref,action,reason)
+    VALUES(?,'fixture.bootstrap',NULL,?,'staff.role.granted',?)`).run(
+    randomUUID(),
+    authOwner,
+    'Record the bounded fixture staff grant for immutable read-surface acceptance.',
+  );
+  await db.prepare(`UPDATE managed_sessions SET authenticated_at=${'floor(extract(epoch from clock_timestamp())*1000)::bigint'},
+    mfa_at=${'floor(extract(epoch from clock_timestamp())*1000)::bigint'} WHERE token=?`).run(storedToken);
+  const staffSessionResponse = await staffSessionRoute(new Request('https://studio.fixture/api/staff/session', {
+    headers: { Cookie: accountCookies },
+  }));
+  assert.deepEqual(await staffSessionResponse.json(), {
+    roles: ['administrator'],
+    mfa: true,
+    fresh: true,
+  });
+  const staffAccountsResponse = await staffAccountsRoute(new Request(
+    'https://studio.fixture/api/staff/accounts?email=next-auth-owner%40example.test',
+    { headers: { Cookie: accountCookies } },
+  ));
+  assert.equal((await staffAccountsResponse.json()).accounts[0].id, authOwner);
+  const staffAuditResponse = await staffAuditRoute(new Request('https://studio.fixture/api/staff/audit', {
+    headers: { Cookie: accountCookies },
+  }));
+  assert.equal((await staffAuditResponse.json()).events[0].action, 'staff.role.granted');
+  const staffSupportResponse = await staffSupportRoute(new Request('https://studio.fixture/api/staff/support', {
+    headers: { Cookie: accountCookies },
+  }));
+  assert.deepEqual((await staffSupportResponse.json()).tickets, []);
+  const staffReportsResponse = await staffReportsRoute(new Request(
+    'https://studio.fixture/api/staff/community/reports',
+    { headers: { Cookie: accountCookies } },
+  ));
+  assert.equal((await staffReportsResponse.json()).reports[0].id, reportReceipt.id);
+  const staffAppealsResponse = await staffAppealsRoute(new Request(
+    'https://studio.fixture/api/staff/community/appeals',
+    { headers: { Cookie: accountCookies } },
+  ));
+  assert.equal((await staffAppealsResponse.json()).appeals[0].id, appealReceipt.id);
+  const staffRestrictionsResponse = await staffRestrictionsRoute(new Request(
+    'https://studio.fixture/api/staff/community/restrictions',
+    { headers: { Cookie: accountCookies } },
+  ));
+  assert.equal((await staffRestrictionsResponse.json()).restrictions[0].id, restrictionId);
+  const staffRestrictionAppealsResponse = await staffRestrictionAppealsRoute(new Request(
+    'https://studio.fixture/api/staff/community/restriction-appeals',
+    { headers: { Cookie: accountCookies } },
+  ));
+  assert.equal((await staffRestrictionAppealsResponse.json()).appeals[0].id, restrictionAppeal.id);
   const missingLearningCsrf = await updateProgressRoute(new Request('https://studio.fixture/api/progress', {
     method: 'POST',
     headers: { Cookie: accountCookies, 'Content-Type': 'application/json' },

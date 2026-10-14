@@ -3,7 +3,12 @@ import {z} from 'zod';
 import type {StaffAccount,StaffAuditEvent,StaffAuditPage,StaffRole,User} from '../shared/types';
 import type {Database} from './db/connection';
 import {HttpError} from './http-error';
-import type {ManagedIdentity} from './identity';
+
+export interface StaffIdentityAuthority {
+  assertDatabase(db:Database):void;
+  assertStaff(user:User):Promise<void>;
+  staffRoles(owner:string):Promise<StaffRole[]>;
+}
 
 export const staffRoleSchema=z.enum(['support-agent','moderator','content-editor','billing-operator','administrator']);
 const allRoles=staffRoleSchema.options;
@@ -34,7 +39,7 @@ function audit(row:Record<string,unknown>):StaffAuditEvent {
 }
 
 export class StaffAdministration {
-  constructor(private readonly db:Database,private readonly identity:ManagedIdentity) {
+  constructor(private readonly db:Database,private readonly identity:StaffIdentityAuthority) {
     if(db.dialect!=='postgres')throw new Error('Staff administration requires controlled PostgreSQL.');
     identity.assertDatabase(db);
   }

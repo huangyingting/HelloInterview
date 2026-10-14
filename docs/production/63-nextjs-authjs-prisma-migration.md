@@ -38,10 +38,13 @@ not a launch or cutover:
 - post creation, exact desired-state votes and follows, durable comment
   submissions, direct compatibility comments and revision-fenced owner
   editing/deletion now use Route Handlers and the same transaction adapter;
+- Auth.js staff sessions can now read role, exact-account, immutable-audit,
+  support, moderation, appeal and restriction queues through a shared
+  fresh-sign-in and recent-MFA authority;
 - anonymous managed support remains fail-closed until trusted edge address
   handling can restore network-scoped abuse protection;
-- staff community moderation, managed-AI feedback and the remaining
-  administrative and commercial surfaces still block participant access;
+- staff mutations, managed-AI feedback and the remaining administrative and
+  commercial surfaces still block participant access;
 - Caddy must continue returning the hardened unavailable response.
 
 ## Final architecture
@@ -250,6 +253,11 @@ Contribution routes preserve opaque identifiers, participation restrictions,
 anonymous question attribution, mute and block visibility, immutable comment
 submission receipts, owner-only revisions, tombstone deletion and atomic
 recognition updates.
+Staff read authority requires an active verified account, a session created
+within 12 hours, activity within 30 minutes, sign-in and MFA within 10 minutes,
+an unexpired role grant and account-scoped admission. Auth.js does not yet
+provide the MFA enrollment/challenge flow, so this remains fail-closed unless a
+session already has reviewed MFA evidence.
 
 Before participant launch, the remaining security surfaces must:
 

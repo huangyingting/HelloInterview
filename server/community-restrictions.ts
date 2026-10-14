@@ -7,8 +7,8 @@ import type {
   StaffCommunityRestrictionPage,StaffRole,User,
 } from '../shared/types';
 import type {Database} from './db/connection';
-import type {ManagedIdentity} from './identity';
 import {HttpError} from './http-error';
+import type {StaffIdentityAuthority} from './staff';
 import {communityPageCursor} from './community';
 import {digest,encodePayload} from './jobs/schema';
 
@@ -79,7 +79,7 @@ const staffAppealCursor=z.strictObject({
 });
 
 export class CommunityRestrictions {
-  constructor(private readonly db:Database,private readonly identity:ManagedIdentity|null) {}
+  constructor(private readonly db:Database,private readonly identity:StaffIdentityAuthority|null) {}
   private async clock() {
     const row=await this.db.prepare(this.db.dialect==='postgres'
       ?'SELECT clock_timestamp() AS now'

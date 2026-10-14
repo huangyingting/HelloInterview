@@ -6,8 +6,8 @@ import type {
   CommunitySpamTriageSignal,StaffCommunityReport,StaffCommunityReportPage,StaffRole,User,
 } from '../shared/types';
 import type {Database} from './db/connection';
-import type {ManagedIdentity} from './identity';
 import {HttpError} from './http-error';
+import type {StaffIdentityAuthority} from './staff';
 import {communityIdentifierSchema,communityPageCursor} from './community';
 import {digest,encodePayload} from './jobs/schema';
 import {classifyCommunitySpam,communitySpamTriageVersion} from './community-spam-triage';
@@ -81,7 +81,7 @@ const boolean=(db:Database)=>db.dialect==='postgres'?'?::boolean':'?';
 const flag=(db:Database,value:boolean)=>db.dialect==='postgres'?String(value):Number(value);
 
 export class CommunityModeration {
-  constructor(private readonly db:Database,private readonly identity:ManagedIdentity|null) {}
+  constructor(private readonly db:Database,private readonly identity:StaffIdentityAuthority|null) {}
   private async lockTarget(type:'post'|'comment',id:string) {
     if(this.db.dialect!=='postgres')return;
     const value=parseInt(digest(`${type}:${id}`).slice(0,8),16),key=value>2147483647?value-4294967296:value;
