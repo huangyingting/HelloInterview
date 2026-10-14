@@ -20,6 +20,8 @@ import { GET as privacyExportsRoute, POST as requestPrivacyExportRoute } from '.
 import { GET as downloadPrivacyExportRoute } from '../app/api/privacy/exports/[id]/download/route';
 import { GET as privacyDeletionRoute, POST as requestPrivacyDeletionRoute } from '../app/api/privacy/deletion/route';
 import { POST as cancelPrivacyDeletionRoute } from '../app/api/privacy/deletion/cancel/route';
+import { POST as saveSupportRoute } from '../app/api/support/route';
+import { GET as supportHistoryRoute } from '../app/api/support/requests/route';
 import { postgresConnection } from '../server/db/connection';
 import { migrateDatabase } from '../server/db/migrations';
 import { prismaConnection } from '../server/db/prisma';
@@ -326,6 +328,22 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     headers: { Cookie: accountCookies },
   }));
   assert.equal((await deletionStatus.json()).deletion.id, deletionId);
+  const deletionPendingSupport = await saveSupportRoute(new Request('https://studio.fixture/api/support', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({
+      key: '33333333-3333-4333-8333-333333333333',
+      email: 'next-auth-owner@example.test',
+      body: 'A deletion-pending owner can still ask for help with the account deletion lifecycle.',
+    }),
+  }));
+  assert.equal(deletionPendingSupport.status, 200);
+  const deletionPendingProfile = await profileRoute(new Request('https://studio.fixture/api/profile', {
+    method: 'PATCH',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ name: 'Must Not Change During Deletion' }),
+  }));
+  assert.equal(deletionPendingProfile.status, 403);
   const cancellation = await cancelPrivacyDeletionRoute(new Request(
     'https://studio.fixture/api/privacy/deletion/cancel',
     {
@@ -337,8 +355,120 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
   assert.equal(cancellation.status, 200);
   assert.equal((await cancellation.json()).status, 'cancelled');
   assert.equal((await db.prepare('SELECT status FROM managed_accounts WHERE user_id=?').get(authOwner))?.status, 'active');
+  const supportBody = 'A private support request that remains available when product access is restricted.';
+  const supportRequest = await saveSupportRoute(new Request('https://studio.fixture/api/support', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({
+      key: '66666666-6666-4666-8666-666666666666',
+      email: 'next-auth-owner@example.test',
+      body: supportBody,
+    }),
+  }));
+  assert.equal(supportRequest.status, 200);
+  const supportId = (await supportRequest.json()).id;
+  const exactRetry = await saveSupportRoute(new Request('https://studio.fixture/api/support', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({
+      key: '66666666-6666-4666-8666-666666666666',
+      email: 'next-auth-owner@example.test',
+      body: supportBody,
+    }),
+  }));
+  assert.equal((await exactRetry.json()).id, supportId);
+  const conflictingRetry = await saveSupportRoute(new Request('https://studio.fixture/api/support', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({
+      key: '66666666-6666-4666-8666-666666666666',
+      email: 'next-auth-owner@example.test',
+      body: `${supportBody} This changed payload must not replace the original request.`,
+    }),
+  }));
+  assert.equal(conflictingRetry.status, 409);
+  const supportHistory = await supportHistoryRoute(new Request('https://studio.fixture/api/support/requests', {
+    headers: { Cookie: accountCookies },
+  }));
+  assert.equal((await supportHistory.json()).tickets[0].id, supportId);
+  await db.prepare("UPDATE managed_accounts SET status='pending-verification' WHERE user_id=?").run(authOwner);
+  const pendingSupport = await saveSupportRoute(new Request('https://studio.fixture/api/support', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({
+      key: '88888888-8888-4888-8888-888888888888',
+      email: 'next-auth-owner@example.test',
+      body: 'A pending-verification owner can still ask for help completing account admission.',
+    }),
+  }));
+  assert.equal(pendingSupport.status, 200);
+  await db.prepare("UPDATE managed_accounts SET status='suspended' WHERE user_id=?").run(authOwner);
+  const restrictedSupport = await saveSupportRoute(new Request('https://studio.fixture/api/support', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({
+      key: '77777777-7777-4777-8777-777777777777',
+      email: 'next-auth-owner@example.test',
+      body: 'A restricted owner can still save this private support request without product-write authority.',
+    }),
+  }));
+  assert.equal(restrictedSupport.status, 200);
+  const restrictedProfile = await profileRoute(new Request('https://studio.fixture/api/profile', {
+    method: 'PATCH',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ name: 'Must Not Change' }),
+  }));
+  assert.equal(restrictedProfile.status, 403);
+  await db.prepare("UPDATE managed_accounts SET status='active' WHERE user_id=?").run(authOwner);
+  for (let index = 0; index < 10; index += 1) {
+    await db.prepare(`INSERT INTO support(id,user_id,email,body,created_at)
+      VALUES(?,?,?,?,?)`).run(`next-owned-support-${index}`, authOwner, 'next-auth-owner@example.test',
+      `A paginated owned support fixture request number ${index} with enough detail for validation.`,
+      `2026-12-${String(index + 1).padStart(2, '0')}T00:00:00.000Z`);
+  }
+  const pagedHistory = await supportHistoryRoute(new Request('https://studio.fixture/api/support/requests', {
+    headers: { Cookie: accountCookies },
+  }));
+  const pagedHistoryPayload = await pagedHistory.json();
+  assert.equal(pagedHistoryPayload.tickets.length, 10);
+  assert.equal(typeof pagedHistoryPayload.nextCursor, 'string');
+  const crossOwnerCursor = JSON.parse(Buffer.from(pagedHistoryPayload.nextCursor, 'base64url').toString('utf8'));
+  crossOwnerCursor.owner = 'different-support-owner';
+  const rejectedCursor = await supportHistoryRoute(new Request(
+    `https://studio.fixture/api/support/requests?cursor=${Buffer.from(JSON.stringify(crossOwnerCursor)).toString('base64url')}`,
+    { headers: { Cookie: accountCookies } },
+  ));
+  assert.equal(rejectedCursor.status, 400);
+  const anonymousSupport = await saveSupportRoute(new Request('https://studio.fixture/api/support', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: 'anonymous@example.test',
+      body: 'Anonymous managed support is intentionally unavailable until trusted edge protection exists.',
+    }),
+  }));
+  assert.equal(anonymousSupport.status, 401);
+  let limitedSupport: Response | undefined;
+  for (let attempt = 0; attempt < 31; attempt += 1) {
+    const response = await saveSupportRoute(new Request('https://studio.fixture/api/support', {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ key: randomUUID(), email: 'invalid', body: 'invalid' }),
+    }));
+    if (response.status === 429) {
+      limitedSupport = response;
+      break;
+    }
+    assert.equal(response.status, 400);
+  }
+  assert.equal(limitedSupport?.status, 429);
+  assert.match(limitedSupport?.headers.get('Retry-After') ?? '', /^\d+$/);
   await db.prepare('UPDATE managed_sessions SET last_used=0 WHERE token=?').run(storedToken);
   assert.equal(await adapter.getSessionAndUser!(sessionToken), null);
+  const expiredSupport = await supportHistoryRoute(new Request('https://studio.fixture/api/support/requests', {
+    headers: { Cookie: accountCookies },
+  }));
+  assert.equal(expiredSupport.status, 401);
   await db.prepare(`UPDATE managed_sessions SET last_used=floor(extract(epoch from clock_timestamp())*1000)::bigint
     WHERE token=?`).run(storedToken);
   await db.prepare('UPDATE managed_accounts SET session_epoch=session_epoch+1 WHERE user_id=?').run(authOwner);

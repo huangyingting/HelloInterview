@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { StaffRole, StaffSupportPage, StaffSupportTicket, SupportHistory, SupportReceipt, SupportReply, User } from '../shared/types';
 import type { Database } from './db/connection';
-import type { ManagedIdentity } from './identity';
 import { HttpError } from './http-error';
 import { digest, encodePayload } from './jobs/schema';
 
@@ -11,6 +10,12 @@ const bodySchema = z.string().min(20).max(10000).refine(value => !value.includes
 const contactSchema = z.strictObject({ email: z.string().trim().pipe(emailSchema), body: z.string().max(10000).trim().pipe(bodySchema) });
 export const supportRequestSchema = contactSchema.extend({ key: z.uuid().transform(key => key.toLowerCase()) });
 export const supportContactSchema = contactSchema;
+export interface SupportIdentityAuthority {
+  assertDatabase(db: Database): void;
+  assertSupport(user: User): Promise<void>;
+  assertStaff(user: User): Promise<void>;
+  staffRoles(owner: string): Promise<StaffRole[]>;
+}
 const identifier = z.string().min(1).max(200);
 const rowSchema = z.object({ id: identifier, email: emailSchema, body: bodySchema,
   user_id:z.string().nullable(),
@@ -43,7 +48,7 @@ function maskEmail(value:string) {
 }
 
 export class SupportRequests {
-  constructor(private readonly db: Database, private readonly identity: ManagedIdentity) {
+  constructor(private readonly db: Database, private readonly identity: SupportIdentityAuthority) {
     if (db.dialect !== 'postgres') throw new Error('Managed support receipts require controlled PostgreSQL.');
     identity.assertDatabase(db);
   }

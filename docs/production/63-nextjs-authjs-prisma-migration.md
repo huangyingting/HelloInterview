@@ -2,10 +2,11 @@
 
 ## Status
 
-Implementation is in progress. Commits `e56d67d` through `2e50595` established
-the App Router, Prisma foundation, Auth.js social admission, service bootstrap
-and public content/community read APIs without changing the operated Azure 503
-boundary. The current durable-session checkpoint is not a launch or cutover:
+Implementation is in progress. The migration checkpoints have established the
+App Router, Prisma foundation, Auth.js social admission, service bootstrap,
+public content/community reads, durable account security, privacy lifecycle and
+owned support APIs without changing the operated Azure 503 boundary. This is
+not a launch or cutover:
 
 - the current Express application remains the deployed artifact;
 - the Next.js UI shell builds and serves deep links, but authenticated writes
@@ -22,8 +23,12 @@ boundary. The current durable-session checkpoint is not a launch or cutover:
 - durable privacy export request/history/download and deletion
   status/request/cancel now preserve fresh-session and atomic account-state
   transitions through Route Handlers;
-- restricted-account support and the remaining product-write surfaces still
-  block participant access;
+- owned support save/history now remains available to valid pending,
+  suspended and deletion-pending sessions without granting product-write or
+  staff authority;
+- anonymous managed support remains fail-closed until trusted edge address
+  handling can restore network-scoped abuse protection;
+- the remaining product-write surfaces still block participant access;
 - Caddy must continue returning the hardened unavailable response.
 
 ## Final architecture
@@ -192,13 +197,19 @@ than JWT browser sessions. The delivered adapter:
 - links Google or Facebook only through a one-use database action bound to the
   current fresh owner session and exact provider subject.
 
+Owned support now uses the same exact Prisma-backed `Database` adapter for
+session authority and support transactions. Its Route Handlers preserve UUID
+idempotency keys, exact payload hashes, owner-bound cursors, session-bound CSRF,
+account-scoped abuse limits and `Retry-After`. Valid managed sessions retain
+owned support authority while pending, suspended or deletion-pending, but this
+does not grant product mutation or staff access.
+
 Before participant launch, the remaining security surfaces must:
 
 - apply the shared CSRF/session authority to every remaining application
   mutation;
-- complete restricted-account support Route Handlers;
 - establish explicit trusted-proxy address handling before restoring
-  network-scoped identity rate limits.
+  network-scoped identity and anonymous-support rate limits.
 
 Next.js proxy trust must be an explicit IP/CIDR allowlist compatible with the
 Caddy-to-loopback topology. Forwarded headers from untrusted peers cannot
