@@ -1,0 +1,18 @@
+[Unit]
+Description=Interview Studio controlled database migration
+Documentation=https://github.com/huangyingting/HelloInterview/blob/main/docs/production/59-azure-guest-runtime-foundation.md
+Requires=docker.service postgresql.service
+After=docker.service postgresql.service
+ConditionPathExists=/etc/interview-studio/release.env
+ConditionPathExists=/etc/interview-studio/migrate.env
+ConditionPathExists=/etc/interview-studio/migrate.pgpass
+ConditionPathExists=/usr/local/share/interview-studio/grant-runtime.sql
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/interview-studio/release.env
+Environment=PGPASSFILE=/etc/interview-studio/migrate.pgpass
+ExecStartPre=/usr/bin/docker image inspect ${STUDIO_IMAGE}
+ExecStart=/usr/bin/docker run --rm --init --name interview-studio-migrate --network host --read-only --tmpfs /tmp:rw,nosuid,nodev,noexec,size=32m --tmpfs /app/data:rw,nosuid,nodev,noexec,size=8m --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 --memory 512m --cpus 1 --log-driver journald --label com.interview-studio.release=${STUDIO_RELEASE} --env-file /etc/interview-studio/migrate.env ${STUDIO_IMAGE} node dist-server/db/cli.js migrate
+ExecStartPost=/usr/bin/psql --no-psqlrc --host=127.0.0.1 --port=5432 --username=interview_studio_migrator --dbname=interview_studio --file=/usr/local/share/interview-studio/grant-runtime.sql
+TimeoutStartSec=180

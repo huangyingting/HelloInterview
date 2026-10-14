@@ -88,6 +88,7 @@ service with defined recovery and support commitments.
 | [56 - Approved invite-only private-beta boundary](56-approved-private-beta-boundary.md) | Approved free/read-only/no-managed-AI scope on the existing Azure Southeast Asia `WebStack` VM, USD 200 ceiling and named owner; explicit guest-database/no-SLA boundary with deployment, privacy and human-review evidence still open | Product and operations |
 | [57 - Invite-only service runtime](57-invite-only-service-runtime.md) | Fail-closed service composition and verified-email admission with billing/AI/demo authority rejected; no authentic tenant, Azure guest deployment or participant acceptance | Identity and operations |
 | [58 - Canonical HTTPS ingress](58-canonical-https-ingress.md) | Exact `interview.genisisiq.com` DNS/TLS Caddy ingress, loopback-only upstream and truthful 503 fallback; no application/Auth0/database deployment acceptance | Platform and operations |
+| [59 - Azure guest runtime foundation](59-azure-guest-runtime-foundation.md) | Exact-artifact runtime image, separated PostgreSQL migration/runtime authority and disabled supervised app/worker units; no authentic service launch | Platform, database and operations |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to

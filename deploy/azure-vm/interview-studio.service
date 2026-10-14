@@ -1,0 +1,23 @@
+[Unit]
+Description=Interview Studio private-beta application
+Documentation=https://github.com/huangyingting/HelloInterview/blob/main/docs/production/59-azure-guest-runtime-foundation.md
+Requires=docker.service postgresql.service
+After=docker.service postgresql.service network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/interview-studio/release.env
+ConditionPathExists=/etc/interview-studio/runtime.env
+ConditionPathExists=/etc/interview-studio/service.env
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/interview-studio/release.env
+ExecStartPre=/usr/bin/docker image inspect ${STUDIO_IMAGE}
+ExecStart=/usr/bin/docker run --rm --init --name interview-studio --network host --read-only --tmpfs /tmp:rw,nosuid,nodev,noexec,size=64m --tmpfs /app/data:rw,nosuid,nodev,noexec,size=16m --cap-drop ALL --security-opt no-new-privileges --pids-limit 256 --memory 768m --cpus 1.5 --stop-timeout 20 --log-driver journald --label com.interview-studio.release=${STUDIO_RELEASE} --env-file /etc/interview-studio/runtime.env --env-file /etc/interview-studio/service.env ${STUDIO_IMAGE}
+ExecStop=-/usr/bin/docker stop --time 20 interview-studio
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=45
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
