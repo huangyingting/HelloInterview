@@ -32,7 +32,7 @@ Run `deploy/azure-vm/provision-database.sh` once as root. It:
 
 The migration role owns schema changes but is never supplied to the app or workers. The runtime role receives `USAGE` plus table DML, sequence use, and function execution in `public` and the pg-boss `public_jobs` schema. `grant-runtime.sql` also establishes matching default privileges for future objects created by the migration role. It grants neither DDL nor role/database administration.
 
-`interview-studio-migrate.service` runs the immutable application migrations and pg-boss installation with the migration connection, then applies the runtime grants through host `psql`. Released numbered migration SQL and recorded checksums remain immutable.
+`interview-studio-migrate.service` runs only the immutable database CLI, with an explicit local maintenance-mode override so the service-mode HTTP/identity gates are not invented during schema installation. It does not start an HTTP listener or local-user authority. The unit installs the application migrations and pg-boss schema with the migration connection, then applies the runtime grants through host `psql`. Released numbered migration SQL and recorded checksums remain immutable.
 
 ## Supervised processes
 

@@ -27,13 +27,17 @@ test('Azure VM runtime consumes only the verified release and remains secret-gat
     assert.match(unit, /--cap-drop ALL/);
     assert.match(unit, /--security-opt no-new-privileges/);
     assert.match(unit, /\$\{STUDIO_IMAGE\}/);
-    assert.doesNotMatch(unit, /docker build|npm run build|APP_MODE=local/);
+    assert.doesNotMatch(unit, /docker build|npm run build/);
+    assert.match(unit, /docker image inspect --format=\{\{\.Id\}\}/);
   }
   for (const file of files.slice(0, 3)) {
     const unit = await readFile(file, 'utf8');
     assert.match(unit, /^ConditionPathExists=\/etc\/interview-studio\/service\.env$/m);
     assert.match(unit, /--env-file \/etc\/interview-studio\/runtime\.env --env-file \/etc\/interview-studio\/service\.env/);
+    assert.doesNotMatch(unit, /APP_MODE=local/);
   }
+  const migration = await readFile(files[3], 'utf8');
+  assert.match(migration, /--env-file \/etc\/interview-studio\/migrate\.env --env APP_MODE=local/);
   const release = await readFile('deploy/azure-vm/Dockerfile.release', 'utf8');
   assert.match(release, /^FROM node:24-bookworm-slim@sha256:[a-f0-9]{64}$/m);
   assert.match(release, /^COPY dist \.\/dist$/m);

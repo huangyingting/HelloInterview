@@ -11,7 +11,7 @@ ConditionPathExists=/etc/interview-studio/service.env
 [Service]
 Type=simple
 EnvironmentFile=/etc/interview-studio/release.env
-ExecStartPre=/usr/bin/docker image inspect ${STUDIO_IMAGE}
+ExecStartPre=/usr/bin/docker image inspect --format={{.Id}} ${STUDIO_IMAGE}
 ExecStart=/usr/bin/docker run --rm --init --name interview-studio-privacy-worker --network host --read-only --tmpfs /tmp:rw,nosuid,nodev,noexec,size=32m --tmpfs /app/data:rw,nosuid,nodev,noexec,size=8m --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 --memory 512m --cpus 1 --stop-timeout 20 --log-driver journald --label com.interview-studio.release=${STUDIO_RELEASE} --env-file /etc/interview-studio/runtime.env --env-file /etc/interview-studio/service.env ${STUDIO_IMAGE} node dist-server/privacy/cli.js worker
 ExecStop=-/usr/bin/docker stop --time 20 interview-studio-privacy-worker
 Restart=on-failure
