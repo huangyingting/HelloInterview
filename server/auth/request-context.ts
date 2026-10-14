@@ -6,13 +6,14 @@ export interface AuthAdmission {
 }
 
 interface AuthRequestContext {
+  readonly cookieHeader: string;
   admission?: AuthAdmission;
 }
 
 const authRequests = new AsyncLocalStorage<AuthRequestContext>();
 
-export function withAuthRequest<T>(operation: () => T): T {
-  return authRequests.run({}, operation);
+export function withAuthRequest<T>(request: Request, operation: () => T): T {
+  return authRequests.run({ cookieHeader: request.headers.get('cookie') ?? '' }, operation);
 }
 
 export function recordAuthAdmission(admission: AuthAdmission) {
@@ -23,4 +24,11 @@ export function recordAuthAdmission(admission: AuthAdmission) {
 
 export function currentAuthAdmission() {
   return authRequests.getStore()?.admission ?? null;
+}
+
+export function authRequestCookie(name: string) {
+  const values = authRequests.getStore()?.cookieHeader.split(';')
+    .map(value => value.trim())
+    .filter(value => value.startsWith(`${name}=`)) ?? [];
+  return values.length === 1 ? values[0].slice(name.length + 1) : null;
 }

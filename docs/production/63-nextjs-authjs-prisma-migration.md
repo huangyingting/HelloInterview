@@ -15,8 +15,10 @@ boundary. The current durable-session checkpoint is not a launch or cutover:
   identity for existing domain repositories;
 - Auth.js now issues only hashed, identity-bound managed database sessions with
   PostgreSQL-clock absolute/idle expiry, account epochs and security cutoffs;
-  explicit reauthentication, application mutation CSRF and account-security
-  Route Handlers still block participant access;
+  bootstrap-bound application CSRF, fresh reauthentication, profile updates,
+  session revocation and sign-in-method removal now use Route Handlers;
+- explicit collision-safe provider linking and the remaining privacy/account
+  lifecycle Route Handlers still block participant access;
 - Caddy must continue returning the hardened unavailable response.
 
 ## Final architecture
@@ -169,15 +171,23 @@ than JWT browser sessions. The delivered adapter:
 - invalidates reads after account-epoch, identity-availability or
   security-cutoff changes;
 - records authentication time while retaining a separate MFA evidence field;
-- caps active sessions and deletes exact hashed sessions on sign-out.
+- caps active sessions and deletes exact hashed sessions on sign-out;
+- refreshes authentication time only after the exact provider identity is
+  admitted again for the current owner;
+- issues session-bound double-submit CSRF proof through bootstrap and enforces
+  it on migrated account mutations;
+- exposes minimized security history, exact session revocation, other-session
+  revocation and guarded sign-in-method removal.
 
 Before participant launch, the remaining security surfaces must:
 
-- expose current/other-session revocation through managed Route Handlers;
-- implement explicit fresh Google reauthentication and intentional Facebook
-  linking without email-based account merging;
-- provide CSRF protection for application mutations;
-- expose only minimized session/security history.
+- implement intentional Google/Facebook linking through a one-use,
+  current-owner-bound action without email-based account merging;
+- apply the shared CSRF/session authority to every remaining application
+  mutation;
+- complete privacy deletion/export and restricted-account Route Handlers;
+- establish explicit trusted-proxy address handling before restoring
+  network-scoped identity rate limits.
 
 Next.js proxy trust must be an explicit IP/CIDR allowlist compatible with the
 Caddy-to-loopback topology. Forwarded headers from untrusted peers cannot

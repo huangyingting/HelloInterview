@@ -105,7 +105,7 @@ export function ManagedAccountPage() {
   const authjs = data.capabilities.auth?.system === 'authjs';
   const redirect = async (path: string, provider: Provider) => {
     if (authjs) {
-      if (path.endsWith('/link')) throw new Error('Connecting another provider is unavailable until the database-session migration is complete.');
+      if (path.endsWith('/link')) throw new Error('Connecting another provider is unavailable until the explicit collision-safe linking flow is complete.');
       window.location.assign(`/api/auth/signin/${provider}?callbackUrl=${encodeURIComponent('/account')}`);
       return;
     }
@@ -158,7 +158,7 @@ export function ManagedAccountPage() {
           <label>Display name<input required minLength={2} maxLength={60} autoComplete="name" value={name} onChange={event => setName(event.target.value)}/></label>
           <button className="button small" disabled={pending}>Save profile</button>
         </form>
-        <h3>Passwords and recovery</h3><p>{authjs ? 'Recover access directly with Google or Facebook. Studio sign-out does not sign you out of either provider. Database-backed Studio session revocation is still being migrated, so participant launch remains blocked.' : `Use hosted email sign-in for password recovery. Studio sign-out does not sign you out of Google or GitHub. ${data.capabilities.auth?.securityLifecycle ? 'Authenticated broker password events revoke Studio sessions. Missed events require the operated identity reconciler; upstream social password changes are not covered. This remains private staging.' : 'Password-reset session invalidation is not enabled yet; this integration is for private staging only.'}`}</p>
+        <h3>Passwords and recovery</h3><p>{authjs ? "Recover access directly with Google or Facebook. Studio sign-out does not sign you out of either provider. Studio sessions are database-backed and can be revoked below; provider recovery remains the provider's responsibility." : `Use hosted email sign-in for password recovery. Studio sign-out does not sign you out of Google or GitHub. ${data.capabilities.auth?.securityLifecycle ? 'Authenticated broker password events revoke Studio sessions. Missed events require the operated identity reconciler; upstream social password changes are not covered. This remains private staging.' : 'Password-reset session invalidation is not enabled yet; this integration is for private staging only.'}`}</p>
         {security?.identities.some(identity => identity.provider === 'email') ? <a className="text-link" href="/auth/login?provider=email">Open email sign-in and recovery</a> : <p>Recover a social account with its provider, or connect a verified email sign-in method below.</p>}
       </section>
       <section className="panel"><h2>Current access</h2><p>Server-verified access: <strong>{data.capabilities.access?.features.some(feature => proCapabilities.includes(feature.key) && feature.reason === 'unavailable') ? 'refresh unavailable' : data.capabilities.access?.state ?? 'unavailable'}</strong>. Content-only grants do not include premium practice, progress, projects or tutor work.</p>
@@ -204,7 +204,7 @@ export function ManagedAccountPage() {
         </div>)}
         <p>Connect another verified sign-in method. Each account is proved separately; email matching does not merge accounts.</p>
         {availableProviders.map(provider => <button className="button secondary small" key={provider} disabled={pending || !security.fresh || authjs} onClick={() => act(() => redirect('/api/identity/link', provider))}>Connect {labels[provider]}</button>)}
-        {authjs && <p className="fine-print">Provider linking is disabled until the database-session and fresh-authentication migration is complete.</p>}
+        {authjs && <p className="fine-print">Provider linking remains disabled until its explicit, one-use collision-safe flow is complete. Matching email addresses will never merge accounts.</p>}
       </>}
     </section>
     {security && <>

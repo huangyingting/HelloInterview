@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import type { Adapter, AdapterAccount, AdapterSession, AdapterUser } from 'next-auth/adapters';
 import { z } from 'zod';
 import { prismaClient } from '../db/prisma';
-import { currentAuthAdmission } from './request-context';
+import { authRequestCookie, currentAuthAdmission, type AuthAdmission } from './request-context';
 
 const sessionLifetime = 30 * 86400000;
 const sessionIdle = 7 * 86400000;
@@ -24,6 +24,32 @@ interface SessionRow extends UserRow {
   readonly token: string;
   readonly user_id: string;
   readonly expires: bigint | number;
+  readonly session_id: string;
+  readonly identity_id: string;
+  readonly epoch: number;
+  readonly csrf_hash: string;
+  readonly authenticated_at: bigint | number;
+  readonly mfa_at: bigint | number;
+  readonly created_at: bigint | number;
+  readonly last_used: bigint | number;
+  readonly status: string;
+}
+
+export interface ManagedAuthSession {
+  readonly tokenHash: string;
+  readonly sessionToken: string;
+  readonly userId: string;
+  readonly sessionId: string;
+  readonly identityId: string;
+  readonly epoch: number;
+  readonly csrfHash: string;
+  readonly authenticatedAt: number;
+  readonly mfaAt: number;
+  readonly createdAt: number;
+  readonly lastUsed: number;
+  readonly expires: Date;
+  readonly status: string;
+  readonly user: AdapterUser;
 }
 
 function issuer(provider: string) {
@@ -50,12 +76,13 @@ async function userById(id: string) {
   return rows[0] ? adapterUser(rows[0]) : null;
 }
 
-async function storedSession(sessionToken: string) {
+export async function managedAuthSession(sessionToken: string, touch = true): Promise<ManagedAuthSession | null> {
   const parsed = tokenSchema.safeParse(sessionToken);
   if (!parsed.success) return null;
   const token = hash(parsed.data);
   const rows = await prismaClient().$queryRaw<SessionRow[]>`
-    SELECT s.token,s.user_id,s.expires,u.id,u.name,a.contact_email,a.contact_verified
+    SELECT s.token,s.user_id,s.expires,m.id AS session_id,m.identity_id,m.epoch,m.csrf_hash,
+      m.authenticated_at,m.mfa_at,m.created_at,m.last_used,u.id,u.name,a.contact_email,a.contact_verified,a.status
     FROM sessions s
     JOIN managed_sessions m ON m.token=s.token
     JOIN users u ON u.id=s.user_id
@@ -70,15 +97,52 @@ async function storedSession(sessionToken: string) {
   `;
   const row = rows[0];
   if (!row) return null;
-  await prismaClient().$executeRaw`UPDATE managed_sessions SET last_used=${databaseClock} WHERE token=${token}`;
+  if (touch) await prismaClient().$executeRaw`UPDATE managed_sessions SET last_used=${databaseClock} WHERE token=${token}`;
   return {
-    session: {
-      sessionToken: parsed.data,
-      userId: row.user_id,
-      expires: new Date(Number(row.expires)),
-    } satisfies AdapterSession,
+    tokenHash: token,
+    sessionToken: parsed.data,
+    userId: row.user_id,
+    sessionId: row.session_id,
+    identityId: row.identity_id,
+    epoch: row.epoch,
+    csrfHash: row.csrf_hash,
+    authenticatedAt: Number(row.authenticated_at),
+    mfaAt: Number(row.mfa_at),
+    createdAt: Number(row.created_at),
+    lastUsed: Number(row.last_used),
+    expires: new Date(Number(row.expires)),
+    status: row.status,
     user: adapterUser(row),
   };
+}
+
+async function storedSession(sessionToken: string) {
+  const stored = await managedAuthSession(sessionToken);
+  if (!stored) return null;
+  return {
+    session: {
+      sessionToken: stored.sessionToken,
+      userId: stored.userId,
+      expires: stored.expires,
+    } satisfies AdapterSession,
+    user: stored.user,
+  };
+}
+
+export async function currentRequestAuthSession(cookieName: string) {
+  const token = authRequestCookie(cookieName);
+  return token ? managedAuthSession(token, false) : null;
+}
+
+export async function refreshAdmittedSession(admission: AuthAdmission, cookieName: string) {
+  const current = await currentRequestAuthSession(cookieName);
+  if (!current || current.userId !== admission.userId) return current;
+  await prismaClient().$executeRaw`
+    UPDATE managed_sessions
+    SET identity_id=${admission.identityId},authenticated_at=${databaseClock},last_used=${databaseClock},mfa_at=0
+    WHERE token=${current.tokenHash} AND epoch=${current.epoch}
+  `;
+  return current;
 }
 
 export function studioAuthAdapter(): Adapter {

@@ -3,14 +3,14 @@ import type { NextAuthOptions } from 'next-auth';
 import FacebookProvider from 'next-auth/providers/facebook';
 import GoogleProvider from 'next-auth/providers/google';
 import { admitSocialIdentity } from './admission';
-import { studioAuthAdapter } from './adapter';
-import { loadAuthSettings } from './config';
+import { currentRequestAuthSession, refreshAdmittedSession, studioAuthAdapter } from './adapter';
+import { authCookieNames, loadAuthSettings } from './config';
 import { recordAuthAdmission } from './request-context';
 
 export function createAuthOptions(): NextAuthOptions {
   const settings = loadAuthSettings();
   if (!settings) throw new Error('Auth.js is not configured.');
-  const secureCookies = settings.origin.startsWith('https://');
+  const cookies = authCookieNames(settings);
   return {
     secret: settings.secret,
     adapter: studioAuthAdapter(),
@@ -22,8 +22,8 @@ export function createAuthOptions(): NextAuthOptions {
     },
     cookies: {
       sessionToken: {
-        name: secureCookies ? '__Host-studio_session' : 'studio_session',
-        options: { httpOnly: true, sameSite: 'lax', path: '/', secure: secureCookies },
+        name: cookies.session,
+        options: { httpOnly: true, sameSite: 'lax', path: '/', secure: cookies.secure },
       },
     },
     pages: { signIn: '/auth', error: '/auth' },
@@ -43,7 +43,10 @@ export function createAuthOptions(): NextAuthOptions {
       async signIn({ account, profile }) {
         if (!account || !profile) return false;
         try {
-          recordAuthAdmission(await admitSocialIdentity(settings, account, profile));
+          const current = await currentRequestAuthSession(cookies.session);
+          const admission = await admitSocialIdentity(settings, account, profile, current?.userId ?? null);
+          recordAuthAdmission(admission);
+          await refreshAdmittedSession(admission, cookies.session);
           return true;
         } catch (error) {
           console.error(JSON.stringify({ event: 'auth.admission.denied', reason: error instanceof Error ? error.message : 'unknown' }));

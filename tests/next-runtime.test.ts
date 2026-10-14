@@ -11,10 +11,16 @@ import { GET as community } from '../app/api/community/posts/route';
 import { GET as communityPost } from '../app/api/community/posts/[id]/route';
 import { GET as comments } from '../app/api/comments/page/route';
 import { GET as posts } from '../app/api/posts/route';
+import { GET as identitySecurityRoute } from '../app/api/identity/security/route';
+import { DELETE as revokeSessionRoute } from '../app/api/identity/sessions/[id]/route';
+import { DELETE as removeIdentityRoute } from '../app/api/identity/methods/[id]/route';
+import { PATCH as profileRoute } from '../app/api/profile/route';
 import { postgresConnection } from '../server/db/connection';
 import { migrateDatabase } from '../server/db/migrations';
 import { prismaConnection } from '../server/db/prisma';
-import { studioAuthAdapter } from '../server/auth/adapter';
+import { refreshAdmittedSession, studioAuthAdapter } from '../server/auth/adapter';
+import { admitSocialIdentity } from '../server/auth/admission';
+import { loadAuthSettings } from '../server/auth/config';
 import { recordAuthAdmission, withAuthRequest } from '../server/auth/request-context';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -34,6 +40,15 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
   process.env.DATABASE_URL = url.href;
   for (const key of ['NEXTAUTH_URL', 'NEXTAUTH_SECRET', 'AUTH_GOOGLE_CLIENT_ID', 'AUTH_GOOGLE_CLIENT_SECRET',
     'AUTH_FACEBOOK_CLIENT_ID', 'AUTH_FACEBOOK_CLIENT_SECRET', 'AUTH_INVITED_EMAILS']) delete process.env[key];
+  Object.assign(process.env, {
+    NEXTAUTH_URL: 'https://studio.fixture',
+    NEXTAUTH_SECRET: 'a'.repeat(64),
+    AUTH_GOOGLE_CLIENT_ID: 'google-client',
+    AUTH_GOOGLE_CLIENT_SECRET: 'google-secret',
+    AUTH_FACEBOOK_CLIENT_ID: '123456789',
+    AUTH_FACEBOOK_CLIENT_SECRET: 'facebook-secret',
+    AUTH_INVITED_EMAILS: 'next-auth-owner@example.test',
+  });
   t.after(async () => {
     await prismaConnection().close();
     if (previous === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = previous;
@@ -47,7 +62,8 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
   assert.equal((await db.prepare('SELECT count(*)::integer AS count FROM users').get())?.count, 0);
   const healthPayload = await health().json();
   const readyResponse = await ready(), readyPayload = await readyResponse.json();
-  const bootstrapResponse = await bootstrap(), bootstrapPayload = await bootstrapResponse.json();
+  const bootstrapResponse = await bootstrap(new Request('https://studio.fixture/api/bootstrap'));
+  const bootstrapPayload = await bootstrapResponse.json();
   assert.deepEqual(healthPayload, { status: 'ok' });
   assert.equal(readyResponse.status, 200);
   assert.deepEqual(readyPayload, { status: 'ready', mode: 'service' });
@@ -113,8 +129,8 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
   assert.equal(postsPayload[0].author, 'Anonymous');
   assert.equal(duplicateQueryResponse.status, 400);
 
-  const authOwner = 'next-auth-owner';
-  const identity = 'next-auth-google';
+  const authOwner = '11111111-1111-4111-8111-111111111111';
+  const identity = '22222222-2222-4222-8222-222222222222';
   await db.prepare('INSERT INTO users(id,name,email,password,demo) VALUES(?,?,?,?,0)')
     .run(authOwner, 'Next Auth Owner', null, null);
   await db.prepare('INSERT INTO user_settings(user_id) VALUES(?)').run(authOwner);
@@ -129,7 +145,7 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     adapter.createSession!({ sessionToken, userId: authOwner, expires: new Date(Date.now() + 86400000) }),
     /exact admitted provider identity/,
   );
-  const createdSession = await withAuthRequest(async () => {
+  const createdSession = await withAuthRequest(new Request('https://studio.fixture/api/auth/callback/google'), async () => {
     recordAuthAdmission({ userId: authOwner, identityId: identity });
     return adapter.createSession!({ sessionToken, userId: authOwner, expires: new Date(Date.now() + 86400000) });
   });
@@ -143,6 +159,97 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
   assert.equal(Number(storedSession?.mfa_at), 0);
   assert.equal(await adapter.getSessionAndUser!('malformed-cookie'), null);
   assert.equal((await adapter.getSessionAndUser!(sessionToken))?.user.id, authOwner);
+  const authenticatedBootstrap = await bootstrap(new Request('https://studio.fixture/api/bootstrap', {
+    headers: { Cookie: `__Host-studio_session=${sessionToken}` },
+  }));
+  assert.equal(authenticatedBootstrap.status, 200);
+  assert.equal((await authenticatedBootstrap.clone().json()).user.id, authOwner);
+  const csrfCookie = authenticatedBootstrap.headers.get('Set-Cookie')?.split(';')[0];
+  assert.match(csrfCookie ?? '', /^__Host-studio_csrf=[a-f0-9]{64}$/);
+  const csrf = csrfCookie!.split('=')[1];
+  const accountCookies = `__Host-studio_session=${sessionToken}; ${csrfCookie}`;
+  const securityResponse = await identitySecurityRoute(new Request('https://studio.fixture/api/identity/security', {
+    headers: { Cookie: accountCookies },
+  }));
+  const security = await securityResponse.json();
+  assert.equal(securityResponse.status, 200);
+  assert.equal(security.identities[0].provider, 'google');
+  assert.equal(security.sessions[0].current, true);
+  await db.prepare(`UPDATE managed_sessions
+    SET authenticated_at=floor(extract(epoch from clock_timestamp())*1000)::bigint-600001
+    WHERE token=?`).run(storedToken);
+  const staleSecurity = await identitySecurityRoute(new Request('https://studio.fixture/api/identity/security', {
+    headers: { Cookie: accountCookies },
+  }));
+  assert.equal((await staleSecurity.json()).fresh, false);
+  await withAuthRequest(new Request('https://studio.fixture/api/auth/callback/google', {
+    headers: { Cookie: `__Host-studio_session=${sessionToken}` },
+  }), () => refreshAdmittedSession({ userId: authOwner, identityId: identity }, '__Host-studio_session'));
+  const refreshedSecurity = await identitySecurityRoute(new Request('https://studio.fixture/api/identity/security', {
+    headers: { Cookie: accountCookies },
+  }));
+  assert.equal((await refreshedSecurity.json()).fresh, true);
+  await assert.rejects(admitSocialIdentity(loadAuthSettings()!, {
+    provider: 'google',
+    providerAccountId: 'different-invited-subject',
+    type: 'oauth',
+  }, {
+    name: 'Different Invited Person',
+    email: 'next-auth-owner@example.test',
+    email_verified: true,
+  }, authOwner), /Sign out before registering/);
+  assert.equal((await db.prepare('SELECT count(*)::integer AS count FROM managed_identities WHERE subject=?')
+    .get('different-invited-subject'))?.count, 0);
+  const missingCsrf = await profileRoute(new Request('https://studio.fixture/api/profile', {
+    method: 'PATCH',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Updated Next Owner' }),
+  }));
+  assert.equal(missingCsrf.status, 403);
+  const profileResponse = await profileRoute(new Request('https://studio.fixture/api/profile', {
+    method: 'PATCH',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ name: 'Updated Next Owner' }),
+  }));
+  assert.equal(profileResponse.status, 200);
+  assert.equal((await profileResponse.json()).name, 'Updated Next Owner');
+  const otherToken = 'e'.repeat(64);
+  await withAuthRequest(new Request('https://studio.fixture/api/auth/callback/google'), async () => {
+    recordAuthAdmission({ userId: authOwner, identityId: identity });
+    await adapter.createSession!({ sessionToken: otherToken, userId: authOwner, expires: new Date() });
+  });
+  const withOther = await identitySecurityRoute(new Request('https://studio.fixture/api/identity/security', {
+    headers: { Cookie: accountCookies },
+  }));
+  const otherSession = (await withOther.json()).sessions.find((value: { current: boolean }) => !value.current);
+  assert.ok(otherSession);
+  const revoked = await revokeSessionRoute(new Request('https://studio.fixture/api/identity/sessions/other', {
+    method: 'DELETE',
+    headers: { Cookie: accountCookies, 'X-CSRF-Token': csrf },
+  }), { params: Promise.resolve({ id: otherSession.id }) });
+  assert.equal(revoked.status, 200);
+  assert.equal(await adapter.getSessionAndUser!(otherToken), null);
+  const currentRemoval = await removeIdentityRoute(new Request('https://studio.fixture/api/identity/methods/current', {
+    method: 'DELETE',
+    headers: { Cookie: accountCookies, 'X-CSRF-Token': csrf },
+  }), { params: Promise.resolve({ id: identity }) });
+  assert.equal(currentRemoval.status, 409);
+  const facebookIdentity = '33333333-3333-4333-8333-333333333333';
+  await db.prepare(`INSERT INTO managed_identities(id,user_id,issuer,subject,provider,email,verified,available)
+    VALUES(?,?,?,?,?,?,0,1)`).run(facebookIdentity, authOwner, 'https://www.facebook.com', 'facebook-subject', 'facebook',
+      'next-auth-owner@example.test');
+  const facebookToken = 'f'.repeat(64);
+  await withAuthRequest(new Request('https://studio.fixture/api/auth/callback/facebook'), async () => {
+    recordAuthAdmission({ userId: authOwner, identityId: facebookIdentity });
+    await adapter.createSession!({ sessionToken: facebookToken, userId: authOwner, expires: new Date() });
+  });
+  const removed = await removeIdentityRoute(new Request('https://studio.fixture/api/identity/methods/facebook', {
+    method: 'DELETE',
+    headers: { Cookie: accountCookies, 'X-CSRF-Token': csrf },
+  }), { params: Promise.resolve({ id: facebookIdentity }) });
+  assert.equal(removed.status, 200);
+  assert.equal(await adapter.getSessionAndUser!(facebookToken), null);
+  assert.equal((await db.prepare('SELECT count(*)::integer AS count FROM managed_identities WHERE id=?').get(facebookIdentity))?.count, 0);
   await db.prepare('UPDATE managed_sessions SET last_used=0 WHERE token=?').run(storedToken);
   assert.equal(await adapter.getSessionAndUser!(sessionToken), null);
   await db.prepare(`UPDATE managed_sessions SET last_used=floor(extract(epoch from clock_timestamp())*1000)::bigint

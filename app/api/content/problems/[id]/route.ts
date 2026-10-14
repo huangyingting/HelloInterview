@@ -8,7 +8,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     if (params.getAll('project').length > 1 || [...params.keys()].some(key => key !== 'project')) {
       return Response.json({ error: 'Invalid project query.' }, { status: 400 });
     }
-    const result = await problemContent(id, params.get('project'));
+    const result = await problemContent(request, id, params.get('project'));
     return Response.json(result.value, {
       headers: { 'Cache-Control': 'private, no-store', 'X-Content-Version': result.version },
     });

@@ -53,7 +53,7 @@ export function assertSocialAdmission(settings: AuthSettings, proof: SocialProof
   }
 }
 
-export async function admitSocialIdentity(settings: AuthSettings, account: Account, profile: Profile) {
+export async function admitSocialIdentity(settings: AuthSettings, account: Account, profile: Profile, currentOwner: string | null = null) {
   const proof = socialProof(account, profile);
   const prisma = prismaClient();
   return prisma.$transaction(async tx => {
@@ -70,6 +70,11 @@ export async function admitSocialIdentity(settings: AuthSettings, account: Accou
     `;
     const row = identities[0];
     const existing = row ? { id: row.id, userId: row.user_id, status: row.status } : null;
+    if (currentOwner && existing?.userId !== currentOwner) {
+      throw new Error(existing
+        ? 'That provider identity belongs to another Studio account.'
+        : 'Sign out before registering a different Studio account.');
+    }
     assertSocialAdmission(settings, proof, existing);
     if (existing) {
       if (proof.provider === 'google') {

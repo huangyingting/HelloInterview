@@ -3,7 +3,7 @@ import { queryInput, routeError } from '../../../../server/next/response';
 
 export async function GET(request: Request) {
   try {
-    return Response.json(await communityFeed(queryInput(request.url)), {
+    return Response.json(await communityFeed(request, queryInput(request.url)), {
       headers: { 'Cache-Control': 'private, no-store' },
     });
   } catch (error) { return routeError(error, 'community.feed.failed'); }

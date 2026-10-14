@@ -6,7 +6,7 @@ type RouteContext = { params: Promise<{ nextauth: string[] }> };
 
 async function handle(request: Request, context: RouteContext) {
   try {
-    return withAuthRequest(() => NextAuth(createAuthOptions())(request, context));
+    return withAuthRequest(request, () => NextAuth(createAuthOptions())(request, context));
   } catch (error) {
     console.error(JSON.stringify({ event: 'auth.configuration.failed', reason: error instanceof Error ? error.name : 'unknown' }));
     return Response.json({ error: 'Authentication is not configured.' }, { status: 503 });

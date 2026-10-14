@@ -27,6 +27,15 @@ export interface AuthSettings {
   readonly inviteEmailHashes: readonly string[];
 }
 
+export function authCookieNames(settings: Pick<AuthSettings, 'origin'>) {
+  const secure = settings.origin.startsWith('https://');
+  return {
+    secure,
+    session: secure ? '__Host-studio_session' : 'studio_session',
+    csrf: secure ? '__Host-studio_csrf' : 'studio_csrf',
+  } as const;
+}
+
 export function invitationHash(secret: string, address: string) {
   return createHmac('sha256', secret).update(address.trim().toLowerCase()).digest('hex');
 }
