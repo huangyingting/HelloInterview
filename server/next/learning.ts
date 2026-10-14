@@ -4,8 +4,16 @@ import type { Capability } from '../../shared/access';
 import { companies, getTrack, levels, problems, quizQuestions, quizTopics } from '../../shared/catalog';
 import { assessAnswer, courseCompletion } from '../../shared/domain';
 import { courses } from '../../shared/courses';
-import { chooseQuestions, customQuestionPool, makePlanTasks, mockTurnProblem, nextMockQuestion } from '../../shared/premium';
-import type { Attempt, MockSession, QuizQuestion, UserState } from '../../shared/types';
+import {
+  chooseQuestions,
+  customQuestionPool,
+  makePlanTasks,
+  mockTurnProblem,
+  nextMockQuestion,
+  projectPatch,
+  sourcePathIssue,
+} from '../../shared/premium';
+import type { Attempt, MockSession, ProjectFile, ProjectWorkspace, QuizQuestion, UserState } from '../../shared/types';
 import type { ManagedAuthSession } from '../auth/adapter';
 import { assertCsrf } from '../auth/csrf';
 import { currentManagedAuthSession } from '../auth/session';
@@ -16,6 +24,7 @@ import { prismaConnection } from '../db/prisma';
 import { StateRepository } from '../db/state-repository';
 import { Entitlements } from '../entitlements';
 import { HttpError } from '../http-error';
+import { digest, encodePayload } from '../jobs/schema';
 import { assertAccountSession } from './identity';
 
 const activeStatus = ['active'] as const;
@@ -104,6 +113,21 @@ const reflectionSchema = z.strictObject({
   taskId: identifier,
   note: z.string().trim().min(20).max(3000),
   revision,
+});
+const projectInputFileSchema = z.strictObject({
+  path: z.string().trim().min(1).max(160),
+  content: z.string().max(20000).nullable(),
+});
+const projectSchema = z.strictObject({
+  title: z.string().trim().min(3).max(100),
+  problemId: z.string().min(1).max(200),
+  files: z.array(projectInputFileSchema.extend({ content: z.string().max(20000) })).min(1).max(16),
+});
+const projectSaveSchema = z.strictObject({
+  revision,
+  files: z.array(projectInputFileSchema).min(1).max(16),
+  explanation: z.string().trim().max(8000),
+  verification: z.string().trim().max(4000),
 });
 
 function checked<T>(schema: z.ZodType<T>, input: unknown, message: string): T {
@@ -613,6 +637,102 @@ export async function savePlanReflection(request: Request, id: string, input: un
     }
     task.note = value.note;
     plan.revision = (plan.revision ?? 0) + 1;
+  });
+}
+
+function projectFiles(input: readonly { path: string; content: string | null }[], existing?: ProjectWorkspace): ProjectFile[] {
+  const files = input.map(file => {
+    const issue = sourcePathIssue(file.path);
+    if (issue) throw new HttpError(400, issue);
+    if (file.content?.includes('\0')) throw new HttpError(400, 'Import text source files, not binary content.');
+    const previous = existing?.files.find(candidate => candidate.path === file.path);
+    if (!previous && file.content === null) throw new HttpError(400, 'A new file cannot be deleted before it exists.');
+    return {
+      path: file.path,
+      original: existing ? previous?.original ?? null : file.content,
+      content: file.content,
+    };
+  });
+  if (new Set(files.map(file => file.path)).size !== files.length) {
+    throw new HttpError(400, 'Project file paths must be unique.');
+  }
+  if (files.reduce((total, file) => total + (file.content?.length ?? 0), 0) > 120000) {
+    throw new HttpError(400, 'Project snapshots may contain at most 120,000 characters.');
+  }
+  if (existing?.files.some(file => !files.some(candidate => candidate.path === file.path))) {
+    throw new HttpError(400, 'Mark removed files as deleted instead of dropping their baseline.');
+  }
+  return files;
+}
+
+export async function createProject(request: Request, input: unknown) {
+  const value = checked(projectSchema, input, 'Choose a supported task, title and one to sixteen bounded text files.');
+  const problem = problems.find(candidate => candidate.id === value.problemId && candidate.track === 'ai-coding');
+  if (!problem) throw new HttpError(400, 'Choose a supported original coding task.');
+  const files = projectFiles(value.files);
+  const { keywords: _keywords, workedCase: _workedCase, solution: _solution, ...brief } = problem;
+  const project: ProjectWorkspace = {
+    id: randomUUID(),
+    title: value.title,
+    problemId: problem.id,
+    brief,
+    briefVersion: digest(encodePayload(brief)),
+    files,
+    explanation: '',
+    verification: '',
+    revision: 0,
+    createdAt: new Date().toISOString(),
+  };
+  const state = await mutateState(request, 'project.create', current => {
+    if (current.projects.length >= 20) throw new HttpError(400, 'Your project archive has reached its limit.');
+    current.projects.unshift(project);
+  });
+  return { state, project };
+}
+
+export async function saveProject(request: Request, id: string, input: unknown) {
+  const projectId = checked(identifier, id, 'Invalid project.');
+  const value = checked(projectSaveSchema, input, 'Provide bounded project files, notes and the saved revision.');
+  return mutateState(request, 'project.create', state => {
+    const project = state.projects.find(candidate => candidate.id === projectId);
+    if (!project) throw new HttpError(404, 'Project not found.');
+    if (project.revision !== value.revision) throw new HttpError(409, 'This project changed. Reload before editing.');
+    const files = projectFiles(value.files, project);
+    const changed = JSON.stringify(project.files) !== JSON.stringify(files)
+      || value.explanation !== project.explanation
+      || value.verification !== project.verification;
+    Object.assign(project, {
+      files,
+      explanation: value.explanation,
+      verification: value.verification,
+      revision: value.revision + 1,
+    });
+    if (changed) {
+      delete project.feedback;
+      delete project.completedAt;
+    }
+  });
+}
+
+export async function reviewProject(request: Request, id: string, input: unknown) {
+  const projectId = checked(identifier, id, 'Invalid project.');
+  const value = checked(finishSchema, input, 'Provide the saved project revision.');
+  return mutateState(request, 'project.create', state => {
+    const project = state.projects.find(candidate => candidate.id === projectId);
+    if (!project) throw new HttpError(404, 'Project not found.');
+    if (project.revision !== value.revision) throw new HttpError(409, 'This project changed. Reload before reviewing.');
+    const patch = projectPatch(project.files);
+    if (!patch || project.explanation.length < 30 || project.verification.length < 10) {
+      throw new HttpError(400, 'Change at least one file, explain the change in 30 characters, and add verification notes.');
+    }
+    const problem = problems.find(candidate => candidate.id === project.problemId);
+    if (!problem) throw new Error('The saved project task is unavailable.');
+    const feedback = assessAnswer(problem,
+      `Explanation:\n${project.explanation}\nVerification:\n${project.verification}\nChanges:\n${patch}`);
+    if (!project.completedAt) state.recognition += 5;
+    project.feedback = feedback;
+    project.completedAt = new Date().toISOString();
+    project.revision += 1;
   });
 }
 

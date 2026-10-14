@@ -45,6 +45,9 @@ import { POST as answerCustomQuizRoute } from '../app/api/custom-quizzes/[id]/an
 import { POST as finishCustomQuizRoute } from '../app/api/custom-quizzes/[id]/finish/route';
 import { POST as createStudyPlanRoute } from '../app/api/study-plans/route';
 import { POST as savePlanReflectionRoute } from '../app/api/study-plans/[id]/reflection/route';
+import { POST as createProjectRoute } from '../app/api/projects/route';
+import { POST as saveProjectRoute } from '../app/api/projects/[id]/save/route';
+import { POST as reviewProjectRoute } from '../app/api/projects/[id]/review/route';
 import { postgresConnection } from '../server/db/connection';
 import { migrateDatabase } from '../server/db/migrations';
 import { prismaConnection } from '../server/db/prisma';
@@ -578,6 +581,79 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     },
   ), { params: Promise.resolve({ id: planId }) });
   assert.equal(staleReflection.status, 409);
+  const projectCreation = await createProjectRoute(new Request('https://studio.fixture/api/projects', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({
+      title: 'Event deduplication project',
+      problemId: 'event-dedup',
+      files: [{ path: 'events.js', content: 'export function solve(input) { return input; }\n' }],
+    }),
+  }));
+  const projectCreated = await projectCreation.json();
+  const projectId = projectCreated.project.id;
+  assert.match(projectCreated.project.briefVersion, /^[a-f0-9]{64}$/);
+  assert.ok(!JSON.stringify(projectCreated.project.brief).includes('keywords'));
+  const pinnedProjectProblem = await problem(new Request(
+    `https://studio.fixture/api/content/problems/event-dedup?project=${projectId}`,
+    { headers: { Cookie: accountCookies } },
+  ), { params: Promise.resolve({ id: 'event-dedup' }) });
+  assert.equal(pinnedProjectProblem.headers.get('X-Content-Version'), projectCreated.project.briefVersion);
+  const projectSave = await saveProjectRoute(new Request(
+    `https://studio.fixture/api/projects/${projectId}/save`,
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({
+        revision: 0,
+        files: [{
+          path: 'events.js',
+          content: 'export function solve(input) { const seen = new Set(); return input.filter(event => !seen.has(event.id) && seen.add(event.id)); }\n',
+        }],
+        explanation: 'A Set preserves the first event for each identifier while retaining the original input order.',
+        verification: 'Ran the browser example checks and reviewed empty and duplicate inputs.',
+      }),
+    },
+  ), { params: Promise.resolve({ id: projectId }) });
+  const savedProject = (await projectSave.json()).projects.find((project: { id: string }) => project.id === projectId);
+  assert.equal(savedProject.revision, 1);
+  const projectReview = await reviewProjectRoute(new Request(
+    `https://studio.fixture/api/projects/${projectId}/review`,
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ revision: savedProject.revision }),
+    },
+  ), { params: Promise.resolve({ id: projectId }) });
+  const reviewedProject = (await projectReview.json()).projects.find(
+    (project: { id: string }) => project.id === projectId,
+  );
+  assert.equal(reviewedProject.feedback.source, 'rubric');
+  assert.equal(typeof reviewedProject.completedAt, 'string');
+  const staleProjectSave = await saveProjectRoute(new Request(
+    `https://studio.fixture/api/projects/${projectId}/save`,
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({
+        revision: 1,
+        files: [{ path: 'events.js', content: 'stale' }],
+        explanation: 'This stale project edit must not replace the reviewed saved source snapshot.',
+        verification: 'This stale note must not be accepted.',
+      }),
+    },
+  ), { params: Promise.resolve({ id: projectId }) });
+  assert.equal(staleProjectSave.status, 409);
+  const protectedPathProject = await createProjectRoute(new Request('https://studio.fixture/api/projects', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({
+      title: 'Rejected credential path',
+      problemId: 'event-dedup',
+      files: [{ path: '.env', content: 'NOT_A_REAL_SECRET=value' }],
+    }),
+  }));
+  assert.equal(protectedPathProject.status, 400);
   const otherToken = 'e'.repeat(64);
   await withAuthRequest(new Request('https://studio.fixture/api/auth/callback/google'), async () => {
     recordAuthAdmission({ userId: authOwner, identityId: identity });
