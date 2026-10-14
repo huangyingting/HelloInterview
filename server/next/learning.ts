@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Capability } from '../../shared/access';
-import { companies, getTrack, levels, problems, quizQuestions, quizTopics } from '../../shared/catalog';
+import { companies, getTrack, levels, problems, quizQuestions, quizTopics, tracks } from '../../shared/catalog';
 import { assessAnswer, courseCompletion } from '../../shared/domain';
 import { courses } from '../../shared/courses';
 import {
@@ -128,6 +128,10 @@ const projectSaveSchema = z.strictObject({
   files: z.array(projectInputFileSchema).min(1).max(16),
   explanation: z.string().trim().max(8000),
   verification: z.string().trim().max(4000),
+});
+const tutorSchema = z.strictObject({
+  question: z.string().trim().min(5).max(4000),
+  context: z.string().trim().max(2000).optional().default(''),
 });
 
 function checked<T>(schema: z.ZodType<T>, input: unknown, message: string): T {
@@ -637,6 +641,56 @@ export async function savePlanReflection(request: Request, id: string, input: un
     }
     task.note = value.note;
     plan.revision = (plan.revision ?? 0) + 1;
+  });
+}
+
+export async function askTutor(request: Request, input: unknown) {
+  const value = checked(tutorSchema, input, 'Ask a focused question with bounded lesson context.');
+  return accountOperation(request, true, async (db, session) => {
+    const entitlements = new Entitlements(db);
+    const premium = await entitlements.allows(session.userId, 'tutor.premium.use');
+    const tokens = value.question.toLowerCase().split(/\W+/).filter(token => token.length > 3);
+    const ranked = tracks
+      .flatMap(track => track.lessons
+        .filter(lesson => !lesson.premium || premium)
+        .map(lesson => ({
+          track,
+          lesson,
+          score: tokens.filter(token => (
+            `${lesson.title} ${lesson.summary} ${lesson.sections.map(section => section.body).join(' ')}`
+              .toLowerCase()
+              .includes(token)
+          )).length,
+        })))
+      .sort((left, right) => right.score - left.score);
+    const match = ranked[0];
+    const protectedTutor = Boolean(match?.score && match.lesson.premium);
+    if (protectedTutor) await entitlements.assert(session.userId, 'tutor.premium.use');
+    const response = match?.score
+      ? `Local study helper (not AI): ${match.lesson.sections[0]?.body ?? match.lesson.summary}\n\nTry this: ${match.lesson.exercise}\n\nRead more: ${match.track.title} -> ${match.lesson.title}.`
+      : 'Local study helper (not AI): Start by identifying the user goal, the required behavior, and a measurable constraint. Then walk through one example and explain a trade-off. Ask about caching, APIs, data modeling, algorithms, or behavioral stories for a related lesson. Live conversational tutoring requires a configured AI provider.';
+    const state = await new StateRepository(db).mutate(session.userId, current => {
+      current.chat.push(
+        { id: randomUUID(), role: 'user', text: value.question, createdAt: new Date().toISOString() },
+        {
+          id: randomUUID(),
+          role: 'assistant',
+          text: response,
+          createdAt: new Date().toISOString(),
+          source: 'rubric',
+        },
+      );
+      current.chat = current.chat.slice(-100);
+      recordActivity(current);
+    });
+    if (protectedTutor) await entitlements.assert(session.userId, 'tutor.premium.use');
+    return state;
+  });
+}
+
+export async function clearTutor(request: Request) {
+  return mutateState(request, undefined, state => {
+    state.chat = [];
   });
 }
 

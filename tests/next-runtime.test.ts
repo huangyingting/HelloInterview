@@ -48,6 +48,7 @@ import { POST as savePlanReflectionRoute } from '../app/api/study-plans/[id]/ref
 import { POST as createProjectRoute } from '../app/api/projects/route';
 import { POST as saveProjectRoute } from '../app/api/projects/[id]/save/route';
 import { POST as reviewProjectRoute } from '../app/api/projects/[id]/review/route';
+import { DELETE as clearTutorRoute, POST as askTutorRoute } from '../app/api/tutor/route';
 import { postgresConnection } from '../server/db/connection';
 import { migrateDatabase } from '../server/db/migrations';
 import { prismaConnection } from '../server/db/prisma';
@@ -654,6 +655,23 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     }),
   }));
   assert.equal(protectedPathProject.status, 400);
+  const tutorQuestion = await askTutorRoute(new Request('https://studio.fixture/api/tutor', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({
+      question: 'How does cache aside work and what failure should I verify?',
+      context: 'I am reviewing the caching lesson.',
+    }),
+  }));
+  const tutorState = await tutorQuestion.json();
+  assert.equal(tutorState.chat.at(-2).role, 'user');
+  assert.equal(tutorState.chat.at(-1).source, 'rubric');
+  assert.match(tutorState.chat.at(-1).text, /^Local study helper \(not AI\):/);
+  const clearedTutor = await clearTutorRoute(new Request('https://studio.fixture/api/tutor', {
+    method: 'DELETE',
+    headers: { Cookie: accountCookies, 'X-CSRF-Token': csrf },
+  }));
+  assert.deepEqual((await clearedTutor.json()).chat, []);
   const otherToken = 'e'.repeat(64);
   await withAuthRequest(new Request('https://studio.fixture/api/auth/callback/google'), async () => {
     recordAuthAdmission({ userId: authOwner, identityId: identity });

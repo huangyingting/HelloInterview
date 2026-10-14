@@ -29,12 +29,12 @@ not a launch or cutover:
 - active-account progress, course enrollment/video completion, quiz sessions,
   quiz reports, direct quiz submission, interview targets and revision-fenced
   behavioral stories, practice drafts, local-rubric feedback, mock interviews,
-  custom quizzes, study plans and project workspaces now use session-bound
-  Route Handlers and the Prisma transaction authority;
+  custom quizzes, study plans, project workspaces and local tutor conversations
+  now use session-bound Route Handlers and the Prisma transaction authority;
 - anonymous managed support remains fail-closed until trusted edge address
   handling can restore network-scoped abuse protection;
-- tutor, managed-AI feedback and the remaining product-write surfaces still
-  block participant access;
+- managed-AI feedback and the remaining product-write surfaces still block
+  participant access;
 - Caddy must continue returning the hardened unavailable response.
 
 ## Final architecture
@@ -230,6 +230,10 @@ Project workspaces preserve immutable task snapshots, protected path and size
 bounds, original file baselines, patch generation, revision fencing and
 user-reported verification provenance; local review never claims server-side
 execution.
+The tutor remains explicitly retrieval-based and labels every response as
+local, not AI. It searches only lessons the account may access, fences premium
+matches with entitlement checks in the same Prisma transaction and retains at
+most 100 messages.
 
 Before participant launch, the remaining security surfaces must:
 
