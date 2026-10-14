@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { GET as bootstrap } from '../app/api/bootstrap/route';
 import { GET as health } from '../app/api/health/route';
@@ -14,6 +14,8 @@ import { GET as posts } from '../app/api/posts/route';
 import { postgresConnection } from '../server/db/connection';
 import { migrateDatabase } from '../server/db/migrations';
 import { prismaConnection } from '../server/db/prisma';
+import { studioAuthAdapter } from '../server/auth/adapter';
+import { recordAuthAdmission, withAuthRequest } from '../server/auth/request-context';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 
@@ -110,4 +112,43 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
   assert.equal(postsPayload[0].id, postId);
   assert.equal(postsPayload[0].author, 'Anonymous');
   assert.equal(duplicateQueryResponse.status, 400);
+
+  const authOwner = 'next-auth-owner';
+  const identity = 'next-auth-google';
+  await db.prepare('INSERT INTO users(id,name,email,password,demo) VALUES(?,?,?,?,0)')
+    .run(authOwner, 'Next Auth Owner', null, null);
+  await db.prepare('INSERT INTO user_settings(user_id) VALUES(?)').run(authOwner);
+  await db.prepare(`INSERT INTO managed_identities(id,user_id,issuer,subject,provider,email,verified,available)
+    VALUES(?,?,?,?,?,?,1,1)`).run(identity, authOwner, 'https://accounts.google.com', 'next-auth-subject', 'google',
+      'next-auth-owner@example.test');
+  await db.prepare(`INSERT INTO managed_accounts(user_id,status,contact_email,contact_identity_id,contact_verified)
+    VALUES(?,'active',?,?,1)`).run(authOwner, 'next-auth-owner@example.test', identity);
+  const adapter = studioAuthAdapter();
+  const sessionToken = 'b'.repeat(64);
+  await assert.rejects(
+    adapter.createSession!({ sessionToken, userId: authOwner, expires: new Date(Date.now() + 86400000) }),
+    /exact admitted provider identity/,
+  );
+  const createdSession = await withAuthRequest(async () => {
+    recordAuthAdmission({ userId: authOwner, identityId: identity });
+    return adapter.createSession!({ sessionToken, userId: authOwner, expires: new Date(Date.now() + 86400000) });
+  });
+  assert.equal(createdSession.sessionToken, sessionToken);
+  assert.ok(createdSession.expires.getTime() > Date.now() + 29 * 86400000);
+  const storedToken = createHash('sha256').update(sessionToken).digest('hex');
+  const storedSession = await db.prepare(`SELECT s.token,m.csrf_hash,m.mfa_at FROM sessions s
+    JOIN managed_sessions m ON m.token=s.token WHERE s.user_id=?`).get(authOwner);
+  assert.equal(storedSession?.token, storedToken);
+  assert.match(String(storedSession?.csrf_hash), /^[a-f0-9]{64}$/);
+  assert.equal(Number(storedSession?.mfa_at), 0);
+  assert.equal(await adapter.getSessionAndUser!('malformed-cookie'), null);
+  assert.equal((await adapter.getSessionAndUser!(sessionToken))?.user.id, authOwner);
+  await db.prepare('UPDATE managed_sessions SET last_used=0 WHERE token=?').run(storedToken);
+  assert.equal(await adapter.getSessionAndUser!(sessionToken), null);
+  await db.prepare(`UPDATE managed_sessions SET last_used=floor(extract(epoch from clock_timestamp())*1000)::bigint
+    WHERE token=?`).run(storedToken);
+  await db.prepare('UPDATE managed_accounts SET session_epoch=session_epoch+1 WHERE user_id=?').run(authOwner);
+  assert.equal(await adapter.getSessionAndUser!(sessionToken), null);
+  await adapter.deleteSession!(sessionToken);
+  assert.equal((await db.prepare('SELECT count(*)::integer AS count FROM sessions WHERE user_id=?').get(authOwner))?.count, 0);
 });

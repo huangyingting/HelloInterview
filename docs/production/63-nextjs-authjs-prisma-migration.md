@@ -2,20 +2,21 @@
 
 ## Status
 
-Implementation is in progress. Commit `e56d67d` established the App Router and
-Prisma foundation without changing the operated Azure 503 boundary. The
-following checkpoint adds the Auth.js Google/Facebook admission policy and
-database migration 38. It is not a launch or cutover:
+Implementation is in progress. Commits `e56d67d` through `2e50595` established
+the App Router, Prisma foundation, Auth.js social admission, service bootstrap
+and public content/community read APIs without changing the operated Azure 503
+boundary. The current durable-session checkpoint is not a launch or cutover:
 
 - the current Express application remains the deployed artifact;
-- the Next.js UI shell builds and serves deep links, but most `/api` routes have
-  not yet moved to Route Handlers;
+- the Next.js UI shell builds and serves deep links, but authenticated writes
+  and most owner/staff APIs have not yet moved to Route Handlers;
 - health, readiness and visitor bootstrap now run as Route Handlers through a
   Prisma-backed compatibility interface that preserves nested transaction
   identity for existing domain repositories;
-- Auth.js uses a short-lived JWT session only as a migration scaffold; durable
-  database sessions, revocation, fresh-authentication and account security must
-  be reconnected before participant access;
+- Auth.js now issues only hashed, identity-bound managed database sessions with
+  PostgreSQL-clock absolute/idle expiry, account epochs and security cutoffs;
+  explicit reauthentication, application mutation CSRF and account-security
+  Route Handlers still block participant access;
 - Caddy must continue returning the hardened unavailable response.
 
 ## Final architecture
@@ -159,16 +160,22 @@ cutover.
 
 ## Session and request security
 
-The temporary Auth.js JWT is limited to 30 minutes and is not the final session
-authority. Before participant launch, the database-backed session design must:
+Auth.js now uses Studio's existing managed database-session authority rather
+than JWT browser sessions. The delivered adapter:
 
-- store only hashed browser tokens;
-- bind each session to an available provider identity and account epoch;
-- enforce absolute and idle expiry using PostgreSQL time;
-- support current/other-session revocation;
-- rotate or invalidate sessions on contact, account-status and security-cutoff
-  changes;
-- retain fresh-authentication and MFA evidence for sensitive actions;
+- stores only hashed browser tokens;
+- binds each session to an available provider identity and account epoch;
+- enforces absolute and idle expiry using PostgreSQL time;
+- invalidates reads after account-epoch, identity-availability or
+  security-cutoff changes;
+- records authentication time while retaining a separate MFA evidence field;
+- caps active sessions and deletes exact hashed sessions on sign-out.
+
+Before participant launch, the remaining security surfaces must:
+
+- expose current/other-session revocation through managed Route Handlers;
+- implement explicit fresh Google reauthentication and intentional Facebook
+  linking without email-based account merging;
 - provide CSRF protection for application mutations;
 - expose only minimized session/security history.
 

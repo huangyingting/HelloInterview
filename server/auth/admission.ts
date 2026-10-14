@@ -86,7 +86,7 @@ export async function admitSocialIdentity(settings: AuthSettings, account: Accou
         INSERT INTO identity_security_events (id,user_id,action,identity_id)
         VALUES (${randomUUID()},${existing.userId},'social-login',${existing.id})
       `;
-      return existing.userId;
+      return { userId: existing.userId, identityId: existing.id };
     }
     const userId = randomUUID(), identityId = randomUUID();
     await tx.$executeRaw`INSERT INTO users (id,name,email,password,demo) VALUES (${userId},${proof.name},NULL,NULL,0)`;
@@ -103,15 +103,6 @@ export async function admitSocialIdentity(settings: AuthSettings, account: Accou
       INSERT INTO identity_security_events (id,user_id,action,identity_id)
       VALUES (${randomUUID()},${userId},'social-registration',${identityId})
     `;
-    return userId;
+    return { userId, identityId };
   }, { isolationLevel: 'Serializable' });
-}
-
-export async function socialIdentityOwner(account: Account) {
-  const proof = socialProof(account, {});
-  const rows = await prismaClient().$queryRaw<Array<{ user_id: string }>>`
-    SELECT user_id FROM managed_identities
-    WHERE issuer=${proof.issuer} AND subject=${proof.subject} AND available=1
-  `;
-  return rows[0]?.user_id ?? null;
 }
