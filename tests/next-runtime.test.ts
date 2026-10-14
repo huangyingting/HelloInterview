@@ -22,6 +22,14 @@ import { GET as privacyDeletionRoute, POST as requestPrivacyDeletionRoute } from
 import { POST as cancelPrivacyDeletionRoute } from '../app/api/privacy/deletion/cancel/route';
 import { POST as saveSupportRoute } from '../app/api/support/route';
 import { GET as supportHistoryRoute } from '../app/api/support/requests/route';
+import { POST as updateProgressRoute } from '../app/api/progress/route';
+import { POST as enrollCourseRoute } from '../app/api/courses/[id]/enroll/route';
+import { POST as saveCourseVideoRoute } from '../app/api/courses/[id]/video/route';
+import { GET as listQuizSessionsRoute, POST as createQuizSessionRoute } from '../app/api/quiz-sessions/route';
+import { GET as quizSessionRoute } from '../app/api/quiz-sessions/[id]/route';
+import { POST as answerQuizSessionRoute } from '../app/api/quiz-sessions/[id]/answer/route';
+import { POST as finishQuizSessionRoute } from '../app/api/quiz-sessions/[id]/finish/route';
+import { GET as quizReportRoute } from '../app/api/quiz-reports/[id]/route';
 import { postgresConnection } from '../server/db/connection';
 import { migrateDatabase } from '../server/db/migrations';
 import { prismaConnection } from '../server/db/prisma';
@@ -225,6 +233,90 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
   }));
   assert.equal(profileResponse.status, 200);
   assert.equal((await profileResponse.json()).name, 'Updated Next Owner');
+  const missingLearningCsrf = await updateProgressRoute(new Request('https://studio.fixture/api/progress', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key: 'system-design/introduction', field: 'read', enabled: true }),
+  }));
+  assert.equal(missingLearningCsrf.status, 403);
+  const progressResponse = await updateProgressRoute(new Request('https://studio.fixture/api/progress', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ key: 'system-design/introduction', field: 'read', enabled: true }),
+  }));
+  const progressState = await progressResponse.json();
+  assert.equal(progressResponse.status, 200);
+  assert.ok(progressState.read.includes('system-design/introduction'));
+  assert.equal(progressState.recognition, 2);
+  const premiumProgress = await updateProgressRoute(new Request('https://studio.fixture/api/progress', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ key: 'low-level-design/concurrency', field: 'read', enabled: true }),
+  }));
+  assert.equal(premiumProgress.status, 403);
+  const enrollment = await enrollCourseRoute(new Request('https://studio.fixture/api/courses/system-design/enroll', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: '{}',
+  }), { params: Promise.resolve({ id: 'system-design' }) });
+  assert.ok((await enrollment.json()).enrollments.includes('system-design'));
+  const videoProgress = await saveCourseVideoRoute(new Request('https://studio.fixture/api/courses/system-design/video', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ resource: 'system-design' }),
+  }), { params: Promise.resolve({ id: 'system-design' }) });
+  assert.ok((await videoProgress.json()).watched.includes('system-design'));
+  const quizCreation = await createQuizSessionRoute(new Request('https://studio.fixture/api/quiz-sessions', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ topic: 'api-design' }),
+  }));
+  assert.equal(quizCreation.status, 201);
+  let quizSession = await quizCreation.json();
+  const quizId = quizSession.id;
+  const openQuizList = await listQuizSessionsRoute(new Request('https://studio.fixture/api/quiz-sessions', {
+    headers: { Cookie: accountCookies },
+  }));
+  assert.equal((await openQuizList.json())[0].id, quizId);
+  const resumedQuiz = await quizSessionRoute(new Request(`https://studio.fixture/api/quiz-sessions/${quizId}`, {
+    headers: { Cookie: accountCookies },
+  }), { params: Promise.resolve({ id: quizId }) });
+  assert.equal((await resumedQuiz.json()).id, quizId);
+  while (quizSession.question) {
+    const answered = await answerQuizSessionRoute(new Request(
+      `https://studio.fixture/api/quiz-sessions/${quizId}/answer`,
+      {
+        method: 'POST',
+        headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify({
+          questionId: quizSession.question.id,
+          answer: -1,
+          revision: quizSession.revision,
+        }),
+      },
+    ), { params: Promise.resolve({ id: quizId }) });
+    assert.equal(answered.status, 200);
+    quizSession = (await answered.json()).session;
+  }
+  const finishedQuiz = await finishQuizSessionRoute(new Request(
+    `https://studio.fixture/api/quiz-sessions/${quizId}/finish`,
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ revision: quizSession.revision }),
+    },
+  ), { params: Promise.resolve({ id: quizId }) });
+  const finishedQuizState = await finishedQuiz.json();
+  assert.equal(finishedQuiz.status, 200);
+  assert.equal(finishedQuizState.quizzes[0].id, quizId);
+  const savedQuizReport = await quizReportRoute(new Request(`https://studio.fixture/api/quiz-reports/${quizId}`, {
+    headers: { Cookie: accountCookies },
+  }), { params: Promise.resolve({ id: quizId }) });
+  assert.equal((await savedQuizReport.json()).id, quizId);
+  const closedQuizList = await listQuizSessionsRoute(new Request('https://studio.fixture/api/quiz-sessions', {
+    headers: { Cookie: accountCookies },
+  }));
+  assert.equal((await closedQuizList.json()).length, 0);
   const otherToken = 'e'.repeat(64);
   await withAuthRequest(new Request('https://studio.fixture/api/auth/callback/google'), async () => {
     recordAuthAdmission({ userId: authOwner, identityId: identity });
@@ -419,6 +511,12 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     body: JSON.stringify({ name: 'Must Not Change' }),
   }));
   assert.equal(restrictedProfile.status, 403);
+  const restrictedProgress = await updateProgressRoute(new Request('https://studio.fixture/api/progress', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ key: 'system-design/introduction', field: 'read', enabled: false }),
+  }));
+  assert.equal(restrictedProgress.status, 403);
   await db.prepare("UPDATE managed_accounts SET status='active' WHERE user_id=?").run(authOwner);
   for (let index = 0; index < 10; index += 1) {
     await db.prepare(`INSERT INTO support(id,user_id,email,body,created_at)

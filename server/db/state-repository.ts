@@ -91,7 +91,7 @@ export class StateRepository {
         const previous = old.get(item.id);
         if (previous?.position === position && JSON.stringify(previous.item) === JSON.stringify(item)) continue;
         const revision = 'revision' in item && typeof item.revision === 'number' ? item.revision : 0;
-        await this.db.prepare(`INSERT INTO ${table} (user_id,id,value,position,revision) VALUES (?,?,?,?,?)
+        await this.db.prepare(`INSERT INTO ${table} (user_id,id,value,position,revision) VALUES (?,?,?::jsonb,?,?)
           ON CONFLICT (user_id,id) DO UPDATE SET value=EXCLUDED.value,position=EXCLUDED.position,revision=EXCLUDED.revision,updated_at=now()`)
           .run(userId, item.id, JSON.stringify(item), position, revision);
       }
