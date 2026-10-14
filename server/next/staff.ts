@@ -1,5 +1,6 @@
 import type { StaffRole, User } from '../../shared/types';
 import { loadAuthSettings } from '../auth/config';
+import { assertCsrf } from '../auth/csrf';
 import { currentManagedAuthSession } from '../auth/session';
 import { CommunityModeration } from '../community-moderation';
 import { CommunityRestrictions } from '../community-restrictions';
@@ -26,9 +27,10 @@ async function enforceStaffLimit(db: Database, owner: string) {
   }
 }
 
-async function staffContext(request: Request) {
+async function staffContext(request: Request, mutation = false) {
   const session = await currentManagedAuthSession(request);
   if (!session) throw new HttpError(401, 'Sign in before opening staff operations.');
+  if (mutation) assertCsrf(request, session);
   const db = prismaConnection();
   await enforceStaffLimit(db, session.userId);
   const saved = await db.prepare('SELECT name FROM users WHERE id=?').get(session.userId);
@@ -123,4 +125,49 @@ export async function staffRestrictionQueue(request: Request, input: unknown) {
 export async function staffRestrictionAppealQueue(request: Request, input: unknown) {
   const { restrictions, user } = await staffContext(request);
   return restrictions.appealQueue(user, input);
+}
+
+export async function changeStaffAccountStatus(request: Request, id: string, input: unknown) {
+  const { staff, user } = await staffContext(request, true);
+  return staff.changeStatus(user, id, input);
+}
+
+export async function updateStaffSupport(request: Request, id: string, input: unknown) {
+  const { support, user } = await staffContext(request, true);
+  return support.update(user, id, input);
+}
+
+export async function replyToStaffSupport(request: Request, id: string, input: unknown) {
+  const { support, user } = await staffContext(request, true);
+  return support.respond(user, id, input);
+}
+
+export async function actOnStaffReport(request: Request, id: string, input: unknown) {
+  const { moderation, user } = await staffContext(request, true);
+  return moderation.act(user, id, input);
+}
+
+export async function reviewStaffReportTriage(request: Request, id: string, input: unknown) {
+  const { moderation, user } = await staffContext(request, true);
+  return moderation.reviewTriage(user, id, input);
+}
+
+export async function applyStaffRestriction(request: Request, id: string, input: unknown) {
+  const { restrictions, user } = await staffContext(request, true);
+  return restrictions.apply(user, id, input);
+}
+
+export async function changeStaffRestriction(request: Request, id: string, input: unknown) {
+  const { restrictions, user } = await staffContext(request, true);
+  return restrictions.change(user, id, input);
+}
+
+export async function actOnStaffRestrictionAppeal(request: Request, id: string, input: unknown) {
+  const { restrictions, user } = await staffContext(request, true);
+  return restrictions.actOnAppeal(user, id, input);
+}
+
+export async function actOnStaffAppeal(request: Request, id: string, input: unknown) {
+  const { moderation, user } = await staffContext(request, true);
+  return moderation.actOnAppeal(user, id, input);
 }

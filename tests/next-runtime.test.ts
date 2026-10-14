@@ -83,6 +83,19 @@ import { GET as staffReportsRoute } from '../app/api/staff/community/reports/rou
 import { GET as staffAppealsRoute } from '../app/api/staff/community/appeals/route';
 import { GET as staffRestrictionsRoute } from '../app/api/staff/community/restrictions/route';
 import { GET as staffRestrictionAppealsRoute } from '../app/api/staff/community/restriction-appeals/route';
+import { PATCH as changeStaffAccountStatusRoute } from '../app/api/staff/accounts/[id]/status/route';
+import { PATCH as actOnStaffReportRoute } from '../app/api/staff/community/reports/[id]/route';
+import { PATCH as reviewStaffTriageRoute } from '../app/api/staff/community/reports/[id]/triage/route';
+import {
+  POST as applyStaffRestrictionRoute,
+} from '../app/api/staff/community/reports/[id]/restrictions/route';
+import { PATCH as actOnStaffAppealRoute } from '../app/api/staff/community/appeals/[id]/route';
+import { PATCH as changeStaffRestrictionRoute } from '../app/api/staff/community/restrictions/[id]/route';
+import {
+  PATCH as actOnStaffRestrictionAppealRoute,
+} from '../app/api/staff/community/restriction-appeals/[id]/route';
+import { PATCH as updateStaffSupportRoute } from '../app/api/staff/support/[id]/route';
+import { POST as replyToStaffSupportRoute } from '../app/api/staff/support/[id]/replies/route';
 import { postgresConnection } from '../server/db/connection';
 import { migrateDatabase } from '../server/db/migrations';
 import { prismaConnection } from '../server/db/prisma';
@@ -571,22 +584,139 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     'https://studio.fixture/api/staff/community/reports',
     { headers: { Cookie: accountCookies } },
   ));
-  assert.equal((await staffReportsResponse.json()).reports[0].id, reportReceipt.id);
+  const staffReport = (await staffReportsResponse.json()).reports[0];
+  assert.equal(staffReport.id, reportReceipt.id);
   const staffAppealsResponse = await staffAppealsRoute(new Request(
     'https://studio.fixture/api/staff/community/appeals',
     { headers: { Cookie: accountCookies } },
   ));
-  assert.equal((await staffAppealsResponse.json()).appeals[0].id, appealReceipt.id);
+  const staffAppeal = (await staffAppealsResponse.json()).appeals[0];
+  assert.equal(staffAppeal.id, appealReceipt.id);
   const staffRestrictionsResponse = await staffRestrictionsRoute(new Request(
     'https://studio.fixture/api/staff/community/restrictions',
     { headers: { Cookie: accountCookies } },
   ));
-  assert.equal((await staffRestrictionsResponse.json()).restrictions[0].id, restrictionId);
+  const staffRestriction = (await staffRestrictionsResponse.json()).restrictions[0];
+  assert.equal(staffRestriction.id, restrictionId);
   const staffRestrictionAppealsResponse = await staffRestrictionAppealsRoute(new Request(
     'https://studio.fixture/api/staff/community/restriction-appeals',
     { headers: { Cookie: accountCookies } },
   ));
-  assert.equal((await staffRestrictionAppealsResponse.json()).appeals[0].id, restrictionAppeal.id);
+  const staffRestrictionAppeal = (await staffRestrictionAppealsResponse.json()).appeals[0];
+  assert.equal(staffRestrictionAppeal.id, restrictionAppeal.id);
+  const claimedReportResponse = await actOnStaffReportRoute(new Request(
+    `https://studio.fixture/api/staff/community/reports/${staffReport.id}`,
+    {
+      method: 'PATCH',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({
+        revision: staffReport.revision,
+        targetRevision: staffReport.targetRevision,
+        action: 'claim',
+        reason: 'Claim this fixture report before saving a reviewed moderation decision.',
+      }),
+    },
+  ), { params: Promise.resolve({ id: staffReport.id }) });
+  const claimedReport = await claimedReportResponse.json();
+  assert.equal(claimedReport.assignment, 'me');
+  const reviewedTriageResponse = await reviewStaffTriageRoute(new Request(
+    `https://studio.fixture/api/staff/community/reports/${staffReport.id}/triage`,
+    {
+      method: 'PATCH',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({
+        revision: claimedReport.triage.revision,
+        decision: 'rejected',
+        reason: 'The deterministic signal is retained as evidence but does not establish a policy violation.',
+      }),
+    },
+  ), { params: Promise.resolve({ id: staffReport.id }) });
+  assert.equal((await reviewedTriageResponse.json()).triage.state, 'reviewed');
+  const appliedRestrictionResponse = await applyStaffRestrictionRoute(new Request(
+    `https://studio.fixture/api/staff/community/reports/${staffReport.id}/restrictions`,
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({
+        reportRevision: claimedReport.revision,
+        targetRevision: claimedReport.targetRevision,
+        subject: 'author',
+        scope: 'participation',
+        durationHours: 24,
+        reason: 'Apply a bounded reviewed fixture restriction to the reported contribution author.',
+      }),
+    },
+  ), { params: Promise.resolve({ id: staffReport.id }) });
+  assert.equal((await appliedRestrictionResponse.json()).scope, 'participation');
+  const claimedAppealResponse = await actOnStaffAppealRoute(new Request(
+    `https://studio.fixture/api/staff/community/appeals/${staffAppeal.id}`,
+    {
+      method: 'PATCH',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({
+        revision: staffAppeal.revision,
+        targetRevision: staffAppeal.targetRevision,
+        action: 'claim',
+        reason: 'Claim this fixture appeal before a separately reviewed final disposition.',
+      }),
+    },
+  ), { params: Promise.resolve({ id: staffAppeal.id }) });
+  assert.equal((await claimedAppealResponse.json()).assignment, 'me');
+  const claimedRestrictionAppealResponse = await actOnStaffRestrictionAppealRoute(new Request(
+    `https://studio.fixture/api/staff/community/restriction-appeals/${staffRestrictionAppeal.id}`,
+    {
+      method: 'PATCH',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({
+        revision: staffRestrictionAppeal.revision,
+        restrictionRevision: staffRestrictionAppeal.restrictionRevision,
+        action: 'claim',
+        reason: 'Claim this restriction appeal before a separately reviewed final disposition.',
+      }),
+    },
+  ), { params: Promise.resolve({ id: staffRestrictionAppeal.id }) });
+  assert.equal((await claimedRestrictionAppealResponse.json()).assignment, 'me');
+  const liftedRestrictionResponse = await changeStaffRestrictionRoute(new Request(
+    `https://studio.fixture/api/staff/community/restrictions/${staffRestriction.id}`,
+    {
+      method: 'PATCH',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({
+        action: 'lift',
+        revision: staffRestriction.revision,
+        reason: 'Lift the bounded fixture restriction after its acceptance checks have completed.',
+      }),
+    },
+  ), { params: Promise.resolve({ id: staffRestriction.id }) });
+  assert.equal((await liftedRestrictionResponse.json()).status, 'lifted');
+  const managedTarget = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const managedTargetIdentity = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  await db.prepare('INSERT INTO users(id,name,email,password,demo) VALUES(?,?,?,?,0)')
+    .run(managedTarget, 'Managed status target', null, null);
+  await db.prepare(`INSERT INTO managed_identities(id,user_id,issuer,subject,provider,email,verified,available)
+    VALUES(?,?,?,?,?,?,1,1)`).run(
+    managedTargetIdentity,
+    managedTarget,
+    'https://accounts.google.com',
+    'managed-target-subject',
+    'google',
+    'managed-target@example.test',
+  );
+  await db.prepare(`INSERT INTO managed_accounts(user_id,status,contact_email,contact_identity_id,contact_verified)
+    VALUES(?,'active','managed-target@example.test',?,1)`).run(managedTarget, managedTargetIdentity);
+  const suspendedTargetResponse = await changeStaffAccountStatusRoute(new Request(
+    `https://studio.fixture/api/staff/accounts/${managedTarget}/status`,
+    {
+      method: 'PATCH',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({
+        status: 'suspended',
+        revision: 0,
+        reason: 'Suspend the isolated fixture account to verify audited status mutation authority.',
+      }),
+    },
+  ), { params: Promise.resolve({ id: managedTarget }) });
+  assert.equal((await suspendedTargetResponse.json()).status, 'suspended');
   const missingLearningCsrf = await updateProgressRoute(new Request('https://studio.fixture/api/progress', {
     method: 'POST',
     headers: { Cookie: accountCookies, 'Content-Type': 'application/json' },
@@ -1172,6 +1302,45 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     headers: { Cookie: accountCookies },
   }));
   assert.equal((await supportHistory.json()).tickets[0].id, supportId);
+  await db.prepare("DELETE FROM identity_abuse_buckets WHERE scope='account-security'").run();
+  await db.prepare(`UPDATE managed_sessions SET authenticated_at=floor(extract(epoch from clock_timestamp())*1000)::bigint,
+    mfa_at=floor(extract(epoch from clock_timestamp())*1000)::bigint WHERE token=?`).run(storedToken);
+  const staffSupportQueueResponse = await staffSupportRoute(new Request('https://studio.fixture/api/staff/support', {
+    headers: { Cookie: accountCookies },
+  }));
+  const staffSupportQueuePayload = await staffSupportQueueResponse.json();
+  assert.equal(staffSupportQueueResponse.status, 200, JSON.stringify(staffSupportQueuePayload));
+  const staffTicket = staffSupportQueuePayload.tickets.find(
+    (ticket: { id: string }) => ticket.id === supportId,
+  );
+  const updatedStaffTicketResponse = await updateStaffSupportRoute(new Request(
+    `https://studio.fixture/api/staff/support/${supportId}`,
+    {
+      method: 'PATCH',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({
+        revision: staffTicket.revision,
+        assignment: 'me',
+        reason: 'Claim this fixture request and record that staff review has started.',
+      }),
+    },
+  ), { params: Promise.resolve({ id: supportId }) });
+  const updatedStaffTicket = await updatedStaffTicketResponse.json();
+  assert.equal(updatedStaffTicketResponse.status, 200, JSON.stringify(updatedStaffTicket));
+  assert.equal(updatedStaffTicket.assignment, 'me');
+  const staffReplyResponse = await replyToStaffSupportRoute(new Request(
+    `https://studio.fixture/api/staff/support/${supportId}/replies`,
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({
+        requestId: randomUUID(),
+        revision: updatedStaffTicket.revision,
+        body: 'Your request is available to the private beta support owner for in-app follow-up.',
+      }),
+    },
+  ), { params: Promise.resolve({ id: supportId }) });
+  assert.equal((await staffReplyResponse.json()).ticket.status, 'pending');
   await db.prepare("UPDATE managed_accounts SET status='pending-verification' WHERE user_id=?").run(authOwner);
   const pendingSupport = await saveSupportRoute(new Request('https://studio.fixture/api/support', {
     method: 'POST',

@@ -149,7 +149,7 @@ export class CommunityRestrictions {
       FROM community_restrictions restriction JOIN community_reports report ON report.id=restriction.source_report_id`;
   }
   private async current(id:string,actor:string) {
-    return this.staff(await this.db.prepare(`${this.select()} WHERE restriction.id=?`).get(id),actor);
+    return this.staff(await this.db.prepare(`${this.select()} WHERE restriction.id=${uuid(this.db)}`).get(id),actor);
   }
   private async evidence(input:{
     restrictionId:string;reportId:string;actor:string;role:Extract<StaffRole,'moderator'|'administrator'>;
@@ -158,7 +158,8 @@ export class CommunityRestrictions {
   }) {
     await this.db.prepare(`INSERT INTO community_restriction_events
       (id,restriction_id,source_report_id,actor_ref,actor_role,action,reason,prior_revision,result_revision,
-        prior_expires_at,result_expires_at,result_state,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        prior_expires_at,result_expires_at,result_state,created_at)
+      VALUES(${uuid(this.db)},${uuid(this.db)},${uuid(this.db)},?,?,?,?,?,?,?,?,?,?)`)
       .run(randomUUID(),input.restrictionId,input.reportId,input.actor,input.role,input.action,input.reason,
         input.priorRevision,input.resultRevision,input.priorExpires,input.resultExpires,input.resultState,input.createdAt);
   }
@@ -240,7 +241,7 @@ export class CommunityRestrictions {
         restriction.expires_at AS current_expires_at
         FROM community_restriction_appeals appeals JOIN community_restrictions restriction
           ON restriction.id=appeals.restriction_id
-        WHERE appeals.owner_id=? ${cursor?'AND (appeals.created_at,appeals.id)<(?,?)':''}
+        WHERE appeals.owner_id=? ${cursor?`AND (appeals.created_at,appeals.id)<(?,${uuid(this.db)})`:''}
         ORDER BY appeals.created_at DESC,appeals.id DESC LIMIT 21`)
         .all(user.id,...(cursor?[cursor.createdAt,cursor.id]:[]));
       const page=rows.slice(0,20),last=page.at(-1)&&appealStatusRow.parse(page.at(-1)),
@@ -258,7 +259,7 @@ export class CommunityRestrictions {
     return this.db.transaction(async()=>{
       const role=await this.authorize(user);
       const report=await this.db.prepare(`SELECT reports.* FROM community_reports reports
-        WHERE reports.id=? ${this.db.dialect==='postgres'?'FOR UPDATE OF reports':''}`).get(reportId.data);
+        WHERE reports.id=${uuid(this.db)} ${this.db.dialect==='postgres'?'FOR UPDATE OF reports':''}`).get(reportId.data);
       if(!report)throw new HttpError(404,'Community report not found.');
       const reportRevision=z.number().int().nonnegative().parse(report.report_revision);
       const reportTargetType=z.enum(['post','comment']).parse(report.target_type),reportTargetId=z.string().parse(report.target_id);
@@ -295,7 +296,7 @@ export class CommunityRestrictions {
         const currentId=z.uuid().parse(current.id),prior=z.number().int().positive().parse(current.revision),
           expires=z.string().parse(current.expires_at);
         await this.db.prepare(`UPDATE community_restrictions SET state='expired',revision=revision+1,updated_at=?
-          WHERE id=? AND revision=?`).run(nowText,currentId,prior);
+          WHERE id=${uuid(this.db)} AND revision=?`).run(nowText,currentId,prior);
         await this.evidence({restrictionId:currentId,reportId:z.uuid().parse(current.source_report_id),
           actor:user.id,role,action:'expire',reason:'The stored restriction expiry was reached before this separately reviewed action.',
           priorRevision:prior,resultRevision:prior+1,priorExpires:expires,resultExpires:expires,resultState:'expired',createdAt:nowText});
@@ -303,7 +304,7 @@ export class CommunityRestrictions {
       const restrictionId=randomUUID(),expires=new Date(now.getTime()+parsed.data.durationHours*3600000).toISOString();
       await this.db.prepare(`INSERT INTO community_restrictions
         (id,subject_id,source_report_id,scope,state,revision,starts_at,expires_at,created_at,updated_at)
-        VALUES(?,?,?,?,'active',1,?,?,?,?)`)
+        VALUES(${uuid(this.db)},?,${uuid(this.db)},?,'active',1,?,?,?,?)`)
         .run(restrictionId,subject,reportId.data,parsed.data.scope,nowText,expires,nowText,nowText);
       await this.evidence({restrictionId,reportId:reportId.data,actor:user.id,role,action:'restrict',reason:parsed.data.reason,
         priorRevision:0,resultRevision:1,priorExpires:null,resultExpires:expires,resultState:'active',createdAt:nowText});
@@ -319,7 +320,7 @@ export class CommunityRestrictions {
       let raw=await this.db.prepare(`SELECT restriction.*,
         (SELECT actor_ref FROM community_restriction_events event WHERE event.restriction_id=restriction.id
           ORDER BY event.created_at DESC,event.id DESC LIMIT 1) AS last_actor
-        FROM community_restrictions restriction WHERE restriction.id=?`).get(restrictionId.data);
+        FROM community_restrictions restriction WHERE restriction.id=${uuid(this.db)}`).get(restrictionId.data);
       if(!raw)throw new HttpError(404,'Community restriction not found.');
       const subject=z.string().nullable().parse(raw.subject_id);
       if(!subject)throw new HttpError(409,'This restriction subject has been retired.');
@@ -327,7 +328,7 @@ export class CommunityRestrictions {
       raw=await this.db.prepare(`SELECT restriction.*,
         (SELECT actor_ref FROM community_restriction_events event WHERE event.restriction_id=restriction.id
           ORDER BY event.created_at DESC,event.id DESC LIMIT 1) AS last_actor
-        FROM community_restrictions restriction WHERE restriction.id=?
+        FROM community_restrictions restriction WHERE restriction.id=${uuid(this.db)}
         ${this.db.dialect==='postgres'?'FOR UPDATE OF restriction':''}`).get(restrictionId.data);
       if(!raw)throw new HttpError(404,'Community restriction not found.');
       if(raw.subject_id!==subject)throw new HttpError(409,'This restriction subject has been retired.');
@@ -345,7 +346,7 @@ export class CommunityRestrictions {
           throw new HttpError(409,'Choose an extension that lasts beyond the current restriction expiry.');
       }
       const changed=await this.db.prepare(`UPDATE community_restrictions SET state=?,revision=revision+1,expires_at=?,updated_at=?
-        WHERE id=? AND revision=? AND state='active'`).run(resultState,resultExpires,nowText,restrictionId.data,revision);
+        WHERE id=${uuid(this.db)} AND revision=? AND state='active'`).run(resultState,resultExpires,nowText,restrictionId.data,revision);
       if(changed!==1)throw new HttpError(409,'The community restriction changed before this action.');
       await this.evidence({restrictionId:restrictionId.data,reportId:z.uuid().parse(raw.source_report_id),actor:user.id,role,
         action:parsed.data.action,reason:parsed.data.reason,priorRevision:revision,resultRevision:revision+1,
@@ -389,7 +390,7 @@ export class CommunityRestrictions {
     return this.db.transaction(async()=>{
       await this.authorize(user);
       const rows=await this.db.prepare(`${this.staffAppealSelect()}
-        ${cursor?'WHERE (appeals.updated_at,appeals.id)<(?,?)':''}
+        ${cursor?`WHERE (appeals.updated_at,appeals.id)<(?,${uuid(this.db)})`:''}
         ORDER BY appeals.updated_at DESC,appeals.id DESC LIMIT 21`).all(...(cursor?[cursor.updatedAt,cursor.id]:[]));
       const page=rows.slice(0,20),now=(await this.clock()).toISOString(),
         appeals=page.map(value=>this.staffAppeal(value,user.id,now)),
@@ -406,18 +407,18 @@ export class CommunityRestrictions {
       'Choose one restriction appeal, current appeal/restriction revisions, one supported action and a 20-500 character reason.');
     return this.db.transaction(async()=>{
       const role=await this.authorize(user);
-      const seedAppeal=appealRow.safeParse(await this.db.prepare('SELECT * FROM community_restriction_appeals WHERE id=?')
+      const seedAppeal=appealRow.safeParse(await this.db.prepare(`SELECT * FROM community_restriction_appeals WHERE id=${uuid(this.db)}`)
         .get(appealId.data));
       if(!seedAppeal.success)throw new HttpError(404,'Community restriction appeal not found.');
-      const seedRestriction=storedRestrictionRow.safeParse(await this.db.prepare('SELECT * FROM community_restrictions WHERE id=?')
+      const seedRestriction=storedRestrictionRow.safeParse(await this.db.prepare(`SELECT * FROM community_restrictions WHERE id=${uuid(this.db)}`)
         .get(seedAppeal.data.restriction_id));
       if(!seedRestriction.success)throw new HttpError(409,'The appealed restriction is no longer stored.');
       if(seedRestriction.data.subject_id)await this.lock(seedRestriction.data.subject_id,seedRestriction.data.scope);
       const currentRestriction=storedRestrictionRow.safeParse(await this.db.prepare(`SELECT * FROM community_restrictions
-        WHERE id=?${this.db.dialect==='postgres'?' FOR UPDATE':''}`).get(seedAppeal.data.restriction_id));
+        WHERE id=${uuid(this.db)}${this.db.dialect==='postgres'?' FOR UPDATE':''}`).get(seedAppeal.data.restriction_id));
       if(!currentRestriction.success)throw new HttpError(409,'The appealed restriction is no longer stored.');
       const restriction=currentRestriction.data;
-      const raw=await this.db.prepare(`${this.staffAppealSelect()} WHERE appeals.id=?
+      const raw=await this.db.prepare(`${this.staffAppealSelect()} WHERE appeals.id=${uuid(this.db)}
         ${this.db.dialect==='postgres'?'FOR UPDATE OF appeals':''}`).get(appealId.data);
       if(!raw)throw new HttpError(404,'Community restriction appeal not found.');
       const current=staffAppealRow.parse(raw),now=(await this.clock()).toISOString();
@@ -456,7 +457,7 @@ export class CommunityRestrictions {
           if(parsed.data.action==='uphold'){
             const changed=await this.db.prepare(`UPDATE community_restrictions
               SET state='lifted',revision=revision+1,updated_at=?
-              WHERE id=? AND revision=? AND state='active'`).run(now,restriction.id,restriction.revision);
+              WHERE id=${uuid(this.db)} AND revision=? AND state='active'`).run(now,restriction.id,restriction.revision);
             if(changed!==1)throw new HttpError(409,'The restriction changed before this appeal decision.');
             resultRestrictionRevision=restriction.revision+1;
             await this.evidence({restrictionId:restriction.id,reportId:restriction.source_report_id,actor:user.id,role,
@@ -468,15 +469,15 @@ export class CommunityRestrictions {
       }
       const changed=await this.db.prepare(`UPDATE community_restriction_appeals
         SET assigned_to=?,state=?,appeal_revision=appeal_revision+1,updated_at=?
-        WHERE id=? AND appeal_revision=?`).run(assigned,state,now,current.id,current.appeal_revision);
+        WHERE id=${uuid(this.db)} AND appeal_revision=?`).run(assigned,state,now,current.id,current.appeal_revision);
       if(changed!==1)throw new HttpError(409,'The restriction appeal changed before this action.');
       await this.db.prepare(`INSERT INTO community_restriction_appeal_events
         (id,appeal_id,restriction_id,actor_ref,actor_role,action,reason,prior_appeal_revision,result_appeal_revision,
           prior_restriction_revision,result_restriction_revision,result_appeal_state,created_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(randomUUID(),current.id,restriction.id,user.id,role,parsed.data.action,
+        VALUES(${uuid(this.db)},${uuid(this.db)},${uuid(this.db)},?,?,?,?,?,?,?,?,?,?)`).run(randomUUID(),current.id,restriction.id,user.id,role,parsed.data.action,
           parsed.data.reason,current.appeal_revision,current.appeal_revision+1,restriction.revision,
           resultRestrictionRevision,state,now);
-      const updated=await this.db.prepare(`${this.staffAppealSelect()} WHERE appeals.id=?`).get(current.id);
+      const updated=await this.db.prepare(`${this.staffAppealSelect()} WHERE appeals.id=${uuid(this.db)}`).get(current.id);
       return this.staffAppeal(updated,user.id,now);
     });
   }
@@ -489,7 +490,7 @@ export class CommunityRestrictions {
       await this.authorize(user);
       const now=(await this.clock()).toISOString();
       const rows=await this.db.prepare(`${this.select()} WHERE restriction.state='active' AND restriction.expires_at>?
-        ${cursor?'AND (restriction.updated_at,restriction.id)<(?,?)':''}
+        ${cursor?`AND (restriction.updated_at,restriction.id)<(?,${uuid(this.db)})`:''}
         ORDER BY restriction.updated_at DESC,restriction.id DESC LIMIT 21`)
         .all(now,...(cursor?[cursor.updatedAt,cursor.id]:[]));
       const page=rows.slice(0,20),restrictions=page.map(value=>this.staff(value,user.id));

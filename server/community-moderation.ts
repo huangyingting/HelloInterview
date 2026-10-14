@@ -195,7 +195,7 @@ export class CommunityModeration {
       const rows=await this.db.prepare(`SELECT reports.*,target.state AS target_state,target.revision AS target_revision
         FROM community_reports reports LEFT JOIN community_moderation_targets target
           ON target.target_type=reports.target_type AND target.target_id=reports.target_id
-        WHERE reports.reporter_id=? ${cursor?'AND (reports.created_at,reports.id)<(?,?)':''}
+        WHERE reports.reporter_id=? ${cursor?`AND (reports.created_at,reports.id)<(?,${uuid(this.db)})`:''}
         ORDER BY reports.created_at DESC,reports.id DESC LIMIT 21`)
         .all(user.id,...(cursor?[cursor.createdAt,cursor.id]:[]));
       const page=rows.slice(0,20),last=page.at(-1)&&reportRow.parse(page.at(-1));
@@ -269,7 +269,7 @@ export class CommunityModeration {
       const rows=await this.db.prepare(`SELECT appeals.*,target.state AS current_target_state,target.revision AS current_target_revision
         FROM community_appeals appeals LEFT JOIN community_moderation_targets target
           ON target.target_type=appeals.target_type AND target.target_id=appeals.target_id
-        WHERE appeals.owner_id=? ${cursor?'AND (appeals.created_at,appeals.id)<(?,?)':''}
+        WHERE appeals.owner_id=? ${cursor?`AND (appeals.created_at,appeals.id)<(?,${uuid(this.db)})`:''}
         ORDER BY appeals.created_at DESC,appeals.id DESC LIMIT 21`)
         .all(user.id,...(cursor?[cursor.createdAt,cursor.id]:[]));
       const page=rows.slice(0,20),last=page.at(-1)&&appealRow.parse(page.at(-1));
@@ -335,7 +335,7 @@ export class CommunityModeration {
         FROM community_reports reports LEFT JOIN community_moderation_targets target
           ON target.target_type=reports.target_type AND target.target_id=reports.target_id
         LEFT JOIN community_spam_triage triage ON triage.report_id=reports.id
-        ${cursor?'WHERE (reports.updated_at,reports.id)<(?,?)':''}
+        ${cursor?`WHERE (reports.updated_at,reports.id)<(?,${uuid(this.db)})`:''}
         ORDER BY reports.updated_at DESC,reports.id DESC LIMIT 21`).all(...(cursor?[cursor.updatedAt,cursor.id]:[]));
       const page=rows.slice(0,20),reports:StaffCommunityReport[]=[];
       for(const row of page)reports.push(await this.dto(row,user.id));
@@ -363,7 +363,7 @@ export class CommunityModeration {
       const rows=await this.db.prepare(`SELECT appeals.*,target.state AS current_target_state,target.revision AS current_target_revision
         FROM community_appeals appeals LEFT JOIN community_moderation_targets target
           ON target.target_type=appeals.target_type AND target.target_id=appeals.target_id
-        ${cursor?'WHERE (appeals.updated_at,appeals.id)<(?,?)':''}
+        ${cursor?`WHERE (appeals.updated_at,appeals.id)<(?,${uuid(this.db)})`:''}
         ORDER BY appeals.updated_at DESC,appeals.id DESC LIMIT 21`).all(...(cursor?[cursor.updatedAt,cursor.id]:[]));
       const page=rows.slice(0,20),appeals=await Promise.all(page.map(row=>this.appealDto(row,user.id))),
         last=page.at(-1)&&appealRow.parse(page.at(-1));
@@ -381,7 +381,7 @@ export class CommunityModeration {
       const raw=await this.db.prepare(`SELECT appeals.*,target.state AS current_target_state,target.revision AS current_target_revision
         FROM community_appeals appeals LEFT JOIN community_moderation_targets target
           ON target.target_type=appeals.target_type AND target.target_id=appeals.target_id
-        WHERE appeals.id=? FOR UPDATE OF appeals`).get(appealId.data);
+        WHERE appeals.id=${uuid(this.db)} FOR UPDATE OF appeals`).get(appealId.data);
       if(!raw)throw new HttpError(404,'Community appeal not found.');
       const current=appealRow.parse(raw);
       await this.lockTarget(current.target_type,current.target_id);
@@ -423,16 +423,16 @@ export class CommunityModeration {
       }
       const now=new Date().toISOString();
       const changed=await this.db.prepare(`UPDATE community_appeals SET assigned_to=?,state=?,appeal_revision=appeal_revision+1,updated_at=?
-        WHERE id=? AND appeal_revision=?`).run(assigned,state,now,current.id,current.appeal_revision);
+        WHERE id=${uuid(this.db)} AND appeal_revision=?`).run(assigned,state,now,current.id,current.appeal_revision);
       if(changed!==1)throw new HttpError(409,'The community appeal changed before this action.');
       await this.db.prepare(`INSERT INTO community_appeal_events
         (id,appeal_id,target_type,target_id,actor_ref,actor_role,action,reason,prior_appeal_revision,result_appeal_revision,
-          prior_target_revision,result_target_revision,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+          prior_target_revision,result_target_revision,created_at) VALUES(${uuid(this.db)},${uuid(this.db)},?,?,?,?,?,?,?,?,?,?,?)`)
         .run(randomUUID(),current.id,current.target_type,current.target_id,user.id,role,parsed.data.action,parsed.data.reason,
           current.appeal_revision,current.appeal_revision+1,targetChanged?targetRevision:null,targetChanged?targetRevision+1:null,now);
       const updated=await this.db.prepare(`SELECT appeals.*,target.state AS current_target_state,target.revision AS current_target_revision
         FROM community_appeals appeals LEFT JOIN community_moderation_targets target
-          ON target.target_type=appeals.target_type AND target.target_id=appeals.target_id WHERE appeals.id=?`).get(current.id);
+          ON target.target_type=appeals.target_type AND target.target_id=appeals.target_id WHERE appeals.id=${uuid(this.db)}`).get(current.id);
       return this.appealDto(updated,user.id);
     });
   }
@@ -444,7 +444,7 @@ export class CommunityModeration {
       const raw=await this.db.prepare(`SELECT reports.*,target.state AS target_state,target.revision AS target_revision
         FROM community_reports reports LEFT JOIN community_moderation_targets target
           ON target.target_type=reports.target_type AND target.target_id=reports.target_id
-        WHERE reports.id=? FOR UPDATE OF reports`).get(reportId.data);
+        WHERE reports.id=${uuid(this.db)} FOR UPDATE OF reports`).get(reportId.data);
       if(!raw)throw new HttpError(404,'Community report not found.');
       const current=reportRow.parse(raw);
       await this.lockTarget(current.target_type,current.target_id);
@@ -488,17 +488,17 @@ export class CommunityModeration {
       }
       const now=new Date().toISOString();
       const changed=await this.db.prepare(`UPDATE community_reports SET assigned_to=?,state=?,report_revision=report_revision+1,updated_at=?
-        WHERE id=? AND report_revision=?`).run(assigned,state,now,current.id,current.report_revision);
+        WHERE id=${uuid(this.db)} AND report_revision=?`).run(assigned,state,now,current.id,current.report_revision);
       if(changed!==1)throw new HttpError(409,'The community report changed before this action.');
       await this.db.prepare(`INSERT INTO community_moderation_events
         (id,report_id,target_type,target_id,actor_ref,actor_role,action,reason,prior_report_revision,result_report_revision,
-          prior_target_revision,result_target_revision,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+          prior_target_revision,result_target_revision,created_at) VALUES(${uuid(this.db)},${uuid(this.db)},?,?,?,?,?,?,?,?,?,?,?)`)
         .run(randomUUID(),current.id,current.target_type,current.target_id,user.id,role,parsed.data.action,parsed.data.reason,
           current.report_revision,current.report_revision+1,targetChanged?targetRevision:null,targetChanged?targetRevision+1:null,now);
       const updated=await this.db.prepare(`SELECT ${staffReportProjection}
         FROM community_reports reports LEFT JOIN community_moderation_targets target
           ON target.target_type=reports.target_type AND target.target_id=reports.target_id
-        LEFT JOIN community_spam_triage triage ON triage.report_id=reports.id WHERE reports.id=?`).get(current.id);
+        LEFT JOIN community_spam_triage triage ON triage.report_id=reports.id WHERE reports.id=${uuid(this.db)}`).get(current.id);
       return this.dto(updated,user.id);
     });
   }
@@ -508,12 +508,12 @@ export class CommunityModeration {
       throw new HttpError(400,'Choose one report, its current triage revision, confirm or reject, and a 20-500 character reason.');
     return this.db.transaction(async()=>{
       const role=await this.authorize(user);
-      const report=await this.db.prepare(`SELECT assigned_to,target_type,target_id FROM community_reports WHERE id=?
+      const report=await this.db.prepare(`SELECT assigned_to,target_type,target_id FROM community_reports WHERE id=${uuid(this.db)}
         ${this.db.dialect==='postgres'?'FOR UPDATE':''}`).get(reportId.data);
       if(!report)throw new HttpError(404,'Community report not found.');
       if(role!=='administrator'&&report.assigned_to!==user.id)
         throw new HttpError(409,'Claim this report before reviewing its automated spam suggestion.');
-      const current=await this.db.prepare(`SELECT content_revision,state,outcome,revision FROM community_spam_triage WHERE report_id=?
+      const current=await this.db.prepare(`SELECT content_revision,state,outcome,revision FROM community_spam_triage WHERE report_id=${uuid(this.db)}
         ${this.db.dialect==='postgres'?'FOR UPDATE':''}`).get(reportId.data);
       if(!current)throw new HttpError(409,'This pre-migration report has no spam triage snapshot to review.');
       if(current.state!=='pending'||Number(current.revision)!==parsed.data.revision)
@@ -532,17 +532,17 @@ export class CommunityModeration {
       const now=new Date().toISOString();
       const changed=await this.db.prepare(`UPDATE community_spam_triage
         SET state='reviewed',outcome=?,revision=revision+1,updated_at=?
-        WHERE report_id=? AND state='pending' AND revision=?`)
+        WHERE report_id=${uuid(this.db)} AND state='pending' AND revision=?`)
         .run(parsed.data.decision,now,reportId.data,parsed.data.revision);
       if(changed!==1)throw new HttpError(409,'This spam triage suggestion changed before the review was saved.');
       await this.db.prepare(`INSERT INTO community_spam_triage_events
         (id,report_id,actor_ref,actor_role,decision,reason,prior_revision,result_revision,created_at)
-        VALUES(?,?,?,?,?,?,0,1,?)`)
+        VALUES(${uuid(this.db)},${uuid(this.db)},?,?,?,?,0,1,?)`)
         .run(randomUUID(),reportId.data,user.id,role,parsed.data.decision,parsed.data.reason,now);
       const updated=await this.db.prepare(`SELECT ${staffReportProjection}
         FROM community_reports reports LEFT JOIN community_moderation_targets target
           ON target.target_type=reports.target_type AND target.target_id=reports.target_id
-        LEFT JOIN community_spam_triage triage ON triage.report_id=reports.id WHERE reports.id=?`).get(reportId.data);
+        LEFT JOIN community_spam_triage triage ON triage.report_id=reports.id WHERE reports.id=${uuid(this.db)}`).get(reportId.data);
       return this.dto(updated,user.id);
     });
   }

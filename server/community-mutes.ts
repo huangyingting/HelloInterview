@@ -127,7 +127,7 @@ export class CommunityMutes {
     return this.db.transaction(async()=>{
       await admit();
       const rows=await this.db.prepare(`SELECT id,target_type,target_id,revision,created_at,updated_at FROM community_mutes
-        WHERE owner_id=? AND state='muted' ${saved?'AND (updated_at,id)<(?,?)':''}
+        WHERE owner_id=? AND state='muted' ${saved?`AND (updated_at,id)<(?,${uuid(this.db)})`:''}
         ORDER BY updated_at DESC,id DESC LIMIT 21`).all(user.id,...(saved?[saved.updatedAt,saved.id]:[]));
       const page=rows.slice(0,20),last=page.at(-1)&&muteRow.parse(page.at(-1));
       await admit();

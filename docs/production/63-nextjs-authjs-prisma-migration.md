@@ -41,10 +41,13 @@ not a launch or cutover:
 - Auth.js staff sessions can now read role, exact-account, immutable-audit,
   support, moderation, appeal and restriction queues through a shared
   fresh-sign-in and recent-MFA authority;
+- staff account suspension/reactivation, support assignment and in-app replies,
+  moderation and spam-triage decisions, reviewed restrictions and both appeal
+  workflows now use CSRF-protected Route Handlers under that same authority;
 - anonymous managed support remains fail-closed until trusted edge address
   handling can restore network-scoped abuse protection;
-- staff mutations, managed-AI feedback and the remaining administrative and
-  commercial surfaces still block participant access;
+- managed-AI feedback and the remaining billing, usage and operational
+  surfaces still block participant access;
 - Caddy must continue returning the hardened unavailable response.
 
 ## Final architecture
@@ -258,6 +261,9 @@ within 12 hours, activity within 30 minutes, sign-in and MFA within 10 minutes,
 an unexpired role grant and account-scoped admission. Auth.js does not yet
 provide the MFA enrollment/challenge flow, so this remains fail-closed unless a
 session already has reviewed MFA evidence.
+Staff mutations add application CSRF, revision fencing and immutable audit or
+evidence records. Support replies remain in-app only; moderation suggestions
+remain non-punitive until a staff member records an explicit review.
 
 Before participant launch, the remaining security surfaces must:
 
