@@ -28,12 +28,12 @@ not a launch or cutover:
   staff authority;
 - active-account progress, course enrollment/video completion, quiz sessions,
   quiz reports, direct quiz submission, interview targets and revision-fenced
-  behavioral stories now use session-bound Route Handlers and the Prisma
-  transaction authority;
+  behavioral stories and practice drafts now use session-bound Route Handlers
+  and the Prisma transaction authority;
 - anonymous managed support remains fail-closed until trusted edge address
   handling can restore network-scoped abuse protection;
-- attempts and the remaining premium/product-write surfaces still block
-  participant access;
+- practice feedback/evaluation and the remaining premium/product-write
+  surfaces still block participant access;
 - Caddy must continue returning the hardened unavailable response.
 
 ## Final architecture
@@ -217,7 +217,10 @@ enrollment and video progress all use the same Prisma-backed adapter. State
 record writes explicitly bind JSON as `jsonb`, avoiding driver-dependent
 implicit casts. Interview targets enforce bounded calendar dates, while
 behavioral story replacements use the saved per-record revision and reject
-stale editors without overwriting newer text.
+stale editors without overwriting newer text. Practice drafts also preserve
+revision fencing, diagram bounds, problem immutability and premium capability
+checks; feedback evaluation remains on the legacy runtime until its provider
+and usage-ledger boundary moves together.
 
 Before participant launch, the remaining security surfaces must:
 

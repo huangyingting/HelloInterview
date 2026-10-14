@@ -4,7 +4,7 @@ import type { Capability } from '../../shared/access';
 import { getTrack, levels, problems, quizQuestions, quizTopics } from '../../shared/catalog';
 import { courseCompletion } from '../../shared/domain';
 import { courses } from '../../shared/courses';
-import type { UserState } from '../../shared/types';
+import type { Attempt, UserState } from '../../shared/types';
 import type { ManagedAuthSession } from '../auth/adapter';
 import { assertCsrf } from '../auth/csrf';
 import { currentManagedAuthSession } from '../auth/session';
@@ -52,6 +52,24 @@ const storySchema = z.strictObject({
   result: z.string().trim().min(1).max(4000),
   tags: z.array(z.string().trim().min(1).max(40)).max(8).optional().default([]),
   revision: revision.optional().default(0),
+});
+const diagramNodeSchema = z.strictObject({
+  id: z.string().trim().min(1).max(80),
+  label: z.string().trim().min(1).max(80),
+  x: z.number().finite().min(0).max(100),
+  y: z.number().finite().min(0).max(100),
+});
+const attemptSchema = z.strictObject({
+  id: z.string().trim().min(1).max(80).optional(),
+  revision: revision.optional().default(0),
+  problemId: z.string().min(1).max(200),
+  level: z.enum(levels),
+  answer: z.string().trim().max(20000).optional().default(''),
+  code: z.string().trim().max(40000).optional().default(''),
+  nodes: z.array(diagramNodeSchema).max(30).optional().default([]),
+  edges: z.array(z.tuple([z.string().trim().min(1).max(80), z.string().trim().min(1).max(80)])).max(60)
+    .optional().default([]),
+  elapsed: z.number().finite().min(0).max(86400).optional().default(0),
 });
 
 function checked<T>(schema: z.ZodType<T>, input: unknown, message: string): T {
@@ -231,6 +249,62 @@ export async function deleteStory(request: Request, id: string) {
     if (!state.stories.some(story => story.id === storyId)) throw new HttpError(404, 'Story not found.');
     state.stories = state.stories.filter(story => story.id !== storyId);
   });
+}
+
+export async function saveAttempt(request: Request, input: unknown) {
+  const value = checked(attemptSchema, input, 'Provide a bounded practice draft, diagram and saved revision.');
+  const problem = problems.find(candidate => candidate.id === value.problemId);
+  if (!problem) throw new HttpError(404, 'Practice problem not found.');
+  if (new Set(value.nodes.map(node => node.id)).size !== value.nodes.length) {
+    throw new HttpError(400, 'Diagram node IDs must be unique.');
+  }
+  const nodeIds = new Set(value.nodes.map(node => node.id));
+  if (value.edges.some(([from, to]) => from === to || !nodeIds.has(from) || !nodeIds.has(to))) {
+    throw new HttpError(400, 'An edge must connect two existing nodes.');
+  }
+  const id = value.id ?? randomUUID();
+  const draft: Attempt = {
+    id,
+    problemId: problem.id,
+    level: value.level,
+    answer: value.answer,
+    code: value.code,
+    nodes: value.nodes,
+    edges: value.edges,
+    completed: false,
+    updatedAt: new Date().toISOString(),
+    elapsed: value.elapsed,
+    revision: 0,
+  };
+  const state = await mutateState(request, problem.premium ? 'practice.premium.create' : undefined, current => {
+    const index = current.attempts.findIndex(attempt => attempt.id === id);
+    if (value.id && index < 0) throw new HttpError(404, 'Attempt not found.');
+    if (index >= 0) {
+      const previous = current.attempts[index];
+      if (previous.problemId !== problem.id) {
+        throw new HttpError(400, 'An existing attempt cannot move to another practice problem.');
+      }
+      const savedRevision = previous.revision ?? 0;
+      if (value.revision !== savedRevision) {
+        throw new HttpError(409, 'This draft changed. Your edits are still in the workspace; reload the saved version before replacing it.');
+      }
+      const changed = previous.answer !== draft.answer
+        || previous.code !== draft.code
+        || previous.level !== draft.level
+        || JSON.stringify(previous.nodes) !== JSON.stringify(draft.nodes)
+        || JSON.stringify(previous.edges) !== JSON.stringify(draft.edges);
+      current.attempts[index] = {
+        ...draft,
+        feedback: changed ? undefined : previous.feedback,
+        completed: !changed && previous.completed,
+        revision: savedRevision + 1,
+      };
+      return;
+    }
+    if (current.attempts.length >= 500) throw new HttpError(400, 'Your practice history has reached its limit.');
+    current.attempts.unshift(draft);
+  });
+  return { state, attempt: state.attempts.find(attempt => attempt.id === id)! };
 }
 
 function quizTopic(value: string) {

@@ -34,6 +34,7 @@ import { POST as createTargetRoute } from '../app/api/targets/route';
 import { DELETE as deleteTargetRoute } from '../app/api/targets/[id]/route';
 import { POST as saveStoryRoute } from '../app/api/stories/route';
 import { DELETE as deleteStoryRoute } from '../app/api/stories/[id]/route';
+import { POST as saveAttemptRoute } from '../app/api/attempts/route';
 import { postgresConnection } from '../server/db/connection';
 import { migrateDatabase } from '../server/db/migrations';
 import { prismaConnection } from '../server/db/prisma';
@@ -374,6 +375,51 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     headers: { Cookie: accountCookies, 'X-CSRF-Token': csrf },
   }), { params: Promise.resolve({ id: targetId }) });
   assert.equal((await deletedTarget.json()).targets.length, 0);
+  const attemptInput = {
+    problemId: 'short-links',
+    level: 'Senior',
+    answer: 'Use a durable key mapping, an idempotent create operation, and bounded redirects.',
+    code: '',
+    nodes: [
+      { id: 'api', label: 'API', x: 20, y: 30 },
+      { id: 'db', label: 'Database', x: 70, y: 30 },
+    ],
+    edges: [['api', 'db']],
+    elapsed: 180,
+    revision: 0,
+  };
+  const createdAttemptResponse = await saveAttemptRoute(new Request('https://studio.fixture/api/attempts', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify(attemptInput),
+  }));
+  const createdAttempt = await createdAttemptResponse.json();
+  const attemptId = createdAttempt.attempt.id;
+  assert.equal(createdAttempt.attempt.revision, 0);
+  const updatedAttemptResponse = await saveAttemptRoute(new Request('https://studio.fixture/api/attempts', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ ...attemptInput, id: attemptId, answer: `${attemptInput.answer} Cache hot redirects.` }),
+  }));
+  assert.equal((await updatedAttemptResponse.json()).attempt.revision, 1);
+  const staleAttempt = await saveAttemptRoute(new Request('https://studio.fixture/api/attempts', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ ...attemptInput, id: attemptId, answer: 'A stale replacement.' }),
+  }));
+  assert.equal(staleAttempt.status, 409);
+  const invalidEdgeAttempt = await saveAttemptRoute(new Request('https://studio.fixture/api/attempts', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ ...attemptInput, edges: [['api', 'missing']] }),
+  }));
+  assert.equal(invalidEdgeAttempt.status, 400);
+  const premiumAttempt = await saveAttemptRoute(new Request('https://studio.fixture/api/attempts', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ ...attemptInput, problemId: 'team-chat' }),
+  }));
+  assert.equal(premiumAttempt.status, 403);
   const otherToken = 'e'.repeat(64);
   await withAuthRequest(new Request('https://studio.fixture/api/auth/callback/google'), async () => {
     recordAuthAdmission({ userId: authOwner, identityId: identity });
