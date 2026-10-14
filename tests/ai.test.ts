@@ -15,11 +15,11 @@ let origin = '';
 let cookie = '';
 let attempt: Attempt;
 const dataDirectory = `data/ai-tests/${randomUUID()}`;
-const requests: { model?: string; messages: { role: string; content: string }[];url:string;apiKey:string|null }[] = [];
+const requests: { model?: string;max_tokens?:number;max_completion_tokens?:number;messages: { role: string; content: string }[];url:string;apiKey:string|null }[] = [];
 const provider = createServer(async (req, res) => {
   let body = '';
   for await (const chunk of req) body += chunk;
-  const payload = JSON.parse(body) as { model?: string; messages: { role: string; content: string }[] };
+  const payload = JSON.parse(body) as { model?: string;max_tokens?:number;max_completion_tokens?:number;messages: { role: string; content: string }[] };
   requests.push({...payload,url:req.url??'',apiKey:typeof req.headers['api-key']==='string'?req.headers['api-key']:null});
   res.setHeader('Content-Type', 'application/json');
   if (mode === 'unavailable') {
@@ -99,6 +99,8 @@ test('configured provider receives context and returns validated AI feedback and
   assert.equal(chat.value.chat.at(-1)?.source, 'ai');
   assert.match(chat.value.chat.at(-1)!.text, /Fixture AI tutor/);
   assert.equal(requests[0].model,undefined);
+  assert.equal(requests[0].max_tokens,undefined);
+  assert.equal(requests[0].max_completion_tokens,1200);
   assert.equal(requests[0].apiKey,'local-fixture-only');
   assert.equal(requests[0].url,'/openai/deployments/fixture-model/chat/completions?api-version=2025-04-01-preview');
   assert.match(requests.at(-1)!.messages[1].content, /Caching lesson/);

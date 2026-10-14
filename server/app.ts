@@ -684,7 +684,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
       response = await fetch(`${ai.baseUrl}/chat/completions${azure?`?api-version=${encodeURIComponent(ai.apiVersion!)}`:''}`, {
         method: 'POST', signal: AbortSignal.any([AbortSignal.timeout(45000), shutdown]),
         headers,
-        body: JSON.stringify({ ...(!azure?{model:ai.model}:{}),messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }], max_tokens: 1200 }),
+        body: JSON.stringify({ ...(!azure?{model:ai.model,max_tokens:1200}:{max_completion_tokens:1200}),messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }] }),
       });
     } catch (error) {
       if (shutdown.aborted) throw new HttpError(503, 'The Studio is shutting down. Your saved work is unchanged.');

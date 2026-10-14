@@ -563,8 +563,8 @@ sends your explanation, user-reported verification notes, and file diff.
 
 Responses are validated, with explicit errors for provider failures rather
 than a silent switch to local grading. The integration is verified against an
-isolated Azure-shaped fixture. A synthetic authorized probe currently returns
-`DeploymentNotFound`, so live response behavior is not yet verified; see the
+isolated Azure-shaped fixture and a synthetic no-user-data request to the
+authorized `gpt-6.1-sol` deployment; see the
 [Azure transport boundary](docs/production/54-azure-openai-transport.md).
 Reference-site cookies are never used as provider credentials.
 

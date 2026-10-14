@@ -1,8 +1,8 @@
 # 54 - Azure OpenAI transport compatibility
 
-**Status: adapter implemented and fixture-verified; the currently authorized
-local configuration returns Azure `DeploymentNotFound`, so authentic provider
-evidence and managed dispatch remain open.**
+**Status: adapter implemented, fixture-verified and authentically probed with
+the authorized `gpt-6.1-sol` Azure deployment; managed dispatch remains
+separately denied.**
 
 This checkpoint tracks
 [#47](https://github.com/huangyingting/HelloInterview/issues/47). The user
@@ -26,21 +26,26 @@ the deployment is a bounded identifier and the API version is a dated Azure
 version. Mixing any `OPENAI_*` setting with `AZURE_OPENAI_*` fails startup.
 
 Azure requests use the deployment chat-completions route, configured
-`api-version` query and `api-key` authentication while retaining the existing
-timeout, shutdown cancellation, output bounds and response validation. Client
-capabilities expose only configured availability and deployment name.
+`api-version` query, `api-key` authentication and the newer
+`max_completion_tokens` output bound while retaining the existing timeout,
+shutdown cancellation and response validation. Client capabilities expose only
+configured availability and deployment name.
 
-## Evidence and current blocker
+## Evidence
 
 The complete existing AI integration suite runs through an Azure-shaped fixture
 and verifies routing, authentication, validated feedback/tutoring, explicit
 upstream failures, late-response fencing and persisted work.
 
-A synthetic readiness request containing no user data was sent with the
-authorized local configuration. Azure accepted the request shape but returned
-HTTP 404 with error code `DeploymentNotFound`. The adjacent project uses the
-same URL construction, so the configured deployment must be corrected or
-restored before authentic provider evidence can pass.
+A synthetic readiness request containing no user data first identified
+`gpt-5.6-terra` as available: an initial `max_tokens` request produced Azure
+`unsupported_parameter`, while `max_completion_tokens` returned HTTP 200.
+The preferred lower-cost `gpt-6.1-sol` deployment then returned HTTP 200 with
+the same bounded request and expected response shape. The adjacent local
+configuration now selects `gpt-6.1-sol` without copying its key or endpoint
+into this repository. A production-built local application then used the real
+adapter to submit a synthetic interview answer; Azure returned validated AI
+feedback with a bounded numeric score.
 
 ## Authority boundary
 
