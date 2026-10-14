@@ -19,8 +19,11 @@ boundary. The current durable-session checkpoint is not a launch or cutover:
   session revocation and sign-in-method removal now use Route Handlers;
 - one-use, fresh-session-bound Google/Facebook linking is now explicit and
   never merges accounts by email;
-- the remaining privacy/account lifecycle Route Handlers still block
-  participant access;
+- durable privacy export request/history/download and deletion
+  status/request/cancel now preserve fresh-session and atomic account-state
+  transitions through Route Handlers;
+- restricted-account support and the remaining product-write surfaces still
+  block participant access;
 - Caddy must continue returning the hardened unavailable response.
 
 ## Final architecture
@@ -141,6 +144,12 @@ Provider calls remain outside SQL transactions. A worker may publish or complete
 a durable job only through the same transaction client used for its business
 mutation.
 
+The pg-boss schema remains a controlled migration concern executed through the
+PostgreSQL driver because its installation is multi-statement SQL. Runtime
+pg-boss commands use the Prisma-backed `Database.executeSql` transaction client;
+the adapter casts pg-boss UUID comparisons and `to_regclass` reads to types
+Prisma can deserialize without weakening parameterization.
+
 ## Route migration
 
 Routes migrate by domain, not by adding a permanent catch-all proxy:
@@ -187,7 +196,7 @@ Before participant launch, the remaining security surfaces must:
 
 - apply the shared CSRF/session authority to every remaining application
   mutation;
-- complete privacy deletion/export and restricted-account Route Handlers;
+- complete restricted-account support Route Handlers;
 - establish explicit trusted-proxy address handling before restoring
   network-scoped identity rate limits.
 

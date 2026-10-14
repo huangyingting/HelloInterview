@@ -20,6 +20,15 @@ function advisoryQuery(sql: string) {
     : sql;
 }
 
+function deserializableQuery(sql: string) {
+  // pg-boss relies on node-postgres type inference that Prisma's text bindings do not provide.
+  const regclass = sql.match(/^\s*SELECT\s+to_regclass\((.+)\)\s+as\s+name\s*;?\s*$/is);
+  const supported = regclass ? `SELECT to_regclass(${regclass[1]})::text AS name` : sql;
+  return /\.job_common\b/i.test(supported)
+    ? supported.replace(/\b(id|source_id|source_root_id)\s*=\s*(\$\d+)(?!\s*::)/gi, '$1 = $2::uuid')
+    : supported;
+}
+
 export function prismaConnection(): Database {
   const prisma = prismaClient();
   const executor = () => transactionContext.getStore() ?? prisma;
@@ -40,7 +49,7 @@ export function prismaConnection(): Database {
     },
     exec: async sql => { await executor().$executeRawUnsafe(postgresParameters(sql)); },
     executeSql: async (sql, values = []) => {
-      const statement = advisoryQuery(sql);
+      const statement = deserializableQuery(advisoryQuery(sql));
       if (/^\s*(?:SELECT|WITH|SHOW|EXPLAIN|VALUES)\b/i.test(statement) || /\bRETURNING\b/i.test(statement)) {
         return { rows: await executor().$queryRawUnsafe<DatabaseRow[]>(statement, ...values) };
       }

@@ -16,6 +16,10 @@ import { DELETE as revokeSessionRoute } from '../app/api/identity/sessions/[id]/
 import { DELETE as removeIdentityRoute } from '../app/api/identity/methods/[id]/route';
 import { POST as beginIdentityLinkRoute } from '../app/api/identity/link/route';
 import { PATCH as profileRoute } from '../app/api/profile/route';
+import { GET as privacyExportsRoute, POST as requestPrivacyExportRoute } from '../app/api/privacy/exports/route';
+import { GET as downloadPrivacyExportRoute } from '../app/api/privacy/exports/[id]/download/route';
+import { GET as privacyDeletionRoute, POST as requestPrivacyDeletionRoute } from '../app/api/privacy/deletion/route';
+import { POST as cancelPrivacyDeletionRoute } from '../app/api/privacy/deletion/cancel/route';
 import { postgresConnection } from '../server/db/connection';
 import { migrateDatabase } from '../server/db/migrations';
 import { prismaConnection } from '../server/db/prisma';
@@ -24,6 +28,8 @@ import { admitSocialIdentity } from '../server/auth/admission';
 import { loadAuthSettings } from '../server/auth/config';
 import { completeSocialLink } from '../server/auth/linking';
 import { recordAuthAdmission, withAuthRequest } from '../server/auth/request-context';
+import { closeNextPrivacyService } from '../server/next/privacy';
+import { migrateJobs } from '../server/jobs';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 
@@ -37,6 +43,7 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
   url.searchParams.set('options', `-c search_path=${schema}`);
   const migration = postgresConnection(url.href);
   await migrateDatabase(migration);
+  await migrateJobs(migration);
   await migration.close();
   const previous = process.env.DATABASE_URL;
   process.env.DATABASE_URL = url.href;
@@ -52,6 +59,7 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     AUTH_INVITED_EMAILS: 'next-auth-owner@example.test',
   });
   t.after(async () => {
+    await closeNextPrivacyService();
     await prismaConnection().close();
     if (previous === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = previous;
     try { await root.exec(`DROP SCHEMA ${schema} CASCADE`); } finally { await root.close(); }
@@ -283,6 +291,52 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
   assert.equal(removed.status, 200);
   assert.equal(await adapter.getSessionAndUser!(facebookToken), null);
   assert.equal((await db.prepare('SELECT count(*)::integer AS count FROM managed_identities WHERE id=?').get(facebookIdentity))?.count, 0);
+  const exportId = '44444444-4444-4444-8444-444444444444';
+  const exportRequest = await requestPrivacyExportRoute(new Request('https://studio.fixture/api/privacy/exports', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ requestId: exportId }),
+  }));
+  assert.equal(exportRequest.status, 202);
+  assert.equal((await exportRequest.json()).id, exportId);
+  const exportHistory = await privacyExportsRoute(new Request('https://studio.fixture/api/privacy/exports', {
+    headers: { Cookie: accountCookies },
+  }));
+  assert.equal((await exportHistory.json()).exports[0].id, exportId);
+  const pendingDownload = await downloadPrivacyExportRoute(new Request(
+    `https://studio.fixture/api/privacy/exports/${exportId}/download`,
+    { headers: { Cookie: accountCookies } },
+  ), { params: Promise.resolve({ id: exportId }) });
+  assert.equal(pendingDownload.status, 409);
+  const emptyDeletion = await privacyDeletionRoute(new Request('https://studio.fixture/api/privacy/deletion', {
+    headers: { Cookie: accountCookies },
+  }));
+  assert.equal((await emptyDeletion.json()).deletion, null);
+  const deletionId = '55555555-5555-4555-8555-555555555555';
+  const deletionRequest = await requestPrivacyDeletionRoute(new Request('https://studio.fixture/api/privacy/deletion', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ requestId: deletionId }),
+  }));
+  assert.equal(deletionRequest.status, 202);
+  assert.equal((await deletionRequest.json()).status, 'cooling-off');
+  assert.equal((await db.prepare('SELECT status FROM managed_accounts WHERE user_id=?').get(authOwner))?.status,
+    'deletion-pending');
+  const deletionStatus = await privacyDeletionRoute(new Request('https://studio.fixture/api/privacy/deletion', {
+    headers: { Cookie: accountCookies },
+  }));
+  assert.equal((await deletionStatus.json()).deletion.id, deletionId);
+  const cancellation = await cancelPrivacyDeletionRoute(new Request(
+    'https://studio.fixture/api/privacy/deletion/cancel',
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ requestId: deletionId }),
+    },
+  ));
+  assert.equal(cancellation.status, 200);
+  assert.equal((await cancellation.json()).status, 'cancelled');
+  assert.equal((await db.prepare('SELECT status FROM managed_accounts WHERE user_id=?').get(authOwner))?.status, 'active');
   await db.prepare('UPDATE managed_sessions SET last_used=0 WHERE token=?').run(storedToken);
   assert.equal(await adapter.getSessionAndUser!(sessionToken), null);
   await db.prepare(`UPDATE managed_sessions SET last_used=floor(extract(epoch from clock_timestamp())*1000)::bigint

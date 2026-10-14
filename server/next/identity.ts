@@ -16,16 +16,21 @@ const clock = 'floor(extract(epoch from clock_timestamp())*1000)::bigint';
 const allowedStatuses = ['active', 'pending-verification'] as const;
 const providerSchema = z.enum(['email', 'google', 'github', 'facebook']);
 
-async function requireSession(request: Request) {
+export async function requireAccountSession(request: Request, statuses: readonly string[] = allowedStatuses) {
   const session = await currentManagedAuthSession(request);
   if (!session) throw new HttpError(401, 'Sign in again to manage account security.');
-  if (!allowedStatuses.includes(session.status as typeof allowedStatuses[number])) {
+  if (!statuses.includes(session.status)) {
     throw new HttpError(403, 'This account is not available for product access. Contact support.');
   }
   return session;
 }
 
-async function assertLockedSession(db: Database, session: ManagedAuthSession, fresh: boolean) {
+export async function assertAccountSession(
+  db: Database,
+  session: ManagedAuthSession,
+  fresh: boolean,
+  statuses: readonly string[] = allowedStatuses,
+) {
   await db.prepare('SELECT id FROM users WHERE id=? FOR UPDATE').get(session.userId);
   const row = await db.prepare(`
     SELECT a.status
@@ -39,7 +44,7 @@ async function assertLockedSession(db: Database, session: ManagedAuthSession, fr
       AND (?=0 OR m.authenticated_at>${clock}-?)
     FOR UPDATE OF a,s,m,i
   `).get(session.userId, session.tokenHash, idle, Number(fresh), freshness);
-  if (!row || !allowedStatuses.includes(String(row.status) as typeof allowedStatuses[number])) {
+  if (!row || !statuses.includes(String(row.status))) {
     throw new HttpError(403, 'Your account session or verification changed. Sign in again; your saved work is unchanged.');
   }
 }
@@ -61,7 +66,7 @@ async function enforceAccountLimit(owner: string) {
 }
 
 export async function identitySecurity(request: Request) {
-  const session = await requireSession(request);
+  const session = await requireAccountSession(request);
   const db = prismaConnection();
   const now = Number((await db.prepare(`SELECT ${clock} AS now`).get())?.now);
   const identitySchema = z.object({
@@ -120,12 +125,12 @@ export async function identitySecurity(request: Request) {
 }
 
 export async function updateProfile(request: Request, input: unknown) {
-  const session = await requireSession(request);
+  const session = await requireAccountSession(request);
   assertCsrf(request, session);
   const { name } = z.strictObject({ name: z.string().trim().min(2).max(60) }).parse(input);
   const db = prismaConnection();
   await db.transaction(async () => {
-    await assertLockedSession(db, session, false);
+    await assertAccountSession(db, session, false);
     await db.prepare('UPDATE users SET name=? WHERE id=?').run(name, session.userId);
   });
   return { id: session.userId, name, email: session.user.email, demo: false,
@@ -133,13 +138,13 @@ export async function updateProfile(request: Request, input: unknown) {
 }
 
 export async function revokeSession(request: Request, id: string) {
-  const session = await requireSession(request);
+  const session = await requireAccountSession(request);
   assertCsrf(request, session);
   await enforceAccountLimit(session.userId);
   const parsed = z.string().min(1).max(200).parse(id);
   const db = prismaConnection();
   await db.transaction(async () => {
-    await assertLockedSession(db, session, true);
+    await assertAccountSession(db, session, true);
     const changed = await db.prepare(`
       DELETE FROM sessions s USING managed_sessions m
       WHERE m.token=s.token AND m.id=? AND s.user_id=?
@@ -151,12 +156,12 @@ export async function revokeSession(request: Request, id: string) {
 }
 
 export async function revokeOtherSessions(request: Request) {
-  const session = await requireSession(request);
+  const session = await requireAccountSession(request);
   assertCsrf(request, session);
   await enforceAccountLimit(session.userId);
   const db = prismaConnection();
   await db.transaction(async () => {
-    await assertLockedSession(db, session, true);
+    await assertAccountSession(db, session, true);
     await db.prepare('DELETE FROM sessions WHERE user_id=? AND token<>?').run(session.userId, session.tokenHash);
     await audit(db, session.userId, 'other-sessions-revoked');
   });
@@ -164,7 +169,7 @@ export async function revokeOtherSessions(request: Request) {
 }
 
 export async function removeIdentity(request: Request, id: string) {
-  const session = await requireSession(request);
+  const session = await requireAccountSession(request);
   assertCsrf(request, session);
   await enforceAccountLimit(session.userId);
   const parsed = z.string().min(1).max(200).parse(id);
@@ -177,7 +182,7 @@ export async function removeIdentity(request: Request, id: string) {
     const issuer = z.string().min(1).max(512).parse(method.issuer);
     const subject = z.string().min(1).max(512).parse(method.subject);
     await lockSubject(db, issuer, subject);
-    await assertLockedSession(db, session, true);
+    await assertAccountSession(db, session, true);
     const identities = await db.prepare(`
       SELECT id,verified,email,available FROM managed_identities WHERE user_id=?
     `).all(session.userId);
@@ -214,7 +219,7 @@ export async function removeIdentity(request: Request, id: string) {
 }
 
 export async function beginIdentityLink(request: Request, input: unknown) {
-  const session = await requireSession(request);
+  const session = await requireAccountSession(request);
   assertCsrf(request, session);
   await enforceAccountLimit(session.userId);
   const { provider } = z.strictObject({ provider: z.enum(['google', 'facebook']) }).parse(input);
@@ -223,7 +228,7 @@ export async function beginIdentityLink(request: Request, input: unknown) {
   const db = prismaConnection();
   const token = randomBytes(32).toString('hex');
   await db.transaction(async () => {
-    await assertLockedSession(db, session, true);
+    await assertAccountSession(db, session, true);
     await db.prepare(`DELETE FROM auth_transactions WHERE expires<=${clock}`).run();
     const count = await db.prepare(`
       SELECT count(*)::integer AS count FROM auth_transactions
