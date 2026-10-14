@@ -105,7 +105,11 @@ export function ManagedAccountPage() {
   const authjs = data.capabilities.auth?.system === 'authjs';
   const redirect = async (path: string, provider: Provider) => {
     if (authjs) {
-      if (path.endsWith('/link')) throw new Error('Connecting another provider is unavailable until the explicit collision-safe linking flow is complete.');
+      if (path.endsWith('/link')) {
+        const result = await request<{ url: string }>('/api/identity/link', { provider });
+        window.location.assign(result.url);
+        return;
+      }
       window.location.assign(`/api/auth/signin/${provider}?callbackUrl=${encodeURIComponent('/account')}`);
       return;
     }
@@ -203,8 +207,8 @@ export function ManagedAccountPage() {
           <button className="text-button" disabled={pending || !security.fresh || identity.current || !security.identities.some(other => other.id !== identity.id && other.verified && other.available)} onClick={() => act(async () => { await request(`/api/identity/methods/${identity.id}`, undefined, 'DELETE'); await loadSecurity(); notify('Sign-in method removed; its Studio sessions were revoked.'); })}>Remove method</button>
         </div>)}
         <p>Connect another verified sign-in method. Each account is proved separately; email matching does not merge accounts.</p>
-        {availableProviders.map(provider => <button className="button secondary small" key={provider} disabled={pending || !security.fresh || authjs} onClick={() => act(() => redirect('/api/identity/link', provider))}>Connect {labels[provider]}</button>)}
-        {authjs && <p className="fine-print">Provider linking remains disabled until its explicit, one-use collision-safe flow is complete. Matching email addresses will never merge accounts.</p>}
+        {availableProviders.map(provider => <button className="button secondary small" key={provider} disabled={pending || !security.fresh} onClick={() => act(() => redirect('/api/identity/link', provider))}>Connect {labels[provider]}</button>)}
+        {authjs && <p className="fine-print">Provider linking uses a one-use action bound to this fresh Studio session. Matching email addresses never merge accounts; Facebook can be linked only from here.</p>}
       </>}
     </section>
     {security && <>

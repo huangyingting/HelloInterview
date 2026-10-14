@@ -5,6 +5,7 @@ import GoogleProvider from 'next-auth/providers/google';
 import { admitSocialIdentity } from './admission';
 import { currentRequestAuthSession, refreshAdmittedSession, studioAuthAdapter } from './adapter';
 import { authCookieNames, loadAuthSettings } from './config';
+import { completeSocialLink } from './linking';
 import { recordAuthAdmission } from './request-context';
 
 export function createAuthOptions(): NextAuthOptions {
@@ -44,7 +45,8 @@ export function createAuthOptions(): NextAuthOptions {
         if (!account || !profile) return false;
         try {
           const current = await currentRequestAuthSession(cookies.session);
-          const admission = await admitSocialIdentity(settings, account, profile, current?.userId ?? null);
+          const admission = await completeSocialLink(settings, account, profile) ??
+            await admitSocialIdentity(settings, account, profile, current?.userId ?? null);
           recordAuthAdmission(admission);
           await refreshAdmittedSession(admission, cookies.session);
           return true;

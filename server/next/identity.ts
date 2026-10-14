@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { Database } from '../db/connection';
 import { prismaConnection } from '../db/prisma';
@@ -8,7 +8,7 @@ import type { ManagedAuthSession } from '../auth/adapter';
 import { currentManagedAuthSession } from '../auth/session';
 import { lockSubject } from '../identity/lifecycle';
 import { IdentityLimits } from '../identity/limits';
-import { loadAuthSettings } from '../auth/config';
+import { authCookieNames, loadAuthSettings } from '../auth/config';
 
 const freshness = 10 * 60000;
 const idle = 7 * 86400000;
@@ -211,4 +211,40 @@ export async function removeIdentity(request: Request, id: string) {
     `).run(randomUUID(), session.userId, 'identity-unlinked', parsed);
   });
   return { ok: true };
+}
+
+export async function beginIdentityLink(request: Request, input: unknown) {
+  const session = await requireSession(request);
+  assertCsrf(request, session);
+  await enforceAccountLimit(session.userId);
+  const { provider } = z.strictObject({ provider: z.enum(['google', 'facebook']) }).parse(input);
+  const settings = loadAuthSettings();
+  if (!settings) throw new HttpError(503, 'Authentication is not configured.');
+  const db = prismaConnection();
+  const token = randomBytes(32).toString('hex');
+  await db.transaction(async () => {
+    await assertLockedSession(db, session, true);
+    await db.prepare(`DELETE FROM auth_transactions WHERE expires<=${clock}`).run();
+    const count = await db.prepare(`
+      SELECT count(*)::integer AS count FROM auth_transactions
+      WHERE user_id=? AND purpose='link'
+    `).get(session.userId);
+    if (Number(count?.count) >= 8) {
+      throw new HttpError(429, 'Finish an existing provider-link attempt or wait ten minutes before starting another.');
+    }
+    const now = Number((await db.prepare(`SELECT ${clock} AS now`).get())?.now);
+    await db.prepare(`
+      INSERT INTO auth_transactions
+        (state_hash,binding_hash,verifier,nonce,provider,purpose,user_id,session_hash,legacy_credential_hash,
+          return_to,expires,created_at,requires_fresh)
+      VALUES (?,?,?,?,?,'link',?,?,NULL,'/account',?,?,1)
+    `).run(createHash('sha256').update(token).digest('hex'), session.tokenHash, 'authjs-link',
+      randomBytes(32).toString('hex'), provider, session.userId, session.tokenHash, now + freshness, now);
+  });
+  const names = authCookieNames(settings);
+  const cookie = `${names.action}=${token}; Path=/; Max-Age=600; HttpOnly; SameSite=Lax${names.secure ? '; Secure' : ''}`;
+  return {
+    url: `/api/auth/signin/${provider}?callbackUrl=${encodeURIComponent('/account')}`,
+    cookie,
+  };
 }

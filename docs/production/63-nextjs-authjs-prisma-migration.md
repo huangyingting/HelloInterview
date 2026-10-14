@@ -17,8 +17,10 @@ boundary. The current durable-session checkpoint is not a launch or cutover:
   PostgreSQL-clock absolute/idle expiry, account epochs and security cutoffs;
   bootstrap-bound application CSRF, fresh reauthentication, profile updates,
   session revocation and sign-in-method removal now use Route Handlers;
-- explicit collision-safe provider linking and the remaining privacy/account
-  lifecycle Route Handlers still block participant access;
+- one-use, fresh-session-bound Google/Facebook linking is now explicit and
+  never merges accounts by email;
+- the remaining privacy/account lifecycle Route Handlers still block
+  participant access;
 - Caddy must continue returning the hardened unavailable response.
 
 ## Final architecture
@@ -177,12 +179,12 @@ than JWT browser sessions. The delivered adapter:
 - issues session-bound double-submit CSRF proof through bootstrap and enforces
   it on migrated account mutations;
 - exposes minimized security history, exact session revocation, other-session
-  revocation and guarded sign-in-method removal.
+  revocation and guarded sign-in-method removal;
+- links Google or Facebook only through a one-use database action bound to the
+  current fresh owner session and exact provider subject.
 
 Before participant launch, the remaining security surfaces must:
 
-- implement intentional Google/Facebook linking through a one-use,
-  current-owner-bound action without email-based account merging;
 - apply the shared CSRF/session authority to every remaining application
   mutation;
 - complete privacy deletion/export and restricted-account Route Handlers;

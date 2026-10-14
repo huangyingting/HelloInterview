@@ -14,6 +14,7 @@ import { GET as posts } from '../app/api/posts/route';
 import { GET as identitySecurityRoute } from '../app/api/identity/security/route';
 import { DELETE as revokeSessionRoute } from '../app/api/identity/sessions/[id]/route';
 import { DELETE as removeIdentityRoute } from '../app/api/identity/methods/[id]/route';
+import { POST as beginIdentityLinkRoute } from '../app/api/identity/link/route';
 import { PATCH as profileRoute } from '../app/api/profile/route';
 import { postgresConnection } from '../server/db/connection';
 import { migrateDatabase } from '../server/db/migrations';
@@ -21,6 +22,7 @@ import { prismaConnection } from '../server/db/prisma';
 import { refreshAdmittedSession, studioAuthAdapter } from '../server/auth/adapter';
 import { admitSocialIdentity } from '../server/auth/admission';
 import { loadAuthSettings } from '../server/auth/config';
+import { completeSocialLink } from '../server/auth/linking';
 import { recordAuthAdmission, withAuthRequest } from '../server/auth/request-context';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -234,15 +236,46 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     headers: { Cookie: accountCookies, 'X-CSRF-Token': csrf },
   }), { params: Promise.resolve({ id: identity }) });
   assert.equal(currentRemoval.status, 409);
-  const facebookIdentity = '33333333-3333-4333-8333-333333333333';
-  await db.prepare(`INSERT INTO managed_identities(id,user_id,issuer,subject,provider,email,verified,available)
-    VALUES(?,?,?,?,?,?,0,1)`).run(facebookIdentity, authOwner, 'https://www.facebook.com', 'facebook-subject', 'facebook',
-      'next-auth-owner@example.test');
+  const linkStart = await beginIdentityLinkRoute(new Request('https://studio.fixture/api/identity/link', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ provider: 'facebook' }),
+  }));
+  assert.equal(linkStart.status, 200);
+  assert.equal((await linkStart.clone().json()).url, '/api/auth/signin/facebook?callbackUrl=%2Faccount');
+  const actionCookie = linkStart.headers.get('Set-Cookie')?.split(';')[0];
+  assert.match(actionCookie ?? '', /^__Host-studio_auth_action=[a-f0-9]{64}$/);
+  const callbackRequest = new Request('https://studio.fixture/api/auth/callback/facebook', {
+    headers: { Cookie: `${accountCookies}; ${actionCookie}` },
+  });
+  const linked = await withAuthRequest(callbackRequest, () => completeSocialLink(loadAuthSettings()!, {
+    provider: 'facebook',
+    providerAccountId: 'facebook-subject',
+    type: 'oauth',
+  }, {
+    name: 'Facebook Owner',
+    email: 'matching-email-does-not-merge@example.test',
+  }));
+  assert.equal(linked?.userId, authOwner);
+  assert.ok(linked?.identityId);
+  await withAuthRequest(callbackRequest,
+    () => refreshAdmittedSession(linked!, '__Host-studio_session'));
+  assert.equal((await db.prepare('SELECT identity_id FROM managed_sessions WHERE token=?').get(storedToken))?.identity_id,
+    linked!.identityId);
+  await assert.rejects(withAuthRequest(callbackRequest, () => completeSocialLink(loadAuthSettings()!, {
+    provider: 'facebook',
+    providerAccountId: 'facebook-subject',
+    type: 'oauth',
+  }, { name: 'Facebook Owner' })), /expired or no longer matches/);
+  const facebookIdentity = linked!.identityId;
   const facebookToken = 'f'.repeat(64);
   await withAuthRequest(new Request('https://studio.fixture/api/auth/callback/facebook'), async () => {
     recordAuthAdmission({ userId: authOwner, identityId: facebookIdentity });
     await adapter.createSession!({ sessionToken: facebookToken, userId: authOwner, expires: new Date() });
   });
+  await withAuthRequest(new Request('https://studio.fixture/api/auth/callback/google', {
+    headers: { Cookie: `__Host-studio_session=${sessionToken}` },
+  }), () => refreshAdmittedSession({ userId: authOwner, identityId: identity }, '__Host-studio_session'));
   const removed = await removeIdentityRoute(new Request('https://studio.fixture/api/identity/methods/facebook', {
     method: 'DELETE',
     headers: { Cookie: accountCookies, 'X-CSRF-Token': csrf },

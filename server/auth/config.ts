@@ -33,6 +33,7 @@ export function authCookieNames(settings: Pick<AuthSettings, 'origin'>) {
     secure,
     session: secure ? '__Host-studio_session' : 'studio_session',
     csrf: secure ? '__Host-studio_csrf' : 'studio_csrf',
+    action: secure ? '__Host-studio_auth_action' : 'studio_auth_action',
   } as const;
 }
 
