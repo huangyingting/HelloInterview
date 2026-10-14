@@ -34,11 +34,14 @@ reset or lost.
 | Request evidence | Server-generated `X-Request-ID`; JSON route-template/status/duration records without submitted/private values |
 | Recovery rehearsal | Isolated encrypted PostgreSQL dump, integrity/tamper checks, restored schema, fresh recovery runtime, owned-state equality |
 
-`NODE_ENV=production` selects compiled static serving. `APP_MODE=local` remains
-the only operational mode in this release. `APP_MODE=service` fails startup
-before database access because managed identity and production authorization
-are not complete. This intentional barrier must not be removed just to deploy
-a publicly reachable demonstration account/plan endpoint.
+`NODE_ENV=production` selects compiled static serving. `APP_MODE=service` is now
+available only for the approved invite-only beta composition: PostgreSQL,
+canonical HTTPS/secure cookies, explicit proxy trust, request telemetry, complete
+managed identity/password lifecycle and a private invite list. It rejects
+legacy migration, billing and external AI configuration. The
+[service-mode runbook](57-invite-only-service-runtime.md) defines the exact
+boundary. This does not configure the real tenant, edge or VM, and must not be
+weakened to expose a demonstration account/plan endpoint.
 
 ## CI and release artifacts
 

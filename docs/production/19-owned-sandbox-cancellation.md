@@ -31,7 +31,9 @@ payloads, reset epochs or remove queues to downgrade.
 
 Existing sandbox configuration remains required: managed verified accounts,
 PostgreSQL, canonical HTTPS origin, own-account test credentials and the pinned
-official Stripe SDK/API. Live keys and `APP_MODE=service` remain unavailable.
+official Stripe SDK/API. Live keys remain unavailable, and the approved
+private-beta `APP_MODE=service` composition rejects this sandbox billing
+configuration.
 There is no new public purchase authority or operator flag. Removing
 `STRIPE_TEST_OFFERS` stops new reservations, **not** owned cancellation,
 notification ingestion or historical reconciliation.

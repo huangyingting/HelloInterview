@@ -13,6 +13,7 @@ const labels = { email: 'Email', google: 'Google', github: 'GitHub' };
 const flowErrors: Record<string, string> = {
   restart: 'Sign-in expired, was declined, or could not be verified. Start again in this browser. Your saved work is unchanged.',
   provider_unavailable: 'The sign-in service is unavailable. Try again later; existing locally valid sessions are not replaced with demo access.',
+  invite: 'Invite required.',
   identity_conflict: 'That sign-in method belongs to another account. No accounts were merged. Use its original account or contact support.',
   security_changed: 'Your session or account security changed. Start again with your current sign-in method.',
   rate_limited: 'Too many sign-in attempts. Finish an existing attempt or wait before trying again.',

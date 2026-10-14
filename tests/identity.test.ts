@@ -49,6 +49,25 @@ test('managed code flow uses PKCE, verified subject authority, opaque host-only 
   assert.equal((await browser.request('/api/profile', { name: 'Edited display name' }, 'PATCH')).status, 200);
 });
 
+test('private invite admission creates only allowlisted verified owners and preserves existing-owner sign-in', async t => {
+  const f = await fixture(t, { OIDC_INVITED_EMAILS: 'owner@example.invalid' });
+  const denied = f.browser();
+  const response = await f.complete(denied, await f.begin(denied), { sub: 'google-oauth2|uninvited-owner', email: 'other@example.invalid' });
+  assert.equal(response.headers.get('location'), '/auth?error=invite');
+  assert.equal((await denied.bootstrap()).user, null);
+  assert.equal((await f.db.prepare('SELECT count(*)::int AS count FROM users').get())?.count, 0);
+  assert.equal((await f.db.prepare('SELECT count(*)::int AS count FROM managed_accounts').get())?.count, 0);
+
+  const invited = await login(f);
+  assert.ok(invited.data.user);
+  const repeat = await f.complete(invited.browser, await f.begin(invited.browser), {
+    sub: 'google-oauth2|synthetic-owner', email: undefined, email_verified: undefined,
+  });
+  assert.equal(repeat.headers.get('location'), '/account');
+  assert.equal((await invited.browser.bootstrap()).user?.id, invited.data.user?.id);
+  assert.equal((await f.db.prepare('SELECT count(*)::int AS count FROM users').get())?.count, 1);
+});
+
 test('callbacks are browser-bound, one-use and fenced across independent API replicas', async t => {
   const f = await fixture(t), browser = f.browser(), stranger = f.browser(), two = await f.replica();
   const authorization = await f.begin(browser), callback = f.authorize(authorization.searchParams);

@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import type express from 'express';
 import { z } from 'zod';
 import type { StaffRole, User } from '../../shared/types';
@@ -18,6 +18,9 @@ const cookieOptions = { httpOnly: true, secure: true, sameSite: 'lax', path: '/'
 const lifetime = 30 * 86400000, idle = 7 * 86400000, freshness = 10 * 60000;
 const clockSql = 'floor(extract(epoch from clock_timestamp())*1000)::bigint';
 const statusSchema = z.enum(['pending-verification', 'active', 'suspended', 'deletion-pending']);
+class InviteRequiredError extends HttpError {
+  constructor() { super(403, 'This private beta requires an invitation for the verified contact email.'); }
+}
 const sessionSchema = z.object({
   id: z.string(), name: z.string(), contact_email: z.string().nullable(), contact_verified: z.number().int().min(0).max(1),
   status: statusSchema, epoch: z.number().int().nonnegative(), token: z.string(), session_id: z.string(),
@@ -247,6 +250,11 @@ export class ManagedIdentity {
     if (target && existing && existing.user_id !== target) throw new HttpError(409, 'This sign-in method already belongs to another Studio account. No accounts were merged.');
     if (purpose === 'reauth' && (!existing || existing.user_id !== target)) throw new HttpError(403, 'Confirm with a sign-in method already connected to this account.');
     if (['link', 'legacy-link'].includes(purpose) && !proof.verified) throw new HttpError(403, 'Use a sign-in method with a verified contact email before linking this account.');
+    if (!existing && !target && this.settings.inviteEmailHashes) {
+      const invited = proof.verified && proof.email !== null &&
+        this.settings.inviteEmailHashes.includes(createHmac('sha256', this.settings.clientSecret).update(proof.email.toLowerCase()).digest('hex'));
+      if (!invited) throw new InviteRequiredError();
+    }
     const userId = target ?? (existing ? String(existing.user_id) : randomUUID());
     if (!existing && !target) {
       await this.db.prepare('INSERT INTO users (id,name,email,password,demo) VALUES (?,?,NULL,NULL,0)').run(userId, proof.name);
@@ -300,7 +308,7 @@ export class ManagedIdentity {
     };
     const browserError: express.ErrorRequestHandler = (error: unknown, _req, res, next) => {
       if (!(error instanceof HttpError)) return next(error);
-      const code = error.status >= 500 ? 'provider_unavailable' : error.status === 409 ? 'identity_conflict' : error.status === 403 ? 'security_changed' : error.status === 429 ? 'rate_limited' : 'restart';
+      const code = error instanceof InviteRequiredError ? 'invite' : error.status >= 500 ? 'provider_unavailable' : error.status === 409 ? 'identity_conflict' : error.status === 403 ? 'security_changed' : error.status === 429 ? 'rate_limited' : 'restart';
       console.error(JSON.stringify({ event: 'identity.flow.failed', requestId: res.locals.requestId, code }));
       res.redirect(303, `/auth?error=${code}`);
     };

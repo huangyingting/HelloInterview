@@ -69,8 +69,28 @@ test('configuration is an immutable snapshot, not a live reference to process en
   assert.ok(Object.isFrozen(config.ai));
 });
 
-test('service mode fails closed and proxy/public-origin configuration is explicit and immutable', () => {
-  assert.throws(() => loadConfig({ NODE_ENV: 'production', APP_MODE: 'service' }), /service mode is not enabled/);
+test('service mode requires the complete approved private-beta authority while local proxy configuration stays explicit', () => {
+  const service = {
+    NODE_ENV: 'production', APP_MODE: 'service', DATABASE_URL: 'postgres://localhost/synthetic_fixture',
+    PUBLIC_ORIGIN: 'https://studio.fixture', COOKIE_SECURE: 'true', TRUST_PROXY: '127.0.0.1/32',
+    OIDC_ISSUER: 'https://broker.fixture/', OIDC_CLIENT_ID: 'synthetic-client', OIDC_CLIENT_SECRET: 'synthetic-secret',
+    OIDC_MANAGEMENT_ORIGIN: 'https://broker.fixture', OIDC_MANAGEMENT_CLIENT_ID: 'synthetic-manager',
+    OIDC_MANAGEMENT_CLIENT_SECRET: 'synthetic-manager-secret', OIDC_PASSWORD_HOOK_SECRET: '1'.repeat(64),
+    OIDC_INVITED_EMAILS: 'Owner@Example.invalid, second@example.invalid',
+  };
+  const serviceConfig = loadConfig(service);
+  assert.equal(serviceConfig.appMode, 'service');
+  assert.equal(serviceConfig.identity?.inviteEmailHashes?.length, 2);
+  assert.ok(Object.isFrozen(serviceConfig.identity?.inviteEmailHashes));
+  assert.ok(!JSON.stringify(serviceConfig.identity).toLowerCase().includes('owner@example.invalid'));
+  for (const override of [
+    { NODE_ENV: 'test' }, { OIDC_ISSUER: undefined }, { OIDC_MANAGEMENT_ORIGIN: undefined },
+    { OIDC_INVITED_EMAILS: undefined }, { OIDC_INVITED_EMAILS: '' }, { OIDC_INVITED_EMAILS: 'duplicate@example.invalid,DUPLICATE@example.invalid' },
+    { OIDC_LEGACY_LINK_UNTIL: new Date(Date.now() + 86400000).toISOString() }, { TRUST_PROXY: undefined },
+    { LOG_REQUESTS: 'false' }, { OPENAI_API_KEY: 'fixture-only' }, { OPENAI_MODEL: 'fixture-model' },
+    { STRIPE_TEST_ACCOUNT_ID: 'acct_SyntheticFixture', STRIPE_TEST_SECRET_KEY: 'rk_test_SyntheticFixtureOnly',
+      STRIPE_TEST_WEBHOOK_SECRET: 'whsec_SyntheticFixtureOnly' },
+  ]) assert.throws(() => loadConfig({ ...service, ...override }), ConfigurationError);
   const env = { PUBLIC_ORIGIN: 'https://Studio.Example:443/', COOKIE_SECURE: 'true', TRUST_PROXY: '127.0.0.1, 10.10.0.0/16, ::1/128', LOG_REQUESTS: 'true' };
   const config = loadConfig(env);
   assert.equal(config.publicOrigin, 'https://studio.example');
@@ -121,6 +141,7 @@ test('managed identity requires an explicit HTTPS PostgreSQL deployment and immu
   const config = loadConfig(env);
   assert.equal(config.identity?.issuer, 'https://broker.fixture/');
   assert.equal(config.identity?.connections.github, 'github');
+  assert.equal(config.identity?.inviteEmailHashes, null);
   assert.equal(config.identity?.legacyLinkUntil, null);
   assert.equal(config.identity?.lifecycle, null);
   assert.ok(Object.isFrozen(config.identity));
@@ -153,6 +174,26 @@ test('identity lifecycle requires separate read-only machine credentials and a p
     { OIDC_MANAGEMENT_ORIGIN: 'https://broker.fixture/path' }, { OIDC_MANAGEMENT_CLIENT_ID: 'synthetic-client' },
     { OIDC_MANAGEMENT_CLIENT_SECRET: undefined }, { OIDC_PASSWORD_HOOK_SECRET: 'short' },
   ]) assert.throws(() => loadConfig({ ...env, ...override }), ConfigurationError);
+});
+
+test('managed invitations are immutable fingerprints and reject malformed or duplicate addresses without echoing them', () => {
+  const env = {
+    DATABASE_URL: 'postgres://localhost/synthetic_fixture', PUBLIC_ORIGIN: 'https://studio.fixture', COOKIE_SECURE: 'true',
+    OIDC_ISSUER: 'https://broker.fixture/', OIDC_CLIENT_ID: 'synthetic-client', OIDC_CLIENT_SECRET: 'synthetic-secret',
+    OIDC_INVITED_EMAILS: 'First@Example.invalid, second@example.invalid',
+  };
+  const config = loadConfig(env);
+  assert.equal(config.identity?.inviteEmailHashes?.length, 2);
+  assert.ok(config.identity?.inviteEmailHashes?.every(value => /^[a-f0-9]{64}$/.test(value)));
+  env.OIDC_INVITED_EMAILS = 'changed@example.invalid';
+  assert.equal(config.identity?.inviteEmailHashes?.length, 2);
+  for (const value of ['', 'invalid', 'one@example.invalid,', 'same@example.invalid,SAME@example.invalid', `${'a'.repeat(250)}@example.invalid`]) {
+    assert.throws(() => loadConfig({ ...env, OIDC_INVITED_EMAILS: value }), error => {
+      assert.ok(error instanceof ConfigurationError);
+      if (value) assert.equal(error.message.includes(value), false);
+      return true;
+    });
+  }
 });
 
 test('sandbox billing is all-or-nothing, immutable, managed-only and cannot accept live or unknown settings', () => {

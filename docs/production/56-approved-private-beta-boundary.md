@@ -26,8 +26,11 @@ has not been performed.
 
 Production demo-plan, local-password, unrestricted gift and local community-write
 authority must not become a public service merely because the VM exists.
-`APP_MODE=service` remains fail-closed until the managed identity/service
-composition is explicitly implemented and verified.
+`APP_MODE=service` now has a fail-closed engineering composition requiring full
+managed identity lifecycle, HTTPS/proxy/request telemetry and private verified
+email admission while rejecting billing, managed AI and legacy migration. See
+[checkpoint 57](57-invite-only-service-runtime.md). No real tenant, invite
+cohort or Azure guest deployment was configured by that code boundary.
 
 ## Approved hosting and ownership
 

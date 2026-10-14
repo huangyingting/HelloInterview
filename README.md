@@ -484,9 +484,12 @@ cp .env.example .env
 ```
 
 The defaults bind to loopback, use port 3000, and store data in `data/`.
-`APP_MODE=local` preserves local workflows. `APP_MODE=service` deliberately
-fails startup until managed identity and production authorization are implemented;
-compiled serving does not grant permission to launch a public paid service.
+`APP_MODE=local` preserves local workflows. `APP_MODE=service` is limited to the
+approved invite-only private beta: it requires production serving, PostgreSQL,
+canonical HTTPS/secure cookies, explicit proxy trust, complete managed identity
+and password lifecycle configuration, request telemetry, and a private
+verified-email invite list. It rejects legacy migration, billing and external
+AI settings. Compiled serving alone does not grant service authority.
 `HOST`, `PORT`, `DATA_DIR`, and `COOKIE_SECURE` can be changed in `.env`.
 Use `COOKIE_SECURE=true` only when serving over HTTPS.
 Configuration is validated before opening the database or listening. `PORT`
@@ -530,7 +533,9 @@ and requires successful controlled migrations before starting the API. It is
 demo authority to customers. The runtime image uses Node's non-root user and
 can run with a read-only root filesystem when its local data directory is mounted.
 See [the deployment and recovery runbook](docs/production/09-platform-implementation.md)
-for release promotion, proxy boundaries, secrets, recovery and remaining gates.
+for release promotion, proxy boundaries, secrets, recovery and remaining gates,
+and the [service-mode runbook](docs/production/57-invite-only-service-runtime.md)
+for the exact private-beta startup and invitation contract.
 
 AI base URLs must be absolute HTTP/HTTPS URLs without embedded credentials,
 queries, or fragments. A trailing slash is normalized. Configuration is a

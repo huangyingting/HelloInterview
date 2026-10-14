@@ -113,6 +113,8 @@ test('managed browser signs in, saves profile with CSRF, links/unlinks a fresh m
   await expect(page.getByRole('textbox', { name: 'Add a comment' })).toHaveCount(0);
   await page.goto(`${f.origin}/auth?error=identity_conflict`);
   await expect(page.getByRole('alert')).toContainText('No accounts were merged');
+  await page.goto(`${f.origin}/auth?error=invite`);
+  await expect(page.getByRole('alert')).toContainText('Invite required');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${f.origin}/account`);
   await expect(page.getByRole('heading', { name: 'Sign-in and security.' })).toBeVisible();

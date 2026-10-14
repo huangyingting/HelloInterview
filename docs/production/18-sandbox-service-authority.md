@@ -3,9 +3,9 @@
 **Status: default-off private engineering checkpoint, not commercial approval.**
 This extends W08's owned Checkout, canonical ledger and card-funding evidence
 with a trusted W06 issuing/revoking adapter. It permits synthetic test-service
-access only when an operator explicitly selects the versioned policy. It does
-not enable live keys, real purchases, external AI, Portal, staff grant tools,
-public accounts or `APP_MODE=service`.
+access only when an operator explicitly selects the versioned policy. It does not enable live keys, real purchases, external AI, Portal, staff grant
+tools, public accounts or billing inside `APP_MODE=service`; the approved
+private-beta service composition rejects every Stripe setting.
 
 ## Configuration and controlled rollout
 

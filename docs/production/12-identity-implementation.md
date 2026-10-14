@@ -1,9 +1,9 @@
 # 12 - Managed identity engineering checkpoint
 
-**Status: private-staging foundation implemented; W04 is not complete and public
-accounts are not approved.** Auth0 remains a reversible reference candidate,
-not a selected/provisioned tenant. No live identity, email, social credentials,
-customer migration or vendor purchase was performed.
+**Status: private-staging foundation and invite-only service authority
+implemented; W04 is not complete and public accounts are not approved.** Auth0
+is the approved private-beta account model but no real tenant, email/social
+credential, customer migration or vendor purchase was configured here.
 
 ## Delivered boundary
 
@@ -26,7 +26,12 @@ external AI dispatch. Community mutations, including votes/follows and comments,
 are read-only in the server and UI until operated moderation is ready. Public
 free content and active verified accounts' free preparation remain available.
 These are explicit availability gates, not pretend successful provider handlers.
-`APP_MODE=service` still fails startup.
+`APP_MODE=service` now starts only for the stricter approved beta composition:
+production/PostgreSQL/HTTPS/proxy/request-log settings, full identity lifecycle
+and a private verified-email allowlist, with legacy migration, billing and AI
+configuration absent. See
+[the service-mode runbook](57-invite-only-service-runtime.md). Authentic tenant
+and recovery evidence remain required.
 
 ## Configuration and rollout
 
@@ -45,6 +50,7 @@ Partial or unsupported `OIDC_` settings fail startup without echoing their value
 | `OIDC_EMAIL_CONNECTION` | Optional connection name; default `Username-Password-Authentication` |
 | `OIDC_GOOGLE_CONNECTION` | Optional connection name; default `google-oauth2` |
 | `OIDC_GITHUB_CONNECTION` | Optional connection name; default `github` |
+| `OIDC_INVITED_EMAILS` | Private comma-separated approved participant addresses; required and HMAC-normalized in service mode |
 | `OIDC_LEGACY_LINK_UNTIL` | Optional explicit UTC deadline within the next 30 days; omitted means no legacy credential transition |
 | `OIDC_MANAGEMENT_ORIGIN` | Optional explicit HTTPS tenant Management API origin; can differ from a custom-domain OIDC issuer |
 | `OIDC_MANAGEMENT_CLIENT_ID` | Separate confidential machine client with only `read:users` permission |
@@ -66,6 +72,12 @@ connection for identity/email, never repository access. Require RS256 ID tokens,
 PKCE S256 and real broker verification semantics. Select a sandbox/private
 tenant only after D01 approval; review connections, email delivery, privacy
 region, pricing, subject stability and recovery behavior before provisioning.
+
+For service mode, a new owner must present a broker-verified contact email in
+the private allowlist before any owner/state/account/session rows are created.
+Existing mapped owners remain able to sign in after allowlist changes, and
+authenticated owners may link other verified methods. This is account admission,
+not email-based account merging or a durable single-use invitation product.
 
 Build, apply migrations **4 through 6** and the new `identity-reconcile` queue
 with `npm run db:migrate`, then deploy matching

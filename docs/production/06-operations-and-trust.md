@@ -20,6 +20,15 @@ writing remain disabled. The
 of RPO/RTO into an explicit no-availability/no-durability promise; it is not
 backup, TLS, secret, cost-alert or operated deployment evidence.
 
+**Implemented invite-only service checkpoint (W03/W04):** service mode now
+requires production/PostgreSQL/HTTPS/proxy/request-log settings, full managed
+identity lifecycle and a private HMAC-normalized verified-email allowlist. It
+rejects legacy migration, billing and managed AI settings; new uninvited owners
+are denied before database creation while existing owners retain recovery.
+The [service runbook](57-invite-only-service-runtime.md) records the contract.
+This is not a configured Auth0 tenant, TLS edge, guest deployment or participant
+notice.
+
 **Implemented job checkpoint (W07):** durable transactional delivery, maintained
 PostgreSQL workers, fenced finalization, bounded retry modes, verified-event
 storage and audited maintenance replay are available. The

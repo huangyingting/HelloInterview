@@ -19,10 +19,11 @@ test('runtime-only release retains identity after restart and operates canonical
   const databaseUrl = f.config.databaseUrl;
   assert.ok(databaseUrl);
   const env: NodeJS.ProcessEnv = {
-    PATH: process.env.PATH, NODE_ENV: 'production', HOST: '127.0.0.1', PORT: '0',
+    PATH: process.env.PATH, NODE_ENV: 'production', APP_MODE: 'service', HOST: '127.0.0.1', PORT: '0',
     DATABASE_URL: databaseUrl, PUBLIC_ORIGIN: f.origin, COOKIE_SECURE: 'true',
-    TRUST_PROXY: '127.0.0.1/32', LOG_REQUESTS: 'false',
+    TRUST_PROXY: '127.0.0.1/32', LOG_REQUESTS: 'true',
     OIDC_ISSUER: f.issuer, OIDC_CLIENT_ID: 'synthetic-client', OIDC_CLIENT_SECRET: 'synthetic-client-secret',
+    OIDC_INVITED_EMAILS: 'owner@example.invalid',
     OIDC_MANAGEMENT_ORIGIN: settings.origin, OIDC_MANAGEMENT_CLIENT_ID: settings.clientId,
     OIDC_MANAGEMENT_CLIENT_SECRET: settings.clientSecret, OIDC_PASSWORD_HOOK_SECRET: settings.hookSecret,
     NODE_EXTRA_CA_CERTS: f.certificatePath,
@@ -74,7 +75,9 @@ test('runtime-only release retains identity after restart and operates canonical
       });
     });
     f.proxyTo(address);
-    assert.equal((await fetch(`${address}/api/ready`)).status, 200);
+    const ready = await fetch(`${address}/api/ready`);
+    assert.equal(ready.status, 200);
+    assert.deepEqual(await ready.json(), { status: 'ready', mode: 'service' });
   }
   await start();
   const browser = f.browser(), authorization = await f.begin(browser);
@@ -82,6 +85,9 @@ test('runtime-only release retains identity after restart and operates canonical
   const before = await browser.bootstrap();
   assert.ok(before.user);
   assert.equal(before.user?.identity?.status, 'active');
+  assert.equal(before.capabilities.ai, false);
+  assert.equal(before.capabilities.commerce, 'disabled');
+  assert.equal(before.capabilities.community, 'read-only');
   assert.equal((await browser.request('/api/profile', { name: 'Compiled member' }, 'PATCH')).status, 200);
   assert.equal((await browser.security()).identities.length, 1);
   const supportInput = { key: randomUUID(), email: 'compiled-support@example.invalid',

@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { isIP } from 'node:net';
 import path from 'node:path';
 import { z } from 'zod';
@@ -8,6 +9,7 @@ export interface IdentityConfig {
   readonly clientId: string;
   readonly clientSecret: string;
   readonly connections: Readonly<{ email: string; google: string; github: string }>;
+  readonly inviteEmailHashes: readonly string[] | null;
   readonly legacyLinkUntil: number | null;
   readonly lifecycle: Readonly<{ origin: string; clientId: string; clientSecret: string; hookSecret: string }> | null;
 }
@@ -53,7 +55,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
   }
   const appMode = env.APP_MODE ?? 'local';
   if (appMode !== 'local' && appMode !== 'service') throw new ConfigurationError('APP_MODE', 'must be local or service.');
-  if (appMode === 'service') throw new ConfigurationError('APP_MODE', 'service mode is not enabled in this release; managed identity lifecycle and production authorization are still pending.');
   const portText = env.PORT ?? '3000';
   if (!/^\d+$/.test(portText) || !Number.isSafeInteger(Number(portText)) || Number(portText) > 65535) {
     throw new ConfigurationError('PORT', 'must be an integer between 0 and 65535.');
@@ -133,7 +134,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
   }
   let identity: Readonly<IdentityConfig> | null = null;
   const identitySettings = ['OIDC_ISSUER', 'OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET', 'OIDC_EMAIL_CONNECTION', 'OIDC_GOOGLE_CONNECTION', 'OIDC_GITHUB_CONNECTION', 'OIDC_LEGACY_LINK_UNTIL',
-    'OIDC_MANAGEMENT_ORIGIN', 'OIDC_MANAGEMENT_CLIENT_ID', 'OIDC_MANAGEMENT_CLIENT_SECRET', 'OIDC_PASSWORD_HOOK_SECRET'];
+    'OIDC_MANAGEMENT_ORIGIN', 'OIDC_MANAGEMENT_CLIENT_ID', 'OIDC_MANAGEMENT_CLIENT_SECRET', 'OIDC_PASSWORD_HOOK_SECRET', 'OIDC_INVITED_EMAILS'];
   const providedIdentitySettings = Object.keys(env).filter(key => key.startsWith('OIDC_') && env[key] !== undefined);
   if (providedIdentitySettings.length) {
     if (providedIdentitySettings.some(key => !identitySettings.includes(key))) throw new ConfigurationError('OIDC configuration', 'contains an unsupported setting.');
@@ -158,6 +159,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
     for (const [provider, value] of Object.entries(connections)) {
       if (!/^[A-Za-z0-9_-]{1,64}$/.test(value)) throw new ConfigurationError(`OIDC_${provider.toUpperCase()}_CONNECTION`, 'must be a bounded broker connection identifier.');
     }
+    let inviteEmailHashes: readonly string[] | null = null;
+    if (env.OIDC_INVITED_EMAILS !== undefined) {
+      if (env.OIDC_INVITED_EMAILS.length > 65536) throw new ConfigurationError('OIDC_INVITED_EMAILS', 'must contain at most 200 bounded email addresses.');
+      const emails = env.OIDC_INVITED_EMAILS.split(',').map(value => value.trim().toLowerCase());
+      if (emails.length > 200 || emails.some(value => !z.string().email().max(254).safeParse(value).success) || new Set(emails).size !== emails.length) {
+        throw new ConfigurationError('OIDC_INVITED_EMAILS', 'must contain 1 to 200 distinct comma-separated email addresses.');
+      }
+      inviteEmailHashes = Object.freeze(emails.map(value => createHmac('sha256', clientSecret).update(value).digest('hex')));
+    }
     let legacyLinkUntil: number | null = null;
     if (env.OIDC_LEGACY_LINK_UNTIL !== undefined) {
       legacyLinkUntil = Date.parse(env.OIDC_LEGACY_LINK_UNTIL);
@@ -181,7 +191,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
       if (!hookSecret || !/^[a-f0-9]{64}$/.test(hookSecret)) throw new ConfigurationError('OIDC_PASSWORD_HOOK_SECRET', 'must be a private 32-byte hexadecimal signing key.');
       lifecycle = Object.freeze({ origin: managementOrigin.origin, clientId: managementId, clientSecret: managementSecret, hookSecret });
     }
-    identity = Object.freeze({ issuer: `${issuer.origin}/`, clientId, clientSecret, connections: Object.freeze(connections), legacyLinkUntil, lifecycle });
+    identity = Object.freeze({ issuer: `${issuer.origin}/`, clientId, clientSecret, connections: Object.freeze(connections), inviteEmailHashes, legacyLinkUntil, lifecycle });
   }
   let billing: Readonly<BillingConfig> | null = null;
   const billingSettings = ['STRIPE_TEST_ACCOUNT_ID', 'STRIPE_TEST_SECRET_KEY', 'STRIPE_TEST_WEBHOOK_SECRET', 'STRIPE_TEST_OFFERS', 'STRIPE_TEST_ACCESS_POLICY', 'STRIPE_TEST_PORTAL_CONFIGURATION'];
@@ -220,6 +230,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
   const retainedFrontendDirs=(env.RETAINED_FRONTEND_DIRS??'').split(path.delimiter).filter(Boolean).map(value=>path.resolve(root,value));
   if(new Set(retainedFrontendDirs).size!==retainedFrontendDirs.length||retainedFrontendDirs.includes(frontendDir)){
     throw new ConfigurationError('RETAINED_FRONTEND_DIRS','must contain distinct prior release directories and must not include the current dist directory.');
+  }
+  if (appMode === 'service') {
+    if (environment !== 'production') throw new ConfigurationError('NODE_ENV', 'must be production when APP_MODE is service.');
+    if (!identity) throw new ConfigurationError('OIDC configuration', 'is required when APP_MODE is service.');
+    if (!identity.lifecycle) throw new ConfigurationError('OIDC lifecycle configuration', 'is required when APP_MODE is service.');
+    if (!identity.inviteEmailHashes?.length) throw new ConfigurationError('OIDC_INVITED_EMAILS', 'must contain the approved private-beta participants when APP_MODE is service.');
+    if (identity.legacyLinkUntil !== null) throw new ConfigurationError('OIDC_LEGACY_LINK_UNTIL', 'must be omitted for the clean-data private beta.');
+    if (!trustedProxies.length) throw new ConfigurationError('TRUST_PROXY', 'must identify the private HTTPS ingress when APP_MODE is service.');
+    if (logRequests !== 'true') throw new ConfigurationError('LOG_REQUESTS', 'must be true when APP_MODE is service.');
+    if (hasAzure || hasOpenAi) throw new ConfigurationError('AI configuration', 'must be omitted while managed external AI is disabled.');
+    if (billing) throw new ConfigurationError('Stripe configuration', 'must be omitted while private-beta payments are disabled.');
   }
   return Object.freeze({
     environment,

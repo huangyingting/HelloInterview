@@ -4,7 +4,8 @@
 jobs, input idempotency, transactional enqueue/finalization, leased workers and
 audited maintenance are available. Existing local synchronous workflows remain
 unchanged. No email, payment, identity, privacy or AI handler is enabled by this
-checkpoint, and `APP_MODE=service` remains disabled.
+checkpoint. The separately implemented private-beta service mode requires its
+identity lifecycle but does not turn generic queued handlers on.
 
 ## Implementation boundary
 
