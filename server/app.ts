@@ -10,7 +10,7 @@ import type { Attempt, Feedback, Level, MockSession, Problem, ProjectFile, Proje
 import type { ServerConfig } from './config';
 import type { Database } from './db/connection';
 import { StateRepository } from './db/state-repository';
-import { requestTelemetry } from './telemetry';
+import { fieldMetricTelemetry, requestTelemetry } from './telemetry';
 import { HttpError } from './http-error';
 import { ContentRepository } from './content/repository';
 import { ManagedIdentity } from './identity';
@@ -137,6 +137,11 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
   });
   lifecycle?.register(app);
   billing?.register(app);
+  if (config.fieldMetrics) app.post('/api/metrics/web-vitals', (req, _res, next) => {
+    const expected = config.publicOrigin ?? `${req.protocol}://${req.get('host')}`;
+    if (req.get('origin') !== expected) next(new HttpError(403, 'Field performance metrics require the current browser origin.'));
+    else next();
+  }, express.json({ limit: '2kb' }), fieldMetricTelemetry());
   app.use(express.json({ limit: '512kb' }));
 
   async function currentUser(req: express.Request): Promise<User | null> {
@@ -251,6 +256,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
     res.json({
       user, state: user && (!user.identity || user.identity.status === 'active') ? (await stateFor(user)) : emptyState(),
       capabilities: { ai: !!connectedAi, commerce: identity ? 'disabled' : 'demo', community: identity ? 'read-only' : 'local', aiModel: connectedAi?.model ?? null,
+        fieldMetrics: config.fieldMetrics,
         ...(billing?.checkout ? { billing: { mode: 'sandbox', checkout: !!config.billing?.offers } } : {}),
         ...(identity && entitlements ? { auth: { mode: 'managed', providers, legacyLink: !!config.identity?.legacyLinkUntil && config.identity.legacyLinkUntil > Date.now(), securityLifecycle: !!lifecycle }, access: await entitlements.view(user?.id ?? null) } : {}),
         ...(staffRoles.length?{staff:{roles:staffRoles}}:{}) },

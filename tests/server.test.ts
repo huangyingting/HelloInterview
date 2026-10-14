@@ -73,7 +73,7 @@ test('production runtime serves built assets, SPA routes and unchanged API error
   const bootstrap = await api<Bootstrap>(runtime.url, '/api/bootstrap');
   assert.equal(bootstrap.response.headers.get('cache-control'), 'no-store');
   assert.equal(bootstrap.value.user, null);
-  assert.deepEqual(bootstrap.value.capabilities, { ai: false, commerce: 'demo', community: 'local', aiModel: null });
+  assert.deepEqual(bootstrap.value.capabilities, { ai: false, commerce: 'demo', community: 'local', aiModel: null, fieldMetrics: false });
   assert.equal((await api(runtime.url, '/api/not-an-endpoint')).response.status, 404);
   for (const route of ['/.cred', '/.env', '/data/studio.sqlite', '/.git/config']) {
     assert.equal((await fetch(`${runtime.url}${route}`)).status, 404);
@@ -89,6 +89,51 @@ test('production runtime serves built assets, SPA routes and unchanged API error
     const invalid=await fetch(`${runtime.url}${route}`,{headers:{Accept:'text/html'}});
     assert.equal(invalid.status,400);assert.match(invalid.headers.get('content-type') ?? '',/json/);assert.deepEqual(await invalid.json(),{error:'Invalid address encoding.'});
   }
+});
+
+test('field performance telemetry is opt-in, privacy-bounded, normalized and rate-limited', async t => {
+  const disabled = await startServer(config(await temporaryDirectory(t)));
+  t.after(() => disabled.close());
+  assert.equal((await fetch(`${disabled.url}/api/metrics/web-vitals`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ metric: 'LCP', value: 2512.4, screen: 'practice', navigation: 'navigate' }),
+  })).status, 404);
+
+  const logs: string[] = [], original = console.log;
+  console.log = (...values: unknown[]) => { logs.push(values.map(String).join(' ')); };
+  t.after(() => { console.log = original; });
+  const runtime = await startServer(config(await temporaryDirectory(t), { FIELD_METRICS_ENABLED: 'true' }));
+  t.after(() => runtime.close());
+  const bootstrap = await api<Bootstrap>(runtime.url, '/api/bootstrap');
+  assert.equal(bootstrap.value.capabilities.fieldMetrics, true);
+  const payload = { metric: 'LCP', value: 2512.4, screen: 'practice', navigation: 'navigate' };
+  assert.equal((await fetch(`${runtime.url}/api/metrics/web-vitals`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  })).status, 403);
+  const accepted = await fetch(`${runtime.url}/api/metrics/web-vitals`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: runtime.url }, body: JSON.stringify(payload),
+  });
+  assert.equal(accepted.status, 204);
+  const event = JSON.parse(logs.at(-1)!) as Record<string, unknown>;
+  assert.deepEqual(event, {
+    event: 'web_vital.observed', metric: 'LCP', value: 2510,
+    rating: 'needs-improvement', screen: 'practice', navigation: 'navigate',
+  });
+  const rejected = await fetch(`${runtime.url}/api/metrics/web-vitals`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: runtime.url },
+    body: JSON.stringify({ ...payload, url: '/practice/private-answer?token=secret' }),
+  });
+  assert.equal(rejected.status, 400);
+  assert.ok(!logs.join('\n').includes('private-answer'));
+  for (let index = 1; index < 60; index++) {
+    assert.equal((await fetch(`${runtime.url}/api/metrics/web-vitals`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: runtime.url }, body: JSON.stringify(payload),
+    })).status, 204);
+  }
+  assert.equal((await fetch(`${runtime.url}/api/metrics/web-vitals`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Origin: runtime.url }, body: JSON.stringify(payload),
+  })).status, 429);
+  assert.equal(logs.filter(line => line.includes('web_vital.observed')).length, 60);
 });
 
 test('production runtime serves explicitly retained hashed assets behind current assets',async t=>{

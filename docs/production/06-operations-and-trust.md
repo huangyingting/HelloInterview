@@ -124,6 +124,16 @@ composition and rollback boundaries. Actual CDN/load-balancer operation,
 retention duration, multi-replica rehearsal, field telemetry and launch
 approval remain open.
 
+**Implemented field-performance instrumentation checkpoint (W12):** an explicit
+default-off setting installs native buffered LCP/CLS/INP observers and a strict
+same-origin endpoint. Payloads contain only metric/value plus allowlisted
+screen/navigation categories; the server normalizes ratings, rate-limits by an
+unlogged ephemeral address key and emits low-cardinality structured records.
+The [field-performance runbook](55-privacy-safe-field-performance.md) records
+the privacy and operating boundary. Representative traffic, approved
+aggregation/retention, SLOs, alert ownership and sustained field evidence remain
+open.
+
 **Implemented local owner-contribution checkpoint (W11):** private owned
 snapshots, current-session/revision-fenced title/body edits, exact discussion
 deletion and serialized post-comment admission are available. The

@@ -52,7 +52,7 @@ test('the compiled release runs with runtime-only dependencies, loads .env, pers
   await writeFile(path.join(release, '.env'), 'HOST=127.0.0.1\nPORT=0\nDATA_DIR=private-data\nCOOKIE_SECURE=false\nOPENAI_API_KEY=\nOPENAI_MODEL=fixture-model\n');
   async function start() {
     const env: NodeJS.ProcessEnv = { ...process.env, NODE_ENV: 'production' };
-    for (const key of ['HOST', 'PORT', 'DATA_DIR', 'DATABASE_URL', 'APP_MODE', 'PUBLIC_ORIGIN', 'TRUST_PROXY', 'LOG_REQUESTS', 'COOKIE_SECURE', 'OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_MODEL']) delete env[key];
+    for (const key of ['HOST', 'PORT', 'DATA_DIR', 'DATABASE_URL', 'APP_MODE', 'PUBLIC_ORIGIN', 'TRUST_PROXY', 'LOG_REQUESTS', 'FIELD_METRICS_ENABLED', 'COOKIE_SECURE', 'OPENAI_API_KEY', 'OPENAI_BASE_URL', 'OPENAI_MODEL']) delete env[key];
     const child = spawn(process.execPath, ['--env-file-if-exists=.env', 'dist-server/index.js'], { cwd: release, env, stdio: ['ignore', 'pipe', 'pipe'] });
     const exited = once(child, 'exit');
     stop = async () => {

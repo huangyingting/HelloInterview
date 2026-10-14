@@ -502,6 +502,11 @@ IP/CIDR allowlists; forwarded protocol from untrusted peers is ignored.
 `LOG_REQUESTS` controls JSON request completion records (on by default for
 production-format serving). Records contain server-generated request IDs,
 route templates, status and duration, not bodies, cookies, emails or query strings.
+`FIELD_METRICS_ENABLED=true` separately enables default-off LCP/CLS/INP
+observations. The browser sends only metric/value plus allowlisted screen and
+navigation categories; the server normalizes, rates and rate-limits them without
+URLs, identifiers or free text. See the
+[field-performance boundary](docs/production/55-privacy-safe-field-performance.md).
 `GET /api/health` checks process liveness; `GET /api/ready` also checks database
 connectivity and fails during draining.
 

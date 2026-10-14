@@ -4,6 +4,7 @@ import { emptyState } from '../shared/domain';
 import { canUse, proCapabilities, type Capability } from '../shared/access';
 
 let csrfToken: string | undefined;
+let fieldMetricsStarted=false;
 export async function request<T>(url: string, data?: unknown, method?: string, signal?: AbortSignal): Promise<T> {
   const verb = method || (data === undefined ? 'GET' : 'POST');
   const response = await fetch(url, {
@@ -34,7 +35,7 @@ interface Store {
 }
 const Context = createContext<Store | null>(null);
 export function StudioProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<Bootstrap>({ user: null, state: emptyState(), capabilities: { ai: false, commerce: 'demo', community: 'local', aiModel: null } });
+  const [data, setData] = useState<Bootstrap>({ user: null, state: emptyState(), capabilities: { ai: false, commerce: 'demo', community: 'local', aiModel: null, fieldMetrics: false } });
   const [loading, setLoading] = useState(true), [error, setError] = useState('');
   const [operations, setOperations] = useState(0);
   const [toast, setToast] = useState<Store['toast']>(null);
@@ -50,6 +51,10 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     if (refreshing.current) return refreshing.current;
     refreshing.current = (async () => {
       const next = await request<Bootstrap>('/api/bootstrap');
+      if(next.capabilities.fieldMetrics&&!fieldMetricsStarted){
+        fieldMetricsStarted=true;
+        void import('./web-vitals').then(module=>module.startFieldMetrics(),()=>{fieldMetricsStarted=false;console.warn('Field metrics are unavailable.');});
+      }
       accessClock.current = next.capabilities.access ? { server: Date.parse(next.capabilities.access.serverTime), received: performance.now() } : null;
       setData(next);
       setError('');

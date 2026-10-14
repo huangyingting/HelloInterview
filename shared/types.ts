@@ -512,6 +512,7 @@ export interface Bootstrap {
     commerce: 'demo' | 'disabled';
     community: 'local' | 'read-only';
     aiModel: string | null;
+    fieldMetrics: boolean;
     auth?: { mode: 'managed'; providers: readonly ('email' | 'google' | 'github')[]; legacyLink: boolean; securityLifecycle: boolean };
     staff?: {roles:StaffRole[]};
   };

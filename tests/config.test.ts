@@ -16,6 +16,7 @@ test('configuration defaults preserve loopback, local data, cookies and optional
     publicOrigin: null,
     trustedProxies: [],
     logRequests: false,
+    fieldMetrics: false,
     host: '127.0.0.1',
     port: 3000,
     cookieSecure: false,
@@ -31,6 +32,7 @@ test('configuration resolves paths and accepts explicit runtime settings and IPv
   assert.equal(config.host, '::1');
   assert.equal(config.port, 0);
   assert.equal(config.cookieSecure, true);
+  assert.equal(loadConfig({ FIELD_METRICS_ENABLED: 'true' }).fieldMetrics, true);
   assert.equal(config.dataDir, path.resolve('private-data'));
   assert.equal(loadConfig({ DATA_DIR: '/tmp/studio-absolute-data' }).dataDir, '/tmp/studio-absolute-data');
   assert.equal(loadConfig({ HOST: 'localhost', PORT: '65535' }).port, 65535);
@@ -90,6 +92,7 @@ test('invalid settings fail explicitly without putting their values in the error
     ['HOST', ['', 'https://example.com', 'localhost:3000', '[::1]', '127.0.0.999', '-bad-host', 'bad host', 'host/path']],
     ['COOKIE_SECURE', ['', '1', 'yes', 'TRUE', 'false ']],
     ['LOG_REQUESTS', ['', '1', 'yes', 'TRUE']],
+    ['FIELD_METRICS_ENABLED', ['', '1', 'yes', 'TRUE']],
     ['PUBLIC_ORIGIN', ['', 'ftp://example.com', 'https://example.com/path', 'https://example.com/?', 'https://example.com/#', 'https://user:fixture@example.com']],
     ['TRUST_PROXY', ['', 'true', 'false', '1', 'loopback', '127.0.0.1/33', '::1/129', '127.0.0.1/-1', '127.0.0.1/24/1']],
     ['DATA_DIR', ['', '   ', 'data\0invalid']],

@@ -30,6 +30,7 @@ export interface ServerConfig {
   readonly publicOrigin: string | null;
   readonly trustedProxies: readonly string[];
   readonly logRequests: boolean;
+  readonly fieldMetrics: boolean;
   readonly host: string;
   readonly port: number;
   readonly cookieSecure: boolean;
@@ -66,6 +67,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
   }
   const logRequests = env.LOG_REQUESTS ?? (environment === 'production' ? 'true' : 'false');
   if (!['true', 'false'].includes(logRequests)) throw new ConfigurationError('LOG_REQUESTS', 'must be true or false.');
+  const fieldMetrics = env.FIELD_METRICS_ENABLED ?? 'false';
+  if (!['true', 'false'].includes(fieldMetrics)) throw new ConfigurationError('FIELD_METRICS_ENABLED', 'must be true or false.');
   let publicOrigin: string | null = null;
   if (env.PUBLIC_ORIGIN !== undefined) {
     try {
@@ -229,6 +232,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
     publicOrigin,
     trustedProxies: Object.freeze(trustedProxies),
     logRequests: logRequests === 'true',
+    fieldMetrics: fieldMetrics === 'true',
     host,
     port: Number(portText),
     cookieSecure: cookieSecure === 'true',

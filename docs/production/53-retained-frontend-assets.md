@@ -72,7 +72,7 @@ W12/W13 and launch acceptance remain open for:
 - an approved retention duration and storage/cost owner;
 - actual CDN/load-balancer/object-storage configuration and cache invalidation;
 - multi-replica rolling release and rollback rehearsal;
-- field Core Web Vitals, compression, cache-hit and asset-error telemetry;
+- operated Core Web Vitals aggregation, compression, cache-hit and asset-error telemetry;
 - supported-browser old-tab/new-release journeys under real network failure;
 - alert ownership, runbooks and sustained operated evidence;
 - reviewed product/content scope, broad accessibility, D08/D10 and launch

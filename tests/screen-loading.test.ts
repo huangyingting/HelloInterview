@@ -34,12 +34,12 @@ function graph(...roots: string[]) {
   roots.forEach(visit);
   return [...files].sort();
 }
-async function fixture(t: TestContext) {
+async function fixture(t: TestContext, env: NodeJS.ProcessEnv = {}) {
   const parent = path.resolve('data/screen-tests');
   await mkdir(parent, { recursive: true });
   const directory = await mkdtemp(path.join(parent, 'screens-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const runtime = await startServer(loadConfig({ NODE_ENV: 'production', HOST: '127.0.0.1', PORT: '0', LOG_REQUESTS: 'false', DATA_DIR: directory }));
+  const runtime = await startServer(loadConfig({ NODE_ENV: 'production', HOST: '127.0.0.1', PORT: '0', LOG_REQUESTS: 'false', DATA_DIR: directory, ...env }));
   t.after(() => runtime.close());
   const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH, headless: true });
   t.after(() => browser.close());
@@ -52,6 +52,33 @@ async function fixture(t: TestContext) {
   });
   return { ...runtime, directory, browser, context, page, documents, mutations };
 }
+
+test('compiled browser reports only allowlisted field performance dimensions when explicitly enabled', async t => {
+  const logs: string[] = [], original = console.log;
+  console.log = (...values: unknown[]) => { logs.push(values.map(String).join(' ')); };
+  t.after(() => { console.log = original; });
+  const f = await fixture(t, { FIELD_METRICS_ENABLED: 'true' });
+  let reports = 0;
+  f.page.on('request', request => {
+    if (new URL(request.url()).pathname === '/api/metrics/web-vitals' && request.method() === 'POST') {
+      reports++;
+      assert.equal(new URL(request.url()).search, '');
+    }
+  });
+  await f.page.goto(`${f.url}/`);
+  await expect(f.page.locator('main')).toBeVisible();
+  await f.page.evaluate(() => new Promise<void>(resolve => setTimeout(resolve, 100)));
+  await f.page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide')));
+  await expect.poll(() => reports).toBeGreaterThan(0);
+  await expect.poll(() => logs.some(line => line.includes('web_vital.observed'))).toBe(true);
+  const event = JSON.parse(logs.find(line => line.includes('web_vital.observed'))!) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(event).sort(), ['event', 'metric', 'navigation', 'rating', 'screen', 'value']);
+  assert.ok(['LCP', 'CLS', 'INP'].includes(String(event.metric)));
+  assert.equal(event.screen, 'landing');
+  assert.ok(['navigate', 'reload', 'back-forward', 'prerender'].includes(String(event.navigation)));
+  assert.equal(typeof event.value, 'number');
+  assert.ok(!JSON.stringify(event).includes(f.url));
+});
 
 test('community cards and global search address exact opaque records instead of normalizing IDs as paths',async t=>{
   const f=await fixture(t),{page}=f,db=localConnection(f.directory);t.after(()=>db.close());
