@@ -1684,6 +1684,17 @@ export const migrations = [{
       CREATE TRIGGER immutable_community_spam_triage_delete BEFORE DELETE ON community_spam_triage
         FOR EACH ROW EXECUTE FUNCTION immutable_community_spam_triage_record();
     `,
+  }, {
+    version: 38,
+    name: 'authjs-social-provider-admission',
+    sql: `
+      ALTER TABLE managed_identities DROP CONSTRAINT managed_identities_provider_check;
+      ALTER TABLE managed_identities ADD CONSTRAINT managed_identities_provider_check
+        CHECK (provider IN ('email','google','github','facebook'));
+      ALTER TABLE auth_transactions DROP CONSTRAINT auth_transactions_provider_check;
+      ALTER TABLE auth_transactions ADD CONSTRAINT auth_transactions_provider_check
+        CHECK (provider IN ('email','google','github','facebook'));
+    `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

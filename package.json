@@ -24,6 +24,7 @@
     "test:jobs": "npm run build && tsx --test tests/jobs.test.ts",
     "test:identity": "npm run build && tsx --test tests/identity.test.ts tests/identity-limits.test.ts tests/identity-contract.test.ts tests/identity-lifecycle.test.ts tests/identity-runtime.test.ts tests/staff.test.ts",
     "test:identity-browser": "npm run build && tsx --test tests/identity-browser.test.ts",
+    "test:authjs": "npm run build:next && tsx --test tests/authjs.test.ts",
     "test:entitlements": "npm run build && tsx --test tests/entitlements.test.ts",
     "test:usage": "npm run build && tsx --test tests/usage.test.ts",
     "test:support": "npm run build && tsx --test tests/support.test.ts",
@@ -48,8 +49,6 @@
     "media": "node scripts/generate-media.mjs"
   },
   "dependencies": {
-    "@next-auth/prisma-adapter": "^1.0.7",
-    "@prisma/adapter-pg": "^6.12.0",
     "@prisma/client": "^6.12.0",
     "express": "^5.1.0",
     "lucide-react": "^0.468.0",

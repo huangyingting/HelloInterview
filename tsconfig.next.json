@@ -9,6 +9,9 @@
     "app",
     "src",
     "shared",
+    "server/auth",
+    "server/db/prisma.ts",
+    "types",
     "next-env.d.ts",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"

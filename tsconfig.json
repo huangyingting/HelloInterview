@@ -18,5 +18,15 @@
     "types": ["node"]
   },
   "include": ["src", "server", "shared", "scripts", "tests", "*.ts"],
-  "exclude": ["node_modules", "app", "next-env.d.ts", "next.config.ts", "tsconfig.next.json"]
+  "exclude": [
+    "node_modules",
+    "app",
+    "next-env.d.ts",
+    "next.config.ts",
+    "tsconfig.next.json",
+    "server/auth",
+    "server/db/prisma.ts",
+    "tests/authjs.test.ts",
+    "types"
+  ]
 }

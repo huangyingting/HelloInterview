@@ -8,11 +8,13 @@ application as production-ready.
 
 ## Executive recommendation
 
-Keep the existing React/TypeScript experience and Express backend. Evolve the
-backend into a **modular monolith**, backed by managed PostgreSQL, with a
-separately deployed worker from the same codebase. Buy identity, hosted checkout,
-transactional email, and infrastructure rather than building those systems.
-Separate public content metadata from protected content before charging for it.
+Migrate the React/TypeScript experience to a **Next.js App Router modular
+monolith** with Auth.js/NextAuth, Prisma-backed PostgreSQL and separately
+deployed workers from the same codebase. The completed repository must not
+retain Vite, Express, React Router, Auth0 compatibility or the SQLite service
+runtime. Buy OAuth identity, hosted checkout, transactional email and
+infrastructure rather than building those provider systems. Separate public
+content metadata from protected content before charging for it.
 
 Launch one coherent product: **Free plus Pro, with monthly and annual billing**.
 Google, GitHub, and verified email/password registration cover the initial
@@ -92,6 +94,7 @@ service with defined recovery and support commitments.
 | [60 - Private-beta Azure cost control](60-private-beta-cost-control.md) | Conservative USD 200 monthly shared-resource-group budget with staged owner notifications and explicit attribution limits | Platform, finance and operations |
 | [61 - Participant policy runtime](61-participant-policy-runtime.md) | Fail-closed public controller/contact/age/retention/deletion/no-durability contract and managed privacy rendering | Privacy, identity and operations |
 | [62 - Service launch preflight](62-service-launch-preflight.md) | Exact-release no-listener configuration/database/queue validation with bounded secret-free evidence | Platform, identity and operations |
+| [63 - Next.js, Auth.js and Prisma migration](63-nextjs-authjs-prisma-migration.md) | No-legacy target architecture, social-provider policy, Prisma authority, route/session migration and cutover gates | Full-stack, identity and platform |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to
@@ -104,7 +107,7 @@ observable outcomes, not implementation checklists.
 | --- | --- | --- |
 | Audience | Individual adult software-engineering candidates; not a hiring/evaluation product | Public terms and onboarding |
 | Commercial scope | Direct-to-consumer web subscriptions, one initial currency and a restricted supported-country list | Enabling live checkout |
-| Identity | Managed identity broker; Auth0 is the reference candidate, not an approved vendor purchase | Identity implementation |
+| Identity | Auth.js with Google registration/login and explicitly linked Facebook login; Studio retains invite, account, linking and session authority | Authentic provider acceptance |
 | Billing | Stripe Checkout, Billing, and Customer Portal, subject to merchant eligibility and jurisdiction | Billing implementation |
 | Hosting | Invite-only beta exception: existing Azure Southeast Asia `WebStack` VM with guest PostgreSQL and no RPO/RTO promise; public/paid target remains managed recovery-capable infrastructure | External testers and any public/paid expansion |
 | Team | Small product team; no dedicated platform organization assumed | Schedule commitment |

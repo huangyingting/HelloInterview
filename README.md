@@ -339,7 +339,7 @@ and rejects page overflow, clipped direct text and offscreen controls. System-
 color focus/current/progress rules are exercised in forced-colors Chromium;
 complete low-vision, magnifier, content-state and cross-platform review remain
 open.
-Controlled PostgreSQL deployments must apply **migration 37 and maintained queue
+Controlled PostgreSQL deployments must apply **migration 38 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 
