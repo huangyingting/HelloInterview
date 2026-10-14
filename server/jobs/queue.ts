@@ -40,17 +40,29 @@ export async function migrateJobs(db: Database): Promise<void> {
     }
   } finally { await boss.stop(); }
 }
+async function assertMaintainedQueues(boss: PgBoss): Promise<void> {
+  if (!await boss.isInstalled()) throw new Error('The durable queue schema is missing. Run the controlled migration command.');
+  for (const kind of jobKinds) {
+    const queue = await boss.getQueue(queueNames[kind]);
+    if (!queue || Object.entries(queuePolicy).some(([key, value]) => queue[key as keyof typeof queue] !== value)) {
+      throw new Error('Durable queue policy does not match this release. Run the controlled migration command.');
+    }
+  }
+  if (!await boss.getQueue(deadLetterQueue)) throw new Error('The durable dead-letter queue is missing.');
+}
+export async function inspectMaintainedJobs(db: Database) {
+  const boss = await createBoss(db);
+  await assertMaintainedQueues(boss);
+  const operations = await db.prepare('SELECT count(*)::integer AS count FROM durable_operations').get();
+  if (typeof operations?.count !== 'number' || !Number.isSafeInteger(operations.count) || operations.count < 0) {
+    throw new Error('Durable operation statistics are unavailable.');
+  }
+  return { maintainedQueueCount: jobKinds.length + 1, operationCount: operations.count };
+}
 export async function startBoss(db: Database, worker = false): Promise<PgBoss> {
   const boss = await createBoss(db, false, worker);
   try {
-    if (!await boss.isInstalled()) throw new Error('The durable queue schema is missing. Run the controlled migration command.');
-    for (const kind of jobKinds) {
-      const queue = await boss.getQueue(queueNames[kind]);
-      if (!queue || Object.entries(queuePolicy).some(([key, value]) => queue[key as keyof typeof queue] !== value)) {
-        throw new Error('Durable queue policy does not match this release. Run the controlled migration command.');
-      }
-    }
-    if (!await boss.getQueue(deadLetterQueue)) throw new Error('The durable dead-letter queue is missing.');
+    await assertMaintainedQueues(boss);
     await boss.start();
     return boss;
   } catch (error) {

@@ -91,6 +91,7 @@ service with defined recovery and support commitments.
 | [59 - Azure guest runtime foundation](59-azure-guest-runtime-foundation.md) | Exact-artifact runtime image, separated PostgreSQL migration/runtime authority and disabled supervised app/worker units; no authentic service launch | Platform, database and operations |
 | [60 - Private-beta Azure cost control](60-private-beta-cost-control.md) | Conservative USD 200 monthly shared-resource-group budget with staged owner notifications and explicit attribution limits | Platform, finance and operations |
 | [61 - Participant policy runtime](61-participant-policy-runtime.md) | Fail-closed public controller/contact/age/retention/deletion/no-durability contract and managed privacy rendering | Privacy, identity and operations |
+| [62 - Service launch preflight](62-service-launch-preflight.md) | Exact-release no-listener configuration/database/queue validation with bounded secret-free evidence | Platform, identity and operations |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to

@@ -49,6 +49,56 @@ test('runtime-only release retains identity after restart and operates canonical
   await promisify(execFile)('npm', ['ci', '--omit=dev', '--no-audit', '--no-fund'], { cwd: release, timeout: 60000 });
   for (const dependency of ['tsx', 'typescript', 'vite', 'esbuild']) await assert.rejects(stat(join(release, 'node_modules', dependency)), { code: 'ENOENT' });
   assert.ok((await stat(join(release, 'dist-server/billing/cli.js'))).isFile());
+  assert.ok((await stat(join(release, 'dist-server/preflight/cli.js'))).isFile());
+  const incompleteEnv = { ...env };
+  delete incompleteEnv.PRIVACY_RETENTION_NOTICE;
+  await assert.rejects(promisify(execFile)(process.execPath, ['dist-server/preflight/cli.js'], {
+    cwd: release, env: incompleteEnv, timeout: 15000,
+  }), error => {
+    assert.ok(error && typeof error === 'object' && 'code' in error && 'stderr' in error);
+    assert.equal(error.code, 1);
+    assert.match(String(error.stderr), /PRIVACY_RETENTION_NOTICE/);
+    assert.ok(!String(error.stderr).includes('synthetic-client-secret'));
+    return true;
+  });
+  const unavailableDatabase = 'postgres://preflight-user:preflight-password@127.0.0.1:1/preflight-secret';
+  await assert.rejects(promisify(execFile)(process.execPath, ['dist-server/preflight/cli.js'], {
+    cwd: release, env: { ...env, DATABASE_URL: unavailableDatabase }, timeout: 15000,
+  }), error => {
+    assert.ok(error && typeof error === 'object' && 'code' in error && 'stderr' in error);
+    assert.equal(error.code, 1);
+    assert.equal(String(error.stderr).trim(),
+      'Service preflight failed. Check root-only configuration, database migrations, and queue health; no credentials are logged.');
+    assert.ok(!String(error.stderr).includes('preflight-password'));
+    assert.ok(!String(error.stderr).includes('preflight-secret'));
+    return true;
+  });
+  async function databaseFingerprint() {
+    const tables = await f.db.prepare(`SELECT schemaname,tablename FROM pg_tables
+      WHERE schemaname IN (current_schema(),current_schema() || '_jobs') ORDER BY schemaname,tablename`).all();
+    return Promise.all(tables.map(async table => {
+      const schema = table.schemaname, name = table.tablename;
+      if (typeof schema !== 'string' || typeof name !== 'string') throw new Error('PostgreSQL returned an invalid table identifier.');
+      assert.match(schema, /^[a-z_][a-z0-9_]*$/); assert.match(name, /^[a-z_][a-z0-9_]*$/);
+      const row = await f.db.prepare(`SELECT count(*)::integer AS count,
+        md5(COALESCE(string_agg(value::text,E'\\n' ORDER BY value::text),'')) AS digest
+        FROM "${schema}"."${name}" value`).get();
+      return { schema, table: name, count: row?.count, digest: row?.digest };
+    }));
+  }
+  const databaseBeforePreflight = await databaseFingerprint();
+  const preflight = await promisify(execFile)(process.execPath, ['dist-server/preflight/cli.js'], { cwd: release, env, timeout: 15000 });
+  assert.deepEqual(await databaseFingerprint(), databaseBeforePreflight);
+  const preflightResult = JSON.parse(preflight.stdout);
+  assert.deepEqual(preflightResult, {
+    event: 'service.preflight.ready', mode: 'service', listener: { loopback: true, port: 0 }, trustedProxyCount: 1,
+    identity: { providers: ['email', 'github', 'google'], lifecycle: true, inviteCount: 1 },
+    participantPolicy: { minimumAge: 18, contactProtocol: 'https:', noDurability: true },
+    database: { migrationCount: 37, latestMigration: 37, operationCount: 0, maintainedQueueCount: 13 },
+    features: { ai: false, billing: false, community: 'read-only' },
+  });
+  for (const privateValue of ['owner@example.invalid', 'synthetic-client-secret', settings.clientSecret,
+    'Synthetic Studio Operator', 'Synthetic records are retained']) assert.ok(!preflight.stdout.includes(privateValue));
   await assert.rejects(promisify(execFile)(process.execPath, ['dist-server/billing/cli.js', 'reconcile'], { cwd: release, env, timeout: 15000 }), error => {
     assert.ok(error && typeof error === 'object' && 'code' in error && 'stderr' in error);
     assert.equal(error.code, 1);

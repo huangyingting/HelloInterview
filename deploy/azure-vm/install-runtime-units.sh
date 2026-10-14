@@ -13,6 +13,7 @@ for unit in \
   interview-studio.service \
   interview-studio-identity-worker.service \
   interview-studio-privacy-worker.service \
+  interview-studio-preflight.service \
   interview-studio-migrate.service
 do
   install -o root -g root -m 0644 "$script_dir/$unit" "/etc/systemd/system/$unit"

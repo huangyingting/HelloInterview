@@ -17,6 +17,7 @@ test('Azure VM runtime consumes only the verified release and remains secret-gat
     'deploy/azure-vm/interview-studio.service',
     'deploy/azure-vm/interview-studio-identity-worker.service',
     'deploy/azure-vm/interview-studio-privacy-worker.service',
+    'deploy/azure-vm/interview-studio-preflight.service',
     'deploy/azure-vm/interview-studio-migrate.service',
   ];
   for (const file of files) {
@@ -30,13 +31,17 @@ test('Azure VM runtime consumes only the verified release and remains secret-gat
     assert.doesNotMatch(unit, /docker build|npm run build/);
     assert.match(unit, /docker image inspect --format=\{\{\.Id\}\}/);
   }
-  for (const file of files.slice(0, 3)) {
+  for (const file of [...files.slice(0, 3), files[3]]) {
     const unit = await readFile(file, 'utf8');
     assert.match(unit, /^ConditionPathExists=\/etc\/interview-studio\/service\.env$/m);
     assert.match(unit, /--env-file \/etc\/interview-studio\/runtime\.env --env-file \/etc\/interview-studio\/service\.env/);
     assert.doesNotMatch(unit, /APP_MODE=local/);
   }
-  const migration = await readFile(files[3], 'utf8');
+  const preflight = await readFile(files[3], 'utf8');
+  assert.match(preflight, /node dist-server\/preflight\/cli\.js/);
+  assert.doesNotMatch(preflight, /APP_MODE=local/);
+  assert.doesNotMatch(preflight, /(?:--publish|-p) /);
+  const migration = await readFile(files[4], 'utf8');
   assert.match(migration, /--env-file \/etc\/interview-studio\/migrate\.env --env APP_MODE=local/);
   const release = await readFile('deploy/azure-vm/Dockerfile.release', 'utf8');
   assert.match(release, /^FROM node:24-bookworm-slim@sha256:[a-f0-9]{64}$/m);
@@ -45,6 +50,7 @@ test('Azure VM runtime consumes only the verified release and remains secret-gat
   assert.doesNotMatch(release, /npm run build|COPY \. \./);
 
   const installer = await readFile('deploy/azure-vm/install-runtime-units.sh', 'utf8');
+  assert.match(installer, /interview-studio-preflight\.service/);
   assert.match(installer, /systemctl disable interview-studio\.service/);
   assert.doesNotMatch(installer, /systemctl (?:enable|start|restart)/);
 

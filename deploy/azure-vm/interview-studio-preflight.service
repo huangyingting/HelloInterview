@@ -1,0 +1,15 @@
+[Unit]
+Description=Interview Studio no-side-effect service preflight
+Documentation=https://github.com/huangyingting/HelloInterview/blob/main/docs/production/62-service-launch-preflight.md
+Requires=docker.service postgresql.service
+After=docker.service postgresql.service
+ConditionPathExists=/etc/interview-studio/release.env
+ConditionPathExists=/etc/interview-studio/runtime.env
+ConditionPathExists=/etc/interview-studio/service.env
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/interview-studio/release.env
+ExecStartPre=/usr/bin/docker image inspect --format={{.Id}} ${STUDIO_IMAGE}
+ExecStart=/usr/bin/docker run --rm --init --name interview-studio-preflight --network host --read-only --tmpfs /tmp:rw,nosuid,nodev,noexec,size=32m --tmpfs /app/data:rw,nosuid,nodev,noexec,size=8m --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 --memory 512m --cpus 1 --log-driver journald --label com.interview-studio.release=${STUDIO_RELEASE} --env-file /etc/interview-studio/runtime.env --env-file /etc/interview-studio/service.env ${STUDIO_IMAGE} node dist-server/preflight/cli.js
+TimeoutStartSec=45

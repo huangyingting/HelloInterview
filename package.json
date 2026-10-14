@@ -7,7 +7,7 @@
     "dev": "npm run content:metadata && tsx --env-file-if-exists=.env server/index.ts",
     "build": "npm run content:metadata && tsc --noEmit && vite build && npm run build:server",
     "content:metadata": "tsx scripts/generate-public-content.ts",
-    "build:server": "esbuild server/index.ts server/db/cli.ts server/jobs/index.ts server/identity/cli.ts server/billing/cli.ts server/staff/cli.ts server/privacy/cli.ts server/usage/index.ts --bundle --platform=node --target=node24 --format=esm --packages=external --outdir=dist-server --outbase=server && tsx scripts/copy-private-media.ts",
+    "build:server": "esbuild server/index.ts server/db/cli.ts server/jobs/index.ts server/identity/cli.ts server/billing/cli.ts server/staff/cli.ts server/privacy/cli.ts server/preflight/cli.ts server/usage/index.ts --bundle --platform=node --target=node24 --format=esm --packages=external --outdir=dist-server --outbase=server && tsx scripts/copy-private-media.ts",
     "start": "NODE_ENV=production node --env-file-if-exists=.env dist-server/index.js",
     "test": "playwright test",
     "test:unit": "tsx --test tests/config.test.ts tests/deployment.test.ts tests/domain.test.ts tests/premium.test.ts tests/content.test.ts tests/coding.test.ts tests/low-level-design.test.ts tests/access.test.ts tests/usage-calendar.test.ts tests/web-vitals.test.ts",
@@ -38,6 +38,7 @@
     "staff:role": "node --env-file-if-exists=.env dist-server/staff/cli.js",
     "privacy:process": "node --env-file-if-exists=.env dist-server/privacy/cli.js process",
     "privacy:worker": "node --env-file-if-exists=.env dist-server/privacy/cli.js worker",
+    "service:preflight": "node --env-file-if-exists=.env dist-server/preflight/cli.js",
     "screenshots": "node scripts/capture-screenshots.mjs",
     "media": "node scripts/generate-media.mjs"
   },

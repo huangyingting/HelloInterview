@@ -12,7 +12,7 @@ import {
   jobKinds, queueNames, readOperation, requestDigest, requestSchema,
   type ClaimData, type Operation, type OperationRequest, type Payload, type VerifiedEvent,
 } from './schema';
-export { migrateJobs } from './queue';
+export { inspectMaintainedJobs, migrateJobs } from './queue';
 export { postgresConnection } from '../db/connection';
 export type { Operation, OperationRequest, Payload, VerifiedEvent } from './schema';
 
