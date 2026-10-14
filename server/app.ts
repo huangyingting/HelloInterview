@@ -257,6 +257,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
       user, state: user && (!user.identity || user.identity.status === 'active') ? (await stateFor(user)) : emptyState(),
       capabilities: { ai: !!connectedAi, commerce: identity ? 'disabled' : 'demo', community: identity ? 'read-only' : 'local', aiModel: connectedAi?.model ?? null,
         fieldMetrics: config.fieldMetrics,
+        ...(config.participantPolicy ? { participantPolicy: config.participantPolicy } : {}),
         ...(billing?.checkout ? { billing: { mode: 'sandbox', checkout: !!config.billing?.offers } } : {}),
         ...(identity && entitlements ? { auth: { mode: 'managed', providers, legacyLink: !!config.identity?.legacyLinkUntil && config.identity.legacyLinkUntil > Date.now(), securityLifecycle: !!lifecycle }, access: await entitlements.view(user?.id ?? null) } : {}),
         ...(staffRoles.length?{staff:{roles:staffRoles}}:{}) },

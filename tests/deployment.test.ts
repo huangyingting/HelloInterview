@@ -47,6 +47,12 @@ test('Azure VM runtime consumes only the verified release and remains secret-gat
   const installer = await readFile('deploy/azure-vm/install-runtime-units.sh', 'utf8');
   assert.match(installer, /systemctl disable interview-studio\.service/);
   assert.doesNotMatch(installer, /systemctl (?:enable|start|restart)/);
+
+  const serviceEnv = await readFile('deploy/azure-vm/service.env.example', 'utf8');
+  for (const setting of ['PRIVACY_CONTROLLER_NAME', 'PRIVACY_CONTACT_URL', 'PARTICIPANT_MINIMUM_AGE',
+    'PRIVACY_RETENTION_NOTICE', 'PRIVACY_DELETION_NOTICE', 'PRIVATE_BETA_NO_DURABILITY_ACK']) {
+    assert.match(serviceEnv, new RegExp(`^${setting}=`, 'm'));
+  }
 });
 
 test('Azure VM database authority separates migration from runtime DML', async () => {
@@ -55,6 +61,8 @@ test('Azure VM database authority separates migration from runtime DML', async (
   assert.match(provision, /interview_studio_runtime/);
   assert.match(provision, /NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION/g);
   assert.match(provision, /install -o root -g root -m 0600/);
+  assert.match(provision, /^FIELD_METRICS_ENABLED=false$/m);
+  assert.doesNotMatch(provision, /^FIELD_METRICS=/m);
   assert.doesNotMatch(provision, /echo.*password|set -x/);
 
   const grants = await readFile('deploy/azure-vm/grant-runtime.sql', 'utf8');

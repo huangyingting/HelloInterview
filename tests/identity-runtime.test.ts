@@ -26,6 +26,10 @@ test('runtime-only release retains identity after restart and operates canonical
     OIDC_INVITED_EMAILS: 'owner@example.invalid',
     OIDC_MANAGEMENT_ORIGIN: settings.origin, OIDC_MANAGEMENT_CLIENT_ID: settings.clientId,
     OIDC_MANAGEMENT_CLIENT_SECRET: settings.clientSecret, OIDC_PASSWORD_HOOK_SECRET: settings.hookSecret,
+    PRIVACY_CONTROLLER_NAME: 'Synthetic Studio Operator', PRIVACY_CONTACT_URL: 'https://studio.fixture/privacy-contact',
+    PARTICIPANT_MINIMUM_AGE: '18', PRIVACY_RETENTION_NOTICE: 'Synthetic records are retained for a bounded fixture period.',
+    PRIVACY_DELETION_NOTICE: 'Synthetic deletion requests are completed within a bounded fixture period.',
+    PRIVATE_BETA_NO_DURABILITY_ACK: 'true',
     NODE_EXTRA_CA_CERTS: f.certificatePath,
   };
   let stop: (() => Promise<void>) | undefined, stopWorker: (() => Promise<void>) | undefined;
@@ -88,6 +92,8 @@ test('runtime-only release retains identity after restart and operates canonical
   assert.equal(before.capabilities.ai, false);
   assert.equal(before.capabilities.commerce, 'disabled');
   assert.equal(before.capabilities.community, 'read-only');
+  assert.equal(before.capabilities.participantPolicy?.minimumAge, 18);
+  assert.equal(before.capabilities.participantPolicy?.controllerName, 'Synthetic Studio Operator');
   assert.equal((await browser.request('/api/profile', { name: 'Compiled member' }, 'PATCH')).status, 200);
   assert.equal((await browser.security()).identities.length, 1);
   const supportInput = { key: randomUUID(), email: 'compiled-support@example.invalid',

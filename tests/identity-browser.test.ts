@@ -28,6 +28,39 @@ async function fixture(t: TestContext, lifecycle = false) {
   return { ...f, context, page: await context.newPage(), mutations };
 }
 
+test('managed privacy page renders only the configured public participant policy', { timeout: 30000 }, async t => {
+  const policy = {
+    PRIVACY_CONTROLLER_NAME: 'Synthetic Studio Operator',
+    PRIVACY_CONTACT_URL: 'https://studio.fixture/privacy-contact',
+    PARTICIPANT_MINIMUM_AGE: '18',
+    PRIVACY_RETENTION_NOTICE: 'Synthetic account data is retained for 90 fixture days.',
+    PRIVACY_DELETION_NOTICE: 'Synthetic deletion requests are completed within 30 fixture days.',
+    PRIVATE_BETA_NO_DURABILITY_ACK: 'true',
+  };
+  const base = await openIdentityFixture(policy);
+  let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
+  t.after(async () => { try { await browser?.close(); } finally { await base.close(); } });
+  browser = await chromium.launch({ executablePath: process.env.CHROME_PATH, headless: true, args: ['--no-proxy-server', '--host-resolver-rules=MAP studio.fixture 127.0.0.1,MAP broker.fixture 127.0.0.1'] });
+  const context = await browser.newContext({ ignoreHTTPSErrors: true });
+  const page = await context.newPage();
+  await page.goto(`${base.origin}/privacy`);
+  await expect(page.getByRole('heading', { name: 'Private-beta participant privacy notice.' })).toBeVisible();
+  await expect(page.getByText('Participants must be at least 18 years old. Access is limited to approved invitations.')).toBeVisible();
+  await expect(page.getByText(policy.PRIVACY_RETENTION_NOTICE)).toBeVisible();
+  await expect(page.getByText(policy.PRIVACY_DELETION_NOTICE)).toBeVisible();
+  await expect(page.getByText(/no backup, recovery point objective, or recovery time objective/i)).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Contact Synthetic Studio Operator about privacy' })).toHaveAttribute('href', policy.PRIVACY_CONTACT_URL);
+  const bootstrap: Bootstrap = await page.evaluate(async () => (await fetch('/api/bootstrap')).json());
+  assert.deepEqual(bootstrap.capabilities.participantPolicy, {
+    controllerName: policy.PRIVACY_CONTROLLER_NAME,
+    contactUrl: policy.PRIVACY_CONTACT_URL,
+    minimumAge: 18,
+    retentionNotice: policy.PRIVACY_RETENTION_NOTICE,
+    deletionNotice: policy.PRIVACY_DELETION_NOTICE,
+    durabilityNotice: 'This invite-only private beta has no backup, recovery point objective, or recovery time objective. Saved data may be lost, so participants must keep another copy of important information.',
+  });
+});
+
 test('real managed browser separates read-only work, expires Pro with a skewed wall clock and preserves drafts through refresh outages', { timeout: 60000 }, async t => {
   const f = await fixture(t), { page } = f;
   await f.context.addInitScript(() => { const realNow = Date.now.bind(Date); Date.now = () => realNow() + 365 * 86400000; });

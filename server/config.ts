@@ -3,6 +3,9 @@ import { isIP } from 'node:net';
 import path from 'node:path';
 import { z } from 'zod';
 import { sandboxServicePolicy } from '../shared/billing-ledger';
+import type { ParticipantPolicy } from '../shared/types';
+
+export const privateBetaDurabilityNotice = 'This invite-only private beta has no backup, recovery point objective, or recovery time objective. Saved data may be lost, so participants must keep another copy of important information.';
 
 export interface IdentityConfig {
   readonly issuer: string;
@@ -33,6 +36,7 @@ export interface ServerConfig {
   readonly trustedProxies: readonly string[];
   readonly logRequests: boolean;
   readonly fieldMetrics: boolean;
+  readonly participantPolicy: Readonly<ParticipantPolicy> | null;
   readonly host: string;
   readonly port: number;
   readonly cookieSecure: boolean;
@@ -70,6 +74,46 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
   if (!['true', 'false'].includes(logRequests)) throw new ConfigurationError('LOG_REQUESTS', 'must be true or false.');
   const fieldMetrics = env.FIELD_METRICS_ENABLED ?? 'false';
   if (!['true', 'false'].includes(fieldMetrics)) throw new ConfigurationError('FIELD_METRICS_ENABLED', 'must be true or false.');
+  const participantSettings = ['PRIVACY_CONTROLLER_NAME', 'PRIVACY_CONTACT_URL', 'PARTICIPANT_MINIMUM_AGE',
+    'PRIVACY_RETENTION_NOTICE', 'PRIVACY_DELETION_NOTICE', 'PRIVATE_BETA_NO_DURABILITY_ACK'];
+  let participantPolicy: Readonly<ParticipantPolicy> | null = null;
+  if (participantSettings.some(key => env[key] !== undefined)) {
+    const statement = (key: string, minimum: number, maximum: number) => {
+      const value = env[key]?.trim();
+      if (!value || value.length < minimum || value.length > maximum || /[\x00-\x1f\x7f]/.test(value)) {
+        throw new ConfigurationError(key, `must be plain public text of ${minimum} to ${maximum} characters.`);
+      }
+      return value;
+    };
+    const controllerName = statement('PRIVACY_CONTROLLER_NAME', 2, 200);
+    const contactText = env.PRIVACY_CONTACT_URL?.trim();
+    let contactUrl: URL;
+    try {
+      if (!contactText || contactText.length > 2048 || /[\x00-\x20\x7f]/.test(contactText)) throw new Error('Invalid contact.');
+      contactUrl = new URL(contactText);
+      const email = contactUrl.protocol === 'mailto:' && !contactUrl.search && !contactUrl.hash &&
+        z.string().email().max(254).safeParse(contactUrl.pathname).success;
+      const web = contactUrl.protocol === 'https:' && !contactUrl.username && !contactUrl.password;
+      if (!email && !web) throw new Error('Invalid contact.');
+    } catch {
+      throw new ConfigurationError('PRIVACY_CONTACT_URL', 'must be a public HTTPS or mailto contact without credentials.');
+    }
+    const ageText = env.PARTICIPANT_MINIMUM_AGE;
+    if (!ageText || !/^\d{2,3}$/.test(ageText) || Number(ageText) < 13 || Number(ageText) > 120) {
+      throw new ConfigurationError('PARTICIPANT_MINIMUM_AGE', 'must be an integer from 13 through 120.');
+    }
+    if (env.PRIVATE_BETA_NO_DURABILITY_ACK !== 'true') {
+      throw new ConfigurationError('PRIVATE_BETA_NO_DURABILITY_ACK', 'must explicitly acknowledge the approved no-backup and no-RPO/RTO boundary.');
+    }
+    participantPolicy = Object.freeze({
+      controllerName,
+      contactUrl: contactUrl.href,
+      minimumAge: Number(ageText),
+      retentionNotice: statement('PRIVACY_RETENTION_NOTICE', 20, 1000),
+      deletionNotice: statement('PRIVACY_DELETION_NOTICE', 20, 1000),
+      durabilityNotice: privateBetaDurabilityNotice,
+    });
+  }
   let publicOrigin: string | null = null;
   if (env.PUBLIC_ORIGIN !== undefined) {
     try {
@@ -237,6 +281,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
     if (!identity.lifecycle) throw new ConfigurationError('OIDC lifecycle configuration', 'is required when APP_MODE is service.');
     if (!identity.inviteEmailHashes?.length) throw new ConfigurationError('OIDC_INVITED_EMAILS', 'must contain the approved private-beta participants when APP_MODE is service.');
     if (identity.legacyLinkUntil !== null) throw new ConfigurationError('OIDC_LEGACY_LINK_UNTIL', 'must be omitted for the clean-data private beta.');
+    if (!participantPolicy) throw new ConfigurationError('Participant policy', 'is required when APP_MODE is service.');
     if (!trustedProxies.length) throw new ConfigurationError('TRUST_PROXY', 'must identify the private HTTPS ingress when APP_MODE is service.');
     if (logRequests !== 'true') throw new ConfigurationError('LOG_REQUESTS', 'must be true when APP_MODE is service.');
     if (hasAzure || hasOpenAi) throw new ConfigurationError('AI configuration', 'must be omitted while managed external AI is disabled.');
@@ -254,6 +299,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
     trustedProxies: Object.freeze(trustedProxies),
     logRequests: logRequests === 'true',
     fieldMetrics: fieldMetrics === 'true',
+    participantPolicy,
     host,
     port: Number(portText),
     cookieSecure: cookieSecure === 'true',

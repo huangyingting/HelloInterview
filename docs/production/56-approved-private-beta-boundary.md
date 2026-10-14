@@ -51,10 +51,10 @@ is located in `southeastasia`. A later bounded guest inspection verified the
 Caddy/PostgreSQL service topology without reading application secrets or
 database contents.
 
-The USD 200 value is an approved application ceiling, not proof of a matching
-Azure resource-group budget, alert recipient or automatic shutdown policy.
-Those controls require separate configuration and evidence. An unrelated
-subscription-level budget is not accepted as this application's cost control.
+The USD 200 value is enforced conservatively by the operated shared-resource-
+group budget in [checkpoint 60](60-private-beta-cost-control.md). It alerts the
+existing owner action group but cannot claim exact Interview Studio attribution
+or automatically stop a VM that also hosts sibling services.
 
 ## Explicit no-SLA and data-loss boundary
 
@@ -81,15 +81,13 @@ The following facts/evidence are still required before inviting external
 testers:
 
 - the participant-facing privacy/controller identity, age eligibility and
-  retention/deletion notice;
+  retention/deletion values required by the fail-closed
+  [participant-policy runtime](61-participant-policy-runtime.md);
 - the actual Auth0 tenant, email/Google/GitHub connections, callbacks,
   verification/reset delivery and recovery exercise;
-- private secret injection and application-process composition on `WebStack`;
-- a scoped Azure cost alert or an explicit manual spend-review procedure that
-  demonstrates the USD 200 ceiling;
-- guest PostgreSQL role separation, disk/volume ownership, startup/restart and
-  capacity checks;
-- an explicit no-migration initialization and database reset procedure;
+- authentic private secret injection followed by enabling the already installed
+  application/identity/privacy process composition on `WebStack`;
+- an approved database reset procedure beyond the operated clean initialization;
 - human curriculum/accessibility/browser review evidence, not merely assignment
   of the reviewer;
 - deletion/export/support behavior under the approved no-SLA/no-backup

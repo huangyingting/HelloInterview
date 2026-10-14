@@ -1,13 +1,16 @@
 # 09 - Platform implementation and release runbook
 
-**Status: provider-neutral W03 foundation and canonical Azure TLS ingress
-implemented; application deployment remains incomplete.** Secret services,
-cost alerts, guest-database operation and human acceptance still require
-evidence. No backup service or new paid infrastructure was provisioned.
+**Status: canonical Azure ingress, exact-artifact guest image, PostgreSQL/queue
+authority and cost budget are operated; the application remains disabled.**
+Authentic identity secrets, approved participant policy values and human
+acceptance still require evidence. No backup service was provisioned.
 
-The canonical hostname is now approved and its Caddy ingress is operated; see
-[checkpoint 58](58-canonical-https-ingress.md). Application deployment, secret
-injection and guest database operation remain incomplete.
+The canonical hostname and Caddy ingress are operated in
+[checkpoint 58](58-canonical-https-ingress.md). The exact-artifact image,
+database and disabled process units are installed by
+[checkpoint 59](59-azure-guest-runtime-foundation.md); the conservative USD 200
+budget is operated by [checkpoint 60](60-private-beta-cost-control.md).
+Application startup remains blocked on authentic service configuration.
 
 ## Approved invite-only beta target
 
@@ -36,12 +39,17 @@ reset or lost.
 | Process checks | `/api/health` liveness; `/api/ready` database-backed readiness; graceful drain refuses new work before disposal |
 | Request evidence | Server-generated `X-Request-ID`; JSON route-template/status/duration records without submitted/private values |
 | Recovery rehearsal | Isolated encrypted PostgreSQL dump, integrity/tamper checks, restored schema, fresh recovery runtime, owned-state equality |
+| Azure guest foundation | Exact CI artifact image, dedicated migration/runtime database roles, 37 migrations, queue schema and disabled systemd units |
+| Cost control | Conservative USD 200 monthly shared-resource-group budget with staged actual/forecast owner notifications |
+| Participant policy | Required public controller/contact/age/retention/deletion DTO plus fixed no-durability warning |
 
 `NODE_ENV=production` selects compiled static serving. `APP_MODE=service` is now
 available only for the approved invite-only beta composition: PostgreSQL,
 canonical HTTPS/secure cookies, explicit proxy trust, request telemetry, complete
 managed identity/password lifecycle and a private invite list. It rejects
-legacy migration, billing and external AI configuration. The
+legacy migration, billing and external AI configuration, and now also requires
+the approved participant-policy contract from
+[checkpoint 61](61-participant-policy-runtime.md). The
 [service-mode runbook](57-invite-only-service-runtime.md) defines the exact
 boundary. This does not configure the real tenant or application process, and must not be
 weakened to expose a demonstration account/plan endpoint.

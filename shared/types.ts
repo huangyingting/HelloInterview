@@ -501,6 +501,14 @@ export interface PrivacyDeletionStatus {
   fresh:boolean;
 }
 export interface PrivacyDeletionView {deletion:PrivacyDeletionStatus|null}
+export interface ParticipantPolicy {
+  controllerName: string;
+  contactUrl: string;
+  minimumAge: number;
+  retentionNotice: string;
+  deletionNotice: string;
+  durabilityNotice: string;
+}
 export interface Bootstrap {
   csrf?: string;
   user: User | null;
@@ -513,6 +521,7 @@ export interface Bootstrap {
     community: 'local' | 'read-only';
     aiModel: string | null;
     fieldMetrics: boolean;
+    participantPolicy?: ParticipantPolicy;
     auth?: { mode: 'managed'; providers: readonly ('email' | 'google' | 'github')[]; legacyLink: boolean; securityLifecycle: boolean };
     staff?: {roles:StaffRole[]};
   };

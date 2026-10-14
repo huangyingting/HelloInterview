@@ -1,7 +1,8 @@
 # 57 - Invite-only service runtime
 
-**Status: fail-closed W03/W04 engineering checkpoint; authentic Auth0, Azure
-guest deployment and participant admission are not yet operated.**
+**Status: fail-closed W03/W04 engineering checkpoint; Azure guest foundations
+are installed but authentic Auth0 and participant admission are not yet
+operated.**
 
 This checkpoint implements
 [#50](https://github.com/huangyingting/HelloInterview/issues/50). It makes the
@@ -23,6 +24,10 @@ issuer as an invitation system.
 - the separate read-only Management API client and signed password-event
   lifecycle are complete;
 - `OIDC_INVITED_EMAILS` contains 1 to 200 distinct approved addresses; and
+- approved public controller/contact/minimum-age/retention/deletion terms are
+  complete and the no-backup/no-RPO/no-RTO boundary is explicitly acknowledged;
+- the participant policy is exposed through the bounded public DTO described in
+  [checkpoint 61](61-participant-policy-runtime.md); and
 - legacy account migration, Stripe sandbox/live configuration and OpenAI/Azure
   OpenAI configuration are absent.
 
@@ -34,9 +39,9 @@ clean-data, free, no-managed-AI beta and refuses contradictory authority.
 The application still needs an HTTP reverse proxy because Node does not
 terminate the approved public certificate. The trusted proxy must overwrite
 forwarded protocol/address headers and block direct public access to the
-application listener. A successful configuration parse proves only internal
-consistency; it does not prove DNS, certificate renewal, NSG/firewall rules or
-secret-file permissions on `WebStack`.
+application listener. A successful configuration parse proves only internal consistency; it does not
+approve the policy values or prove Auth0 callbacks, participant notice review,
+certificate renewal or application operation on `WebStack`.
 
 The approved values are `PUBLIC_ORIGIN=https://interview.genisisiq.com`,
 `HOST=127.0.0.1`, `PORT=10006` and `TRUST_PROXY=127.0.0.1/32`, as operated in

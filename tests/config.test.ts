@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import path from 'node:path';
-import { ConfigurationError, loadConfig } from '../server/config';
+import { ConfigurationError, loadConfig, privateBetaDurabilityNotice } from '../server/config';
 
 test('configuration defaults preserve loopback, local data, cookies and optional AI', () => {
   const config = loadConfig({}, '/tmp/studio-config-fixture');
@@ -17,6 +17,7 @@ test('configuration defaults preserve loopback, local data, cookies and optional
     trustedProxies: [],
     logRequests: false,
     fieldMetrics: false,
+    participantPolicy: null,
     host: '127.0.0.1',
     port: 3000,
     cookieSecure: false,
@@ -69,6 +70,32 @@ test('configuration is an immutable snapshot, not a live reference to process en
   assert.ok(Object.isFrozen(config.ai));
 });
 
+test('participant policy is complete, bounded, public and explicitly acknowledges no durability', () => {
+  const policy = {
+    PRIVACY_CONTROLLER_NAME: 'Synthetic Studio Operator',
+    PRIVACY_CONTACT_URL: 'mailto:privacy@example.invalid',
+    PARTICIPANT_MINIMUM_AGE: '18',
+    PRIVACY_RETENTION_NOTICE: 'Synthetic records are retained for a bounded fixture period.',
+    PRIVACY_DELETION_NOTICE: 'Synthetic deletion requests are completed within a bounded fixture period.',
+    PRIVATE_BETA_NO_DURABILITY_ACK: 'true',
+  };
+  assert.equal(loadConfig(policy).participantPolicy?.contactUrl, 'mailto:privacy@example.invalid');
+  const invalid: [keyof typeof policy, string | undefined][] = [
+    ['PRIVACY_CONTROLLER_NAME', undefined], ['PRIVACY_CONTROLLER_NAME', 'x'], ['PRIVACY_CONTROLLER_NAME', 'unsafe\nname'],
+    ['PRIVACY_CONTACT_URL', undefined], ['PRIVACY_CONTACT_URL', 'http://example.com'], ['PRIVACY_CONTACT_URL', 'mailto:not-an-email'],
+    ['PARTICIPANT_MINIMUM_AGE', undefined], ['PARTICIPANT_MINIMUM_AGE', '12'], ['PARTICIPANT_MINIMUM_AGE', '121'],
+    ['PRIVACY_RETENTION_NOTICE', undefined], ['PRIVACY_RETENTION_NOTICE', 'short'],
+    ['PRIVACY_DELETION_NOTICE', undefined], ['PRIVACY_DELETION_NOTICE', 'short'],
+    ['PRIVATE_BETA_NO_DURABILITY_ACK', undefined], ['PRIVATE_BETA_NO_DURABILITY_ACK', 'false'],
+  ];
+  for (const [key, value] of invalid) assert.throws(() => loadConfig({ ...policy, [key]: value }), error => {
+    assert.ok(error instanceof ConfigurationError);
+    assert.match(error.message, new RegExp(`^${key} `));
+    if (value && value.length > 6) assert.ok(!error.message.includes(value));
+    return true;
+  });
+});
+
 test('service mode requires the complete approved private-beta authority while local proxy configuration stays explicit', () => {
   const service = {
     NODE_ENV: 'production', APP_MODE: 'service', DATABASE_URL: 'postgres://localhost/synthetic_fixture',
@@ -77,16 +104,29 @@ test('service mode requires the complete approved private-beta authority while l
     OIDC_MANAGEMENT_ORIGIN: 'https://broker.fixture', OIDC_MANAGEMENT_CLIENT_ID: 'synthetic-manager',
     OIDC_MANAGEMENT_CLIENT_SECRET: 'synthetic-manager-secret', OIDC_PASSWORD_HOOK_SECRET: '1'.repeat(64),
     OIDC_INVITED_EMAILS: 'Owner@Example.invalid, second@example.invalid',
+    PRIVACY_CONTROLLER_NAME: 'Synthetic Studio Operator', PRIVACY_CONTACT_URL: 'https://studio.fixture/privacy-contact',
+    PARTICIPANT_MINIMUM_AGE: '18', PRIVACY_RETENTION_NOTICE: 'Synthetic records are retained for a bounded fixture period.',
+    PRIVACY_DELETION_NOTICE: 'Synthetic deletion requests are completed within a bounded fixture period.',
+    PRIVATE_BETA_NO_DURABILITY_ACK: 'true',
   };
   const serviceConfig = loadConfig(service);
   assert.equal(serviceConfig.appMode, 'service');
   assert.equal(serviceConfig.identity?.inviteEmailHashes?.length, 2);
   assert.ok(Object.isFrozen(serviceConfig.identity?.inviteEmailHashes));
   assert.ok(!JSON.stringify(serviceConfig.identity).toLowerCase().includes('owner@example.invalid'));
+  assert.deepEqual(serviceConfig.participantPolicy, {
+    controllerName: 'Synthetic Studio Operator', contactUrl: 'https://studio.fixture/privacy-contact', minimumAge: 18,
+    retentionNotice: 'Synthetic records are retained for a bounded fixture period.',
+    deletionNotice: 'Synthetic deletion requests are completed within a bounded fixture period.',
+    durabilityNotice: privateBetaDurabilityNotice,
+  });
+  assert.ok(Object.isFrozen(serviceConfig.participantPolicy));
   for (const override of [
     { NODE_ENV: 'test' }, { OIDC_ISSUER: undefined }, { OIDC_MANAGEMENT_ORIGIN: undefined },
     { OIDC_INVITED_EMAILS: undefined }, { OIDC_INVITED_EMAILS: '' }, { OIDC_INVITED_EMAILS: 'duplicate@example.invalid,DUPLICATE@example.invalid' },
     { OIDC_LEGACY_LINK_UNTIL: new Date(Date.now() + 86400000).toISOString() }, { TRUST_PROXY: undefined },
+    { PRIVACY_CONTROLLER_NAME: undefined }, { PRIVACY_CONTACT_URL: undefined }, { PARTICIPANT_MINIMUM_AGE: undefined },
+    { PRIVACY_RETENTION_NOTICE: undefined }, { PRIVACY_DELETION_NOTICE: undefined }, { PRIVATE_BETA_NO_DURABILITY_ACK: undefined },
     { LOG_REQUESTS: 'false' }, { OPENAI_API_KEY: 'fixture-only' }, { OPENAI_MODEL: 'fixture-model' },
     { STRIPE_TEST_ACCOUNT_ID: 'acct_SyntheticFixture', STRIPE_TEST_SECRET_KEY: 'rk_test_SyntheticFixtureOnly',
       STRIPE_TEST_WEBHOOK_SECRET: 'whsec_SyntheticFixtureOnly' },
