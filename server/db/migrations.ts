@@ -1,18 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { Database } from './connection';
+import { recordTables } from './records';
 
-export const recordTables = {
-  targets: 'targets',
-  stories: 'stories',
-  attempts: 'attempts',
-  quizzes: 'quiz_attempts',
-  certificates: 'completion_records',
-  chat: 'tutor_messages',
-  mocks: 'mock_sessions',
-  customQuizzes: 'custom_quizzes',
-  studyPlans: 'study_plans',
-  projects: 'project_workspaces',
-} as const;
+export { recordTables } from './records';
 
 export const migrations = [{
   version: 1,
@@ -1721,7 +1711,7 @@ export async function migrateDatabase(db: Database): Promise<void> {
 
 export async function assertDatabaseVersion(db: Database): Promise<void> {
   if (db.dialect === 'sqlite') return;
-  const table = await db.prepare("SELECT to_regclass('schema_migrations') AS name").get();
+  const table = await db.prepare("SELECT to_regclass('schema_migrations')::text AS name").get();
   if (!table?.name) throw new Error('PostgreSQL migrations are missing. Run npm run db:migrate before starting this release.');
   const rows = await db.prepare('SELECT version,name,checksum FROM schema_migrations ORDER BY version').all();
   if (rows.length !== migrations.length || migrations.some(migration => !rows.some(row => row.version === migration.version && row.name === migration.name && row.checksum === checksum(migration.sql)))) {

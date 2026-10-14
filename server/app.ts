@@ -259,7 +259,7 @@ export function createApp(config: ServerConfig, db: Database, shutdown: AbortSig
         fieldMetrics: config.fieldMetrics,
         ...(config.participantPolicy ? { participantPolicy: config.participantPolicy } : {}),
         ...(billing?.checkout ? { billing: { mode: 'sandbox', checkout: !!config.billing?.offers } } : {}),
-        ...(identity && entitlements ? { auth: { mode: 'managed', providers, legacyLink: !!config.identity?.legacyLinkUntil && config.identity.legacyLinkUntil > Date.now(), securityLifecycle: !!lifecycle }, access: await entitlements.view(user?.id ?? null) } : {}),
+        ...(identity && entitlements ? { auth: { mode: 'managed', system: 'oidc', providers, legacyLink: !!config.identity?.legacyLinkUntil && config.identity.legacyLinkUntil > Date.now(), securityLifecycle: !!lifecycle }, access: await entitlements.view(user?.id ?? null) } : {}),
         ...(staffRoles.length?{staff:{roles:staffRoles}}:{}) },
       ...(identity ? { csrf: await identity.csrf(req, res) } : {}),
     });

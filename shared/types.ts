@@ -522,12 +522,12 @@ export interface Bootstrap {
     aiModel: string | null;
     fieldMetrics: boolean;
     participantPolicy?: ParticipantPolicy;
-    auth?: { mode: 'managed'; providers: readonly ('email' | 'google' | 'github')[]; legacyLink: boolean; securityLifecycle: boolean };
+    auth?: { mode: 'managed'; system?: 'oidc' | 'authjs'; providers: readonly ('email' | 'google' | 'github' | 'facebook')[]; legacyLink: boolean; securityLifecycle: boolean };
     staff?: {roles:StaffRole[]};
   };
 }
 export interface IdentitySecurity {
-  identities: { id: string; provider: 'email' | 'google' | 'github'; email: string | null; verified: boolean; available: boolean; createdAt: string; current: boolean }[];
+  identities: { id: string; provider: 'email' | 'google' | 'github' | 'facebook'; email: string | null; verified: boolean; available: boolean; createdAt: string; current: boolean }[];
   sessions: { id: string; createdAt: number; lastUsed: number; authenticatedAt: number; mfa:boolean;current: boolean }[];
   events: { id: string; action: string; createdAt: string }[];
   fresh: boolean;

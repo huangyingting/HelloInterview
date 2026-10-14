@@ -10,6 +10,9 @@ database migration 38. It is not a launch or cutover:
 - the current Express application remains the deployed artifact;
 - the Next.js UI shell builds and serves deep links, but most `/api` routes have
   not yet moved to Route Handlers;
+- health, readiness and visitor bootstrap now run as Route Handlers through a
+  Prisma-backed compatibility interface that preserves nested transaction
+  identity for existing domain repositories;
 - Auth.js uses a short-lived JWT session only as a migration scaffold; durable
   database sessions, revocation, fresh-authentication and account security must
   be reconnected before participant access;

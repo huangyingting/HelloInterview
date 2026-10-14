@@ -1,7 +1,7 @@
 import { emptyState } from '../../shared/domain';
 import type { UserState } from '../../shared/types';
 import type { Database } from './connection';
-import { recordTables } from './migrations';
+import { recordTables } from './records';
 import { userStateSchema } from './state-schema';
 
 const resourceFields = ['read', 'bookmarks', 'review', 'activity', 'enrollments', 'watched'] as const;

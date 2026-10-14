@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev:next": "npm run content:metadata && next dev",
-    "build:next": "npm run content:metadata && npm run prisma:generate && next build",
-    "start:next": "next start",
+    "build:next": "npm run content:metadata && npm run prisma:generate && next build && tsx scripts/prepare-next-standalone.ts",
+    "start:next": "node .next/standalone/server.js",
     "prisma:generate": "DATABASE_URL=\"${DATABASE_URL:-postgresql://localhost/unavailable}\" prisma generate",
     "prisma:pull": "prisma db pull && prisma generate",
     "dev": "npm run content:metadata && tsx --env-file-if-exists=.env server/index.ts",
@@ -25,6 +25,7 @@
     "test:identity": "npm run build && tsx --test tests/identity.test.ts tests/identity-limits.test.ts tests/identity-contract.test.ts tests/identity-lifecycle.test.ts tests/identity-runtime.test.ts tests/staff.test.ts",
     "test:identity-browser": "npm run build && tsx --test tests/identity-browser.test.ts",
     "test:authjs": "npm run build:next && tsx --test tests/authjs.test.ts",
+    "test:next-runtime": "npm run build:next && tsx --test tests/next-runtime.test.ts",
     "test:entitlements": "npm run build && tsx --test tests/entitlements.test.ts",
     "test:usage": "npm run build && tsx --test tests/usage.test.ts",
     "test:support": "npm run build && tsx --test tests/support.test.ts",
