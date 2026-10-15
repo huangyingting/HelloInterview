@@ -30,7 +30,6 @@ function brief(problem: Problem): PracticeProblem {
 export class SandboxInputs {
   private constructor(private readonly db: Database, private readonly policy: InputPolicy, private readonly policyHash: string) {}
   static async open(db: Database, input: InputPolicy) {
-    if (db.dialect !== 'postgres') throw new Error('Owned AI input snapshots require controlled PostgreSQL.');
     const policy = inputPolicySchema.parse(input), payload = encodePayload(policy, 131072), hash = digest(payload);
     await assertDatabaseVersion(db);
     const inputs = new SandboxInputs(db, policy, hash);

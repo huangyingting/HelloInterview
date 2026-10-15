@@ -48,7 +48,7 @@ export interface ManagedAiConfig {
 }
 
 function boundedInteger(
-  env: NodeJS.ProcessEnv,
+  env: Readonly<Record<string, string | undefined>>,
   key: typeof managedSettings[number],
   minimum: number,
   maximum: number,
@@ -61,7 +61,7 @@ function boundedInteger(
   return Number(value);
 }
 
-export function loadManagedAiConfig(env: NodeJS.ProcessEnv = process.env): Readonly<ManagedAiConfig> | null {
+export function loadManagedAiConfig(env: Readonly<Record<string, string | undefined>> = process.env): Readonly<ManagedAiConfig> | null {
   const present = [...managedSettings, ...azureSettings].filter(key => env[key] !== undefined);
   if (!present.length) return null;
   if (env.MANAGED_AI_ENABLED !== 'true') {

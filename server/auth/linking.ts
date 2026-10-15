@@ -3,7 +3,7 @@ import type { Account, Profile } from 'next-auth';
 import { z } from 'zod';
 import { prismaConnection } from '../db/prisma';
 import { HttpError } from '../http-error';
-import { lockSubject } from '../identity/lifecycle';
+import { lockSubject } from '../identity/subject-lock';
 import { socialProof } from './admission';
 import { authCookieNames, type AuthSettings } from './config';
 import { authRequestCookie, type AuthAdmission } from './request-context';

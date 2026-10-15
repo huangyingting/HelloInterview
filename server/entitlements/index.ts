@@ -25,7 +25,6 @@ const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(valu
 
 export class Entitlements {
   constructor(private readonly db: Database) {
-    if (db.dialect !== 'postgres') throw new Error('Managed entitlements require PostgreSQL; local demo access is separate.');
   }
   private async lockOwner(owner: string) {
     if (!await this.db.prepare('SELECT u.id FROM users u JOIN managed_accounts a ON a.user_id=u.id WHERE u.id=? FOR UPDATE OF u').get(owner)) {

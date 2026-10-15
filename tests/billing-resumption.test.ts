@@ -50,7 +50,7 @@ test('resumption requires strict acknowledged fresh owned admission, CSRF and op
   assert.equal((await f.browser.request(`/api/billing/subscriptions/${f.facts.sub.id}/resume`, body(f))).status, 400);
   assert.equal((await f.browser.request(`/api/billing/subscriptions/${randomUUID()}/resume`, body(f))).status, 404);
   assert.equal((await f.browser.request(f.url, { ...body(f), cancellationId: randomUUID() })).status, 404);
-  const stranger = await f.login(undefined, 'auth0|resumption-stranger');
+  const stranger = await f.login(undefined, 'google|resumption-stranger');
   assert.equal((await stranger.browser.request(f.url, body(f))).status, 404);
   const replica = await f.replica(), browser = replica.browser();
   for (const [key, value] of f.browser.cookies) browser.cookies.set(key, value);
@@ -426,9 +426,10 @@ test('compiled maintained reconciliation claims new renewal work and publishes c
     const client=new Stripe(process.env.STRIPE_TEST_SECRET_KEY,{host:'127.0.0.1',port:${f.port},protocol:'http',
       apiVersion:'${stripeApiVersion}',timeout:1000,maxNetworkRetries:0}); await runBillingCommand('reconcile',client);`;
   assert.ok(f.config.databaseUrl);
+  const env:NodeJS.ProcessEnv={PATH:process.env.PATH,NODE_ENV:'production',DATABASE_URL:f.config.databaseUrl,
+    ...authJsEnvironment(f.origin),...sandboxSettings};
   await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], { cwd: process.cwd(),
-    env: { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl,
-      ...authJsEnvironment(f.origin), ...sandboxSettings }, timeout: 30000 });
+    env, timeout: 30000 });
   assert.equal((await resumption(f))?.state, 'confirmed');
   assert.equal((await f.view(f.browser)).ledger?.subscriptions[0].nonrenewing, false);
   assert.equal((await f.view(f.browser)).ledger?.stale, false); assert.equal(posts(f).length, 1);

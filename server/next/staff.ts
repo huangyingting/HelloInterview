@@ -27,8 +27,16 @@ async function enforceStaffLimit(db: Database, owner: string) {
   }
 }
 
+export async function currentStaffRoles(db: Database, owner: string): Promise<StaffRole[]> {
+  const rows = await db.prepare(`SELECT role FROM (
+    SELECT DISTINCT ON (role) role,state,starts_at,ends_at FROM staff_role_events
+    WHERE user_id=? ORDER BY role,created_at DESC,id DESC
+  ) latest WHERE state='granted' AND starts_at<=clock_timestamp() AND ends_at>clock_timestamp() ORDER BY role`).all(owner);
+  return rows.map(row => staffRoleSchema.parse(row.role));
+}
+
 async function staffContext(request: Request, mutation = false) {
-  const session = await currentManagedAuthSession(request);
+  const session = await currentManagedAuthSession(request, false);
   if (!session) throw new HttpError(401, 'Sign in before opening staff operations.');
   if (mutation) assertCsrf(request, session);
   const db = prismaConnection();
@@ -42,13 +50,7 @@ async function staffContext(request: Request, mutation = false) {
     demo: false,
     identity: { status: 'active', verified: true },
   };
-  const roles = async (owner: string): Promise<StaffRole[]> => {
-    const rows = await db.prepare(`SELECT role FROM (
-      SELECT DISTINCT ON (role) role,state,starts_at,ends_at FROM staff_role_events
-      WHERE user_id=? ORDER BY role,created_at DESC,id DESC
-    ) latest WHERE state='granted' AND starts_at<=clock_timestamp() AND ends_at>clock_timestamp() ORDER BY role`).all(owner);
-    return rows.map(row => staffRoleSchema.parse(row.role));
-  };
+  const roles = (owner: string): Promise<StaffRole[]> => currentStaffRoles(db, owner);
   const authority: StaffIdentityAuthority & SupportIdentityAuthority = {
     assertDatabase(candidate) {
       if (candidate !== db) throw new Error('Staff services and session authority must share the exact database adapter.');
@@ -73,6 +75,7 @@ async function staffContext(request: Request, mutation = false) {
       if (!row) {
         throw new HttpError(403, 'Staff actions require an active account, verified MFA and a fresh sign-in. Confirm your identity again.');
       }
+      await db.prepare(`UPDATE managed_sessions SET last_used=${clock} WHERE token=?`).run(session.tokenHash);
     },
     staffRoles: roles,
     async assertSupport(candidate) {

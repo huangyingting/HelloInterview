@@ -19,7 +19,7 @@ const evidence = {
   reason: 'Synthetic managed AI worker acceptance evidence only.',
 };
 
-function settings(overrides: NodeJS.ProcessEnv = {}) {
+function settings(overrides: Readonly<Record<string, string | undefined>> = {}) {
   return {
     MANAGED_AI_ENABLED: 'true',
     MANAGED_AI_MODEL_REVISION: 'fixture-model-revision',
@@ -279,9 +279,15 @@ test('stale saved work cancels the known-undispatched native intent at zero cost
   });
   const intent = await f.worker.inputs.enqueue(f.worker.usage, f.worker.jobs, f.request, f.aiConfig.costCeilingMicros);
   assert.equal((await f.browser.request('/api/attempts', {
-    ...f.attempt,
+    id: f.attempt.id,
     revision: f.attempt.revision ?? 0,
+    problemId: f.attempt.problemId,
+    level: f.attempt.level,
     answer: `${f.attempt.answer} This newer saved explanation must remain authoritative.`,
+    code: f.attempt.code,
+    nodes: f.attempt.nodes,
+    edges: f.attempt.edges,
+    elapsed: f.attempt.elapsed,
   })).status, 200);
   assert.deepEqual(await f.worker.processNext(), { state: 'cancelled', operationId: intent.operationId });
   assert.equal(calls, 0);
@@ -319,7 +325,7 @@ test('compiled managed AI processor uses Prisma and Azure transport without deve
   });
   const intent = await f.worker.inputs.enqueue(f.worker.usage, f.worker.jobs, f.request, f.aiConfig.costCeilingMicros);
   await f.worker.close();
-  const env = {
+  const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH,
     NODE_ENV: 'production',
     DATABASE_URL: f.databaseUrl,

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type Stripe from 'stripe';
 import { assertCsrf } from '../auth/csrf';
 import { loadAuthSettings } from '../auth/config';
 import { BillingNotifications } from '../billing';
@@ -19,6 +20,24 @@ const maximumWebhookBytes = 256 * 1024;
 
 let billingPromise: Promise<BillingNotifications> | null = null;
 let billingAbort: AbortController | null = null;
+let billingClient: Stripe | undefined;
+let billingOverride: BillingNotifications | undefined;
+
+export function setNextBillingClientForTests(client?: Stripe) {
+  if (client !== undefined && process.env.NODE_ENV !== 'test') {
+    throw new Error('The Next billing client override is test-only.');
+  }
+  if (billingPromise) throw new Error('Close the active Next billing service before changing its test client.');
+  billingClient = client;
+}
+
+export function setNextBillingServiceForTests(service?: BillingNotifications) {
+  if (service !== undefined && process.env.NODE_ENV !== 'test') {
+    throw new Error('The Next billing service override is test-only.');
+  }
+  if (billingPromise) throw new Error('Close the active Next billing service before changing its test service.');
+  billingOverride = service;
+}
 
 function configuration() {
   const auth = loadAuthSettings();
@@ -39,6 +58,7 @@ export function nextBillingCapability() {
 }
 
 async function nextBillingService() {
+  if (billingOverride) return billingOverride;
   if (!billingPromise) {
     const { auth, billing } = configuration();
     if (!billing) throw new HttpError(503, 'Owned sandbox billing is not configured.');
@@ -48,7 +68,7 @@ async function nextBillingService() {
       billing,
       billingAbort.signal,
       false,
-      undefined,
+      billingClient,
       auth.origin,
     ).catch(error => {
       billingPromise = null;
@@ -60,6 +80,7 @@ async function nextBillingService() {
 }
 
 export async function closeNextBillingService() {
+  billingOverride = undefined;
   const current = billingPromise;
   billingPromise = null;
   billingAbort?.abort();
@@ -82,8 +103,8 @@ async function authorize(request: Request, mutation: boolean) {
   return { session, billing: await nextBillingService() };
 }
 
-async function run<T>(session: ManagedAuthSession, fresh: boolean, action: () => Promise<T>) {
-  const db = prismaConnection();
+async function run<T>(billing: BillingNotifications, session: ManagedAuthSession, fresh: boolean, action: () => Promise<T>) {
+  const db = billing.db;
   try {
     return await db.transaction(async () => {
       await assertAccountSession(db, session, fresh, ['active']);
@@ -102,7 +123,7 @@ async function run<T>(session: ManagedAuthSession, fresh: boolean, action: () =>
 export async function billingView(request: Request) {
   const { session, billing } = await authorize(request, false);
   if (!billing.checkout) throw new HttpError(503, 'Owned sandbox checkout is unavailable.');
-  return run(session, false, () => billing.checkout!.view(session.userId));
+  return run(billing, session, false, () => billing.checkout!.view(session.userId));
 }
 
 export async function reconcileBilling(request: Request, input: unknown) {
@@ -110,7 +131,7 @@ export async function reconcileBilling(request: Request, input: unknown) {
     throw new HttpError(400, 'Use an empty request body; customer and invoice references are server-owned.');
   }
   const { session, billing } = await authorize(request, true);
-  return run(session, true, () => billing.ledger.refresh(session.userId));
+  return run(billing, session, true, () => billing.ledger.refresh(session.userId));
 }
 
 export async function reserveCheckout(request: Request, input: unknown) {
@@ -120,7 +141,7 @@ export async function reserveCheckout(request: Request, input: unknown) {
   }
   const { session, billing } = await authorize(request, true);
   if (!billing.checkout) throw new HttpError(503, 'Owned sandbox checkout is unavailable.');
-  return run(session, true, () => billing.checkout!.reserve(session.userId, parsed.data));
+  return run(billing, session, true, () => billing.checkout!.reserve(session.userId, parsed.data));
 }
 
 export async function useCheckout(
@@ -136,8 +157,8 @@ export async function useCheckout(
   const { session, billing } = await authorize(request, true);
   if (!billing.checkout) throw new HttpError(503, 'Owned sandbox checkout is unavailable.');
   return action === 'open'
-    ? run(session, true, () => billing.checkout!.open(session.userId, parsedId.data))
-    : run(session, true, () => billing.checkout!.refresh(session.userId, parsedId.data));
+    ? run(billing, session, true, () => billing.checkout!.open(session.userId, parsedId.data))
+    : run(billing, session, true, () => billing.checkout!.refresh(session.userId, parsedId.data));
 }
 
 export async function cancelSubscription(request: Request, id: string, input: unknown) {
@@ -148,7 +169,7 @@ export async function cancelSubscription(request: Request, id: string, input: un
   }
   const { session, billing } = await authorize(request, true);
   if (!billing.checkout) throw new HttpError(503, 'Owned sandbox checkout is unavailable.');
-  return run(session, true, () => billing.checkout!.cancelRenewal(session.userId, parsedId.data, body.data));
+  return run(billing, session, true, () => billing.checkout!.cancelRenewal(session.userId, parsedId.data, body.data));
 }
 
 export async function resumeSubscription(request: Request, id: string, input: unknown) {
@@ -159,7 +180,7 @@ export async function resumeSubscription(request: Request, id: string, input: un
   }
   const { session, billing } = await authorize(request, true);
   if (!billing.checkout) throw new HttpError(503, 'Owned sandbox checkout is unavailable.');
-  return run(session, true, () => billing.checkout!.resumeRenewal(session.userId, parsedId.data, body.data));
+  return run(billing, session, true, () => billing.checkout!.resumeRenewal(session.userId, parsedId.data, body.data));
 }
 
 export async function openBillingPortal(request: Request, input: unknown) {
@@ -170,16 +191,27 @@ export async function openBillingPortal(request: Request, input: unknown) {
   const portal = billing.portal;
   if (!portal) throw new HttpError(503, 'Owned sandbox Portal is unavailable.');
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(30000)]);
-  const scope = await run(session, true, () => portal.prepare(session.userId));
-  const result = await billing.provider.portalSession(scope, () => run(session, true, async () => {
-    await portal.guard(scope, session.userId);
-    signal.throwIfAborted();
-  }), signal);
+  const scope = await run(billing, session, true, () => portal.prepare(session.userId));
+  const result = await billing.provider.portalSession(scope, async () => {
+    const current = await requireAccountSession(request, ['active']);
+    if (current.userId !== session.userId || current.tokenHash !== session.tokenHash) {
+      throw new HttpError(401, 'Sign in again to manage account security.');
+    }
+    await run(billing, current, true, async () => {
+      await portal.guard(scope, current.userId);
+      signal.throwIfAborted();
+    });
+  }, signal);
   signal.throwIfAborted();
-  await run(session, true, async () => {
-    await portal.complete(scope, session.userId, result);
+  const current = await requireAccountSession(request, ['active']);
+  if (current.userId !== session.userId || current.tokenHash !== session.tokenHash) {
+    throw new HttpError(401, 'Sign in again to manage account security.');
+  }
+  await run(billing, current, true, async () => {
+    await portal.complete(scope, current.userId, result);
     signal.throwIfAborted();
   });
+  signal.throwIfAborted();
   return { url: result.url };
 }
 

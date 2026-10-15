@@ -38,57 +38,7 @@ test('canonical address handling cannot create separate mapped IPv4 or alternate
   assert.throws(() => networkAddress('client-controlled-name'), /could not be verified/);
 });
 
-test('HTTP admission shares replica budgets and bounded retry without creating proofs or exchanging codes', async t => {
-  const f = await openIdentityFixture(); t.after(f.close);
-  const replica = await f.replica(), browsers = [f.browser(), replica.browser()];
-  for (let index = 0; index < 30; index++) {
-    const response = await browsers[index % 2].request('/auth/login?provider=invalid', undefined, 'GET', { 'X-Forwarded-For': '198.18.0.77' });
-    assert.equal(response.status, 303);
-    assert.equal(response.headers.get('location'), '/auth?error=restart');
-  }
-  for (const browser of browsers) {
-    const response = await browser.request('/auth/login?provider=google', undefined, 'GET', { 'X-Forwarded-For': '198.18.0.77' });
-    assert.equal(response.headers.get('location'), '/auth?error=rate_limited');
-    assert.ok(Number(response.headers.get('retry-after')) >= 1);
-    assert.ok(Number(response.headers.get('retry-after')) <= 900);
-  }
-  assert.equal(f.observed.length, 0);
-  assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM auth_transactions').get())?.count, 0);
-  const other = await f.begin(f.browser());
-  assert.equal(other.origin, new URL(f.issuer).origin);
-});
-
-test('targeted legacy proof budgets survive IP changes and never expose account existence', async t => {
-  const f = await openIdentityFixture({ OIDC_LEGACY_LINK_UNTIL: new Date(Date.now() + 86400000).toISOString() }); t.after(f.close);
-  for (let index = 0; index < 30; index++) {
-    const browser = f.browser(); await browser.bootstrap();
-    const response = await browser.request('/api/identity/legacy-link', { email: 'missing@example.invalid', password: 'synthetic-invalid-password', provider: 'google' });
-    assert.equal(response.status, 401);
-    assert.deepEqual(await response.json(), { error: 'The legacy email or password is incorrect.' });
-  }
-  const next = f.browser(); await next.bootstrap();
-  const response = await next.request('/api/identity/legacy-link', { email: 'MISSING@example.invalid', password: 'synthetic-invalid-password', provider: 'google' });
-  assert.equal(response.status, 429);
-  assert.ok(Number(response.headers.get('retry-after')) <= 900);
-  assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM users').get())?.count, 0);
-  assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM auth_transactions').get())?.count, 0);
-});
-
-test('shared-control outage fails closed without memory fallback and does not invalidate existing sessions', async t => {
-  const f = await openIdentityFixture(); t.after(f.close);
-  const browser = f.browser(); await f.complete(browser, await f.begin(browser));
-  const before = await browser.bootstrap();
-  await f.db.exec('ALTER TABLE identity_abuse_buckets RENAME TO identity_abuse_unavailable');
-  const response = await browser.request('/auth/login?provider=google');
-  assert.equal(response.status, 303);
-  assert.equal(response.headers.get('location'), '/auth?error=provider_unavailable');
-  assert.equal((await browser.bootstrap()).user?.id, before.user?.id);
-  assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM auth_transactions').get())?.count, 0);
-  await f.db.exec('ALTER TABLE identity_abuse_unavailable RENAME TO identity_abuse_buckets');
-  assert.equal((await f.begin(browser)).origin, new URL(f.issuer).origin);
-});
-
-test('owned security mutations share an account budget across networks without throttling another owner or sign-out', async t => {
+test('owned Auth.js security mutations share an account budget without throttling another owner', async t => {
   const f = await openIdentityFixture(); t.after(f.close);
   const owner = f.browser(); await f.complete(owner, await f.begin(owner)); await owner.bootstrap();
   for (let index = 0; index < 31; index++) {
@@ -103,6 +53,4 @@ test('owned security mutations share an account budget across networks without t
   await f.complete(other, await f.begin(other), { sub: 'google-oauth2|independent-limit-owner' });
   await other.bootstrap();
   assert.equal((await other.request('/api/identity/sessions/foreign-session', undefined, 'DELETE')).status, 404);
-  assert.equal((await owner.request('/api/logout', {})).status, 200);
-  assert.equal((await owner.bootstrap()).user, null);
 });

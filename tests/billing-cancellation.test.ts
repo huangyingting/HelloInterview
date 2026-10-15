@@ -40,7 +40,7 @@ test('owned cancellation admission is fresh, CSRF-protected, strict, replica-ded
   }
   assert.equal((await f.browser.request(`/api/billing/subscriptions/${f.facts.sub.id}/cancel`, {})).status, 400);
   assert.equal((await f.browser.request(`/api/billing/subscriptions/${randomUUID()}/cancel`, {})).status, 404);
-  const stranger = await f.login(undefined, 'auth0|cancellation-stranger');
+  const stranger = await f.login(undefined, 'google|cancellation-stranger');
   assert.equal((await stranger.browser.request(f.url, {})).status, 404);
   const replica = await f.replica(), browser = replica.browser();
   for (const [key, value] of f.browser.cookies) browser.cookies.set(key, value);
@@ -262,7 +262,7 @@ test('compiled maintained reconciliation claims cancellation and publishes owned
   const code = `import Stripe from 'stripe'; import { runBillingCommand } from './dist-server/billing/cli.js';
     const client = new Stripe(process.env.STRIPE_TEST_SECRET_KEY, { host: '127.0.0.1', port: ${f.port}, protocol: 'http',
       apiVersion: '${stripeApiVersion}', maxNetworkRetries: 0, timeout: 1000 }); await runBillingCommand('reconcile', client);`;
-  const env = { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl!,
+  const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl!,
     ...authJsEnvironment(f.origin), ...sandboxSettings };
   const result = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', code], { env, timeout: 15000 });
   assert.equal(JSON.parse(result.stdout).event, 'billing.sandbox.reconciled');

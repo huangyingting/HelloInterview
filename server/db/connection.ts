@@ -1,16 +1,13 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import { Pool, type PoolClient, type QueryResult } from 'pg';
-import { openDatabase } from '../database';
 
 export type DatabaseRow = Record<string, unknown>;
 export interface Statement {
-  get(...values: SQLInputValue[]): Promise<DatabaseRow | undefined>;
-  all(...values: SQLInputValue[]): Promise<DatabaseRow[]>;
-  run(...values: SQLInputValue[]): Promise<number>;
+  get(...values: unknown[]): Promise<DatabaseRow | undefined>;
+  all(...values: unknown[]): Promise<DatabaseRow[]>;
+  run(...values: unknown[]): Promise<number>;
 }
 export interface Database {
-  readonly dialect: 'sqlite' | 'postgres';
   prepare(sql: string): Statement;
   exec(sql: string): Promise<void>;
   executeSql(sql: string, values?: unknown[]): Promise<{ rows: DatabaseRow[] }>;
@@ -21,49 +18,6 @@ export interface Database {
 export function postgresParameters(sql: string): string {
   let index = 0;
   return sql.replace(/'(?:''|[^'])*'|"(?:\"\"|[^"])*"|\?/g, token => token === '?' ? `$${++index}` : token);
-}
-
-export function sqliteConnection(connection: DatabaseSync): Database {
-  connection.function('studio_casefold', { deterministic: true }, value => {
-    if (typeof value !== 'string') throw new Error('Community search requires text.');
-    return value.toLowerCase();
-  });
-  const context = new AsyncLocalStorage<boolean>();
-  let tail: Promise<unknown> = Promise.resolve();
-  let closing: Promise<void> | undefined;
-  function schedule<T>(operation: () => Promise<T> | T): Promise<T> {
-    if (context.getStore()) return Promise.resolve().then(operation);
-    if (closing) return Promise.reject(new Error('The database is closing.'));
-    const result = tail.then(operation);
-    tail = result.catch(() => undefined);
-    return result;
-  }
-  return {
-    dialect: 'sqlite',
-    prepare(sql) {
-      return {
-        get: (...values) => schedule(() => connection.prepare(sql).get(...values)),
-        all: (...values) => schedule(() => connection.prepare(sql).all(...values)),
-        run: (...values) => schedule(() => Number(connection.prepare(sql).run(...values).changes)),
-      };
-    },
-    exec: sql => schedule(() => connection.exec(sql)),
-    executeSql: () => Promise.reject(new Error('Raw PostgreSQL queries require a PostgreSQL connection.')),
-    transaction: operation => context.getStore() ? operation() : schedule(() => context.run(true, async () => {
-      connection.exec('BEGIN IMMEDIATE');
-      try {
-        const result = await operation();
-        connection.exec('COMMIT');
-        return result;
-      } catch (error) {
-        connection.exec('ROLLBACK');
-        throw error;
-      }
-    })),
-    close() {
-      return closing ??= tail.then(() => { connection.close(); });
-    },
-  };
 }
 
 export function postgresConnection(connectionString: string): Database {
@@ -80,7 +34,6 @@ export function postgresConnection(connectionString: string): Database {
     return final;
   }
   return {
-    dialect: 'postgres',
     prepare(sql) {
       return {
         get: async (...values) => (await query(postgresParameters(sql), values)).rows[0],
@@ -108,8 +61,4 @@ export function postgresConnection(connectionString: string): Database {
     },
     close() { return closing ??= pool.end(); },
   };
-}
-
-export function localConnection(dataDir: string): Database {
-  return sqliteConnection(openDatabase(dataDir));
 }

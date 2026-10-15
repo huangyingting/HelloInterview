@@ -267,10 +267,7 @@ test('owner deletion enters a restricted cooling-off session, revokes peers and 
   await f.db.prepare('UPDATE managed_sessions SET authenticated_at=? WHERE token IN (SELECT token FROM sessions WHERE user_id=?)')
     .run(Date.now()-600001,first.owner);
   assert.equal((await first.browser.request('/api/privacy/deletion/cancel',{requestId})).status,403);
-  const started=await first.browser.request('/api/identity/reauth',{provider:'google'});
-  assert.equal(started.status,200);
-  const completed=await f.complete(first.browser,new URL((await started.json() as {url:string}).url),{sub:'google-oauth2|privacy-owner',email:'privacy@example.invalid'});
-  assert.equal(completed.headers.get('location'),'/account');
+  await f.freshen(first.browser);
   assert.equal((await first.browser.bootstrap()).user?.identity?.status,'deletion-pending');
   const cancelled=await first.browser.request('/api/privacy/deletion/cancel',{requestId});
   assert.equal(cancelled.status,200);

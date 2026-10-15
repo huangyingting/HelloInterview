@@ -9,7 +9,7 @@ import { request, useStudio } from '../store';
 import { download } from '../download';
 
 export function CourseIndex() {
-  return <><PageHeading eyebrow="A STRUCTURED WAY FORWARD" title="Connect each step of the journey." description="Original courses that bring lessons, captioned video, quizzes, and guided practice together."/><div className="learning-index">{courses.map(course=><Link className="track-card" to={`/learn/courses/${course.id}`} key={course.id}><IconTile icon={GraduationCap}/><h2>{course.title}</h2><p>{course.description}</p><div className="track-card-bottom"><span>{course.units.length} modules{course.premium?' · Premium demo':''}</span><ArrowRight size={17}/></div></Link>)}</div></>;
+  return <><PageHeading eyebrow="A STRUCTURED WAY FORWARD" title="Connect each step of the journey." description="Original courses that bring lessons, captioned video, quizzes, and guided practice together."/><div className="learning-index">{courses.map(course=><Link className="track-card" to={`/learn/courses/${course.id}`} key={course.id}><IconTile icon={GraduationCap}/><h2>{course.title}</h2><p>{course.description}</p><div className="track-card-bottom"><span>{course.units.length} modules{course.premium?' · Premium':''}</span><ArrowRight size={17}/></div></Link>)}</div></>;
 }
 
 export function CoursePage({id,videoId}:{id:string;videoId?:string}) {

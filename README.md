@@ -16,12 +16,13 @@ The [researched curricula](docs/CONTENT-CURRICULUM.md) record the System Design,
 Coding, and Low-Level Design expansions, sources, depth, and editorial limitations.
 
 The [production application blueprint](docs/production/README.md) reviews the
-current gaps and specifies the proposed architecture, social identity and account
-lifecycle, billing and entitlements, premium features, operations, and phased
-delivery plan. The [implementation progress](docs/production/07-delivery-roadmap.md#implementation-progress)
-records shipped foundations; optional managed-identity engineering is in
-progress, while live identity delivery/operations, commerce and remaining service capabilities
-are still launch blockers.
+architecture, social identity and account lifecycle, billing and entitlements,
+premium features, operations, and phased delivery plan. The
+[Next.js, Auth.js and Prisma migration](docs/production/63-nextjs-authjs-prisma-migration.md)
+and [implementation progress](docs/production/07-delivery-roadmap.md#implementation-progress)
+record the completed zero-legacy Next.js App Router runtime; authentic
+provider acceptance, Azure deployment smoke/rollback evidence and live
+operations remain explicit launch gates before Caddy cutover.
 
 ![Original Interview Studio landing page](docs/screenshots/01-landing.png)
 
@@ -30,10 +31,10 @@ are still launch blockers.
 Requirements:
 
 - Node.js 24 and npm.
-- Google Chrome for browser tests and media/screenshot generation. The default
+- Google Chrome for browser tests and media generation. The default
   executable is `/usr/bin/google-chrome`; set `CHROME_PATH` for another location.
   CI uses Playwright-managed Chromium, installed with `npx playwright install chromium`.
-- A dedicated PostgreSQL database and synthetic or real Auth.js provider
+- A dedicated PostgreSQL 16+ database and synthetic or real Auth.js provider
   configuration.
 
 ```bash
@@ -80,10 +81,9 @@ changing compact fine-pointer layouts; see the
 Those same compiled flows now have computed light/dark text, placeholder and
 keyboard-focus contrast checks with shared-token corrections; see the
 [contrast boundaries](docs/production/49-critical-flow-contrast.md).
-Compiled local authentication, account and support forms also expose stable
-instruction associations, preserve native invalid focus without issuing
-requests, and announce rejected credentials and locally saved support outcomes;
-see the [form-semantics boundaries](docs/production/50-critical-form-semantics.md).
+Authentication, account and support forms also expose stable instruction
+associations and preserve native invalid focus without issuing requests; see the
+[form-semantics boundaries](docs/production/50-critical-form-semantics.md).
 Reduced-motion preferences suppress shared animations, transitions and smooth
 scrolling while retaining visible static loading and explicit algorithm steps;
 see the [reduced-motion boundaries](docs/production/51-reduced-motion-critical-flows.md).
@@ -91,22 +91,23 @@ Compiled critical flows are also checked at 320 CSS pixels with WCAG text-
 spacing overrides, while forced-colors mode uses system colors for focus,
 current state and progress; see the
 [resilient-visual-mode boundaries](docs/production/52-reflow-text-spacing-forced-colors.md).
-Production runtime can additionally mount prior release `assets` directories
-behind current assets so old tabs can request hashed chunks without receiving
-SPA HTML; see the
-[retained-asset boundaries](docs/production/53-retained-frontend-assets.md).
 This is not a complete accessibility assessment or real-device/browser approval.
 
-**This is a production-format runtime, not a production-ready paid service.**
-Local accounts, demo plans, and the existing service limitations remain.
-PostgreSQL is available for persistence preparation; selecting it does not enable
-managed identity, live billing, production entitlements, or operational launch.
+**This is a production-format Next.js runtime, not an open public or live paid
+service.** All legacy Vite, Express, React Router, Auth0/OIDC broker, local
+password, demo-plan, gift-code and SQLite service-runtime code has been removed.
+Public cutover at `https://interview.genisisiq.com` remains intentionally
+fail-closed behind a hardened 503 until authentic-provider, deployment, smoke
+and rollback gates pass.
 
-## PostgreSQL persistence
+## PostgreSQL and Prisma persistence
 
-SQLite remains the zero-configuration local default. To use PostgreSQL 16 or
-newer, build the release, configure `DATABASE_URL` in the private environment,
-and run the controlled migration command once before starting any replicas:
+PostgreSQL 16+ is the sole application database runtime, accessed through
+Prisma Client and reviewed parameterized SQL for locks, compare-and-swap
+revisions, PostgreSQL clock decisions and transaction-coupled `pg-boss`
+operations. Build the release, configure `DATABASE_URL` in the private
+environment, and run the controlled migration command once before starting any
+replicas:
 
 ```bash
 npm run build
@@ -120,39 +121,37 @@ collections are persisted as individual rows with transactional updates,
 foreign keys, and owner indexes. Draft/story/reflection edits carry revisions
 and return explicit conflicts instead of replacing newer work.
 
-No local data is copied automatically. A legacy importer defaults to a
-read-only dry run, requires an explicit approved account allowlist and matching
+No legacy local data is copied automatically. The maintenance-only
+`npm run db:import` utility is the only read-only SQLite dependency: it defaults
+to a dry run, requires an explicit approved account allowlist and matching
 snapshot fingerprint to write, preserves original state bytes for reconciliation,
 and excludes passwords, sessions, demo accounts, gifts, and paid-access authority.
-Imported accounts require later verified identity recovery before signing in.
+Imported accounts require verified identity recovery before signing in.
 See [the persistence implementation and migration runbook](docs/production/08-persistence-implementation.md)
 for schema details, API revisions, rehearsal, and cutover safeguards.
 
 ## What works
 
-Managed identity has an opt-in **private-staging checkpoint** with hosted
-email/Google/GitHub sign-in, verified contact gates, explicit account linking,
-CSRF-protected opaque sessions, shared authentication budgets and owner-scoped security settings.
-An optional lifecycle slice adds authenticated password-change revocation,
-read-only canonical security facts and a compiled durable reconciliation worker.
-Local authentication remains the default. Approved tenants/delivery, operated
-reconciliation/alerts and service authorization are not complete. Managed
-mode disables demo purchases, gifts, external AI and community writing. See
-[the identity runbook](docs/production/12-identity-implementation.md) before any
-configuration; this does not authorize public accounts.
+Identity and sessions run through **NextAuth/Auth.js Route Handlers** backed by
+PostgreSQL. Registration requires an invited Google identity with a verified
+email claim; Facebook is link-only from a fresh authenticated Studio session;
+email equality never merges accounts; and browser tokens are stored only as
+SHA-256 hashes with PostgreSQL-clock absolute/idle expiry, account epochs,
+session-bound CSRF, encrypted app-owned TOTP MFA and one-time recovery codes.
+See [the Next.js/Auth.js/Prisma migration contract](docs/production/63-nextjs-authjs-prisma-migration.md)
+and [the Auth.js TOTP MFA runbook](docs/production/64-authjs-totp-mfa.md).
 The [owned support checkpoint](docs/production/26-owned-support-receipts.md)
 adds private member request history, retry-safe receipts and shared support
-admission. Saved requests are explicitly **not delivered**; no staff replies,
-email/helpdesk integration or response-time promise is connected.
+admission. Saved requests are explicitly **not delivered** externally; in-app
+staff replies are available under MFA-gated staff operations, while external
+email/helpdesk integration and response-time SLAs remain disabled.
 
-Managed accounts also have a **private entitlement engineering checkpoint**:
+Managed accounts use **server-verified PostgreSQL entitlements**:
 immutable, source-scoped PostgreSQL grants and revocations; current server-clock
 feature decisions; separate content-only versus Pro permissions; and retained
 owned archives after expiry. The UI refreshes permissions at scheduled boundaries
-without trusting the browser's wall clock. Demo plans never authorize managed
-access. There is no public grant endpoint, paid checkout, approved subscription
-offer or external AI quota. See
-[the entitlement runbook](docs/production/13-entitlements-implementation.md).
+without trusting the browser's wall clock. Demo plans never authorize access.
+See [the entitlement runbook](docs/production/13-entitlements-implementation.md).
 
 A first **sandbox billing notification checkpoint** adds official Stripe SDK
 signature verification, minimized durable acceptance, read-only canonical
@@ -339,27 +338,27 @@ and rejects page overflow, clipped direct text and offscreen controls. System-
 color focus/current/progress rules are exercised in forced-colors Chromium;
 complete low-vision, magnifier, content-state and cross-platform review remain
 open.
-Controlled PostgreSQL deployments must apply **migration 38 and maintained queue
+Controlled PostgreSQL deployments must apply **migration 39 and maintained queue
 migration** before this release and preserve the configured service policy when
 retained evidence exists.
 
-| Area | Local functionality |
+| Area | Functionality |
 | --- | --- |
 | Learning | Seven tracks, 74 original lessons; 24 substantial sourced lessons each for System Design and Coding, plus 12 for Low-Level Design, objectives, exercises, outlines, progress, bookmarks, comments, and five algorithm labs |
 | Courses | Seven structured paths, including 52-step System Design, 60-step Coding, and 28-step Low-Level Design text/quiz/practice paths |
-| Practice | 59 original exercises; 16 worked System Design references, 24 executable Coding exercises, eight worked object models including four new runnable stateful exercises |
+| Practice | 59 original exercises; 16 worked System Design references, 24 executable Coding exercises, eight worked object models including four runnable stateful exercises |
 | Workspaces | Movable architecture nodes and directed connections, diagram export, saved drafts, history, explanation editor, timer, feedback |
 | Coding | Dedicated algorithm practice, original reference implementations, complexity analysis, isolated JavaScript `solve(input)` example execution and deadline; code-review line references |
 | Behavioral | Micro/mini/full sessions, company and level context, browser speech synthesis, private STAR story CRUD and export |
 | Quizzes | 33 topics and 443 questions; System Design and Coding each have 180 sourced questions, plus 80 Low-Level Design questions, canonical scoring, explanations, history, and review |
-| Premium mocks | Original topic-adaptive three/five-turn conversations, saved drafts/transcripts, optional AI grading, reports and export |
+| Premium mocks | Original topic-adaptive three/five-turn conversations, saved drafts/transcripts, optional managed AI grading, reports and export |
 | Custom quizzes | Mixed-topic or missed-only sessions, preserved question order, resume, canonical scores and review-deck updates |
 | Study plans | Company/level-focused two/four-week schedules, real progress integration, reflections and export |
 | Project workbench | Imported source snapshots, immutable baselines, multi-file editing, isolated JS examples, reviews, exact patch and JSON export |
-| Community | Local publishing, search, filters, sorting, pagination, reversible votes, follows, anonymous question display, comments, and replies |
+| Community | Privacy-safe feeds, search, filters, sorting, pagination, discussions, moderation, appeals, personal muting and relationship blocking |
 | Discovery | Cross-library search, company/level planning guides, three original journal articles, retrieval-based study helper |
-| Accounts | Local signup/login/logout, profile/password changes, interview targets, progress, streaks, recognition, account export |
-| Access and support | Explicit local-only plan activation/expiry, one-use gift codes, plan reset, locally saved support tickets |
+| Identity and privacy | Invited Google sign-in, link-only Facebook, encrypted TOTP MFA + recovery codes, session controls, durable privacy exports and 7-day deletion cooling-off |
+| Access, billing and support | Server-verified PostgreSQL entitlements, optional sandbox Stripe Checkout/Portal/reconciliation, and private member support receipts with MFA staff operations |
 | Interface | Responsive desktop/mobile navigation, persisted light/dark theme, keyboard shortcuts, focus styles, visible errors |
 
 ## Content delivery and saved quiz versions
@@ -367,23 +366,23 @@ retained evidence exists.
 The browser imports a generated discovery catalog, not lesson bodies, worked
 solutions, rubric keywords, or quiz keys. `npm run content:metadata` regenerates
 the allowlisted titles/summaries/navigation metadata; development and builds run
-it automatically. A Vite import boundary rejects private content dependencies.
-Readers and runnable example briefs use authorized, private/no-store APIs.
-The premium concurrency clip/captions live in the server release, not `dist/`,
-and their endpoint authorizes every request, including byte ranges.
+it automatically.
+Readers and runnable example briefs use authorized, private/no-store Next.js
+Route Handlers. The premium concurrency clip/captions live in the server
+release, not `.next/static/`, and their endpoint authorizes every request,
+including byte ranges.
 
-Topic quizzes now issue server-owned, resumable sessions. **Checking or skipping
+Topic quizzes issue server-owned, resumable sessions. **Checking or skipping
 commits an answer** before its explanation is returned; reload resumes at the
 next unanswered question. Topic and custom sessions pin an immutable question
 snapshot and use it for grading, report order, citations, and JSON exports even
-after a curriculum update. Completed owned reports remain available after demo
+after a curriculum update. Completed owned reports remain available after
 premium expiry. Legacy reports without recorded versions are explicitly labeled;
 their original answers/scores remain exportable rather than being rewritten.
 
 See [the protected-content implementation runbook](docs/production/10-content-implementation.md)
 for the public/private contract, endpoints, migration 2, version/legacy behavior,
-and validation. This boundary still uses local demo authorization: W04/W06 must
-replace that authority before service mode or payments can be enabled.
+and validation.
 
 A course completion record requires every course step to be complete. It is a
 local practice-completion record, not accreditation, hiring evidence, or proof
@@ -397,14 +396,13 @@ operation/inbox/outbox insertion, stable request idempotency, resource-scoped
 claims, safe retry modes, fenced result commits and audited maintenance replay.
 `npm run db:migrate` installs the queue explicitly; runtime queue clients never
 auto-migrate. `npm run jobs:status` shows private operational metadata without
-request bodies. The compiled release includes a reusable worker module.
+request bodies.
 
-Managed identity supplies optional compiled `identity:reconcile` /
-`identity:worker` composition for security facts and `privacy:process` /
-`privacy:worker` composition for owner export artifacts; the web process starts
-neither worker automatically. Privacy artifacts are database-only and are not
-email or external-object delivery. Billing and AI provider workers remain
-separate feature compositions. Local SQLite workflows are unchanged. See
+Compiled worker and maintenance entrypoints under `dist-server/` handle
+`privacy:process` / `privacy:worker` for owner export and deletion cooling-off
+workflows, `billing:reconcile` / `billing:worker` for sandbox Stripe webhooks,
+and `ai:worker` for durable Azure OpenAI evaluations; the Next.js web process
+starts none of these workers automatically. See
 [the durable-job runbook](docs/production/11-jobs-implementation.md)
 for contracts, replay safeguards, retention and actual worker-death/restore
 coverage.
@@ -477,118 +475,89 @@ The remaining four tracks are still starter-depth. The four short video clips,
 generic company guides, and illustrative community entries are unchanged.
 None of the expanded curricula has independent human expert review.
 
-## Configuration and optional AI
+## Configuration and optional managed AI
 
 ```bash
 cp .env.example .env
 ```
 
-The defaults bind to loopback, use port 3000, and store data in `data/`.
-`APP_MODE=local` preserves local workflows. `APP_MODE=service` is limited to the
-approved invite-only private beta: it requires production serving, PostgreSQL,
-canonical HTTPS/secure cookies, explicit proxy trust, complete managed identity
-and password lifecycle configuration, request telemetry, and a private
-verified-email invite list. It rejects legacy migration, billing and external
-AI settings. Compiled serving alone does not grant service authority.
-`HOST`, `PORT`, `DATA_DIR`, and `COOKIE_SECURE` can be changed in `.env`.
-Use `COOKIE_SECURE=true` only when serving over HTTPS.
-Configuration is validated before opening the database or listening. `PORT`
-must be an integer from 0 to 65535 (0 selects an ephemeral port); `HOST` must
-be an IP address or hostname; `COOKIE_SECURE` must be exactly `true` or `false`.
-`NODE_ENV` accepts `development`, `test`, or `production`; `npm start` selects
-production static serving and fails clearly if the frontend build is missing.
-It does not enable live payments or managed identity.
-
-For private HTTPS staging, `PUBLIC_ORIGIN` fixes the expected canonical origin
-and requires `COOKIE_SECURE=true`. `TRUST_PROXY` accepts only explicit proxy
-IP/CIDR allowlists; forwarded protocol from untrusted peers is ignored.
+The defaults bind to loopback on port 3000 (`HOSTNAME=127.0.0.1`, `PORT=3000`).
+Set `DATABASE_URL` to a dedicated PostgreSQL 16+ database and configure the
+Auth.js settings (`NEXTAUTH_URL`, `NEXTAUTH_SECRET`, `AUTH_GOOGLE_CLIENT_ID`,
+`AUTH_GOOGLE_CLIENT_SECRET`, `AUTH_FACEBOOK_CLIENT_ID`,
+`AUTH_FACEBOOK_CLIENT_SECRET`, `AUTH_INVITED_EMAILS`, and
+`AUTH_MFA_ENCRYPTION_KEY`).
+For production serving (`NODE_ENV=production`), configure the required
+participant policy settings (`PRIVACY_CONTROLLER_NAME`, `PRIVACY_CONTACT_URL`,
+`PARTICIPANT_MINIMUM_AGE`, `PRIVACY_RETENTION_NOTICE`,
+`PRIVACY_DELETION_NOTICE`, and `PRIVATE_BETA_NO_DURABILITY_ACK=true`) plus
+`TRUST_PROXY` for the ingress loopback/CIDR allowlist.
 The approved private-beta origin is `https://interview.genisisiq.com`; its
 repository-owned Caddy route uses loopback port 10006 and returns an explicit
-503 until the service runtime is ready. See
-[the canonical-ingress runbook](docs/production/58-canonical-https-ingress.md).
-`LOG_REQUESTS` controls JSON request completion records (on by default for
-production-format serving). Records contain server-generated request IDs,
-route templates, status and duration, not bodies, cookies, emails or query strings.
-`FIELD_METRICS_ENABLED=true` separately enables default-off LCP/CLS/INP
-observations. The browser sends only metric/value plus allowlisted screen and
-navigation categories; the server normalizes, rates and rate-limits them without
-URLs, identifiers or free text. See the
-[field-performance boundary](docs/production/55-privacy-safe-field-performance.md).
-`GET /api/health` checks process liveness; `GET /api/ready` also checks database
-connectivity and fails during draining.
+503 until the service runtime and release gates are ready. See
+[the canonical-ingress runbook](docs/production/58-canonical-https-ingress.md)
+and [the service launch preflight runbook](docs/production/62-service-launch-preflight.md).
+`GET /api/health` checks process liveness; `GET /api/ready` checks PostgreSQL
+connectivity, migration history, Auth.js configuration and participant policy.
 
 ## CI and private container staging
 
-Application CI builds the release, runs unit/database/runtime/provider/browser
-coverage against synthetic fixtures, verifies the non-root container, rehearses
-an encrypted PostgreSQL dump/restore, and uploads compiled release artifacts.
+Application CI builds the Next.js standalone release and worker entrypoints,
+runs unit/database/runtime/provider/browser coverage against synthetic
+PostgreSQL and Auth.js fixtures, verifies the non-root container, rehearses an
+encrypted PostgreSQL dump/restore, and uploads compiled release artifacts.
 Actions and container base images are pinned; no live provider keys are required.
 
 ```bash
 docker build -t interview-studio:staging .
-# Inject private POSTGRES_PASSWORD and DATABASE_URL through the environment.
+# Inject private POSTGRES_PASSWORD, DATABASE_URL and Auth.js settings through the environment.
 # The URL must address database:5432/studio; encode special password characters.
 docker compose -f compose.staging.yml up -d --wait
 ```
 
-The staging compose file exposes the API only on loopback, persists PostgreSQL,
-and requires successful controlled migrations before starting the API. It is
-**private staging, not managed production infrastructure**. Do not expose local
-demo authority to customers. The runtime image uses Node's non-root user and
-can run with a read-only root filesystem when its local data directory is mounted.
+The staging compose file exposes the Next.js standalone server only on loopback,
+persists PostgreSQL, and requires successful controlled migrations before
+starting the web container. It is **private staging, not managed production
+infrastructure**. The runtime image uses Node's non-root user.
 See [the deployment and recovery runbook](docs/production/09-platform-implementation.md)
-for release promotion, proxy boundaries, secrets, recovery and remaining gates,
-and the [service-mode runbook](docs/production/57-invite-only-service-runtime.md)
-for the exact private-beta startup and invitation contract.
-
-AI base URLs must be absolute HTTP/HTTPS URLs without embedded credentials,
-queries, or fragments. A trailing slash is normalized. Configuration is a
-startup snapshot; changing `.env` requires a restart.
+and [the standalone release runbook](docs/production/67-next-standalone-release.md)
+for release promotion, proxy boundaries, secrets, recovery and remaining gates.
 
 By default, practice feedback uses a labeled **local topic rubric**, and the
 study helper retrieves passages from original lessons. They are not AI and are
 not represented as AI.
 
-To connect an OpenAI-compatible Chat Completions provider, configure:
+To enable the optional durable managed AI worker (`npm run ai:worker`),
+configure the complete all-or-nothing Azure OpenAI and pricing boundary:
 
 ```dotenv
-OPENAI_API_KEY=your-provider-key
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_MODEL=gpt-4.1-mini
-```
-
-Alternatively, configure one complete Azure OpenAI set and remove all
-`OPENAI_*` settings:
-
-```dotenv
+MANAGED_AI_ENABLED=true
+MANAGED_AI_MODEL_REVISION=gpt-6.1-sol-2026-01
+MANAGED_AI_INPUT_PRICE_MICROS_PER_MILLION_TOKENS=250000
+MANAGED_AI_OUTPUT_PRICE_MICROS_PER_MILLION_TOKENS=1000000
+MANAGED_AI_DATA_USE_NOTICE="Saved submission text is sent to Azure OpenAI for requested evaluation."
 AZURE_OPENAI_API_KEY=your-azure-key
 AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
 AZURE_OPENAI_DEPLOYMENT=your-deployment
 AZURE_OPENAI_API_VERSION=2025-04-01-preview
 ```
 
-Restart the server after changing configuration. The API key stays server-side.
-Configured tutoring sends your questions and selected lesson context to the
-provider. Configured grading sends the practice prompt, requirements, level,
-submitted explanation, and code. **Do not submit confidential information.**
-Provider charges and data-retention policies are your responsibility.
-Mock grading also sends prior answers and company/level context. Project review
-sends your explanation, user-reported verification notes, and file diff.
-
-Responses are validated, with explicit errors for provider failures rather
-than a silent switch to local grading. The integration is verified against an
-isolated Azure-shaped fixture and a synthetic no-user-data request to the
-authorized `gpt-6.1-sol` deployment; see the
-[Azure transport boundary](docs/production/54-azure-openai-transport.md).
+The API key stays server-side. Consent-gated managed AI evaluations queue
+durable jobs from saved practice, mock and project snapshots, enforce unit/cost
+allowance caps in PostgreSQL, and record provider token/cost provenance.
+**Do not submit confidential information.** See
+[the managed AI worker runbook](docs/production/66-managed-ai-native-worker.md)
+and [the Azure transport boundary](docs/production/54-azure-openai-transport.md).
 Reference-site cookies are never used as provider credentials.
 
 ## Data and credential boundaries
 
-- SQLite lives at `data/studio.sqlite`, using WAL mode. Accounts, hashed sessions,
-  progress, drafts, stories, posts, comments, gifts, and support tickets persist
-  across application restarts.
-- Passwords use salted scrypt hashes. Session cookies are HttpOnly and SameSite
-  Strict; the database stores their SHA-256 hashes.
+- PostgreSQL stores accounts, federated identities, SHA-256 session token
+  hashes, encrypted TOTP secrets, hashed recovery codes, entitlements, billing
+  observations, usage ledgers, progress, drafts, stories, community records,
+  support receipts and durable jobs across application restarts.
+- Session and CSRF cookies use HttpOnly, SameSite=Lax (with `__Host-` and
+  `Secure` on HTTPS); the database stores only SHA-256 token hashes.
 - `.cred` was used only for the separate reference-browser inspection. The
   application does not load it. It is ignored by Git and blocked from HTTP
   serving, along with `.env`, Git metadata, and data paths.
@@ -596,9 +565,6 @@ Reference-site cookies are never used as provider credentials.
   the application. Only original-application screenshots are included here.
 - `.env`, runtime databases, dependencies, build outputs, and test artifacts
   are excluded from version control.
-- Back up the database before making changes or moving machines. Stop the
-  application before taking a simple file-copy backup so the WAL is checkpointed.
-  Do not publish the data directory.
 
 The JavaScript runner uses a network-disabled worker in an opaque-origin
 sandboxed iframe, with a two-second execution deadline and explicit source,
@@ -611,7 +577,7 @@ not authoritative grading, the browser has no reliable per-worker memory
 quota, and this is not an independent sandbox security approval. See
 [the runner boundary](docs/production/47-bounded-browser-example-runner.md).
 
-## Validation and screenshots
+## Validation and media
 
 ```bash
 npm run build
@@ -633,19 +599,6 @@ npm run test:container
 - Container acceptance verifies the exact standalone image, Auth.js-owned state,
   restart persistence and encrypted backup restore.
 
-With the app running:
-
-```bash
-npm run screenshots
-```
-
-This captures 44 original-application desktop/mobile screenshots under
-`docs/screenshots/`. The [manifest](docs/screenshots/manifest.json) records routes
-and descriptions. Set `STUDIO_URL` to capture a different local instance.
-The script creates a local demo account, demo entitlement, and original sample
-practice/mock/quiz/plan/project records. It requires local feedback mode and
-refuses configured AI to avoid external provider submissions or charges.
-
 Regenerate the four original canvas-animated WebM clips and English VTT captions:
 
 ```bash
@@ -654,20 +607,18 @@ npm run media
 
 ## Architecture and limits
 
-`src/` contains the React client; `shared/` holds original catalogs, types,
-course definitions, and domain rules; `server/index.ts` implements the API and
-SQLite persistence. Development embeds Vite middleware. Production serves
-`dist/` with an SPA fallback.
+`app/` contains the Next.js App Router pages and Route Handlers; `src/` contains
+the client screens and components; `shared/` holds original catalogs, types,
+course definitions, and domain rules; `server/` implements Auth.js admission,
+Prisma/PostgreSQL persistence, entitlements, sandbox billing, managed AI,
+community moderation, support, staff administration, privacy workflows and
+launch preflight; `prisma/schema.prisma` defines the Prisma relational schema.
 
-**Not connected or equivalent to the reference:** real payments/subscriptions,
-email delivery or password recovery, social OAuth, a production support team,
+**Not connected or equivalent to the reference:** live commercial billing,
+transactional email delivery, an external helpdesk or 24/7 support team,
 the reference community or proprietary datasets, live BYOE repository/IDE
-connectivity, and the reference's adaptive AI pipeline. Original local adaptive
-interviews and a snapshot workbench exist, but are not those private services.
-Demo billing plans, gifts, support, and community
-are explicitly local-only. The four generated videos and original catalogs are
-much smaller than the reference's content library.
-
-Do not expose this local prototype publicly without additional deployment
-hardening, verified identity/email/payment integrations, moderation and abuse
-controls, backups, observability, and appropriate content/data rights.
+connectivity, and the reference's proprietary adaptive AI pipeline. The four
+generated videos and original catalogs are smaller than the reference's content
+library. Public cutover at `https://interview.genisisiq.com` remains behind an
+explicit 503 until authentic-provider, deployment, smoke and rollback gates
+pass.

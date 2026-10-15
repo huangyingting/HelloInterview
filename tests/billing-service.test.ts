@@ -298,7 +298,7 @@ test('actual lease expiry after grant/audit SQL rolls financial rows, service au
 });
 
 test('a foreign source tombstone cannot lend its authority or be reassigned to an owned invoice', async t => {
-  const f = await fixture(t), other = await f.login(f.browser(), 'auth0|service-foreign-owner');
+  const f = await fixture(t), other = await f.login(f.browser(), 'google|service-foreign-owner');
   await new Entitlements(f.db).revoke(other.owner, { kind: 'billing', key: `stripe-test-v1:${digest(`${f.settings.accountId}:${f.facts.invoice.id}`)}` },
     { actor: 'synthetic-fixture', reason: 'Foreign source ownership collision test.' });
   await f.complete('billing.customer.snapshot');
@@ -329,7 +329,7 @@ test('deletion inside actual service SQL fences completion and rolls new authori
 
 test('compiled maintained reconciliation issues gated sandbox service authority without dev loaders and fails closed if policy is removed', async t => {
   const f = await fixture(t);
-  const env = { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl!,
+  const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl!,
     ...authJsEnvironment(f.origin), ...sandboxSettings, ...optIn };
   const code = `import Stripe from 'stripe'; import { runBillingCommand } from './dist-server/billing/cli.js';
     const client = new Stripe(process.env.STRIPE_TEST_SECRET_KEY, { host: '127.0.0.1', port: ${f.port}, protocol: 'http',

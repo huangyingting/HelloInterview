@@ -428,7 +428,7 @@ test('compiled usage domain operates the same owned reservation and immutable po
       console.log(JSON.stringify(await usage.reserve(JSON.parse(process.env.USAGE_FIXTURE_REQUEST))));}
     finally{await db.close();}`;
   const result = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', code], { timeout: 15000,
-    env: { PATH: process.env.PATH, USAGE_FIXTURE_DATABASE: f.config.databaseUrl,
+    env: { PATH: process.env.PATH, NODE_ENV: 'test', USAGE_FIXTURE_DATABASE: f.config.databaseUrl,
       USAGE_FIXTURE_POLICY: JSON.stringify(policy), USAGE_FIXTURE_REQUEST: JSON.stringify(input) } });
   assert.deepEqual(JSON.parse(result.stdout), await f.usage.reserve(input));
   assert.equal((await f.usage.view(f.owner)).reservations.length, 1);
@@ -624,7 +624,7 @@ test('compiled native intent binding uses one runtime-only transaction and remai
       console.log(JSON.stringify({id:result.reservation.id,operationId:result.operation.id,generation:result.operation.generation}));}
     finally{if(jobs)await jobs.close();await db.close();}`;
   const result = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', code], { timeout: 15000,
-    env: { PATH: process.env.PATH, USAGE_FIXTURE_DATABASE: f.config.databaseUrl,
+    env: { PATH: process.env.PATH, NODE_ENV: 'test', USAGE_FIXTURE_DATABASE: f.config.databaseUrl,
       USAGE_FIXTURE_POLICY: JSON.stringify(policy), USAGE_FIXTURE_REQUEST: JSON.stringify(input) } });
   const same = await f.jobs.enqueueReservedAi(f.usage, input);
   assert.deepEqual(JSON.parse(result.stdout), { id: same.reservation.id, operationId: same.operation.id, generation: 0 });
@@ -892,7 +892,7 @@ test('compiled input provenance stages the same actual owned saved source withou
       console.log(JSON.stringify(await inputs.enqueue(usage,jobs,JSON.parse(process.env.INPUT_FIXTURE_REQUEST),10)));}
     finally{if(jobs)await jobs.close();await db.close();}`;
   const result = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', code], { timeout: 15000,
-    env: { PATH: process.env.PATH, USAGE_FIXTURE_DATABASE: f.config.databaseUrl,
+    env: { PATH: process.env.PATH, NODE_ENV: 'test', USAGE_FIXTURE_DATABASE: f.config.databaseUrl,
       USAGE_FIXTURE_POLICY: JSON.stringify(policy), INPUT_FIXTURE_POLICY: JSON.stringify(inputPolicy), INPUT_FIXTURE_REQUEST: JSON.stringify(input) } });
   assert.deepEqual(JSON.parse(result.stdout), await f.inputs.enqueue(f.usage, f.jobs, input, 10));
   assert.equal((await f.browser.bootstrap()).capabilities.ai, false);

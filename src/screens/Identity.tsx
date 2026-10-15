@@ -7,12 +7,13 @@ import { AuthPrompt } from '../components/access';
 import { Badge, PageHeading } from '../components/primitives';
 import { request, useStudio } from '../store';
 
-const providers = ['email', 'google', 'github', 'facebook'] as const;
+const providers = ['google', 'facebook'] as const;
 type Provider = typeof providers[number];
-const labels = { email: 'Email', google: 'Google', github: 'GitHub', facebook: 'Facebook' };
+const isProvider = (value: string): value is Provider => value === 'google' || value === 'facebook';
+const labels: Record<Provider, string> = { google: 'Google', facebook: 'Facebook' };
 const flowErrors: Record<string, string> = {
   restart: 'Sign-in expired, was declined, or could not be verified. Start again in this browser. Your saved work is unchanged.',
-  provider_unavailable: 'The sign-in service is unavailable. Try again later; existing locally valid sessions are not replaced with demo access.',
+  provider_unavailable: 'The sign-in service is unavailable. Try again later; existing valid sessions remain unchanged.',
   invite: 'Invite required.',
   identity_conflict: 'That sign-in method belongs to another account. No accounts were merged. Use its original account or contact support.',
   security_changed: 'Your session or account security changed. Start again with your current sign-in method.',
@@ -21,14 +22,10 @@ const flowErrors: Record<string, string> = {
 };
 
 export function ManagedAuthPage() {
-  const { data, act, pending } = useStudio(), [params] = useSearchParams();
-  const [legacy, setLegacy] = useState(false), [email, setEmail] = useState(''), [password,setPassword] = useState(''), [provider, setProvider] = useState<Provider>('google');
+  const { data } = useStudio(), [params] = useSearchParams();
   const error = flowErrors[params.get('error') ?? ''];
-  const fresh = ['security_changed', 'restart'].includes(params.get('error') ?? '');
-  const auth = data.capabilities.auth, available = auth?.providers ?? [], authjs = auth?.system === 'authjs';
-  const signIn = (value: Provider) => authjs
-    ? `/api/auth/signin/${value}?callbackUrl=${encodeURIComponent('/dashboard')}`
-    : `/auth/login?provider=${value}${fresh ? '&fresh=true' : ''}`;
+  const available = (data.capabilities.auth?.providers ?? []).filter((provider): provider is 'google' => provider === 'google');
+  const signIn = (provider: 'google') => `/api/auth/signin/${provider}?callbackUrl=${encodeURIComponent('/dashboard')}`;
   return <section className="auth-card">
     <ShieldCheck size={28}/><h1>{data.user ? 'Your account security.' : 'Welcome to the Studio.'}</h1>
     {error && <p role="alert">{error}</p>}
@@ -36,31 +33,10 @@ export function ManagedAuthPage() {
       <p>{data.user.identity?.status === 'active' ? `Signed in as ${data.user.name}.` : data.user.identity?.status === 'pending-verification' ? 'Add or verify a contact email before saving preparation or using member features.' : 'Account access is restricted. Open Account for support and sign-out options.'}</p>
       <Link className="button" to="/account">Open Account</Link>
     </> : <>
-      <p>{authjs ? 'Sign in with Google or a Facebook identity already linked to your Studio account.' : 'Sign in or register through our hosted identity service. Passwords stay with that service, not the Studio.'}</p>
+      <p>Sign in with Google. Facebook identities can be linked only after an existing Studio account is authenticated.</p>
       {available.map(value => <p key={value}><a className="button secondary" href={signIn(value)}>Continue with {labels[value]}</a></p>)}
-      {!authjs && available.includes('email') && <p><a className="text-link" href="/auth/login?provider=email&signup=true">Create an email account</a></p>}
-      <p className="fine-print">{authjs ? 'New private-beta accounts require an invited Google address with a verified email claim. Facebook cannot create or merge an account by matching email.' : 'Email sign-in also opens hosted password recovery. Google and GitHub request identity, profile and email only, never repository access.'}</p>
-      {data.capabilities.auth?.legacyLink && <>
-        <button className="text-button" onClick={() => setLegacy(!legacy)}>Keep work from a previous local account</button>
-        {legacy && <form onSubmit={event => {
-          event.preventDefault();
-          void act(async () => {
-            const result = await request<{ url: string }>('/api/identity/legacy-link', { email, password, provider });
-            setPassword('');
-            window.location.assign(result.url);
-          });
-        }}>
-          <p>Prove your old Studio password, then authenticate a verified new sign-in method. Work keeps its original account ID. Old demo plans do not become paid subscriptions.</p>
-          <label>Previous Studio email<input required type="email" autoComplete="username" maxLength={254} value={email} onChange={event => setEmail(event.target.value)}/></label>
-          <label>Previous Studio password<input required type="password" autoComplete="current-password" maxLength={128} value={password} onChange={event => setPassword(event.target.value)}/></label>
-          <label>New sign-in method<select value={provider} onChange={event => {
-            const value = event.target.value;
-            if (providers.includes(value as Provider)) setProvider(value as Provider);
-          }}>{available.map(value => <option value={value} key={value}>{labels[value]}</option>)}</select></label>
-          <button className="button" disabled={pending}>Prove and connect my account</button>
-        </form>}
-      </>}
-      <p className="fine-print">Matching email addresses never merge accounts. To preserve a local archive, use the migration flow before creating a separate managed account.</p>
+      {!available.length && <p role="alert">Google sign-in is not configured. This deployment remains fail-closed.</p>}
+      <p className="fine-print">New private-beta accounts require an invited Google address with a verified email claim. Matching email addresses never merge accounts, and Facebook cannot create an account.</p>
     </>}
   </section>;
 }
@@ -103,19 +79,21 @@ export function ManagedAccountPage() {
     return()=>window.clearInterval(timer);
   },[exports]);
   if (!data.user) return <AuthPrompt/>;
-  const availableProviders = data.capabilities.auth?.providers ?? [];
-  const authjs = data.capabilities.auth?.system === 'authjs';
-  const redirect = async (path: string, provider: Provider) => {
-    if (authjs) {
-      if (path.endsWith('/link')) {
-        const result = await request<{ url: string }>('/api/identity/link', { provider });
-        window.location.assign(result.url);
-        return;
-      }
-      window.location.assign(`/api/auth/signin/${provider}?callbackUrl=${encodeURIComponent('/account')}`);
-      return;
-    }
-    const result = await request<{ url: string }>(path, { provider });
+  const configuredProviders = (data.capabilities.auth?.providers ?? []).filter(isProvider);
+  const connectedIdentities = (security?.identities ?? []).filter(
+    (identity): identity is typeof identity & { provider: Provider } => isProvider(identity.provider),
+  );
+  const connectedProviders = configuredProviders.filter(provider =>
+    connectedIdentities.some(identity => identity.provider === provider && identity.available),
+  );
+  const unconnectedProviders = configuredProviders.filter(provider =>
+    !connectedIdentities.some(identity => identity.provider === provider),
+  );
+  const reauthenticate = (provider: Provider) => {
+    window.location.assign(`/api/auth/signin/${provider}?callbackUrl=${encodeURIComponent('/account')}`);
+  };
+  const linkProvider = async (provider: Provider) => {
+    const result = await request<{ url: string }>('/api/identity/link', { provider });
     window.location.assign(result.url);
   };
   if(status==='deletion-pending'){
@@ -136,8 +114,8 @@ export function ManagedAccountPage() {
           </>}
           {current.status==='cooling-off'&&!current.fresh&&<>
             <p>Confirm with a sign-in method already connected to this account:</p>
-            {availableProviders.map(provider=><button className="button secondary small" key={provider} disabled={pending}
-              onClick={()=>act(()=>redirect('/api/identity/reauth',provider))}>Confirm with {labels[provider]}</button>)}
+            {(connectedProviders.length ? connectedProviders : configuredProviders).map(provider=><button className="button secondary small" key={provider} disabled={pending}
+              onClick={()=>reauthenticate(provider)}>Confirm with {labels[provider]}</button>)}
           </>}
           {current.status==='cooling-off'&&current.fresh&&
             <button className="button secondary small" disabled={pending} onClick={()=>act(async()=>{
@@ -157,20 +135,19 @@ export function ManagedAccountPage() {
   const active = data.user.identity?.status === 'active';
   return <>
     <PageHeading eyebrow="YOUR ACCOUNT" title="Sign-in and security." description="Your identity settings are separate from your preparation archive and subscriptions."/>
-    {!active && <section className="panel"><h2>A verified contact email is needed</h2><p>{data.user.email ? `${data.user.email} has not been verified for product access.` : 'Your provider did not supply a verified contact address. No substitute address was invented.'} Connect a verified email or Google sign-in method below, or verify your address with your existing provider and sign in again.</p></section>}
+    {!active && <section className="panel"><h2>A verified contact email is needed</h2><p>{data.user.email ? `${data.user.email} has not been verified for product access.` : 'Your provider did not supply a verified contact address. No substitute address was invented.'} Connect a verified Google sign-in method below, or verify your address with your existing provider and sign in again.</p></section>}
     <div className="account-grid">
       <section className="panel"><h2>Profile</h2><p>{data.user.email || 'No contact email available'}</p><Badge tone={active ? 'green' : 'amber'}>{active ? 'Verified contact' : data.user.identity?.status ?? 'Verification required'}</Badge>
         <form onSubmit={event => { event.preventDefault(); void act(async () => { await request('/api/profile', { name }, 'PATCH'); await refresh(); notify('Profile updated.'); }); }}>
           <label>Display name<input required minLength={2} maxLength={60} autoComplete="name" value={name} onChange={event => setName(event.target.value)}/></label>
           <button className="button small" disabled={pending}>Save profile</button>
         </form>
-        <h3>Passwords and recovery</h3><p>{authjs ? "Recover access directly with Google or Facebook. Studio sign-out does not sign you out of either provider. Studio sessions are database-backed and can be revoked below; provider recovery remains the provider's responsibility." : `Use hosted email sign-in for password recovery. Studio sign-out does not sign you out of Google or GitHub. ${data.capabilities.auth?.securityLifecycle ? 'Authenticated broker password events revoke Studio sessions. Missed events require the operated identity reconciler; upstream social password changes are not covered. This remains private staging.' : 'Password-reset session invalidation is not enabled yet; this integration is for private staging only.'}`}</p>
-        {security?.identities.some(identity => identity.provider === 'email') ? <a className="text-link" href="/auth/login?provider=email">Open email sign-in and recovery</a> : <p>Recover a social account with its provider, or connect a verified email sign-in method below.</p>}
+        <h3>Provider recovery</h3><p>Recover access directly with Google or Facebook. Studio sign-out does not sign you out of either provider. Studio sessions are database-backed and can be revoked below; account recovery remains with the connected provider.</p>
       </section>
       <section className="panel"><h2>Current access</h2><p>Server-verified access: <strong>{data.capabilities.access?.features.some(feature => proCapabilities.includes(feature.key) && feature.reason === 'unavailable') ? 'refresh unavailable' : data.capabilities.access?.state ?? 'unavailable'}</strong>. Content-only grants do not include premium practice, progress, projects or tutor work.</p>
         {data.capabilities.access?.nextChangeAt && <p>Next scheduled access change: {new Date(data.capabilities.access.nextChangeAt).toLocaleString()}.</p>}
-        <p>Production payments and subscriptions remain disabled. Demo purchases and gifts cannot upgrade a managed account; an access grant is not proof of payment.</p>
-        {data.capabilities.billing && <p><Link className="text-link" to="/billing">Open private sandbox billing</Link> - hosted test sessions do not grant premium access.</p>}<h3>Privacy exports</h3>
+        <p>Production payments and subscriptions remain disabled. An access grant is not proof of payment.</p>
+        {data.capabilities.billing && <p><Link className="text-link" to="/billing">Open private sandbox billing</Link> - sandbox sessions do not grant production access.</p>}<h3>Privacy exports</h3>
         <p>Request a comprehensive owner export after confirming your identity within ten minutes. A worker prepares a private database artifact for 24 hours; no email or external storage is connected.</p>
         <button className="button secondary small" disabled={pending || !active || !security?.fresh} onClick={() => act(async () => {
           await request('/api/privacy/exports',{requestId:crypto.randomUUID()});
@@ -203,18 +180,20 @@ export function ManagedAccountPage() {
       {!security && !error && <p role="status">Loading sign-in and session information...</p>}
       {security && <>
         {!security.fresh && <p>Confirm an existing sign-in method before linking, unlinking, revoking sessions or exporting.</p>}
-        {security.identities.map(identity => <div className="panel" key={identity.id}>
+        {connectedIdentities.map(identity => <div className="panel" key={identity.id}>
           <h3>{labels[identity.provider]} {identity.current && <Badge>Current method</Badge>}</h3><p>{identity.email || 'No contact address shared'} - {identity.verified ? 'Verified' : 'Unverified'}{!identity.available && ' - Unavailable with provider'}</p>
-          <button className="button secondary small" disabled={pending || !identity.available} onClick={() => act(() => redirect('/api/identity/reauth', identity.provider))}>Confirm with {labels[identity.provider]}</button>{' '}
-          <button className="text-button" disabled={pending || !security.fresh || identity.current || !security.identities.some(other => other.id !== identity.id && other.verified && other.available)} onClick={() => act(async () => { await request(`/api/identity/methods/${identity.id}`, undefined, 'DELETE'); await loadSecurity(); notify('Sign-in method removed; its Studio sessions were revoked.'); })}>Remove method</button>
+          <button className="button secondary small" disabled={pending || !identity.available} onClick={() => reauthenticate(identity.provider)}>Confirm with {labels[identity.provider]}</button>{' '}
+          <button className="text-button" disabled={pending || !security.fresh || identity.current || !connectedIdentities.some(other => other.id !== identity.id && other.verified && other.available)} onClick={() => act(async () => { await request(`/api/identity/methods/${identity.id}`, undefined, 'DELETE'); await loadSecurity(); notify('Sign-in method removed; its Studio sessions were revoked.'); })}>Remove method</button>
         </div>)}
-        <p>Connect another verified sign-in method. Each account is proved separately; email matching does not merge accounts.</p>
-        {availableProviders.map(provider => <button className="button secondary small" key={provider} disabled={pending || !security.fresh} onClick={() => act(() => redirect('/api/identity/link', provider))}>Connect {labels[provider]}</button>)}
-        {authjs && <p className="fine-print">Provider linking uses a one-use action bound to this fresh Studio session. Matching email addresses never merge accounts; Facebook can be linked only from here.</p>}
+        {unconnectedProviders.length > 0 ? <>
+          <p>Connect another verified sign-in method. Each account is proved separately; email matching does not merge accounts.</p>
+          {unconnectedProviders.map(provider => <button className="button secondary small" key={provider} disabled={pending || !security.fresh} onClick={() => act(() => linkProvider(provider))}>Connect {labels[provider]}</button>)}
+          <p className="fine-print">Provider linking uses a one-use action bound to this fresh Studio session. Matching email addresses never merge accounts; Facebook can be linked only from here.</p>
+        </> : <p className="fine-print">All configured sign-in providers are connected to this account.</p>}
       </>}
     </section>
     {security && <>
-      {authjs&&<section className="panel"><h2>Authenticator MFA</h2>
+      <section className="panel"><h2>Authenticator MFA</h2>
         {!security.mfa?.enabled ? <>
           <p>Add a time-based authenticator for staff and other sensitive actions. Enrollment requires a provider confirmation from the last ten minutes.</p>
           <button className="button secondary small" disabled={pending || !security.fresh} onClick={()=>act(async()=>{
@@ -272,7 +251,7 @@ export function ManagedAccountPage() {
             await navigator.clipboard.writeText(recoveryCodes.join('\n'));notify('Recovery codes copied.');
           })}>Copy recovery codes</button>
         </div>}
-      </section>}
+      </section>
       <section className="panel"><h2>Studio sessions</h2><p>Sessions expire after 30 days or seven days without use. No provider tokens, device fingerprints or precise locations are displayed or stored here.</p>
         {security.sessions.map(session => <div className="panel" key={session.id}><strong>{session.current ? 'This session' : 'Other sign-in session'}</strong><p>Created {new Date(session.createdAt).toLocaleString()} - last used {new Date(session.lastUsed).toLocaleString()}</p>{!session.current && <button className="text-button" disabled={pending || !security.fresh} onClick={() => act(async () => { await request(`/api/identity/sessions/${session.id}`, undefined, 'DELETE'); await loadSecurity(); notify('Session revoked.'); })}>Revoke session</button>}</div>)}
         <button className="button secondary small" disabled={pending || !security.fresh} onClick={() => act(async () => { await request('/api/identity/sessions/revoke-others', {}); await loadSecurity(); notify('Other Studio sessions were revoked.'); })}>Sign out other sessions</button>

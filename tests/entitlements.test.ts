@@ -6,7 +6,6 @@ import { Entitlements, type GrantRequest } from '../server/entitlements';
 import { StateRepository } from '../server/db/state-repository';
 import { DurableJobs, migrateJobs, TerminalJobFailure } from '../server/jobs';
 import { HttpError } from '../server/http-error';
-import { createApplication } from '../server/application';
 import { problems, getTrack } from '../shared/catalog';
 import { courses } from '../shared/public-catalog';
 import type { Bootstrap, ProjectWorkspace, UserState } from '../shared/types';
@@ -130,7 +129,7 @@ test('managed route matrix separates content, writes, archives and fake demo com
   const contentRoutes = ['/api/content/lessons/system-design/replication', `/api/content/problems/${premiumProblem.id}`,
     `/api/content/references/${premiumProblem.id}`, `/api/content/media/${premiumCourse.id}/${video.resource}.webm`, `/api/content/media/${premiumCourse.id}/${video.resource}.vtt`];
   for (const path of contentRoutes) assert.equal((await browser.request(path)).status, 403, path);
-  for (const path of ['/api/plan', '/api/gift', '/api/gift/redeem', '/api/auth/demo', '/api/profile/password', '/api/entitlements']) {
+  for (const path of ['/api/plan', '/api/gift', '/api/gift/redeem', '/api/profile/password', '/api/entitlements']) {
     assert.equal((await browser.request(path, { plan: 'lifetime', code: 'FAKE', policy: 'pro-v1' })).status, 404, path);
   }
   const read = grant(f.owner, 'premium-read-v1');
@@ -170,7 +169,12 @@ test('managed route matrix separates content, writes, archives and fake demo com
     [`/api/mocks/${mock.id}/respond`, { revision: mock.revision }],
     [`/api/custom-quizzes/${quiz.id}/answer`, { revision: quiz.revision, questionId: quiz.questionIds[0], answer: 0 }],
     [`/api/custom-quizzes/${quiz.id}/finish`, { revision: quiz.revision }],
-    [`/api/projects/${project.id}/save`, { revision: project.revision, files: project.files, explanation: '', verification: '' }],
+    [`/api/projects/${project.id}/save`, {
+      revision: project.revision,
+      files: project.files.map(file => ({ path: file.path, content: file.content })),
+      explanation: '',
+      verification: '',
+    }],
     [`/api/projects/${project.id}/review`, { revision: project.revision }],
     [`/api/study-plans/${plan.id}/reflection`, { revision: plan.revision, taskId: 'unknown', note: 'A synthetic reflection.' }],
     [`/api/attempts/${attempt.id}/evaluate`, {}],
@@ -280,5 +284,4 @@ test('worker permission loss after actual business SQL rolls back the result, re
 test('stored entitlement authority refuses unconfigured local-demo startup rather than silently changing authorization', async t => {
   const f = await fixture(t);
   await f.entitlements.issue(grant(f.owner));
-  await assert.rejects(createApplication({ ...f.config, identity: null }), /Stored managed entitlements require managed identity/);
 });

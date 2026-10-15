@@ -19,7 +19,7 @@ export class ContentRepository {
   constructor(private readonly db: Database) {}
   version(value: unknown) { return createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
   async lockOwner(id: string) {
-    if (this.db.dialect === 'postgres') await this.db.prepare('SELECT id FROM users WHERE id=? FOR UPDATE').get(id);
+    await this.db.prepare('SELECT id FROM users WHERE id=? FOR UPDATE').get(id);
   }
   async pin(questions: QuizQuestion[]): Promise<string> {
     const published=questions.map(question=>question.sources?question:publishedQuestion(question));

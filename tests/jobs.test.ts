@@ -315,7 +315,7 @@ test('a deleted owner is not dispatched; terminal worker failures retain only sa
 
 test('compiled migration/status/replay tools preserve private inputs and operate without development loaders', async t => {
   const f = await fixture(t, false);
-  const env = { ...process.env, APP_MODE: 'local', DATABASE_URL: f.url, NODE_ENV: 'production' };
+  const env: NodeJS.ProcessEnv = { ...process.env, APP_MODE: 'local', DATABASE_URL: f.url, NODE_ENV: 'production' };
   await execute(process.execPath, ['dist-server/db/cli.js', 'migrate'], { env });
   const jobs = await f.open(), operation = await jobs.enqueue(request({ retryMode: 'reconcile' }));
   const claim = await jobs.claim(operation.kind);
@@ -359,7 +359,7 @@ test('worker death after provider success recovers with the original idempotency
   await boss.update(queueNames[operation.kind], undefined, { id: operation.jobId, expireInSeconds: 1 });
   async function child(halt: boolean) {
     const process = spawn(globalThis.process.execPath, ['tests/fixtures/job-worker.mjs'], {
-      env: { TEST_DATABASE_URL: f.url, JOB_FIXTURE_PROVIDER: providerUrl, JOB_FIXTURE_HALT: String(halt) },
+      env: { NODE_ENV: 'test', TEST_DATABASE_URL: f.url, JOB_FIXTURE_PROVIDER: providerUrl, JOB_FIXTURE_HALT: String(halt) },
       stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
     });
     const exit = once(process, 'exit');

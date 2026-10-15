@@ -24,7 +24,7 @@ export class CommunitySubmissions {
   private readonly blocks:CommunityBlocks;
   constructor(private readonly db: Database) {this.blocks=new CommunityBlocks(db);}
   private async admitted(owner:string,admit:()=>Promise<void>) {
-    if(!await this.db.prepare(`SELECT id FROM users WHERE id=?${this.db.dialect==='postgres'?' FOR UPDATE':''}`).get(owner))
+    if(!await this.db.prepare('SELECT id FROM users WHERE id=? FOR UPDATE').get(owner))
       throw new HttpError(401,'Sign in to check or submit your comment.');
     await admit();
   }
@@ -83,7 +83,7 @@ export class CommunitySubmissions {
         SELECT 1 FROM community_moderation_targets moderation WHERE moderation.target_type='post'
           AND moderation.target_id=p.id AND moderation.state='hidden') AND NOT EXISTS(
         SELECT 1 FROM community_mutes mute WHERE mute.owner_id=? AND mute.subject_id=p.author_id AND mute.state='muted')
-        ${this.db.dialect==='postgres'?'FOR UPDATE OF p':''}`).get(request.resource.slice(5),user.id))
+        FOR UPDATE OF p`).get(request.resource.slice(5),user.id))
         throw new HttpError(404,'This post is no longer available for discussion.');
       if(request.parentId&&!await this.db.prepare(`SELECT comments.id FROM comments
         LEFT JOIN community_comment_tombstones tombstone ON tombstone.comment_id=comments.id

@@ -58,7 +58,7 @@ test('owned canonical subscriptions, inclusive service-line periods and payment 
   assert.equal(f.requests.filter(request => request.method === 'POST').length, 2);
   assert.equal((await f.browser.request('/api/billing/reconcile', { customerId: 'cus_Foreign' })).status, 400);
   assert.equal((await f.browser.request('/api/billing/reconcile', {}, 'POST', { 'X-CSRF-Token': 'wrong' })).status, 403);
-  const stranger = await f.login(f.anotherBrowser(), 'auth0|ledger-stranger');
+  const stranger = await f.login(f.anotherBrowser(), 'google|ledger-stranger');
   assert.equal((await f.view(stranger.browser)).ledger, null);
   assert.equal((await stranger.browser.request('/api/billing/reconcile', {})).status, 409);
   await f.db.prepare('UPDATE managed_sessions SET authenticated_at=authenticated_at-660000 WHERE token IN (SELECT token FROM sessions WHERE user_id=?)').run(f.owner);

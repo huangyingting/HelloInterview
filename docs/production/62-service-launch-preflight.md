@@ -27,7 +27,7 @@ It uses the exact promoted image, host networking for guest PostgreSQL, a read-o
 
 ## Verified scope
 
-The command uses the Auth.js, participant-policy, managed-AI and sandbox-billing loaders used by the Next.js application. It requires production mode, the standalone listener, PostgreSQL, the private ingress allowlist, complete Google/Facebook/invite/MFA configuration and the approved participant policy before any database work occurs. Any legacy `OIDC_*` setting is rejected.
+The command uses the Auth.js, participant-policy, managed-AI and sandbox-billing loaders used by the Next.js application. It requires production mode, the standalone listener, PostgreSQL, the private ingress allowlist, complete Google/Facebook/invite/MFA configuration and the approved participant policy before any database work occurs. Partial or malformed Stripe sandbox or managed-AI settings fail closed before any database connection is opened.
 
 After configuration succeeds, the Prisma-backed runtime database role:
 

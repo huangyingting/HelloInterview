@@ -40,7 +40,6 @@ function audit(row:Record<string,unknown>):StaffAuditEvent {
 
 export class StaffAdministration {
   constructor(private readonly db:Database,private readonly identity:StaffIdentityAuthority) {
-    if(db.dialect!=='postgres')throw new Error('Staff administration requires controlled PostgreSQL.');
     identity.assertDatabase(db);
   }
   async roles(owner:string){return this.identity.staffRoles(z.uuid().parse(owner));}
@@ -104,7 +103,7 @@ export class StaffAdministration {
     }
     return this.db.transaction(async()=>{
       await this.authorize(user,['administrator']);
-      const rows=await this.db.prepare(`SELECT *,created_at::text AS cursor_created_at FROM staff_audit_events ${cursor?'WHERE (created_at,id)<(?,?)':''}
+      const rows=await this.db.prepare(`SELECT *,created_at::text AS cursor_created_at FROM staff_audit_events ${cursor?'WHERE (created_at,id)<(?::timestamptz,?)':''}
         ORDER BY created_at DESC,id DESC LIMIT 21`).all(...(cursor?[cursor.createdAt,cursor.id]:[]));
       const page=rows.slice(0,20),events=page.map(row=>audit(row));
       const last=page.at(-1)&&z.object({id:z.uuid(),cursor_created_at:z.string()}).parse(page.at(-1));
@@ -114,7 +113,6 @@ export class StaffAdministration {
 }
 
 export async function appendStaffRole(db:Database,input:{userId:string;role:string;state:string;actorRef:string;reason:string;endsAt?:string}) {
-  if(db.dialect!=='postgres')throw new Error('Staff role provisioning requires controlled PostgreSQL.');
   const parsed=z.strictObject({userId:z.uuid(),role:staffRoleSchema,state:z.enum(['granted','revoked']),actorRef:z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/),
     reason:reasonSchema,endsAt:z.iso.datetime().optional()}).parse(input);
   return db.transaction(async()=>{
@@ -129,7 +127,7 @@ export async function appendStaffRole(db:Database,input:{userId:string;role:stri
     if(parsed.state==='revoked'&&(latest?.state!=='granted'||latest.unexpired!==true))throw new Error('Staff role is not currently active.');
     const id=randomUUID(),action=parsed.state==='granted'?'staff.role.granted':'staff.role.revoked';
     await db.prepare(`INSERT INTO staff_role_events(id,user_id,role,state,actor_ref,reason,ends_at)
-      VALUES(?,?,?,?,?,?,?)`).run(id,parsed.userId,parsed.role,parsed.state,parsed.actorRef,parsed.reason,parsed.endsAt??null);
+      VALUES(?,?,?,?,?,?,?::timestamptz)`).run(id,parsed.userId,parsed.role,parsed.state,parsed.actorRef,parsed.reason,parsed.endsAt??null);
     await db.prepare(`INSERT INTO staff_audit_events(id,actor_ref,actor_role,target_ref,action,reason)
       VALUES(?,?,?,?,?,?)`).run(randomUUID(),parsed.actorRef,null,parsed.userId,action,parsed.reason);
     return {id,userId:parsed.userId,role:parsed.role,state:parsed.state,endsAt:parsed.endsAt??null};

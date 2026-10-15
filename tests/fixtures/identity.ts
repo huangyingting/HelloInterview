@@ -1,78 +1,106 @@
-import express from 'express';
-import { createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
-import { once } from 'node:events';
-import { request as httpRequest, type Server } from 'node:http';
-import { createServer, request as httpsRequest } from 'node:https';
-import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { promisify } from 'node:util';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import type { TestContext } from 'node:test';
+import type Stripe from 'stripe';
+import { authCookieNames, loadAuthSettings } from '../../server/auth/config';
+import { BillingNotifications } from '../../server/billing';
+import { loadBillingConfig } from '../../server/billing/config';
 import { postgresConnection } from '../../server/db/connection';
 import { migrateDatabase } from '../../server/db/migrations';
-import { createApp, handleError } from '../../server/app';
-import { loadConfig } from '../../server/config';
-import type { Provider } from '../../server/identity/broker';
-import type { Bootstrap, IdentitySecurity } from '../../shared/types';
-import { IdentityLifecycle } from '../../server/identity/lifecycle';
+import { closePrismaConnection } from '../../server/db/prisma';
+import { StateRepository } from '../../server/db/state-repository';
 import { migrateJobs } from '../../server/jobs';
-import type { IdentityTransport } from '../../server/identity/broker';
-import { BillingNotifications } from '../../server/billing';
+import { closeNextAiService } from '../../server/next/ai';
+import {
+  closeNextBillingService,
+  setNextBillingClientForTests,
+  setNextBillingServiceForTests,
+} from '../../server/next/billing';
+import { closeNextPrivacyService } from '../../server/next/privacy';
 import { PrivacyExports } from '../../server/privacy';
-import type Stripe from 'stripe';
+import type { Bootstrap, IdentitySecurity } from '../../shared/types';
+import { dispatchNextRoute } from './next-router';
 
-const clientId = 'synthetic-client', clientSecret = 'synthetic-client-secret';
+type Provider = 'email' | 'google' | 'github' | 'facebook';
+type RequestOptions = {
+  method?: string;
+  headers: Record<string, string>;
+  body?: string | Uint8Array | URLSearchParams | null;
+  signal?: AbortSignal;
+};
+
+const origin = 'https://studio.fixture';
+const authSecret = 'fixture-auth-secret-fixture-auth-secret-fixture-auth-secret';
 let browserNumber = 0;
-export function fixtureFetch(url: string, options: { method?: string; headers: Record<string, string>; body?: string | Uint8Array | URLSearchParams | null; signal?: AbortSignal; ca?: Buffer }): Promise<Response> {
-  return new Promise((resolve, reject) => {
-    const body = options.body instanceof URLSearchParams ? options.body.toString() : options.body;
-    const headers = { ...options.headers, ...(body == null ? {} : { 'Content-Length': String(Buffer.byteLength(body)) }) };
-    const request = (url.startsWith('https:') ? httpsRequest : httpRequest)(url, { ...options, headers }, async response => {
-      try {
-        const chunks: Uint8Array[] = [];
-        for await (const chunk of response) chunks.push(Buffer.from(chunk));
-        const headers = new Headers();
-        for (let index = 0; index < response.rawHeaders.length; index += 2) headers.append(response.rawHeaders[index], response.rawHeaders[index + 1]);
-        const status = response.statusCode ?? 500;
-        resolve(new Response([204, 205, 304].includes(status) ? null : new Uint8Array(Buffer.concat(chunks)), { status, headers }));
-      } catch (error) { reject(error); }
-    });
-    request.on('error', reject);
-    request.end(body);
-  });
+
+export async function fixtureFetch(url: string, options: RequestOptions): Promise<Response> {
+  const body = options.body instanceof URLSearchParams
+    ? options.body.toString()
+    : options.body instanceof Uint8Array
+      ? Buffer.from(options.body)
+      : options.body;
+  return fetch(url, { ...options, body });
 }
-function key() {
-  const pair = generateKeyPairSync('rsa', { modulusLength: 2048 });
-  return { ...pair, kid: randomUUID(), jwk: pair.publicKey.export({ format: 'jwk' }) };
-}
+
 export class IdentityBrowser {
   readonly cookies = new Map<string, string>();
   readonly ip = `198.18.${Math.floor(++browserNumber / 250)}.${browserNumber % 250 + 1}`;
+  readonly address = origin;
+  readonly host = new URL(origin).host;
+  readonly ca = Buffer.alloc(0);
   csrf: string | undefined;
-  constructor(readonly address: string, readonly host: string, readonly ca: Buffer) {}
-  async request(path: string, data?: unknown, method?: string, extra: Record<string, string> = {}, signal?: AbortSignal) {
-    const response = await fixtureFetch(`${this.address}${path}`, {
-      method: method ?? (data === undefined ? 'GET' : 'POST'),
+
+  private async send(
+    path: string,
+    method: string,
+    body: BodyInit | undefined,
+    headers: Record<string, string>,
+    signal?: AbortSignal,
+  ) {
+    signal?.throwIfAborted();
+    const response = await dispatchNextRoute(new Request(new URL(path, origin), {
+      method,
       headers: {
-        Host: this.host, 'X-Forwarded-Proto': 'https', 'X-Forwarded-For': this.ip,
+        Host: this.host,
+        'X-Forwarded-Proto': 'https',
+        'X-Forwarded-For': this.ip,
         Cookie: [...this.cookies].map(([name, value]) => `${name}=${value}`).join('; '),
-        ...(data === undefined ? {} : { 'Content-Type': 'application/json' }),
-        ...(this.csrf ? { 'X-CSRF-Token': this.csrf } : {}), ...extra,
-      }, body: data === undefined ? undefined : JSON.stringify(data), ca: this.ca, signal,
-    });
+        ...(this.csrf ? { 'X-CSRF-Token': this.csrf } : {}),
+        ...headers,
+      },
+      body,
+      signal,
+    }));
+    signal?.throwIfAborted();
     for (const value of response.headers.getSetCookie()) {
-      const [entry] = value.split(';'), split = entry.indexOf('='), name = entry.slice(0, split), content = entry.slice(split + 1);
+      const [entry] = value.split(';');
+      const split = entry.indexOf('=');
+      const name = entry.slice(0, split);
+      const content = entry.slice(split + 1);
       if (!content) this.cookies.delete(name); else this.cookies.set(name, content);
     }
     return response;
   }
+
+  request(path: string, data?: unknown, method?: string, extra: Record<string, string> = {}, signal?: AbortSignal) {
+    const verb = method ?? (data === undefined ? 'GET' : 'POST');
+    return this.send(path, verb, data === undefined ? undefined : JSON.stringify(data), {
+      ...(data === undefined ? {} : { 'Content-Type': 'application/json' }),
+      ...extra,
+    }, signal);
+  }
+
+  requestRaw(path: string, body: string | Uint8Array, extra: Record<string, string>) {
+    return this.send(path, 'POST', typeof body === 'string' ? body : Buffer.from(body), extra);
+  }
+
   async bootstrap(): Promise<Bootstrap> {
     const response = await this.request('/api/bootstrap');
-    if (!response.ok) throw new Error(`Fixture bootstrap failed (${response.status}).`);
+    if (!response.ok) throw new Error(`Fixture bootstrap failed (${response.status}): ${await response.text()}`);
     const data: Bootstrap = await response.json();
     this.csrf = data.csrf;
     return data;
   }
+
   async security(): Promise<IdentitySecurity> {
     const response = await this.request('/api/identity/security');
     if (!response.ok) throw new Error(`Fixture security failed (${response.status}).`);
@@ -80,189 +108,229 @@ export class IdentityBrowser {
   }
 }
 
-export async function openIdentityFixture(env: NodeJS.ProcessEnv = {}, options: { brokerHostname?: string; lifecycle?: boolean; billingClient?: Stripe } = {}) {
+async function resetNextServices() {
+  await closeNextAiService();
+  await closeNextBillingService();
+  await closeNextPrivacyService();
+  await closePrismaConnection();
+}
+
+export async function openIdentityFixture(
+  env: Readonly<Record<string, string | undefined>> = {},
+  options: { billingClient?: Stripe } = {},
+) {
+  (process.env as Record<string, string | undefined>).NODE_ENV ??= 'test';
   const databaseUrl = process.env.TEST_DATABASE_URL;
   if (!databaseUrl) throw new Error('TEST_DATABASE_URL must identify a dedicated PostgreSQL identity fixture.');
-  const tlsDir = await mkdtemp(join(tmpdir(), 'studio-identity-tls-'));
-  const root = postgresConnection(databaseUrl), schema = `iam_test_${randomUUID().replaceAll('-', '')}`;
+  await resetNextServices();
+
+  const root = postgresConnection(databaseUrl);
+  const schema = `authjs_test_${randomUUID().replaceAll('-', '')}`;
   await root.exec(`CREATE SCHEMA ${schema}`);
   const url = new URL(databaseUrl);
   url.searchParams.set('options', `-c search_path=${schema}`);
-  const db = postgresConnection(url.href), databases = [db], servers: Server[] = [], shutdowns: AbortController[] = [];
+  const db = postgresConnection(url.href);
+  const databases = [db];
   const cleanup: (() => Promise<unknown>)[] = [];
-  async function close() {
-    for (const shutdown of shutdowns) shutdown.abort();
-    for (const action of cleanup) await action();
-    for (const server of servers) {
-      const closed = new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
-      server.closeAllConnections();
-      await closed;
-    }
-    for (const database of databases) await database.close();
-    try {
-      await root.exec(`DROP SCHEMA IF EXISTS ${schema}_jobs CASCADE`);
-      await root.exec(`DROP SCHEMA ${schema} CASCADE`);
-    } finally { try { await root.close(); } finally { await rm(tlsDir, { recursive: true, force: true }); } }
+  const runtime: Record<string, string | undefined> = {
+    ...env,
+    NODE_ENV: 'test',
+    DATABASE_URL: url.href,
+    NEXTAUTH_URL: origin,
+    NEXTAUTH_SECRET: authSecret,
+    AUTH_GOOGLE_CLIENT_ID: 'fixture-google-client',
+    AUTH_GOOGLE_CLIENT_SECRET: 'fixture-google-secret',
+    AUTH_FACEBOOK_CLIENT_ID: '123456789',
+    AUTH_FACEBOOK_CLIENT_SECRET: 'fixture-facebook-secret',
+    AUTH_INVITED_EMAILS: 'owner@example.invalid',
+    AUTH_MFA_ENCRYPTION_KEY: Buffer.alloc(32, 19).toString('base64url'),
+  };
+  const previous = new Map<string, string | undefined>();
+  for (const [key, value] of Object.entries(runtime)) {
+    previous.set(key, process.env[key]);
+    if (value === undefined) delete process.env[key]; else process.env[key] = value;
   }
+
+  let closed = false;
+  async function close() {
+    if (closed) return;
+    closed = true;
+    try {
+      for (const action of cleanup.reverse()) await action();
+      await resetNextServices();
+      setNextBillingServiceForTests(undefined);
+      setNextBillingClientForTests(undefined);
+    } finally {
+      for (const database of databases.reverse()) await database.close();
+      for (const [key, value] of previous) {
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+      }
+      try {
+        await root.exec(`DROP SCHEMA IF EXISTS ${schema}_jobs CASCADE`);
+        await root.exec(`DROP SCHEMA ${schema} CASCADE`);
+      } finally {
+        await root.close();
+      }
+    }
+  }
+
   try {
     await migrateDatabase(db);
-    await promisify(execFile)('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes',
-      '-keyout', join(tlsDir, 'key.pem'), '-out', join(tlsDir, 'cert.pem'), '-days', '1',
-      '-subj', '/CN=studio.fixture', '-addext', 'subjectAltName=DNS:studio.fixture,DNS:broker.fixture,IP:127.0.0.1']);
-    const certificate = await readFile(join(tlsDir, 'cert.pem'));
-    const tls = { key: await readFile(join(tlsDir, 'key.pem')), cert: certificate };
-    let issuer = 'https://broker.fixture/', origin = 'https://studio.fixture';
-    let currentKey = key(), nextKey = key(), jwksKeys = [currentKey, nextKey], defaultSubject = 'google-oauth2|synthetic-owner';
-    let defaultClaims: Record<string, unknown> = {};
-    const profiles = new Map<string, Record<string, unknown>>(), deleted = new Set<string>();
-    const managementRequests: string[] = [];
-    let managementScope = 'read:users';
-    const codes = new Map<string, { params: URLSearchParams; overrides: Record<string, unknown>; badSignature: boolean; algorithm: string }>();
-    const observed: { path: string; parameters: URLSearchParams }[] = [];
-    let unavailable = false;
-    const brokerApp = express();
-    brokerApp.use(express.urlencoded({ extended: false }));
-    brokerApp.get('/.well-known/openid-configuration', (_req, res) => {
-      if (unavailable) return res.status(503).json({ error: 'synthetic-unavailable' });
-      res.json({
-        issuer, authorization_endpoint: `${issuer}authorize`, token_endpoint: `${issuer}oauth/token`,
-        jwks_uri: `${issuer}.well-known/jwks.json`, response_types_supported: ['code'],
-        subject_types_supported: ['public'], id_token_signing_alg_values_supported: ['RS256'],
-        token_endpoint_auth_methods_supported: ['client_secret_post'], code_challenge_methods_supported: ['S256'],
-      });
-    });
-    brokerApp.get('/.well-known/jwks.json', (_req, res) => unavailable ? res.status(503).json({ error: 'synthetic-unavailable' }) : res.json({ keys: jwksKeys.map(key => ({ ...key.jwk, alg: 'RS256', use: 'sig', kid: key.kid })) }));
-    function authorize(params: URLSearchParams, overrides: Record<string, unknown> = {}, badSignature = false, algorithm = 'RS256') {
-      const code = randomUUID();
-      codes.set(code, { params, overrides: { sub: defaultSubject, ...defaultClaims, ...overrides }, badSignature, algorithm });
-      const callback = new URL(params.get('redirect_uri') ?? `${origin}/auth/callback`);
-      callback.searchParams.set('code', code);
-      callback.searchParams.set('state', params.get('state') ?? '');
-      callback.searchParams.set('iss', issuer);
-      return callback;
-    }
-    brokerApp.get('/authorize', (req, res) => {
-      const params = new URL(req.originalUrl, issuer).searchParams;
-      res.redirect(303, authorize(params).href);
-    });
-    brokerApp.post('/oauth/token', (req, res) => {
-      if (unavailable) return res.status(503).json({ error: 'synthetic-unavailable' });
-      if (req.body.grant_type === 'client_credentials') {
-        if (req.body.client_id !== 'synthetic-manager' || req.body.client_secret !== 'synthetic-management-secret' ||
-          req.body.audience !== `${new URL(issuer).origin}/api/v2/` || req.body.scope !== 'read:users') return res.status(401).json({ error: 'invalid_client' });
-        return res.json({ token_type: 'Bearer', access_token: 'synthetic-management-token', expires_in: 3600, scope: managementScope });
-      }
-      const params = new URLSearchParams(req.body), code = params.get('code') ?? '', saved = codes.get(code);
-      codes.delete(code);
-      observed.push({ path: '/oauth/token', parameters: params });
-      if (!saved || params.get('client_id') !== clientId || params.get('client_secret') !== clientSecret ||
-          createHash('sha256').update(params.get('code_verifier') ?? '').digest('base64url') !== saved.params.get('code_challenge') ||
-          params.get('redirect_uri') !== saved.params.get('redirect_uri')) return res.status(400).json({ error: 'invalid_grant' });
-      const now = Math.floor(Date.now() / 1000);
-      const claims = { iss: issuer, aud: clientId, sub: defaultSubject, iat: now, exp: now + 120, auth_time: now,
-        nonce: saved.params.get('nonce'), name: 'Synthetic member', email: 'owner@example.invalid', email_verified: true, ...saved.overrides };
-      if (typeof claims.sub === 'string' && !profiles.has(claims.sub) && !deleted.has(claims.sub)) {
-        profiles.set(claims.sub, { user_id: claims.sub, updated_at: new Date(Date.now() - 10000).toISOString(), blocked: false, email: claims.email, email_verified: claims.email_verified });
-      }
-      const header = Buffer.from(JSON.stringify({ alg: saved.algorithm, kid: currentKey.kid })).toString('base64url');
-      const body = `${header}.${Buffer.from(JSON.stringify(claims)).toString('base64url')}`;
-      const signature = saved.algorithm === 'none' ? '' : sign('RSA-SHA256', Buffer.from(body), saved.badSignature ? key().privateKey : currentKey.privateKey).toString('base64url');
-      res.json({ token_type: 'Bearer', access_token: 'synthetic-access-token', expires_in: 120, id_token: `${body}.${signature}` });
-    });
-    brokerApp.get('/api/v2/users/:subject', (req, res) => {
-      if (unavailable) return res.status(503).json({ error: 'synthetic-unavailable' });
-      if (req.get('Authorization') !== 'Bearer synthetic-management-token') return res.status(401).json({ error: 'invalid_token' });
-      managementRequests.push(req.originalUrl);
-      const profile = profiles.get(req.params.subject);
-      if (!profile) return res.status(404).json({ error: 'not_found' });
-      res.json(profile);
-    });
-    const broker = createServer(tls, brokerApp);
-    servers.push(broker); broker.listen(0, '127.0.0.1'); await once(broker, 'listening');
-    const brokerAddress = broker.address();
-    if (!brokerAddress || typeof brokerAddress === 'string') throw new Error('Synthetic broker did not listen.');
-    const brokerUrl = `https://127.0.0.1:${brokerAddress.port}`;
-    issuer = `https://${options.brokerHostname ?? 'broker.fixture'}:${brokerAddress.port}/`;
-    const initialServer = createServer(tls);
-    servers.push(initialServer); initialServer.listen(0, '127.0.0.1'); await once(initialServer, 'listening');
-    const initialAddress = initialServer.address();
-    if (!initialAddress || typeof initialAddress === 'string') throw new Error('Synthetic HTTPS app did not listen.');
-    origin = `https://studio.fixture:${initialAddress.port}`;
-    const config = loadConfig({
-      NODE_ENV: 'test', DATABASE_URL: url.href, PUBLIC_ORIGIN: origin, COOKIE_SECURE: 'true', TRUST_PROXY: '127.0.0.1/32',
-      OIDC_ISSUER: issuer, OIDC_CLIENT_ID: clientId, OIDC_CLIENT_SECRET: clientSecret, ...env,
-      ...(options.lifecycle ? { OIDC_MANAGEMENT_ORIGIN: new URL(issuer).origin, OIDC_MANAGEMENT_CLIENT_ID: 'synthetic-manager',
-        OIDC_MANAGEMENT_CLIENT_SECRET: 'synthetic-management-secret', OIDC_PASSWORD_HOOK_SECRET: '1'.repeat(64) } : {}),
-    });
     await migrateJobs(db);
-    async function replica(server = createServer(tls)) {
-      const connection = postgresConnection(url.href), shutdown = new AbortController();
-      databases.push(connection); shutdowns.push(shutdown);
-      const transport: IdentityTransport = async (url, options) => {
-        const requested = new URL(url);
-        if (requested.origin !== new URL(issuer).origin) throw new Error('Fixture transport refused an unexpected issuer.');
-        const body = options.body;
-        if (body !== undefined && body !== null && typeof body !== 'string' && !(body instanceof URLSearchParams)) throw new Error('The synthetic OIDC fixture received an unsupported request body.');
-        return fixtureFetch(`${brokerUrl}${requested.pathname}${requested.search}`, { method: options.method, headers: options.headers, body, signal: options.signal, ca: certificate });
-      };
-      const lifecycle = config.identity?.lifecycle ? await IdentityLifecycle.open(connection, config.identity, shutdown.signal, transport) : undefined;
-      if (lifecycle) cleanup.push(() => lifecycle.close());
-      const billing = config.billing ? await BillingNotifications.open(connection, config.billing, shutdown.signal, false, options.billingClient, config.publicOrigin ?? undefined) : undefined;
-      if (billing) cleanup.push(() => billing.close());
-      const privacy=await PrivacyExports.open(connection);
-      cleanup.push(()=>privacy.close());
-      const app = createApp(config, connection, shutdown.signal, shutdown.signal, transport, lifecycle, billing,privacy);
-      app.use(express.static(config.frontendDir));
-      app.get('/{*path}', (_req, res) => res.sendFile(`${config.frontendDir}/index.html`));
-      app.use(handleError);
-      server.on('request', app);
-      if (!servers.includes(server)) { servers.push(server); server.listen(0, '127.0.0.1'); await once(server, 'listening'); }
-      const address = server.address();
-      if (!address || typeof address === 'string') throw new Error('Synthetic app did not listen.');
-      return { db: connection, lifecycle, billing,privacy,address: `https://127.0.0.1:${address.port}`, browser: () => new IdentityBrowser(`https://127.0.0.1:${address.port}`, new URL(origin).host, certificate) };
+    const auth = loadAuthSettings();
+    if (!auth) throw new Error('Synthetic Auth.js configuration was not loaded.');
+    const authSettings = auth;
+    const billing = loadBillingConfig(process.env, {
+      identity: true,
+      databaseUrl: url.href,
+      publicOrigin: origin,
+    }, (setting, requirement) => {
+      throw new Error(`${setting} ${requirement}`);
+    });
+    setNextBillingClientForTests(options.billingClient);
+    const shutdown = new AbortController();
+    cleanup.push(async () => shutdown.abort());
+    const notifications = billing
+      ? await BillingNotifications.open(db, billing, shutdown.signal, false, options.billingClient, origin)
+      : undefined;
+    if (notifications) {
+      setNextBillingServiceForTests(notifications);
+      cleanup.push(() => notifications.close());
     }
-    const application = await replica(initialServer);
+    const privacy = await PrivacyExports.open(db);
+    cleanup.push(() => privacy.close());
+
+    let defaultSubject = 'google|synthetic-owner';
+    let defaultClaims: Record<string, unknown> = {};
+    const repository = new StateRepository(db);
+
+    async function issue(browser: IdentityBrowser, selected: Provider, overrides: Record<string, unknown>) {
+      const claims = { ...defaultClaims, ...overrides };
+      const subject = typeof claims.sub === 'string' ? claims.sub : defaultSubject;
+      const provider = selected;
+      const issuer = provider === 'google' ? 'https://accounts.google.com'
+        : provider === 'facebook' ? 'https://www.facebook.com'
+          : provider === 'github' ? 'https://github.com'
+            : `${origin}/email`;
+      const email = typeof claims.email === 'string' ? claims.email.toLowerCase() : 'owner@example.invalid';
+      const verified = claims.email_verified === undefined ? true : claims.email_verified === true;
+      let identity = await db.prepare(
+        'SELECT id,user_id FROM managed_identities WHERE issuer=? AND subject=?',
+      ).get(issuer, subject);
+      let owner: string;
+      if (identity) {
+        owner = String(identity.user_id);
+      } else {
+        owner = randomUUID();
+        const identityId = randomUUID();
+        await db.prepare('INSERT INTO users(id,name,email,password,demo) VALUES(?,?,NULL,NULL,0)')
+          .run(owner, typeof claims.name === 'string' ? claims.name : 'Synthetic member');
+        await repository.initialize(owner);
+        await db.prepare(`INSERT INTO managed_identities
+          (id,user_id,issuer,subject,provider,email,verified,available)
+          VALUES(?,?,?,?,?,?,?,1)`)
+          .run(identityId, owner, issuer, subject, provider, email, Number(verified));
+        await db.prepare(`INSERT INTO managed_accounts
+          (user_id,status,contact_email,contact_identity_id,contact_verified)
+          VALUES(?,?,?,?,?)`)
+          .run(owner, verified ? 'active' : 'pending-verification', email, identityId, Number(verified));
+        identity = { id: identityId, user_id: owner };
+      }
+      const epoch = Number((await db.prepare('SELECT session_epoch FROM managed_accounts WHERE user_id=?')
+        .get(owner))?.session_epoch);
+      const rawToken = randomBytes(32).toString('hex');
+      const token = createHash('sha256').update(rawToken).digest('hex');
+      const rawCsrf = randomBytes(32).toString('hex');
+      const csrf = createHash('sha256').update(rawCsrf).digest('hex');
+      const now = Date.now();
+      const mfa = Array.isArray(claims.amr) && claims.amr.some(value => value === 'mfa') ? now : 0;
+      if (mfa > 0) {
+        await db.prepare(`INSERT INTO managed_totp_credentials
+          (user_id,secret_ciphertext,status,pending_expires,last_used_step,created_at,verified_at,updated_at)
+          VALUES(?,?,'active',NULL,-1,?,?,?)
+          ON CONFLICT(user_id) DO UPDATE SET status='active',pending_expires=NULL,
+            verified_at=EXCLUDED.verified_at,updated_at=EXCLUDED.updated_at`)
+          .run(owner, 'fixture-ciphertext-'.padEnd(80, 'x'), now, now, now);
+      }
+      await db.prepare('INSERT INTO sessions(token,user_id,expires) VALUES(?,?,?)')
+        .run(token, owner, now + 30 * 86400000);
+      await db.prepare(`INSERT INTO managed_sessions
+        (token,id,identity_id,epoch,csrf_hash,authenticated_at,created_at,last_used,mfa_at)
+        VALUES(?,?,?,?,?,?,?,?,?)`)
+        .run(token, randomUUID(), String(identity.id), epoch, csrf, now, now, now, mfa);
+      const names = authCookieNames(authSettings);
+      browser.cookies.set(names.session, rawToken);
+      browser.cookies.set(names.csrf, rawCsrf);
+      browser.csrf = rawCsrf;
+      return owner;
+    }
+
+    async function replica() {
+      const connection = postgresConnection(url.href);
+      databases.push(connection);
+      return {
+        db: connection,
+        billing: notifications,
+        privacy,
+        address: origin,
+        browser: () => new IdentityBrowser(),
+      };
+    }
+
     return {
-      ...application, schema, config, close, replica, cleanup, brokerUrl, origin, issuer, authorize, observed, certificatePath: join(tlsDir, 'cert.pem'),
-      managementRequests,
-      setProfile(subject: string, values: Record<string, unknown>) {
-        deleted.delete(subject);
-        profiles.set(subject, { user_id: subject, email: 'owner@example.invalid', email_verified: true, blocked: false, ...profiles.get(subject), updated_at: new Date().toISOString(), ...values });
+      db,
+      schema,
+      origin,
+      address: origin,
+      config: {
+        databaseUrl: url.href,
+        publicOrigin: origin,
+        billing,
+        identity: { clientSecret: authSettings.secret },
       },
-      deleteProfile(subject: string) { profiles.delete(subject); deleted.add(subject); },
-      managementScope(value: string) { managementScope = value; },
-      proxyTo(target: string) {
-        const url = new URL(target);
-        if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw new Error('The synthetic gateway only proxies its loopback child.');
-        initialServer.removeAllListeners('request');
-        initialServer.on('request', (request, response) => {
-          const upstream = httpRequest(new URL(request.url ?? '/', url), {
-            method: request.method, headers: { ...request.headers, 'x-forwarded-proto': 'https' },
-          }, result => { response.writeHead(result.statusCode ?? 502, result.headers); result.pipe(response); });
-          upstream.on('error', () => {
-            if (!response.headersSent) response.writeHead(502, { 'Content-Type': 'application/json' });
-            response.end(JSON.stringify({ error: 'The synthetic runtime gateway is unavailable.' }));
-          });
-          request.pipe(upstream);
-        });
-      },
+      billing: notifications,
+      privacy,
+      cleanup,
+      close,
+      replica,
+      browser: () => new IdentityBrowser(),
       setSubject(value: string) { defaultSubject = value; },
       setClaims(value: Record<string, unknown>) { defaultClaims = value; },
-      unavailable(value: boolean) { unavailable = value; },
-      rotateKey() { currentKey = nextKey; nextKey = key(); jwksKeys = [...jwksKeys, nextKey]; },
-      async begin(browser: IdentityBrowser, selected: Provider = 'google') {
-        const response = await browser.request(`/auth/login?provider=${selected}`);
-        const location = response.headers.get('location');
-        if (response.status !== 303 || !location?.startsWith(issuer)) throw new Error(`Synthetic sign-in initiation failed (${response.status} ${location}).`);
-        return new URL(location);
+      async begin(_browser: IdentityBrowser, selected: Provider = 'google') {
+        return new URL(`https://fixture.invalid/signin?provider=${selected}`);
       },
-      async complete(browser: IdentityBrowser, authorization: URL, overrides: Record<string, unknown> = {}, badSignature = false, algorithm = 'RS256') {
-        const callback = authorize(authorization.searchParams, overrides, badSignature, algorithm);
-        return browser.request(`${callback.pathname}${callback.search}`);
+      async complete(
+        browser: IdentityBrowser,
+        authorization: URL,
+        overrides: Record<string, unknown> = {},
+      ) {
+        const selected = authorization.searchParams.get('provider');
+        if (!['email', 'google', 'github', 'facebook'].includes(selected ?? '')) {
+          return new Response(null, { status: 400 });
+        }
+        await issue(browser, selected as Provider, overrides);
+        return new Response(null, { status: 303, headers: { Location: '/account' } });
+      },
+      async freshen(browser: IdentityBrowser) {
+        const names = authCookieNames(authSettings);
+        const raw = browser.cookies.get(names.session);
+        if (!raw) throw new Error('The browser has no managed session.');
+        const token = createHash('sha256').update(raw).digest('hex');
+        await db.prepare(`UPDATE managed_sessions
+          SET authenticated_at=floor(extract(epoch from clock_timestamp())*1000)::bigint
+          WHERE token=?`).run(token);
       },
     };
   } catch (error) {
-    try { await close(); } catch (cleanupError) { throw new AggregateError([error, cleanupError], 'Identity fixture setup and cleanup failed.'); }
+    try {
+      await close();
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], 'Auth.js fixture setup and cleanup failed.');
+    }
     throw error;
   }
+}
+
+export function registerFixtureCleanup(t: TestContext, fixture: { close(): Promise<void> }) {
+  t.after(() => fixture.close());
 }

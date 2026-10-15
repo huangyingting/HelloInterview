@@ -43,7 +43,7 @@ export function invitationHash(secret: string, address: string) {
   return createHmac('sha256', secret).update(address.trim().toLowerCase()).digest('hex');
 }
 
-export function loadAuthSettings(env: NodeJS.ProcessEnv = process.env): Readonly<AuthSettings> | null {
+export function loadAuthSettings(env: Readonly<Record<string, string | undefined>> = process.env): Readonly<AuthSettings> | null {
   if (!settings.some(key => env[key] !== undefined)) return null;
   let origin: URL;
   try {

@@ -47,7 +47,7 @@ export class CommunityContributions {
   constructor(private readonly db: Database) { this.reads = new CommunityReads(db); }
   private async snapshot(id: string, owner: string): Promise<OwnedCommunityPost> {
     const row = await this.db.prepare(`SELECT kind FROM posts WHERE id=? AND author_id=? AND sample=0
-      ${this.db.dialect === 'postgres' ? 'FOR UPDATE' : ''}`).get(id, owner);
+      FOR UPDATE`).get(id, owner);
     if (!row) throw new HttpError(404, 'This original post is unavailable or is not editable by this account.');
     const version = await this.db.prepare('SELECT revision FROM community_post_revisions WHERE post_id=?').get(id);
     return { post: await this.reads.detail(id, { kind: row.kind }, owner, true), revision: revision.parse(version?.revision) };
@@ -59,7 +59,7 @@ export class CommunityContributions {
     return this.db.transaction(() => this.snapshot(id, owner));
   }
   private async admitted(owner: string, admit: () => Promise<void>) {
-    if (!await this.db.prepare(`SELECT id FROM users WHERE id=?${this.db.dialect === 'postgres' ? ' FOR UPDATE' : ''}`).get(owner))
+    if (!await this.db.prepare('SELECT id FROM users WHERE id=? FOR UPDATE').get(owner))
       throw new HttpError(401, 'Sign in to manage your original contribution.');
     await admit();
   }
@@ -128,7 +128,7 @@ export class CommunityContributions {
     const resource = z.string().parse(location.resource);
     if (resource.startsWith('post/')) {
       const postId = communityIdentifierSchema.parse(resource.slice(5));
-      if (!await this.db.prepare(`SELECT id FROM posts WHERE id=?${this.db.dialect === 'postgres' ? ' FOR UPDATE' : ''}`).get(postId))
+      if (!await this.db.prepare('SELECT id FROM posts WHERE id=? FOR UPDATE').get(postId))
         throw new HttpError(404, 'This discussion is no longer available.');
     }
     const row = await this.db.prepare(`SELECT ${commentProjection},1 AS "isMine",0 AS deleted,
@@ -139,7 +139,7 @@ export class CommunityContributions {
       LEFT JOIN community_mutes mute ON 1=0
       LEFT JOIN community_blocks block ON 1=0
       WHERE comments.id=? AND comments.user_id=?
-      ${this.db.dialect === 'postgres' ? 'FOR UPDATE OF comments' : ''}`).get(id,owner);
+      FOR UPDATE OF comments`).get(id,owner);
     if (!row) throw new HttpError(404, 'This comment is no longer editable.');
     const comment = commentDto.parse(row);
     if (comment.resource !== resource) throw new HttpError(409, 'This comment changed discussion while it was opening. Check the saved version before editing.');

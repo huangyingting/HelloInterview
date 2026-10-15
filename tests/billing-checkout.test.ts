@@ -43,7 +43,7 @@ test('owned HTTPS replica admission is fresh, CSRF-protected, strict and duplica
   assert.ok(!JSON.stringify(view).includes('checkout.stripe.com')); assert.ok(!JSON.stringify(view).includes('cus_Synthetic'));
   const opened = await browser.request(`/api/billing/checkouts/${replies[0].id}/open`, {});
   assert.equal(opened.status, 200); assert.match((await opened.json()).url, /#opaque-fixture-fragment$/);
-  const stranger = await f.login(f.browser(), 'auth0|checkout-stranger');
+  const stranger = await f.login(f.browser(), 'google|checkout-stranger');
   assert.equal((await stranger.browser.request(`/api/billing/checkouts/${replies[0].id}/open`, {})).status, 404);
   assert.equal((await stranger.browser.request(`/api/billing/checkouts/${replies[0].id}/refresh`, {})).status, 404);
   assert.equal((await browser.bootstrap()).capabilities.commerce, 'disabled');
@@ -287,7 +287,7 @@ test('compiled worker death after external checkout success recovers exactly one
   const boss = await createBoss(f.db); await boss.start(); f.cleanup.push(() => boss.stop());
   const entered = barrier(), release = barrier();
   f.barrier(async path => { if (path.startsWith('/v1/checkout/sessions/')) { entered.resolve(); await release.promise; } });
-  const env = { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl!,
+  const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl!,
     ...authJsEnvironment(f.origin), ...sandboxSettings };
   const code = `import Stripe from 'stripe'; import { runBillingCommand } from './dist-server/billing/cli.js';
     const client = new Stripe(process.env.STRIPE_TEST_SECRET_KEY, { host: '127.0.0.1', port: ${f.port}, protocol: 'http',
@@ -315,7 +315,7 @@ test('compiled worker death after external checkout success recovers exactly one
 test('compiled reconciliation processes customer and checkout children, and a later bounded sweep refreshes open sessions without SDK writes', async t => {
   const f = await openBillingFixture(t), { browser } = await f.login();
   await f.reserve(browser, 'pro_annual');
-  const env = { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl!,
+  const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl!,
     ...authJsEnvironment(f.origin), ...sandboxSettings };
   const code = `import Stripe from 'stripe'; import { runBillingCommand } from './dist-server/billing/cli.js';
     const client = new Stripe(process.env.STRIPE_TEST_SECRET_KEY, { host: '127.0.0.1', port: ${f.port}, protocol: 'http',

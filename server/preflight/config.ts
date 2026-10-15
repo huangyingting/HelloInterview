@@ -27,11 +27,8 @@ function fail(setting: string, requirement: string): never {
   throw new ServicePreflightConfigurationError(setting, requirement);
 }
 
-export function loadServicePreflightConfig(env: NodeJS.ProcessEnv = process.env): Readonly<ServicePreflightConfig> {
+export function loadServicePreflightConfig(env: Readonly<Record<string, string | undefined>> = process.env): Readonly<ServicePreflightConfig> {
   if (env.NODE_ENV !== 'production') fail('NODE_ENV', 'must be production for the operated service.');
-  if (Object.keys(env).some(key => key.startsWith('OIDC_') && env[key] !== undefined)) {
-    fail('OIDC configuration', 'must be removed from the Auth.js-only release.');
-  }
   const portText = env.PORT ?? '3000';
   if (!/^\d+$/.test(portText) || !Number.isSafeInteger(Number(portText)) || Number(portText) > 65535) {
     fail('PORT', 'must be an integer between 0 and 65535.');

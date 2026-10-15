@@ -44,7 +44,6 @@ function parsedRows(rows:DatabaseRow[],...keys:string[]) {
 export class PrivacyExports {
   private constructor(private readonly db:Database,readonly jobs:DurableJobs) {}
   static async open(db:Database,worker=false) {
-    if(db.dialect!=='postgres')throw new Error('Durable privacy exports require controlled PostgreSQL.');
     return new PrivacyExports(db,await DurableJobs.open(db,worker));
   }
   close(){return this.jobs.close();}

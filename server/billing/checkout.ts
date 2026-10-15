@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { SandboxBillingView } from '../../shared/billing';
-import type { BillingConfig } from '../config';
+import type { BillingConfig } from './config';
 import type { Database, DatabaseRow } from '../db/connection';
 import { HttpError } from '../http-error';
 import { DurableJobs, TerminalJobFailure, type JobClaim, type Operation } from '../jobs';

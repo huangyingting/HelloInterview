@@ -1,7 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { isIP, SocketAddress } from 'node:net';
 import { z } from 'zod';
-import type express from 'express';
 import type { Database } from '../db/connection';
 import { HttpError } from '../http-error';
 
@@ -15,6 +14,14 @@ const decisionSchema = z.object({
   retry_after: z.coerce.number().int().min(1).max(windowMs / 1000),
 });
 
+function databaseErrorCode(error: unknown) {
+  if (!(error instanceof Error) || !('code' in error) || typeof error.code !== 'string') return null;
+  if (error.code !== 'P2010') return error.code;
+  if (!('meta' in error) || !error.meta || typeof error.meta !== 'object' ||
+    !('code' in error.meta) || typeof error.meta.code !== 'string') return error.code;
+  return error.meta.code;
+}
+
 export function networkAddress(value: string) {
   const family = isIP(value);
   if (!family) throw new HttpError(503, 'The request address could not be verified. Try again through the configured application edge.');
@@ -25,7 +32,6 @@ export function networkAddress(value: string) {
 export class IdentityLimits {
   private readonly key: Buffer;
   constructor(private readonly db: Database, secret: string) {
-    if (db.dialect !== 'postgres') throw new Error('Shared identity admission requires PostgreSQL.');
     this.key = createHmac('sha256', secret).update('studio.identity.admission.v1').digest();
   }
   async consume(scope: Scope, identifier: string) {
@@ -43,9 +49,10 @@ export class IdentityLimits {
         RETURNING attempts,greatest(1,ceil((expires-${clock})/1000.0))::integer AS retry_after
       `).get(scope, fingerprint, windowMs, maximum + 1);
     } catch (error) {
-      if (!(error instanceof Error) || !('code' in error) || typeof error.code !== 'string' ||
-        !['42P01', '42501', '08000', '08003', '08006', '57P01', '57P02', '57P03', '53300', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ENOTFOUND'].includes(error.code)) throw error;
-      console.error(JSON.stringify({ event: 'identity.admission.unavailable', scope, code: error.code }));
+      const code = databaseErrorCode(error);
+      if (!code || !['42P01', '42501', '08000', '08003', '08006', '57P01', '57P02', '57P03', '53300',
+        'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'ENOTFOUND'].includes(code)) throw error;
+      console.error(JSON.stringify({ event: 'identity.admission.unavailable', scope, code }));
       throw new HttpError(503, scope.startsWith('support-') ?
         'Shared support protection is unavailable. Try again later; no support request was stored.' :
         scope.startsWith('community-') ?
@@ -56,12 +63,5 @@ export class IdentityLimits {
     }
     const result = decisionSchema.parse(row);
     return { allowed: result.attempts <= maximum, retryAfter: result.retry_after };
-  }
-  async enforce(scope: Scope, identifier: string, res: express.Response) {
-    const decision = await this.consume(scope, identifier);
-    if (!decision.allowed) {
-      res.setHeader('Retry-After', String(decision.retryAfter));
-      throw new HttpError(429, 'Too many attempts. Wait for the shared 15-minute attempt window before trying again.');
-    }
   }
 }

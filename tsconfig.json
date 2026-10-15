@@ -17,7 +17,7 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src", "server", "shared", "scripts", "tests", "*.ts"],
+  "include": ["src", "server", "shared", "scripts", "tests", "types", "*.ts"],
   "exclude": [
     "node_modules",
     "app",
@@ -28,7 +28,6 @@
     "server/db/prisma.ts",
     "server/next",
     "tests/authjs.test.ts",
-    "tests/next-runtime.test.ts",
-    "types"
+    "tests/next-runtime.test.ts"
   ]
 }

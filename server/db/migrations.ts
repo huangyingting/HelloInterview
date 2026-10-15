@@ -1729,7 +1729,6 @@ export const migrations = [{
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }
 
 export async function migrateDatabase(db: Database): Promise<void> {
-  if (db.dialect !== 'postgres') throw new Error('Controlled migrations require PostgreSQL.');
   await db.transaction(async () => {
     await db.prepare('SELECT pg_advisory_xact_lock(?)').get(749131620);
     await db.exec('CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())');
@@ -1749,7 +1748,6 @@ export async function migrateDatabase(db: Database): Promise<void> {
 }
 
 export async function assertDatabaseVersion(db: Database): Promise<void> {
-  if (db.dialect === 'sqlite') return;
   const table = await db.prepare("SELECT to_regclass('schema_migrations')::text AS name").get();
   if (!table?.name) throw new Error('PostgreSQL migrations are missing. Run npm run db:migrate before starting this release.');
   const rows = await db.prepare('SELECT version,name,checksum FROM schema_migrations ORDER BY version').all();

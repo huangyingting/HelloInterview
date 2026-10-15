@@ -25,7 +25,6 @@ const bindingSchema = z.object({ reservation_id: z.uuid(), owner_ref: z.uuid(), 
 export class SandboxUsage {
   private constructor(private readonly db: Database, private readonly policy: UsagePolicy, private readonly policyHash: string) {}
   static async open(db: Database, input: UsagePolicy) {
-    if (db.dialect !== 'postgres') throw new Error('Sandbox usage requires controlled PostgreSQL; local AI remains separate.');
     const policy = usagePolicySchema.parse(input), payload = encodePayload(policy), hash = digest(payload);
     await assertDatabaseVersion(db);
     const usage = new SandboxUsage(db, policy, hash);

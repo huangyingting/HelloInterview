@@ -1,15 +1,26 @@
-import { loadConfig } from '../config';
 import { postgresConnection } from './connection';
 import { migrateDatabase } from './migrations';
 import { applyLegacyImport, inspectLegacyImport } from './legacy-import';
 import { DurableJobs, migrateJobs } from '../jobs';
 
+function databaseUrl() {
+  const value = process.env.DATABASE_URL;
+  try {
+    if (!value || /[\x00-\x20\x7f]/.test(value)) throw new Error('Invalid URL.');
+    const url = new URL(value);
+    if (!['postgres:', 'postgresql:'].includes(url.protocol) || !url.hostname || url.pathname.length < 2 || url.hash) {
+      throw new Error('Invalid PostgreSQL URL.');
+    }
+  } catch {
+    throw new Error('DATABASE_URL must be a PostgreSQL connection URL with a hostname and database name.');
+  }
+  return value;
+}
+
 async function main() {
   const [command, ...args] = process.argv.slice(2);
   if (command === 'migrate' && args.length === 0) {
-    const config = loadConfig();
-    if (!config.databaseUrl) throw new Error('DATABASE_URL is required for controlled PostgreSQL migrations.');
-    const db = postgresConnection(config.databaseUrl);
+    const db = postgresConnection(databaseUrl());
     try {
       await migrateDatabase(db);
       await migrateJobs(db);
@@ -33,9 +44,7 @@ async function main() {
       }
       if (!id || !actor || !reason) throw new Error('Replay requires an operation ID, --actor <operator-id>, and --reason <reconciliation-notes>.');
     } else if (operation !== 'status' || options.length) throw new Error('Usage: jobs status | jobs replay <operation-id> --actor <operator-id> --reason <notes> [--provider-reconciled]');
-    const config = loadConfig();
-    if (!config.databaseUrl) throw new Error('DATABASE_URL is required for durable-job maintenance.');
-    const db = postgresConnection(config.databaseUrl);
+    const db = postgresConnection(databaseUrl());
     let jobs: DurableJobs | undefined;
     try {
       jobs = await DurableJobs.open(db);
@@ -62,9 +71,7 @@ async function main() {
     if (!source) throw new Error('Specify --source with an owner-approved, decrypted maintenance backup and --user for every approved non-demo account. The default is a read-only dry run.');
     const input = inspectLegacyImport(source, users);
     if (approved) {
-      const config = loadConfig();
-      if (!config.databaseUrl) throw new Error('DATABASE_URL is required to apply a legacy import.');
-      const db = postgresConnection(config.databaseUrl);
+      const db = postgresConnection(databaseUrl());
       try { await applyLegacyImport(db, input, approved); } finally { await db.close(); }
     }
     console.log(JSON.stringify({ mode: approved ? 'applied' : 'dry-run', ...input.report }, null, 2));

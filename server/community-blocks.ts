@@ -29,9 +29,9 @@ const blockRow=z.object({
 const cursor=z.strictObject({
   version:z.literal('community-blocks-v1'),hash:z.string().length(64),updatedAt:z.iso.datetime(),id:z.uuid(),
 });
-const uuid=(db:Database)=>db.dialect==='postgres'?'?::uuid':'?';
-const boolean=(db:Database)=>db.dialect==='postgres'?'?::boolean':'?';
-const flag=(db:Database,value:boolean)=>db.dialect==='postgres'?String(value):Number(value);
+const uuid=(_db:Database)=>'?::uuid';
+const boolean=(_db:Database)=>'?::boolean';
+const flag=(_db:Database,value:boolean)=>String(value);
 
 export class CommunityBlocks {
   constructor(private readonly db:Database) {}
@@ -39,7 +39,7 @@ export class CommunityBlocks {
     return owner<subject?`${owner}:${subject}`:`${subject}:${owner}`;
   }
   private async lock(owner:string,subject:string) {
-    if(this.db.dialect!=='postgres'||owner===subject)return;
+    if(owner===subject)return;
     const value=parseInt(digest(`community-block:${this.pair(owner,subject)}`).slice(0,8),16);
     await this.db.prepare('SELECT pg_advisory_xact_lock(?)').get(value>2147483647?value-4294967296:value);
   }
@@ -98,15 +98,13 @@ export class CommunityBlocks {
         await this.lock(user.id,subject);
         if(await this.subject(user.id,request.targetType,request.targetId)!==subject)
           throw new HttpError(409,'This community contribution changed before the block was saved.');
-        current=await this.db.prepare(`SELECT * FROM community_blocks WHERE owner_id=? AND subject_id=?
-          ${this.db.dialect==='postgres'?'FOR UPDATE':''}`).get(user.id,subject);
+        current=await this.db.prepare('SELECT * FROM community_blocks WHERE owner_id=? AND subject_id=? FOR UPDATE').get(user.id,subject);
       }else{
         current=await this.db.prepare(`SELECT * FROM community_blocks WHERE id=${uuid(this.db)} AND owner_id=?`).get(request.blockId,user.id);
         if(!current)throw new HttpError(404,'This personal block is unavailable.');
         subject=z.string().parse(current.subject_id);
         await this.lock(user.id,subject);
-        current=await this.db.prepare(`SELECT * FROM community_blocks WHERE id=${uuid(this.db)} AND owner_id=?
-          ${this.db.dialect==='postgres'?'FOR UPDATE':''}`).get(request.blockId,user.id);
+        current=await this.db.prepare(`SELECT * FROM community_blocks WHERE id=${uuid(this.db)} AND owner_id=? FOR UPDATE`).get(request.blockId,user.id);
         if(!current)throw new HttpError(404,'This personal block is unavailable.');
         if(Number(current.revision)!==request.revision)throw new HttpError(409,'This personal block changed. Reload its current revision.');
       }

@@ -1,5 +1,5 @@
 import Stripe from 'stripe';
-import type { BillingConfig } from '../config';
+import type { BillingConfig } from './config';
 import { digest, encodePayload } from '../jobs/schema';
 import { canonicalObjectSchema, notification, observationSchema, providerId, referenceId, stripeApiVersion, type Notification, type Observation } from './schema';
 import { z } from 'zod';

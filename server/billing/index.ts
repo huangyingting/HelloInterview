@@ -1,7 +1,6 @@
-import express from 'express';
 import Stripe from 'stripe';
 import { z } from 'zod';
-import type { BillingConfig } from '../config';
+import type { BillingConfig } from './config';
 import type { Database } from '../db/connection';
 import { HttpError } from '../http-error';
 import { DurableJobs, TerminalJobFailure, type JobClaim } from '../jobs';
@@ -16,7 +15,6 @@ import { assertSandboxAccessConfiguration } from './service';
 import { SandboxPortal } from './portal';
 
 export async function assertBillingConfiguration(db: Database, settings: BillingConfig | null) {
-  if (db.dialect !== 'postgres') return;
   const row = await db.prepare('SELECT account_id FROM stripe_billing_reference WHERE singleton=1').get();
   if (row && !settings) throw new Error('Stored billing notifications require explicit sandbox billing configuration; disabling reconciliation is not a fallback.');
   if (row && settings && row.account_id !== settings.accountId) throw new Error('Stored billing evidence belongs to a different provider account.');
@@ -26,7 +24,7 @@ export async function assertBillingConfiguration(db: Database, settings: Billing
   await assertSandboxAccessConfiguration(db, settings);
 }
 export class BillingNotifications {
-  private constructor(private readonly db: Database, private readonly settings: BillingConfig, readonly jobs: DurableJobs,
+  private constructor(readonly db: Database, private readonly settings: BillingConfig, readonly jobs: DurableJobs,
     readonly provider: StripeEvidence, readonly checkout: SandboxCheckout | null, readonly ledger: SandboxBillingLedger,
     readonly portal: SandboxPortal | null) {}
   static async open(db: Database, settings: BillingConfig, shutdown: AbortSignal, worker = false, client?: Stripe, origin?: string) {
@@ -81,20 +79,6 @@ export class BillingNotifications {
         throw new HttpError(409, 'The billing notification conflicts with its saved evidence.');
       }
       return { accepted: true, duplicate: result.duplicate };
-    });
-  }
-  register(app: express.Express) {
-    const raw = express.raw({ type: 'application/json', limit: '256kb', inflate: false });
-    app.post('/api/webhooks/stripe', (req, res, next) => raw(req, res, (error: unknown) => {
-      if (error && typeof error === 'object' && 'type' in error) {
-        if (error.type === 'entity.too.large') return next(new HttpError(413, 'The billing event exceeds its size limit.'));
-        if (error.type === 'encoding.unsupported') return next(new HttpError(415, 'Compressed billing events are not supported.'));
-      }
-      next(error);
-    }), async (req, res) => {
-      const signature = req.get('Stripe-Signature');
-      if (!Buffer.isBuffer(req.body) || !signature) throw new HttpError(403, 'The billing event could not be authenticated.');
-      res.json(await this.acceptWebhook(req.body, signature));
     });
   }
   async runClaim(claim: JobClaim, signal?: AbortSignal) {

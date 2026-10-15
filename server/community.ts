@@ -126,7 +126,7 @@ export class CommunityReads {
       if (value) { clauses.push(`p.${field}=?`); values.push(value); }
     }
     if (query.q) {
-      const fold = this.db.dialect === 'sqlite' ? 'studio_casefold' : 'lower';
+      const fold = 'lower';
       clauses.push(`${fold}(p.title || ' ' || p.body || ' ' || p.company || ' ' || p.kind) LIKE ? ESCAPE '\\'`);
       values.push(`%${query.q.toLowerCase().replace(/[\\%_]/g,'\\$&')}%`);
     }

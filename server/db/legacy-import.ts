@@ -147,7 +147,7 @@ export function inspectLegacyImport(source: string, selectedUserIds: readonly st
 }
 
 export async function applyLegacyImport(db: Database, input: LegacyImport, approvedFingerprint: string): Promise<void> {
-  if (db.dialect !== 'postgres' || approvedFingerprint !== input.report.fingerprint) throw new Error('Applying an import requires PostgreSQL and the exact approved dry-run fingerprint.');
+  if (approvedFingerprint !== input.report.fingerprint) throw new Error('Applying an import requires the exact approved dry-run fingerprint.');
   await assertDatabaseVersion(db);
   await db.transaction(async () => {
     await db.prepare('SELECT pg_advisory_xact_lock(?)').get(749131621);

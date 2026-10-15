@@ -8,7 +8,7 @@ import { sandboxServicePolicy } from '../shared/billing-ledger';
 import { problems } from '../shared/catalog';
 import { setTimeout as delay } from 'node:timers/promises';
 
-async function fixture(t: TestContext, overrides: NodeJS.ProcessEnv = {}) {
+async function fixture(t: TestContext, overrides: Readonly<Record<string, string | undefined>> = {}) {
   const f = await openBillingFixture(t, { STRIPE_TEST_PORTAL_CONFIGURATION: sandboxPortalConfiguration, ...overrides });
   const { browser, owner } = await f.login(), attempt = await f.reserve(browser);
   await f.complete('billing.customer'); f.requests.splice(0);
@@ -47,10 +47,10 @@ test('fresh verified admission is owned, strict and CSRF protected before any Po
     { return_url: 'https://foreign.fixture' }, { on_behalf_of: 'acct_Foreign' }, { flow_data: {} }, { id: randomUUID() }]) {
     assert.equal((await f.browser.request(endpoint, input)).status, 400);
   }
-  const stranger = await f.login(undefined, 'auth0|portal-unmapped-stranger');
+  const stranger = await f.login(undefined, 'google|portal-unmapped-stranger');
   assert.equal((await stranger.browser.request(endpoint, {})).status, 409);
   f.setClaims({ email_verified: false });
-  const unverified = await f.login(undefined, 'auth0|portal-unverified');
+  const unverified = await f.login(undefined, 'google|portal-unverified');
   assert.equal((await unverified.browser.request(endpoint, {})).status, 403); f.setClaims({});
   await f.db.prepare('UPDATE managed_sessions SET authenticated_at=authenticated_at-660000 WHERE token IN (SELECT token FROM sessions WHERE user_id=?)').run(f.owner);
   assert.equal((await f.browser.request(endpoint, {})).status, 403);
@@ -354,11 +354,10 @@ test('provider response secrets and contacts are omitted from actual request/err
   console.error = (...args: unknown[]) => { messages.push(args.join(' ')); };
   console.log = (...args: unknown[]) => { messages.push(args.join(' ')); };
   t.after(() => { console.error = originalError; console.log = originalLog; });
-  const f = await fixture(t, { LOG_REQUESTS: 'true' });
+  const f = await fixture(t);
   f.portalResponse({ customer: 'cus_Foreign', private_contact: 'private-portal-contact@example.invalid' });
   const response = await f.browser.request(endpoint, {}); assert.equal(response.status, 500);
-  assert.ok(messages.some(message => message.includes('request.failed')));
-  assert.ok(messages.some(message => message.includes('request.completed')));
+  assert.ok(messages.some(message => message.includes('billing.portal.failed')));
   for (const secret of ['test_SyntheticRestricted', 'private-portal-contact', 'cus_Foreign', 'cus_Synthetic', 'bpc_SyntheticRestricted']) {
     assert.ok(!messages.join('\n').includes(secret)); assert.ok(!(await response.clone().text()).includes(secret));
   }

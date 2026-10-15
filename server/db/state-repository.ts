@@ -11,10 +11,6 @@ export class StateRepository {
 
   async initialize(userId: string, state = emptyState()): Promise<void> {
     const checked = userStateSchema.parse(state);
-    if (this.db.dialect === 'sqlite') {
-      await this.db.prepare('INSERT INTO states (user_id,value) VALUES (?,?)').run(userId, JSON.stringify(checked));
-      return;
-    }
     await this.db.prepare('INSERT INTO user_settings (user_id) VALUES (?)').run(userId);
     await this.writeChanges(userId, emptyState(), checked);
   }
@@ -39,16 +35,11 @@ export class StateRepository {
   }
 
   private async lock(userId: string): Promise<void> {
-    const row = await this.db.prepare(`SELECT id FROM users WHERE id=?${this.db.dialect === 'postgres' ? ' FOR UPDATE' : ''}`).get(userId);
+    const row = await this.db.prepare('SELECT id FROM users WHERE id=? FOR UPDATE').get(userId);
     if (!row) throw new Error('The owner of this preparation state does not exist.');
   }
 
   private async readLocked(userId: string): Promise<UserState> {
-    if (this.db.dialect === 'sqlite') {
-      const row = await this.db.prepare('SELECT value FROM states WHERE user_id=?').get(userId);
-      if (!row || typeof row.value !== 'string') throw new Error('Your saved state could not be found.');
-      return userStateSchema.parse({ ...emptyState(), ...JSON.parse(row.value) });
-    }
     const settings = await this.db.prepare('SELECT plan,plan_expires_at,recognition FROM user_settings WHERE user_id=?').get(userId);
     if (!settings) throw new Error('Your saved state could not be found.');
     const resources = await this.db.prepare('SELECT kind,resource FROM user_resources WHERE user_id=? ORDER BY position,resource').all(userId);
@@ -62,10 +53,6 @@ export class StateRepository {
   }
 
   private async writeChanges(userId: string, before: UserState, after: UserState): Promise<void> {
-    if (this.db.dialect === 'sqlite') {
-      await this.db.prepare('UPDATE states SET value=? WHERE user_id=?').run(JSON.stringify(after), userId);
-      return;
-    }
     await this.db.prepare('UPDATE user_settings SET plan=?,plan_expires_at=?,recognition=?,revision=revision+1 WHERE user_id=?')
       .run(after.plan, after.planExpiresAt, after.recognition, userId);
     for (const field of resourceFields) {

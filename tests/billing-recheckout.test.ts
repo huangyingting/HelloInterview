@@ -55,7 +55,7 @@ test('fresh strict owned recheckout admission requires exact opaque ended predec
   }
   assert.equal((await f.browser.request('/api/billing/checkouts', { ...request, previousSubscriptionRef: randomUUID() })).status, 404);
   assert.equal((await f.browser.request('/api/billing/checkouts', { key: randomUUID(), offer: request.offer })).status, 409);
-  const stranger = await f.login(undefined, 'auth0|recheckout-stranger');
+  const stranger = await f.login(undefined, 'google|recheckout-stranger');
   assert.equal((await stranger.browser.request('/api/billing/checkouts', request)).status, 404);
   assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM stripe_owned_customers').get())?.count, 1);
   const replica = await f.replica(), browser = replica.browser();
@@ -349,9 +349,10 @@ test('compiled maintained reconciliation creates the exact new owned hosted sess
   const code = `import Stripe from 'stripe';import {runBillingCommand} from './dist-server/billing/cli.js';
     const client=new Stripe(process.env.STRIPE_TEST_SECRET_KEY,{host:'127.0.0.1',port:${f.port},protocol:'http',
       apiVersion:'${stripeApiVersion}',timeout:1000,maxNetworkRetries:0});await runBillingCommand('reconcile',client);`;
+  const env:NodeJS.ProcessEnv={PATH:process.env.PATH,NODE_ENV:'production',DATABASE_URL:f.config.databaseUrl,
+    ...authJsEnvironment(f.origin),...sandboxSettings};
   await promisify(execFile)(process.execPath, ['--input-type=module', '-e', code], { timeout: 30000,
-    env: { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl,
-      ...authJsEnvironment(f.origin), ...sandboxSettings } });
+    env });
   assert.equal((await f.view(f.browser)).checkout?.id, attempt.id); assert.equal((await f.view(f.browser)).checkout?.state, 'open');
   assert.equal(f.customers.size, 1); assert.equal(posts(f).length, 2);
 });

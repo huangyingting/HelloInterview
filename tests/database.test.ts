@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
@@ -7,18 +7,15 @@ import { DatabaseSync } from 'node:sqlite';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { emptyState } from '../shared/domain';
-import { problems, quizQuestions } from '../shared/catalog';
-import type { Attempt, Bootstrap, QuizReport, Story, UserState } from '../shared/types';
-import { loadConfig } from '../server/config';
-import { openDatabase } from '../server/database';
-import { postgresConnection, postgresParameters, sqliteConnection, type Database } from '../server/db/connection';
+import { quizQuestions } from '../shared/catalog';
+import type { UserState } from '../shared/types';
+import { postgresConnection, postgresParameters, type Database } from '../server/db/connection';
 import { applyLegacyImport, inspectLegacyImport } from '../server/db/legacy-import';
 import { assertDatabaseVersion, migrateDatabase, migrations, recordTables } from '../server/db/migrations';
 import { StateRepository } from '../server/db/state-repository';
-import { startServer } from '../server/runtime';
 import { ContentRepository } from '../server/content/repository';
-import { HttpError } from '../server/http-error';
 import { publishedQuestion } from '../server/content/schema';
+import { HttpError } from '../server/http-error';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl) throw new Error('TEST_DATABASE_URL must point to a dedicated PostgreSQL test database. Each test owns and removes a unique schema.');
@@ -53,30 +50,11 @@ async function account(db: Database, state = emptyState()) {
   });
   return id;
 }
-async function api<T>(url: string, route: string, body?: unknown, cookie = '', method = body === undefined ? 'GET' : 'POST') {
-  const response = await fetch(`${url}${route}`, {
-    method, headers: { Cookie: cookie, 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  return { response, value: await response.json() as T };
-}
-async function runtime(t: TestContext, url: string) {
-  const settings = loadConfig({ NODE_ENV: 'production', DATABASE_URL: url, DATA_DIR: path.join(await temporaryDirectory(t), 'untouched'), PORT: '0', LOG_REQUESTS: 'false' });
-  const server = await startServer(settings);
-  t.after(() => server.close());
-  return server;
-}
-async function signup(url: string, email = `${randomUUID()}@example.invalid`) {
-  const result = await api<{ user: { id: string } }>(url, '/api/auth/signup', { name: 'PostgreSQL Fixture', email, password: 'fixture-password-123' });
-  assert.equal(result.response.status, 200);
-  return { id: result.value.user.id, cookie: result.response.headers.get('set-cookie')!.split(';')[0] };
-}
-
 test('PostgreSQL parameter conversion preserves quoted literals and identifiers', () => {
   assert.equal(postgresParameters(`SELECT '?' AS "?", 'it''s ?' WHERE id=? AND name=?`), `SELECT '?' AS "?", 'it''s ?' WHERE id=$1 AND name=$2`);
 });
 
-test('controlled migrations are repeatable, serialize runners, and runtime rejects missing or changed history', async t => {
+test('controlled migrations are repeatable, serialize runners, and reject missing or changed history', async t => {
   const { db, url } = await fixture(t, false);
   await assert.rejects(assertDatabaseVersion(db), /migrations are missing/);
   const another = postgresConnection(url);
@@ -88,7 +66,6 @@ test('controlled migrations are repeatable, serialize runners, and runtime rejec
   await db.prepare('UPDATE schema_migrations SET checksum=? WHERE version=1').run('corrupted-fixture');
   await assert.rejects(assertDatabaseVersion(db), /incompatible/);
   await assert.rejects(migrateDatabase(db), /history does not match/);
-  await assert.rejects(runtime(t, url), /incompatible/);
 });
 test('versioned assessment answers are single-owner and revision-fenced across PostgreSQL pools',async t=>{
   const {db,url}=await fixture(t),owner=await account(db),anotherOwner=await account(db);
@@ -111,34 +88,6 @@ test('versioned assessment answers are single-owner and revision-fenced across P
   await db.prepare('DELETE FROM users WHERE id=?').run(owner);
   assert.equal((await db.prepare('SELECT id FROM assessment_sessions WHERE user_id=?').all(owner)).length,0);
 });
-test('PostgreSQL JSONB answer ordering cannot change version-pinned report order or original explanations',async t=>{
-  const {db,url}=await fixture(t),server=await runtime(t,url),owner=await signup(server.url);
-  const result=await api<UserState>(server.url,'/api/quiz',{topic:'api-design',answers:{'api-1':1}},owner.cookie);
-  assert.equal(result.response.status,200);
-  const quiz=result.value.quizzes[0],questions=quizQuestions.filter(question=>question.topic==='api-design');
-  const saved=await new StateRepository(db).read(owner.id);
-  assert.deepEqual(saved.quizzes[0].questionIds,questions.map(question=>question.id));
-  const report=await api<QuizReport>(server.url,`/api/quiz-reports/${quiz.id}`,undefined,owner.cookie);
-  assert.equal(report.response.status,200);
-  assert.deepEqual(report.value.questions,questions.map(publishedQuestion));
-  assert.equal(report.value.provenance,'versioned');
-});
-
-test('SQLite async transactions serialize concurrent work, support nesting and roll back exactly', async t => {
-  const db = sqliteConnection(openDatabase(await temporaryDirectory(t)));
-  t.after(() => db.close());
-  const id = await account(db);
-  const states = new StateRepository(db);
-  await Promise.all(Array.from({ length: 15 }, (_, index) => states.mutate(id, state => { state.bookmarks.push(`fixture-${index}`); })));
-  assert.equal((await states.read(id)).bookmarks.length, 15);
-  const before = await states.read(id);
-  await assert.rejects(db.transaction(async () => {
-    await states.mutate(id, state => { state.recognition += 4; });
-    await db.transaction(async () => { throw new Error('Injected rollback'); });
-  }), /Injected rollback/);
-  assert.deepEqual(await states.read(id), before);
-});
-
 test('PostgreSQL owned rows preserve every collection, source bytes, owner isolation and unchanged rows', async t => {
   const { db } = await fixture(t);
   const state = emptyState();
@@ -188,95 +137,6 @@ test('two PostgreSQL pools do not lose concurrent independent owner mutations', 
   assert.equal(saved.recognition, 40);
 });
 
-test('PostgreSQL API supports restart, relational DTO parity and atomic concurrent signup', async t => {
-  const { db, url } = await fixture(t);
-  const first = await runtime(t, url), second = await runtime(t, url);
-  const email = 'signup-race@example.invalid';
-  const responses = await Promise.all([first, second].map(server => api(server.url, '/api/auth/signup', { name: 'Race Fixture', email, password: 'fixture-password-123' })));
-  assert.deepEqual(responses.map(result => result.response.status).sort(), [200, 409]);
-  assert.equal((await db.prepare('SELECT COUNT(*)::int AS count FROM users WHERE email=?').get(email))!.count, 1);
-  const authenticated = await signup(first.url);
-  const target = await api<UserState>(first.url, '/api/targets', { company: 'Meta', level: 'Senior', role: 'Engineer', date: '' }, authenticated.cookie);
-  assert.equal(target.response.status, 200);
-  const post = await api<{ id: string }>(first.url, '/api/posts', { kind: 'discussion', title: 'PostgreSQL fixture discussion', body: 'A preserved community discussion with transactional recognition.', company: '', track: 'system-design', level: 'Senior', region: 'Global' }, authenticated.cookie);
-  assert.equal(post.response.status, 201);
-  await api(first.url, `/api/posts/${post.value.id}/vote`, {}, authenticated.cookie);
-  const posts = await api<Record<string, unknown>[]>(second.url, '/api/posts?kind=discussion', undefined, authenticated.cookie);
-  assert.equal(posts.value[0].isMine, true);
-  assert.ok(!Object.hasOwn(posts.value[0],'authorId'));
-  assert.equal(posts.value[0].voted, true);
-  assert.equal(posts.value[0].votes, 1);
-  assert.equal(typeof posts.value[0].createdAt, 'string');
-  await api(first.url, '/api/comments', { resource: 'fixture-resource', body: 'Fixture comment is persisted.' }, authenticated.cookie);
-  const comments = await api<Record<string, unknown>[]>(second.url, '/api/comments?resource=fixture-resource');
-  assert.equal(typeof comments.value[0].createdAt, 'string');
-  assert.equal(comments.value[0].parentId, null);
-  const before = await api<Bootstrap>(first.url, '/api/bootstrap', undefined, authenticated.cookie);
-  await first.close();
-  const restarted = await runtime(t, url);
-  assert.deepEqual((await api<Bootstrap>(restarted.url, '/api/bootstrap', undefined, authenticated.cookie)).value, before.value);
-});
-
-test('attempt and story edits enforce revisions across instances and never move attempts between problems', async t => {
-  const { url } = await fixture(t);
-  const first = await runtime(t, url), second = await runtime(t, url), user = await signup(first.url);
-  const created = await api<{ attempt: Attempt }>(first.url, '/api/attempts', { problemId: 'short-links', level: 'Senior', answer: 'A saved explanation of a database invariant and API.', code: '', nodes: [], edges: [], elapsed: 1 }, user.cookie);
-  const input = created.value.attempt;
-  const edits = await Promise.all([first, second].map((server, index) => api<{ attempt: Attempt }>(server.url, '/api/attempts', { ...input, answer: `Saved version ${index}: database and endpoint design.` }, user.cookie)));
-  assert.deepEqual(edits.map(result => result.response.status).sort(), [200, 409]);
-  const latest = (await api<Bootstrap>(first.url, '/api/bootstrap', undefined, user.cookie)).value.state.attempts[0];
-  assert.equal(latest.revision, 1);
-  const otherProblem = problems.find(problem => problem.id !== latest.problemId && !problem.premium)!;
-  assert.equal((await api(first.url, '/api/attempts', { ...latest, problemId: otherProblem.id }, user.cookie)).response.status, 400);
-  assert.equal((await api(first.url, '/api/attempts', { ...latest, revision: undefined }, user.cookie)).response.status, 400);
-  const story = { title: 'Fixture STAR story', situation: 'Context', task: 'Task', action: 'Action', result: 'Result', tags: [] };
-  const savedStory = await api<UserState>(first.url, '/api/stories', story, user.cookie);
-  const existing = savedStory.value.stories[0];
-  const storyEdits = await Promise.all([first, second].map(server => api<Story>(server.url, '/api/stories', { ...existing, title: 'Updated fixture story' }, user.cookie)));
-  assert.deepEqual(storyEdits.map(result => result.response.status).sort(), [200, 409]);
-});
-
-test('gift redemption is one-use across replicas and rolls back its financial-looking demo flag on write failure', async t => {
-  const { db, url } = await fixture(t);
-  const first = await runtime(t, url), second = await runtime(t, url);
-  const users = await Promise.all([signup(first.url), signup(second.url)]);
-  const gift = await api<{ code: string }>(first.url, '/api/gift', { plan: 'year' }, users[0].cookie);
-  const redeemed = await Promise.all([first, second].map((server, index) => api<UserState>(server.url, '/api/gift/redeem', { code: gift.value.code }, users[index].cookie)));
-  assert.deepEqual(redeemed.map(result => result.response.status).sort(), [200, 400]);
-  assert.equal((await db.prepare("SELECT COUNT(*)::int AS count FROM user_settings WHERE plan='year'").get())!.count, 1);
-  const next = await api<{ code: string }>(first.url, '/api/gift', { plan: 'month' }, users[0].cookie);
-  await db.exec("CREATE FUNCTION fail_state_update() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN RAISE EXCEPTION ''Injected state failure''; END'; CREATE TRIGGER state_failure BEFORE UPDATE ON user_settings FOR EACH ROW EXECUTE FUNCTION fail_state_update()");
-  t.mock.method(console, 'error', () => undefined);
-  assert.equal((await api(second.url, '/api/gift/redeem', { code: next.value.code }, users[1].cookie)).response.status, 500);
-  assert.equal((await db.prepare('SELECT COUNT(*)::int AS count FROM gifts WHERE redeemed_by IS NULL').get())!.count, 1);
-  await db.exec('DROP TRIGGER state_failure ON user_settings');
-  assert.equal((await api(second.url, '/api/gift/redeem', { code: next.value.code }, users[1].cookie)).response.status, 200);
-});
-
-test('premium mocks, project snapshots and study reflections reject concurrent stale edits in PostgreSQL', async t => {
-  const { url } = await fixture(t);
-  const first = await runtime(t, url), second = await runtime(t, url), user = await signup(first.url);
-  const servers = [first, second];
-  await api(first.url, '/api/plan', { plan: 'year' }, user.cookie);
-  const createdMock = await api<{ session: { id: string } }>(first.url, '/api/mocks', { problemId: 'short-links', company: 'Meta', level: 'Senior', length: 3 }, user.cookie);
-  const drafts = await Promise.all(servers.map(server => api(server.url, `/api/mocks/${createdMock.value.session.id}/draft`, { revision: 0, answer: 'A saved mock draft about API and database constraints.' }, user.cookie)));
-  assert.deepEqual(drafts.map(result => result.response.status).sort(), [200, 409]);
-  const createdProject = await api<{ project: { id: string } }>(first.url, '/api/projects', { title: 'Concurrent project', problemId: 'event-dedup', files: [{ path: 'events.js', content: '  // baseline\r\n' }] }, user.cookie);
-  const projectId = createdProject.value.project.id;
-  const saves = await Promise.all(servers.map(server => api(server.url, `/api/projects/${projectId}/save`, { revision: 0, files: [{ path: 'events.js', content: '  // changed\r\n' }], explanation: '', verification: '' }, user.cookie)));
-  assert.deepEqual(saves.map(result => result.response.status).sort(), [200, 409]);
-  const plan = await api<{ plan: { id: string; tasks: { id: string; kind: string }[] } }>(first.url, '/api/study-plans', { company: 'Meta', level: 'Senior', weeks: 2, sessionsPerWeek: 5, startOn: '2026-10-08' }, user.cookie);
-  assert.equal(plan.response.status, 200);
-  const reflection = plan.value.plan.tasks.find(task => task.kind === 'reflection');
-  assert.ok(reflection);
-  const reflections = await Promise.all(servers.map(server => api(server.url, `/api/study-plans/${plan.value.plan.id}/reflection`, { revision: 0, taskId: reflection.id, note: 'A preserved reflection about the next practice session.' }, user.cookie)));
-  assert.deepEqual(reflections.map(result => result.response.status).sort(), [200, 409]);
-  const saved = (await api<Bootstrap>(first.url, '/api/bootstrap', undefined, user.cookie)).value.state;
-  assert.equal(saved.projects[0].files[0].original, '  // baseline\r\n');
-  assert.equal(saved.projects[0].files[0].content, '  // changed\r\n');
-  assert.equal(saved.studyPlans[0].revision, 1);
-});
-
 test('compiled migration/import commands perform explicit operations without development runtime tools', async t => {
   const { db, url } = await fixture(t, false);
   const execute = promisify(execFile);
@@ -295,7 +155,24 @@ test('compiled migration/import commands perform explicit operations without dev
 });
 
 async function legacyFixture(t: TestContext) {
-  const directory = await temporaryDirectory(t), db = openDatabase(directory);
+  const directory = await temporaryDirectory(t), source = path.join(directory, 'studio.sqlite');
+  const db = new DatabaseSync(source);
+  db.exec(`
+    PRAGMA foreign_keys=ON;
+    CREATE TABLE users (id TEXT PRIMARY KEY,name TEXT NOT NULL,email TEXT UNIQUE NOT NULL,password TEXT,demo INTEGER NOT NULL);
+    CREATE TABLE states (user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,value TEXT NOT NULL);
+    CREATE TABLE sessions (token TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,expires INTEGER NOT NULL);
+    CREATE TABLE gifts (hash TEXT PRIMARY KEY,plan TEXT NOT NULL,creator TEXT NOT NULL,redeemed_by TEXT,created_at TEXT NOT NULL);
+    CREATE TABLE posts (id TEXT PRIMARY KEY,kind TEXT NOT NULL,title TEXT NOT NULL,body TEXT NOT NULL,company TEXT NOT NULL,
+      track TEXT NOT NULL,level TEXT NOT NULL,region TEXT NOT NULL,author TEXT NOT NULL,author_id TEXT NOT NULL,created_at TEXT NOT NULL,sample INTEGER NOT NULL);
+    CREATE TABLE votes (post_id TEXT NOT NULL,user_id TEXT NOT NULL,PRIMARY KEY(post_id,user_id));
+    CREATE TABLE follows (post_id TEXT NOT NULL,user_id TEXT NOT NULL,PRIMARY KEY(post_id,user_id));
+    CREATE TABLE comments (id TEXT PRIMARY KEY,resource TEXT NOT NULL,user_id TEXT,author TEXT NOT NULL,body TEXT NOT NULL,created_at TEXT NOT NULL,parent_id TEXT);
+    CREATE TABLE support (id TEXT PRIMARY KEY,user_id TEXT,email TEXT NOT NULL,body TEXT NOT NULL,created_at TEXT NOT NULL);
+    CREATE TABLE content_versions (id TEXT PRIMARY KEY,value TEXT NOT NULL);
+    CREATE TABLE assessment_sessions (id TEXT PRIMARY KEY,user_id TEXT NOT NULL,topic TEXT NOT NULL,content_version TEXT NOT NULL,
+      answers TEXT NOT NULL,revision INTEGER NOT NULL,completed_at TEXT);
+  `);
   const state = emptyState();
   state.plan = 'lifetime';
   state.attempts.push({ id: 'legacy-attempt', problemId: 'short-links', level: 'Senior', answer: 'Historical answer', code: '  // preserved\r\n', nodes: [], edges: [], completed: false, updatedAt: '2026-01-02', elapsed: 1 });
@@ -308,7 +185,7 @@ async function legacyFixture(t: TestContext) {
   db.prepare('INSERT INTO sessions VALUES (?,?,?)').run('do-not-import-session', 'legacy-owner', Date.now() + 86400000);
   db.prepare('INSERT INTO gifts VALUES (?,?,?,?,?)').run('do-not-import-gift', 'year', 'legacy-owner', null, '2026-01-02');
   db.close();
-  return { source: path.join(directory, 'studio.sqlite'), raw, state };
+  return { source, raw, state };
 }
 
 test('explicit import dry run preserves bytes, excludes demo authority, reconciles every record and rejects replay', async t => {
@@ -319,7 +196,7 @@ test('explicit import dry run preserves bytes, excludes demo authority, reconcil
   assert.equal(input.report.excludedDemoUsers, 1);
   assert.equal(input.report.skippedSessions, 1);
   assert.equal(input.report.skippedGifts, 1);
-  assert.equal(input.report.records.posts.excluded, 12);
+  assert.equal(input.report.records.posts.excluded, 0);
   assert.deepEqual(await readFile(legacy.source), bytes);
   assert.deepEqual(inspectLegacyImport(legacy.source, ['legacy-owner']).report, input.report);
   assert.equal((await db.prepare('SELECT COUNT(*)::int AS count FROM users').get())!.count, 0);
@@ -336,24 +213,27 @@ test('explicit import dry run preserves bytes, excludes demo authority, reconcil
 });
 test('explicit imports preserve owned assessment progress and immutable content bytes without importing auth or demo authority',async t=>{
   const {db}=await fixture(t),legacy=await legacyFixture(t);
-  const source=sqliteConnection(new DatabaseSync(legacy.source));
-  const content=new ContentRepository(source),states=new StateRepository(source);
+  const source=new DatabaseSync(legacy.source);
   const questions=quizQuestions.filter(question=>question.topic==='api-design').slice(0,2);
-  const session=await source.transaction(()=>content.createSession('legacy-owner','api-design',questions));
-  await content.answerSession('legacy-owner',session.id,questions[0].id,questions[0].correct,0);
-  const version=await content.pin(questions);
-  await states.mutate('legacy-owner',state=>{
-    state.customQuizzes.push({id:'versioned-import-report',title:'Pinned historical fixture',topics:['api-design'],mode:'all',questionIds:questions.map(question=>question.id),answers:Object.fromEntries(questions.map(question=>[question.id,question.correct])),score:2,revision:3,createdAt:'2026-10-01',completedAt:'2026-10-02',contentVersion:version});
-  });
-  const snapshot=(await source.prepare('SELECT value FROM content_versions WHERE id=?').get(version))!.value;
-  await source.close();
+  const snapshot=JSON.stringify(questions.map(publishedQuestion));
+  const version=createHash('sha256').update(snapshot).digest('hex'),sessionId=randomUUID();
+  source.prepare('INSERT INTO content_versions(id,value) VALUES(?,?)').run(version,snapshot);
+  source.prepare(`INSERT INTO assessment_sessions
+    (id,user_id,topic,content_version,answers,revision,completed_at) VALUES(?,?,?,?,?,1,NULL)`)
+    .run(sessionId,'legacy-owner','api-design',version,JSON.stringify({[questions[0].id]:questions[0].correct}));
+  const state=JSON.parse(String(source.prepare('SELECT value FROM states WHERE user_id=?').get('legacy-owner')?.value)) as UserState;
+  state.customQuizzes.push({id:'versioned-import-report',title:'Pinned historical fixture',topics:['api-design'],mode:'all',
+    questionIds:questions.map(question=>question.id),answers:Object.fromEntries(questions.map(question=>[question.id,question.correct])),
+    score:2,revision:3,createdAt:'2026-10-01',completedAt:'2026-10-02',contentVersion:version});
+  source.prepare('UPDATE states SET value=? WHERE user_id=?').run(JSON.stringify(state,null,2),'legacy-owner');
+  source.close();
   const inspected=inspectLegacyImport(legacy.source,['legacy-owner']);
   assert.equal(inspected.report.records.content_versions.imported,1);
   assert.equal(inspected.report.records.assessment_sessions.imported,1);
   await new ContentRepository(db).pin(questions);
   await applyLegacyImport(db,inspected,inspected.report.fingerprint);
   assert.equal((await db.prepare('SELECT value FROM content_versions WHERE id=?').get(version))!.value,snapshot);
-  assert.equal((await new ContentRepository(db).sessionView('legacy-owner',session.id)).answered,1);
+  assert.equal((await new ContentRepository(db).sessionView('legacy-owner',sessionId)).answered,1);
   const restored=await new StateRepository(db).read('legacy-owner'),quiz=restored.customQuizzes[0];
   assert.equal(restored.plan,'free');
   const report=await new ContentRepository(db).report(quiz.id,quiz.answers,quiz.contentVersion,quiz.questionIds,quiz.score!);

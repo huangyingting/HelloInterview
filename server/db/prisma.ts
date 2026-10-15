@@ -14,6 +14,12 @@ export function prismaClient() {
   });
 }
 
+export async function closePrismaConnection() {
+  const prisma = globalPrisma.studioPrisma;
+  delete globalPrisma.studioPrisma;
+  if (prisma) await prisma.$disconnect();
+}
+
 function advisoryQuery(sql: string) {
   return /^\s*SELECT\s+pg_advisory_xact_lock\(/i.test(sql)
     ? `SELECT 1 AS locked FROM (${sql}) AS advisory_lock`
@@ -35,7 +41,6 @@ export function prismaConnection(): Database {
   const query = async (sql: string, values: unknown[] = []) =>
     executor().$queryRawUnsafe<DatabaseRow[]>(advisoryQuery(postgresParameters(sql)), ...values);
   return {
-    dialect: 'postgres',
     prepare(sql) {
       return {
         get: async (...values) => (await query(sql, values))[0],
@@ -60,6 +65,6 @@ export function prismaConnection(): Database {
       transaction => transactionContext.run(transaction, operation),
       { maxWait: 5000, timeout: 30000 },
     ),
-    close: () => prisma.$disconnect(),
+    close: closePrismaConnection,
   };
 }

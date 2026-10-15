@@ -10,7 +10,7 @@ export function CaseLibrary() {
   const cases = problems.filter(problem => problem.track === 'system-design' && problem.hasWorkedCase);
   return <><PageHeading eyebrow="SYSTEM DESIGN · WORKED DESIGNS" title="Study the decisions, not just the diagram." description={`${cases.length} original worked examples with hypothetical workloads, explicit calculations, failure paths, alternatives, and public sources.`} action={<Link className="button secondary" to="/learn/courses/system-design-complete"><BookOpen size={17} /> Full learning path</Link>} />
     <p className="fine-print">These are illustrative designs, not official company solutions or current interview-loop reports. Try the exercise before reading its reference design.</p>
-    <div className="learning-index">{cases.map(problem => <Link className="track-card" key={problem.id} to={`/practice/system-design/${problem.id}/writeup`}><Badge tone={problem.difficulty}>{problem.difficulty}</Badge><h2>{problem.title}</h2><p>{problem.caseSummary}</p><div className="track-card-bottom"><span>{problem.calculationCount} capacity calculations{problem.premium ? ' · Premium demo' : ''}</span><ArrowRight size={17} /></div></Link>)}</div>
+    <div className="learning-index">{cases.map(problem => <Link className="track-card" key={problem.id} to={`/practice/system-design/${problem.id}/writeup`}><Badge tone={problem.difficulty}>{problem.difficulty}</Badge><h2>{problem.title}</h2><p>{problem.caseSummary}</p><div className="track-card-bottom"><span>{problem.calculationCount} capacity calculations{problem.premium ? ' · Premium' : ''}</span><ArrowRight size={17} /></div></Link>)}</div>
   </>;
 }
 

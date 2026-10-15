@@ -135,17 +135,22 @@ test('managed staff administration requires MFA, bounded roles, separation, CAS 
   assert.equal((await administrator.browser.request('/api/staff/session')).status,200);
 });
 
-test('OIDC amr is strictly typed and only explicit mfa evidence is retained',async t=>{
+test('Auth.js staff sessions require explicit MFA step-up and an active TOTP credential',async t=>{
   const f=await fixture(t);
-  for(const amr of ['mfa',[''],Array.from({length:21},()=> 'mfa')]){
-    const browser=f.browser(),response=await f.complete(browser,await f.begin(browser),{sub:`google-oauth2|amr-${randomUUID()}`,email:'amr@example.invalid',amr});
-    assert.equal(response.headers.get('location'),'/auth?error=restart');
-    assert.equal((await browser.bootstrap()).user,null);
-  }
   f.setClaims({amr:['pwd','otp']});
   const notExplicit=await login(f,f.browser(),'google-oauth2|otp-only','otp@example.invalid');
+  await appendStaffRole(f.db,{userId:notExplicit.data.user!.id,role:'administrator',state:'granted',actorRef:'fixture-bootstrap',
+    reason:reason('Grant administrator role without MFA step-up.'),endsAt:expiry()});
   assert.equal((await notExplicit.browser.security()).sessions[0].mfa,false);
+  assert.equal((await notExplicit.browser.request('/api/staff/session')).status,403);
+
   f.setClaims({amr:['pwd','mfa']});
   const explicit=await login(f,f.browser(),'google-oauth2|explicit-mfa','mfa@example.invalid');
+  await appendStaffRole(f.db,{userId:explicit.data.user!.id,role:'administrator',state:'granted',actorRef:'fixture-bootstrap',
+    reason:reason('Grant administrator role with MFA step-up.'),endsAt:expiry()});
   assert.equal((await explicit.browser.security()).sessions[0].mfa,true);
+  assert.equal((await explicit.browser.request('/api/staff/session')).status,200);
+
+  await f.db.prepare('DELETE FROM managed_totp_credentials WHERE user_id=?').run(explicit.data.user!.id);
+  assert.equal((await explicit.browser.request('/api/staff/session')).status,403);
 });

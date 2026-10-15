@@ -13,7 +13,7 @@ export interface BillingConfig {
 type ConfigurationFailure = (setting: string, requirement: string) => never;
 
 export function loadBillingConfig(
-  env: NodeJS.ProcessEnv,
+  env: Readonly<Record<string, string | undefined>>,
   prerequisites: Readonly<{ identity: boolean; databaseUrl: string | null; publicOrigin: string | null }>,
   fail: ConfigurationFailure,
 ): Readonly<BillingConfig> | null {

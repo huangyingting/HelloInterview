@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
-import { loadServicePreflightConfig, ServicePreflightConfigurationError } from '../server/preflight/config';
+import { loadServicePreflightConfig } from '../server/preflight/config';
 
 const serviceEnvironment = {
   NODE_ENV: 'production',
@@ -25,7 +25,7 @@ const serviceEnvironment = {
   PRIVATE_BETA_NO_DURABILITY_ACK: 'true',
 };
 
-test('Auth.js service preflight configuration is complete, secret-free and rejects legacy OIDC settings', () => {
+test('Auth.js service preflight configuration is complete and secret-free', () => {
   const config = loadServicePreflightConfig(serviceEnvironment);
   assert.equal(config.auth.origin, 'https://interview.genisisiq.com');
   assert.equal(config.auth.inviteEmailHashes.length, 1);
@@ -37,7 +37,6 @@ test('Auth.js service preflight configuration is complete, secret-free and rejec
     { AUTH_INVITED_EMAILS: undefined },
     { PRIVACY_RETENTION_NOTICE: undefined },
     { TRUST_PROXY: undefined },
-    { OIDC_ISSUER: 'https://legacy.example.invalid/' },
   ]) {
     assert.throws(() => loadServicePreflightConfig({ ...serviceEnvironment, ...malformed }), (error: unknown) => {
       assert.ok(error instanceof Error);
@@ -46,10 +45,6 @@ test('Auth.js service preflight configuration is complete, secret-free and rejec
       return true;
     });
   }
-  assert.throws(
-    () => loadServicePreflightConfig({ ...serviceEnvironment, OIDC_ISSUER: 'https://legacy.example.invalid/' }),
-    (error: unknown) => error instanceof ServicePreflightConfigurationError && /must be removed/.test(error.message),
-  );
 });
 
 test('Azure VM ingress uses the exact canonical host, loopback upstream and explicit unavailable fallback', async () => {
@@ -103,8 +98,6 @@ test('Azure VM runtime consumes only the verified release and remains secret-gat
   const installer = await readFile('deploy/azure-vm/install-runtime-units.sh', 'utf8');
   assert.match(installer, /interview-studio-preflight\.service/);
   assert.match(installer, /systemctl disable interview-studio\.service/);
-  assert.match(installer, /systemctl disable --now interview-studio-identity-worker\.service/);
-  assert.match(installer, /rm -f "\$obsolete_identity_unit"/);
   assert.doesNotMatch(installer, /systemctl (?:enable|start|restart)/);
 
   const serviceEnv = await readFile('deploy/azure-vm/service.env.example', 'utf8');
@@ -117,7 +110,6 @@ test('Azure VM runtime consumes only the verified release and remains secret-gat
     'PRIVACY_RETENTION_NOTICE', 'PRIVACY_DELETION_NOTICE', 'PRIVATE_BETA_NO_DURABILITY_ACK']) {
     assert.match(serviceEnv, new RegExp(`^${setting}=`, 'm'));
   }
-  assert.doesNotMatch(serviceEnv, /^OIDC_/m);
 });
 
 test('Azure VM database authority separates migration from runtime DML', async () => {

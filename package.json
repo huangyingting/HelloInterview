@@ -19,7 +19,7 @@
     "test:unit": "tsx --test tests/config.test.ts tests/deployment.test.ts tests/domain.test.ts tests/premium.test.ts tests/content.test.ts tests/coding.test.ts tests/low-level-design.test.ts tests/access.test.ts tests/usage-calendar.test.ts tests/web-vitals.test.ts",
     "test:db": "npm run build && tsx --test tests/database.test.ts",
     "test:jobs": "npm run build && tsx --test tests/jobs.test.ts",
-    "test:identity": "npm run build && tsx --test tests/identity.test.ts tests/identity-limits.test.ts tests/identity-contract.test.ts tests/identity-lifecycle.test.ts tests/staff.test.ts",
+    "test:identity": "npm run build:next && tsx --test tests/authjs.test.ts tests/identity-limits.test.ts tests/staff.test.ts",
     "test:authjs": "npm run build:next && tsx --test tests/authjs.test.ts",
     "test:next-runtime": "npm run build:next && tsx --test tests/next-runtime.test.ts",
     "test:entitlements": "npm run build && tsx --test tests/entitlements.test.ts",
@@ -40,16 +40,13 @@
     "privacy:process": "node --env-file-if-exists=.env dist-server/privacy/cli.js process",
     "privacy:worker": "node --env-file-if-exists=.env dist-server/privacy/cli.js worker",
     "service:preflight": "node --env-file-if-exists=.env dist-server/preflight/cli.js",
-    "screenshots": "node scripts/capture-screenshots.mjs",
     "media": "node scripts/generate-media.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.12.0",
-    "express": "^5.1.0",
     "lucide-react": "^0.468.0",
     "next": "^16.4.1",
     "next-auth": "^4.24.15",
-    "openid-client": "6.8.8",
     "pg": "^8.16.3",
     "pg-boss": "12.37.1",
     "qrcode": "^1.5.4",
@@ -60,7 +57,6 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0",
-    "@types/express": "^5.0.3",
     "@types/node": "^24.0.0",
     "@types/pg": "^8.15.6",
     "@types/qrcode": "^1.5.6",

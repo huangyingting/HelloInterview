@@ -72,10 +72,9 @@ or image layers.
 
 ## Remaining cutover work
 
-The Vite entrypoint, React Router dependency and their local-demo browser
-harness have been removed. The source repository still contains the
-Express/SQLite and legacy OIDC compatibility implementation used by remaining
-domain/compatibility tests. It is not part of the release web or worker process,
-but must still be deleted with those tests and configuration before the
-zero-legacy gate passes. Authentic provider acceptance, exact-SHA Azure
-smoke/rollback evidence and Caddy cutover also remain required.
+All legacy Vite, React Router, Express, Auth0/OIDC broker, and SQLite
+service-runtime code and tests have been removed from the repository; only the
+explicit read-only `server/db/legacy-import.ts` maintenance utility uses
+built-in `node:sqlite` for offline snapshot inspection. Authentic Google/Facebook
+provider acceptance, exact-SHA Azure smoke/rollback evidence, and Caddy cutover
+remain required before opening `https://interview.genisisiq.com`.

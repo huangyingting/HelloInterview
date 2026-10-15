@@ -29,14 +29,13 @@ const muteRow=z.object({
 const cursor=z.strictObject({
   version:z.literal('community-mutes-v1'),hash:z.string().length(64),updatedAt:z.iso.datetime(),id:z.uuid(),
 });
-const uuid=(db:Database)=>db.dialect==='postgres'?'?::uuid':'?';
-const boolean=(db:Database)=>db.dialect==='postgres'?'?::boolean':'?';
-const flag=(db:Database,value:boolean)=>db.dialect==='postgres'?String(value):Number(value);
+const uuid=(_db:Database)=>'?::uuid';
+const boolean=(_db:Database)=>'?::boolean';
+const flag=(_db:Database,value:boolean)=>String(value);
 
 export class CommunityMutes {
   constructor(private readonly db:Database) {}
   private async lock(owner:string,subject:string) {
-    if(this.db.dialect!=='postgres')return;
     const value=parseInt(digest(`${owner}:${subject}`).slice(0,8),16),key=value>2147483647?value-4294967296:value;
     await this.db.prepare('SELECT pg_advisory_xact_lock(?)').get(key);
   }
@@ -78,15 +77,13 @@ export class CommunityMutes {
       if(request.muted){
         subject=await this.subject(user.id,request.targetType,request.targetId);
         await this.lock(user.id,subject);
-        current=await this.db.prepare(`SELECT * FROM community_mutes WHERE owner_id=? AND subject_id=?
-          ${this.db.dialect==='postgres'?'FOR UPDATE':''}`).get(user.id,subject);
+        current=await this.db.prepare('SELECT * FROM community_mutes WHERE owner_id=? AND subject_id=? FOR UPDATE').get(user.id,subject);
       }else{
         current=await this.db.prepare(`SELECT * FROM community_mutes WHERE id=${uuid(this.db)} AND owner_id=?`).get(request.muteId,user.id);
         if(!current)throw new HttpError(404,'This personal mute is unavailable.');
         subject=z.string().parse(current.subject_id);
         await this.lock(user.id,subject);
-        current=await this.db.prepare(`SELECT * FROM community_mutes WHERE id=${uuid(this.db)} AND owner_id=?
-          ${this.db.dialect==='postgres'?'FOR UPDATE':''}`).get(request.muteId,user.id);
+        current=await this.db.prepare(`SELECT * FROM community_mutes WHERE id=${uuid(this.db)} AND owner_id=? FOR UPDATE`).get(request.muteId,user.id);
         if(!current)throw new HttpError(404,'This personal mute is unavailable.');
         if(Number(current.revision)!==request.revision)throw new HttpError(409,'This personal mute changed. Reload its current revision.');
       }

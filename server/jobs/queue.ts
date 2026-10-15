@@ -9,7 +9,6 @@ export const queuePolicy: Omit<Queue, 'name'> = {
   deleteAfterSeconds: 604800, deadLetter: deadLetterQueue,
 };
 export async function createBoss(db: Database, maintenance = false, worker = false): Promise<PgBoss> {
-  if (db.dialect !== 'postgres') throw new Error('Durable jobs require PostgreSQL; local synchronous workflows are unchanged.');
   await assertDatabaseVersion(db);
   const row = await db.prepare('SELECT current_schema() AS schema').get();
   if (typeof row?.schema !== 'string' || !/^[a-z_][a-z0-9_]{0,44}$/.test(row.schema)) {

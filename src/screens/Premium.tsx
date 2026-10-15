@@ -13,7 +13,7 @@ export function PremiumStudio() {
   const { can, data } = useStudio(), [company, setCompany] = useState('Meta'), [difficulty, setDifficulty] = useState('All');
   const list = companyProblems(company).filter(p => difficulty === 'All' || p.difficulty === difficulty);
   return <>
-    <PageHeading eyebrow="ORIGINAL PREMIUM WORKFLOWS" title="Make the practice more deliberate." description="A focused conversation, a tailored quiz, a plan you can follow, and a project you can inspect." action={<Badge tone={can('mock.create') ? 'green' : 'amber'}>{data.capabilities.auth?.mode === 'managed' ? can('mock.create') ? 'Pro access active' : 'Check access on Account' : can('mock.create') ? 'Premium demo active' : 'Explore with a local demo plan'}</Badge>} />
+    <PageHeading eyebrow="ORIGINAL PREMIUM WORKFLOWS" title="Make the practice more deliberate." description="A focused conversation, a tailored quiz, a plan you can follow, and a project you can inspect." action={<Badge tone={can('mock.create') ? 'green' : 'amber'}>{can('mock.create') ? 'Pro access active' : 'Check access on Account'}</Badge>} />
     <div className="premium-cards">
       <CardLink to="/premium/mock" title="Adaptive mock interviews" description="Follow-up questions respond to gaps in your answers. Keep a transcript and actionable report." icon={MessageSquare} />
       <CardLink to="/quiz/custom" title="Custom quiz builder" description="Combine topics, choose a session length, or focus exclusively on missed questions." icon={ClipboardCheck} />

@@ -72,7 +72,7 @@ const appealHistoryCursor=z.strictObject({
   version:z.literal('community-restriction-appeal-history-v1'),hash:z.string().length(64),
   createdAt:z.iso.datetime(),id:z.uuid(),
 });
-const uuid=(db:Database)=>db.dialect==='postgres'?'?::uuid':'?';
+const uuid=(_db:Database)=>'?::uuid';
 const staffAppealCursor=z.strictObject({
   version:z.literal('community-restriction-appeal-queue-v1'),hash:z.literal('community-restriction-appeals'),
   updatedAt:z.iso.datetime(),id:z.uuid(),
@@ -81,21 +81,17 @@ const staffAppealCursor=z.strictObject({
 export class CommunityRestrictions {
   constructor(private readonly db:Database,private readonly identity:StaffIdentityAuthority|null) {}
   private async clock() {
-    const row=await this.db.prepare(this.db.dialect==='postgres'
-      ?'SELECT clock_timestamp() AS now'
-      :"SELECT strftime('%Y-%m-%dT%H:%M:%fZ','now') AS now").get();
+    const row=await this.db.prepare('SELECT clock_timestamp() AS now').get();
     const value=row?.now;
     const parsed=value instanceof Date?value:new Date(z.string().parse(value));
     if(!Number.isFinite(parsed.getTime()))throw new Error('The database clock returned an invalid restriction time.');
     return parsed;
   }
   private async lock(subject:string,value:CommunityRestrictionScope) {
-    if(this.db.dialect!=='postgres')return;
     const raw=parseInt(digest(`community-restriction:${subject}:${value}`).slice(0,8),16);
     await this.db.prepare('SELECT pg_advisory_xact_lock(?)').get(raw>2147483647?raw-4294967296:raw);
   }
   private async lockTarget(type:'post'|'comment',id:string) {
-    if(this.db.dialect!=='postgres')return;
     const raw=parseInt(digest(`${type}:${id}`).slice(0,8),16);
     await this.db.prepare('SELECT pg_advisory_xact_lock(?)').get(raw>2147483647?raw-4294967296:raw);
   }
@@ -206,7 +202,7 @@ export class CommunityRestrictions {
       }
       const now=(await this.clock()).toISOString();
       const current=storedRestrictionRow.safeParse(await this.db.prepare(`SELECT * FROM community_restrictions
-        WHERE id=${uuid(this.db)} AND subject_id=?${this.db.dialect==='postgres'?' FOR UPDATE':''}`)
+        WHERE id=${uuid(this.db)} AND subject_id=? FOR UPDATE`)
         .get(request.restrictionId,user.id));
       if(!current.success||current.data.state!=='active'||current.data.expires_at<=now||
         current.data.revision!==request.restrictionRevision)
@@ -259,13 +255,13 @@ export class CommunityRestrictions {
     return this.db.transaction(async()=>{
       const role=await this.authorize(user);
       const report=await this.db.prepare(`SELECT reports.* FROM community_reports reports
-        WHERE reports.id=${uuid(this.db)} ${this.db.dialect==='postgres'?'FOR UPDATE OF reports':''}`).get(reportId.data);
+        WHERE reports.id=${uuid(this.db)} FOR UPDATE OF reports`).get(reportId.data);
       if(!report)throw new HttpError(404,'Community report not found.');
       const reportRevision=z.number().int().nonnegative().parse(report.report_revision);
       const reportTargetType=z.enum(['post','comment']).parse(report.target_type),reportTargetId=z.string().parse(report.target_id);
       await this.lockTarget(reportTargetType,reportTargetId);
       const target=await this.db.prepare(`SELECT revision FROM community_moderation_targets
-        WHERE target_type=? AND target_id=? ${this.db.dialect==='postgres'?'FOR UPDATE':''}`).get(reportTargetType,reportTargetId);
+        WHERE target_type=? AND target_id=? FOR UPDATE`).get(reportTargetType,reportTargetId);
       const targetRevision=target?.revision===null||target?.revision===undefined?0:z.number().int().positive().parse(target.revision);
       if(reportRevision!==parsed.data.reportRevision||targetRevision!==parsed.data.targetRevision)
         throw new HttpError(409,'The report or moderation target changed. Review current revisions.');
@@ -284,11 +280,11 @@ export class CommunityRestrictions {
       if((await this.identity!.staffRoles(subject)).length)
         throw new HttpError(409,'Another staff account requires the separate reviewed staff-access procedure.');
       await this.lock(subject,parsed.data.scope);
-      if(!await this.db.prepare(`SELECT id FROM users WHERE id=?${this.db.dialect==='postgres'?' FOR UPDATE':''}`).get(subject))
+      if(!await this.db.prepare('SELECT id FROM users WHERE id=? FOR UPDATE').get(subject))
         throw new HttpError(409,'The selected report subject no longer has a restrictable account.');
       const now=await this.clock(),nowText=now.toISOString();
       const current=await this.db.prepare(`SELECT * FROM community_restrictions
-        WHERE subject_id=? AND scope=? AND state='active' ${this.db.dialect==='postgres'?'FOR UPDATE':''}`)
+        WHERE subject_id=? AND scope=? AND state='active' FOR UPDATE`)
         .get(subject,parsed.data.scope);
       if(current&&Date.parse(z.string().parse(current.expires_at))>now.getTime())
         throw new HttpError(409,'This account already has an active restriction in that scope. Review the current restriction.');
@@ -329,7 +325,7 @@ export class CommunityRestrictions {
         (SELECT actor_ref FROM community_restriction_events event WHERE event.restriction_id=restriction.id
           ORDER BY event.created_at DESC,event.id DESC LIMIT 1) AS last_actor
         FROM community_restrictions restriction WHERE restriction.id=${uuid(this.db)}
-        ${this.db.dialect==='postgres'?'FOR UPDATE OF restriction':''}`).get(restrictionId.data);
+        FOR UPDATE OF restriction`).get(restrictionId.data);
       if(!raw)throw new HttpError(404,'Community restriction not found.');
       if(raw.subject_id!==subject)throw new HttpError(409,'This restriction subject has been retired.');
       if(Number(raw.revision)!==parsed.data.revision)throw new HttpError(409,'The community restriction changed. Review its current revision.');
@@ -415,11 +411,11 @@ export class CommunityRestrictions {
       if(!seedRestriction.success)throw new HttpError(409,'The appealed restriction is no longer stored.');
       if(seedRestriction.data.subject_id)await this.lock(seedRestriction.data.subject_id,seedRestriction.data.scope);
       const currentRestriction=storedRestrictionRow.safeParse(await this.db.prepare(`SELECT * FROM community_restrictions
-        WHERE id=${uuid(this.db)}${this.db.dialect==='postgres'?' FOR UPDATE':''}`).get(seedAppeal.data.restriction_id));
+        WHERE id=${uuid(this.db)} FOR UPDATE`).get(seedAppeal.data.restriction_id));
       if(!currentRestriction.success)throw new HttpError(409,'The appealed restriction is no longer stored.');
       const restriction=currentRestriction.data;
       const raw=await this.db.prepare(`${this.staffAppealSelect()} WHERE appeals.id=${uuid(this.db)}
-        ${this.db.dialect==='postgres'?'FOR UPDATE OF appeals':''}`).get(appealId.data);
+        FOR UPDATE OF appeals`).get(appealId.data);
       if(!raw)throw new HttpError(404,'Community restriction appeal not found.');
       const current=staffAppealRow.parse(raw),now=(await this.clock()).toISOString();
       if(current.appeal_revision!==parsed.data.revision||restriction.revision!==parsed.data.restrictionRevision)

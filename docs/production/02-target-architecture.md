@@ -1,15 +1,18 @@
 # 02 - Target architecture
 
-**Status: proposed.** Builds on the [observed baseline](01-readiness-assessment.md).
+**Status: superseded by [63 - Next.js, Auth.js and Prisma migration](63-nextjs-authjs-prisma-migration.md) and [67 - Next.js standalone release](67-next-standalone-release.md); retained as historical design baseline.** Builds on the [observed baseline](01-readiness-assessment.md).
 The initial target is a reliable single-region service, not a distributed
 microservice platform.
 
-**Implemented foundation (W01):** application composition, SQLite opening,
-validated configuration, and HTTP process lifecycle now live in separate
-`server/app.ts`, `server/database.ts`, `server/config.ts`, `server/application.ts`,
-and `server/runtime.ts` modules. `server/index.ts` is the CLI entry point.
-The build emits a Node.js server bundle outside the public frontend directory;
-Vite is dynamically loaded only for development.
+**Delivered zero-legacy architecture:** the application runtime now runs
+exclusively on Next.js App Router (`output: 'standalone'`), Auth.js / NextAuth
+with Google and link-only Facebook plus app-owned TOTP MFA, Prisma Client over
+PostgreSQL 16+, and separately compiled `pg-boss` worker entrypoints in
+`dist-server/`. The legacy Vite/React Router frontend, Express HTTP runtime,
+Auth0/OIDC broker, and SQLite service runtime described below have been
+completely removed; only the read-only `server/db/legacy-import.ts` CLI uses
+built-in `node:sqlite` for offline snapshot inspection. See
+[63 - Next.js, Auth.js and Prisma migration](63-nextjs-authjs-prisma-migration.md).
 
 **Implemented persistence checkpoint (W02):** `server/db/` provides asynchronous
 SQLite/PostgreSQL connections, controlled checksum-verified migrations,

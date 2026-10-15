@@ -1,4 +1,3 @@
-import { hasPremium } from './domain';
 import type { Bootstrap } from './types';
 
 export const capabilities = [
@@ -22,10 +21,6 @@ export interface AccessView {
   sourceHistoryTruncated: boolean;
 }
 export function canUse(data: Bootstrap, capability: Capability, now = Date.now()): boolean {
-  if (data.capabilities.auth?.mode !== 'managed') {
-    if (capability === 'ai.feedback.consume') return data.capabilities.ai;
-    return proCapabilities.includes(capability) ? hasPremium(data.state, now) : !!data.user;
-  }
   const access = data.capabilities.access;
   const feature = access?.features.find(feature => feature.key === capability);
   return !!feature?.allowed && (!feature.validUntil || Date.parse(feature.validUntil) > now);

@@ -2,66 +2,64 @@
 
 ## Status
 
-Implementation is in progress. The migration checkpoints have established the
-App Router, Prisma foundation, Auth.js social admission, service bootstrap,
-public content/community reads, durable account security, privacy lifecycle and
-owned support APIs without changing the operated Azure 503 boundary. This is
-not a launch or cutover:
+Source migration is complete; all legacy Vite, Express, React Router,
+Auth0/OIDC broker and SQLite service-runtime code and tests have been removed
+from the repository. Authentic-provider acceptance and Azure cutover remain
+explicit launch gates while `https://interview.genisisiq.com` stays behind the
+hardened 503. This is not a public launch or cutover:
 
-- the release application artifact now starts the Next.js standalone server;
-- the Next.js UI shell, authenticated owner/staff workflows and migrated
+- the release application artifact starts the Next.js standalone server;
+- all UI screens, navigation, authenticated owner/staff workflows and
   application APIs run through App Router pages and Route Handlers;
-- health, readiness and visitor bootstrap now run as Route Handlers through a
-  Prisma-backed compatibility interface that preserves nested transaction
-  identity for existing domain repositories;
-- Auth.js now issues only hashed, identity-bound managed database sessions with
+- health, readiness and visitor bootstrap run as Route Handlers through the
+  Prisma-backed PostgreSQL transaction adapter that preserves nested transaction
+  identity across all domain repositories;
+- Auth.js issues only hashed, identity-bound managed database sessions with
   PostgreSQL-clock absolute/idle expiry, account epochs and security cutoffs;
   bootstrap-bound application CSRF, fresh reauthentication, profile updates,
-  session revocation and sign-in-method removal now use Route Handlers;
-- one-use, fresh-session-bound Google/Facebook linking is now explicit and
-  never merges accounts by email;
+  session revocation and sign-in-method removal use Route Handlers;
+- one-use, fresh-session-bound Google/Facebook linking is explicit and never
+  merges accounts by email;
 - durable privacy export request/history/download and deletion
-  status/request/cancel now preserve fresh-session and atomic account-state
+  status/request/cancel preserve fresh-session and atomic account-state
   transitions through Route Handlers;
-- owned support save/history now remains available to valid pending,
-  suspended and deletion-pending sessions without granting product-write or
-  staff authority;
+- owned support save/history remains available to valid pending, suspended and
+  deletion-pending sessions without granting product-write or staff authority;
 - active-account progress, course enrollment/video completion, quiz sessions,
   quiz reports, direct quiz submission, interview targets and revision-fenced
   behavioral stories, practice drafts, local-rubric feedback, mock interviews,
   custom quizzes, study plans, project workspaces and local tutor conversations
-  now use session-bound Route Handlers and the Prisma transaction authority;
+  use session-bound Route Handlers and the Prisma transaction authority;
 - community reports, owner appeals, personal mutes and two-way blocks,
-  restriction status and restriction appeals now use managed Auth.js sessions,
-  CSRF, account-scoped admission limits and the existing PostgreSQL lock/CAS
-  domains;
+  restriction status and restriction appeals use managed Auth.js sessions,
+  CSRF, account-scoped admission limits and the PostgreSQL lock/CAS domains;
 - post creation, exact desired-state votes and follows, durable comment
   submissions, direct compatibility comments and revision-fenced owner
-  editing/deletion now use Route Handlers and the same transaction adapter;
-- Auth.js staff sessions can now read role, exact-account, immutable-audit,
-  support, moderation, appeal and restriction queues through a shared
-  fresh-sign-in and recent-MFA authority;
+  editing/deletion use Route Handlers and the same transaction adapter;
+- Auth.js staff sessions read role, exact-account, immutable-audit, support,
+  moderation, appeal and restriction queues through a shared fresh-sign-in and
+  recent-MFA authority;
 - staff account suspension/reactivation, support assignment and in-app replies,
   moderation and spam-triage decisions, reviewed restrictions and both appeal
-  workflows now use CSRF-protected Route Handlers under that same authority;
-- Auth.js accounts can now enroll encrypted TOTP, complete session-scoped MFA
-  step-up, consume or replace one-time recovery codes and disable MFA through
-  fresh, CSRF-protected account controls;
+  workflows use CSRF-protected Route Handlers under that same authority;
+- Auth.js accounts enroll encrypted TOTP, complete session-scoped MFA step-up,
+  consume or replace one-time recovery codes and disable MFA through fresh,
+  CSRF-protected account controls;
 - owned sandbox billing view, checkout reserve/open/refresh, restricted Portal,
   canonical reconciliation, cancellation/resumption and raw Stripe webhook
-  transport now use Route Handlers and the Prisma transaction authority;
-- the separately supervised billing worker and reconciliation command now use
-  that same Prisma adapter for business mutations and transaction-coupled
-  pg-boss completion;
-- an operation-specific managed AI worker now uses the same Prisma adapter to
+  transport use Route Handlers and the Prisma transaction authority;
+- the separately supervised billing worker and reconciliation command use that
+  same Prisma adapter for business mutations and transaction-coupled pg-boss
+  completion;
+- the operation-specific managed AI worker uses the same Prisma adapter to
   fence native claims, record dispatch before Azure I/O and atomically publish
   validated saved-work results, measured usage settlement and queue completion;
 - anonymous managed support remains fail-closed until trusted edge address
-  handling can restore network-scoped abuse protection;
-- managed-AI browser admission/status UX and the sanitized Next standalone
-  container/recovery path are implemented; legacy worker configuration and
-  remaining operational surfaces still block participant access;
-- Caddy must continue returning the hardened unavailable response.
+  handling restores network-scoped abuse protection;
+- managed-AI browser admission/status UX, the sanitized Next standalone
+  container/recovery path, and zero-legacy source deletion are complete;
+- Caddy must continue returning the hardened unavailable response until
+  authentic-provider, deployment, smoke and rollback gates pass.
 
 ## Final architecture
 
@@ -334,5 +332,6 @@ Cutover is allowed only when:
 - standalone artifact inspection and parallel Azure smoke tests pass;
 - rollback preserves the hardened 503 and never falls back to demo authority.
 
-Google and Facebook client credentials are needed for authentic-provider
-acceptance, not for completing the remaining code migration.
+The code migration and zero-legacy deletion are complete in source; Google and
+Facebook client credentials and `/etc/interview-studio/service.env` are
+required only for authentic-provider acceptance and Azure cutover.

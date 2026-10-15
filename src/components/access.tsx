@@ -10,8 +10,8 @@ export function AuthPrompt({ message = 'Sign in to save your progress and contin
 }
 export function PremiumGate() {
   const {data}=useStudio();
-  if(data.capabilities.commerce==='disabled')return <div className="premium-gate"><IconTile icon={LockKeyhole}/><h2>Current access does not include this feature.</h2><p>Check your verified access on Account. Content-only access does not include new premium practice or progress. Payments are not connected; demo purchases cannot upgrade managed accounts. Your saved archive is unchanged.</p><Link className="button" to="/account">Open Account <ArrowRight size={16}/></Link></div>;
-  return <div className="premium-gate"><IconTile icon={LockKeyhole}/><h2>A deeper practice opportunity.</h2><p>This original Studio exercise is part of the local premium demo. Activate a demo plan to explore it; no payment or card information is collected.</p><Link className="button" to="/pricing">Explore demo plans <ArrowRight size={16}/></Link></div>;
+  if(data.capabilities.commerce==='disabled')return <div className="premium-gate"><IconTile icon={LockKeyhole}/><h2>Current access does not include this feature.</h2><p>Check your verified access on Account. Content-only access does not include new premium practice or progress. Subscriptions are not enabled, and your saved archive is unchanged.</p><Link className="button" to="/account">Open Account <ArrowRight size={16}/></Link></div>;
+  return <div className="premium-gate"><IconTile icon={LockKeyhole}/><h2>A deeper practice opportunity.</h2><p>This original Studio exercise requires a current server-verified premium grant. Review the available subscription workflow and your current access.</p><Link className="button" to="/pricing">Review premium access <ArrowRight size={16}/></Link></div>;
 }
 export function PremiumAccess({ children, feature = 'mock.create' }: { children: ReactNode; feature?: Capability }) {
   const { can, data } = useStudio();

@@ -76,14 +76,13 @@ const appealHistoryCursor=z.strictObject({
 const staffAppealCursor=z.strictObject({
   version:z.literal('community-appeal-queue-v1'),hash:z.literal('community-appeals'),updatedAt:z.iso.datetime(),id:z.uuid(),
 });
-const uuid=(db:Database)=>db.dialect==='postgres'?'?::uuid':'?';
-const boolean=(db:Database)=>db.dialect==='postgres'?'?::boolean':'?';
-const flag=(db:Database,value:boolean)=>db.dialect==='postgres'?String(value):Number(value);
+const uuid=(_db:Database)=>'?::uuid';
+const boolean=(_db:Database)=>'?::boolean';
+const flag=(_db:Database,value:boolean)=>String(value);
 
 export class CommunityModeration {
   constructor(private readonly db:Database,private readonly identity:StaffIdentityAuthority|null) {}
   private async lockTarget(type:'post'|'comment',id:string) {
-    if(this.db.dialect!=='postgres')return;
     const value=parseInt(digest(`${type}:${id}`).slice(0,8),16),key=value>2147483647?value-4294967296:value;
     await this.db.prepare('SELECT pg_advisory_xact_lock(?)').get(key);
   }
@@ -96,20 +95,20 @@ export class CommunityModeration {
     if(type==='post')return !!await this.db.prepare(`SELECT p.id FROM posts p
       WHERE p.id=? ${visibleOnly?`AND NOT EXISTS(SELECT 1 FROM community_moderation_targets target
         WHERE target.target_type='post' AND target.target_id=p.id AND target.state='hidden')`:''}
-      ${lock&&this.db.dialect==='postgres'?'FOR UPDATE OF p':''}`).get(id);
+      ${lock?'FOR UPDATE OF p':''}`).get(id);
     return !!await this.db.prepare(`SELECT comments.id FROM comments
       WHERE comments.id=? AND comments.user_id IS NOT NULL ${visibleOnly?`AND NOT EXISTS(
         SELECT 1 FROM community_moderation_targets target WHERE target.target_type='comment'
           AND target.target_id=comments.id AND target.state='hidden')`:''}
-      ${lock&&this.db.dialect==='postgres'?'FOR UPDATE OF comments':''}`).get(id);
+      ${lock?'FOR UPDATE OF comments':''}`).get(id);
   }
   private async ownsTarget(type:'post'|'comment',id:string,owner:string,lock=false) {
     if(type==='post')return !!await this.db.prepare(`SELECT id FROM posts WHERE id=? AND author_id=?
-      ${lock&&this.db.dialect==='postgres'?'FOR UPDATE':''}`).get(id,owner);
+      ${lock?'FOR UPDATE':''}`).get(id,owner);
     return !!await this.db.prepare(`SELECT comments.id FROM comments
       LEFT JOIN community_comment_tombstones tombstone ON tombstone.comment_id=comments.id
       WHERE comments.id=? AND comments.user_id=? AND tombstone.comment_id IS NULL
-      ${lock&&this.db.dialect==='postgres'?'FOR UPDATE OF comments':''}`).get(id,owner);
+      ${lock?'FOR UPDATE OF comments':''}`).get(id,owner);
   }
   private async recordSpamTriage(reportId:string,type:'post'|'comment',targetId:string,reportCategory:z.infer<typeof category>) {
     const target=type==='post'
@@ -237,7 +236,7 @@ export class CommunityModeration {
         await admit();return this.appealReceipt(concurrent);
       }
       const target=await this.db.prepare(`SELECT state,revision FROM community_moderation_targets
-        WHERE target_type=? AND target_id=? ${this.db.dialect==='postgres'?'FOR UPDATE':''}`).get(request.targetType,request.targetId);
+        WHERE target_type=? AND target_id=? FOR UPDATE`).get(request.targetType,request.targetId);
       if(target?.state!=='hidden'||Number(target.revision)!==request.targetRevision)
         throw new HttpError(409,'Appeal the current hidden moderation revision after reloading the contribution.');
       if(!await this.ownsTarget(request.targetType,request.targetId,user.id,true))
@@ -509,12 +508,12 @@ export class CommunityModeration {
     return this.db.transaction(async()=>{
       const role=await this.authorize(user);
       const report=await this.db.prepare(`SELECT assigned_to,target_type,target_id FROM community_reports WHERE id=${uuid(this.db)}
-        ${this.db.dialect==='postgres'?'FOR UPDATE':''}`).get(reportId.data);
+        FOR UPDATE`).get(reportId.data);
       if(!report)throw new HttpError(404,'Community report not found.');
       if(role!=='administrator'&&report.assigned_to!==user.id)
         throw new HttpError(409,'Claim this report before reviewing its automated spam suggestion.');
       const current=await this.db.prepare(`SELECT content_revision,state,outcome,revision FROM community_spam_triage WHERE report_id=${uuid(this.db)}
-        ${this.db.dialect==='postgres'?'FOR UPDATE':''}`).get(reportId.data);
+        FOR UPDATE`).get(reportId.data);
       if(!current)throw new HttpError(409,'This pre-migration report has no spam triage snapshot to review.');
       if(current.state!=='pending'||Number(current.revision)!==parsed.data.revision)
         throw new HttpError(409,'This spam triage suggestion changed. Review its current state.');
@@ -522,10 +521,10 @@ export class CommunityModeration {
       const target=type==='post'
         ?await this.db.prepare(`SELECT revisions.revision AS content_revision FROM posts
           JOIN community_post_revisions revisions ON revisions.post_id=posts.id WHERE posts.id=?
-          ${this.db.dialect==='postgres'?'FOR UPDATE OF posts':''}`).get(targetId)
+          FOR UPDATE OF posts`).get(targetId)
         :await this.db.prepare(`SELECT revisions.revision AS content_revision FROM comments
           JOIN community_comment_revisions revisions ON revisions.comment_id=comments.id WHERE comments.id=?
-          ${this.db.dialect==='postgres'?'FOR UPDATE OF comments':''}`).get(targetId);
+          FOR UPDATE OF comments`).get(targetId);
       const contentRevision=target?.content_revision===undefined?null:z.number().int().nonnegative().parse(target.content_revision);
       if(parsed.data.decision==='confirmed'&&contentRevision!==Number(current.content_revision))
         throw new HttpError(409,'The contribution changed after this suggestion. Reject the stale suggestion instead of confirming it.');

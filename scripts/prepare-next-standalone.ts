@@ -8,6 +8,7 @@ const publicTarget = path.join(standalone, 'public');
 const privateMediaTarget = path.join(standalone, 'private-media');
 
 await rm(path.join(standalone, 'data'), { recursive: true, force: true });
+await rm(path.join(standalone, 'server'), { recursive: true, force: true });
 await rm(staticTarget, { recursive: true, force: true });
 await mkdir(path.dirname(staticTarget), { recursive: true });
 await cp(path.join(root, '.next', 'static'), staticTarget, { recursive: true });

@@ -71,7 +71,24 @@ interface Store {
 }
 const Context = createContext<Store | null>(null);
 export function StudioProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<Bootstrap>({ user: null, state: emptyState(), capabilities: { ai: false, commerce: 'demo', community: 'local', aiModel: null, fieldMetrics: false } });
+  const [data, setData] = useState<Bootstrap>({
+    user: null,
+    state: emptyState(),
+    capabilities: {
+      ai: false,
+      commerce: 'disabled',
+      community: 'read-only',
+      aiModel: null,
+      fieldMetrics: false,
+      auth: {
+        mode: 'managed',
+        system: 'authjs',
+        providers: ['google', 'facebook'],
+        legacyLink: false,
+        securityLifecycle: false,
+      },
+    },
+  });
   const [loading, setLoading] = useState(true), [error, setError] = useState('');
   const [operations, setOperations] = useState(0);
   const [toast, setToast] = useState<Store['toast']>(null);

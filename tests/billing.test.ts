@@ -1,19 +1,17 @@
 import assert from 'node:assert/strict';
-import express from 'express';
 import Stripe from 'stripe';
 import { execFile } from 'node:child_process';
-import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { promisify } from 'node:util';
 import { test, type TestContext } from 'node:test';
-import { fixtureFetch, openIdentityFixture } from './fixtures/identity';
+import { openIdentityFixture } from './fixtures/identity';
 import { authJsEnvironment } from './fixtures/billing';
 import { BillingNotifications, assertBillingConfiguration } from '../server/billing';
 import { stripeApiVersion, notification } from '../server/billing/schema';
 import { LostJobClaim } from '../server/jobs';
 import { createBoss } from '../server/jobs/queue';
-import { createApplication } from '../server/application';
-import { handleError } from '../server/app';
+import { createJsonFixtureServer } from './fixtures/http-json';
+import { HttpError } from '../server/http-error';
 
 const settings = {
   STRIPE_TEST_ACCOUNT_ID: 'acct_SyntheticBillingFixture',
@@ -34,8 +32,7 @@ async function fixture(t: TestContext) {
   const events = new Map<string, unknown>(), objects = new Map<string, unknown>();
   const requests: { method: string; path: string; version: string | undefined; authorization: string | undefined }[] = [];
   let accountId = settings.STRIPE_TEST_ACCOUNT_ID, failPath = '', barrier: (() => Promise<void>) | undefined;
-  const app = express();
-  app.all('/{*path}', async (req, res) => {
+  const server = createJsonFixtureServer(async (req, res) => {
     requests.push({ method: req.method, path: req.path, version: req.get('Stripe-Version'), authorization: req.get('Authorization') });
     if (req.path === failPath) return res.status(503).json({ error: { type: 'api_error', message: 'Synthetic read-only provider outage.' } });
     if (req.path === '/v1/account') return res.json({ id: accountId, object: 'account' });
@@ -45,7 +42,6 @@ async function fixture(t: TestContext) {
     if (!value) return res.status(404).json({ error: { type: 'invalid_request_error', message: 'Synthetic canonical object missing.' } });
     res.json(value);
   });
-  const server = createServer(app);
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address();
   assert.ok(address && typeof address !== 'string');
@@ -68,8 +64,11 @@ async function fixture(t: TestContext) {
       const signature = options.signature ?? client.webhooks.generateTestHeaderString({
         payload: body, secret: settings.STRIPE_TEST_WEBHOOK_SECRET, timestamp: options.timestamp ?? Math.floor(Date.now() / 1000),
       });
-      return fixtureFetch(`${browser.address}/api/webhooks/stripe`, { method: 'POST', body, ca: browser.ca,
-        headers: { Host: browser.host, 'X-Forwarded-Proto': 'https', 'Content-Type': 'application/json', 'Stripe-Signature': signature, ...options.headers } });
+      return browser.requestRaw('/api/webhooks/stripe', body, {
+        'Content-Type': 'application/json',
+        'Stripe-Signature': signature,
+        ...options.headers,
+      });
     },
     seed(event: Message, value: unknown = event.data.object) {
       events.set(event.id, event);
@@ -107,7 +106,7 @@ test('official raw-byte signatures and replica replay create one durable minimiz
   assert.ok(!stored.includes('not-owner-authority'));
   assert.equal((await f.browser().request('/api/profile', { name: 'Not a webhook' }, 'PATCH')).status, 403);
   const browser = f.browser();
-  assert.equal((await f.complete(browser, await f.begin(browser, 'email'), { sub: 'auth0|billing-fixture-owner' })).headers.get('location'), '/account');
+  assert.equal((await f.complete(browser, await f.begin(browser, 'email'), { sub: 'email|billing-fixture-owner' })).headers.get('location'), '/account');
   const bootstrap = await browser.bootstrap();
   assert.equal(bootstrap.capabilities.commerce, 'disabled');
   assert.equal(bootstrap.capabilities.access?.state, 'free');
@@ -251,12 +250,11 @@ test('a claim expiring during actual observation SQL rolls back observation and 
   assert.equal(await count(f, 'entitlement_grants'), 0);
 });
 
-test('recorded billing evidence cannot silently lose configuration or switch provider accounts at application startup', async t => {
+test('recorded billing evidence cannot silently lose configuration or switch provider accounts', async t => {
   const f = await fixture(t);
   assert.equal((await f.send(message())).status, 200);
   await assert.rejects(assertBillingConfiguration(f.db, null), /Stored billing notifications require/);
   await assert.rejects(assertBillingConfiguration(f.db, { ...f.config.billing!, accountId: 'acct_ForeignFixture' }), /different provider account/);
-  await assert.rejects(createApplication({ ...f.config, environment: 'production', billing: null }), /Stored billing notifications require/);
 });
 
 test('concurrently opened producers cannot bind first accepted evidence to two different provider accounts', async t => {
@@ -264,22 +262,16 @@ test('concurrently opened producers cannot bind first accepted evidence to two d
   assert.ok(f.config.billing);
   const rival = await BillingNotifications.open(f.db, { ...f.config.billing, accountId: 'acct_RivalFixture' }, shutdown.signal);
   f.cleanup.push(() => rival.close());
-  const app = express(); rival.register(app); app.use(handleError);
-  const server = createServer(app);
-  server.listen(0, '127.0.0.1'); await once(server, 'listening');
-  f.cleanup.push(async () => {
-    const closed = new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
-    server.closeAllConnections(); await closed;
-  });
-  const address = server.address(); assert.ok(address && typeof address !== 'string');
   const event = message(), body = JSON.stringify(event);
   const signature = f.client.webhooks.generateTestHeaderString({ payload: body, secret: settings.STRIPE_TEST_WEBHOOK_SECRET });
-  const responses = await Promise.all([
-    f.send(event),
-    fetch(`http://127.0.0.1:${address.port}/api/webhooks/stripe`, { method: 'POST', body,
-      headers: { 'Content-Type': 'application/json', 'Stripe-Signature': signature } }),
+  const statuses = await Promise.all([
+    f.send(event).then(response => response.status),
+    rival.acceptWebhook(Buffer.from(body), signature).then(
+      () => 200,
+      error => error instanceof HttpError ? error.status : Promise.reject(error),
+    ),
   ]);
-  assert.deepEqual(responses.map(response => response.status).sort(), [200, 409]);
+  assert.deepEqual(statuses.sort(), [200, 409]);
   assert.equal(await count(f, 'stripe_event_notifications'), 1);
   assert.equal(await count(f, 'verified_event_inbox'), 1);
   assert.equal(await count(f, 'durable_operations'), 1);
@@ -291,7 +283,7 @@ test('compiled billing maintenance uses the official runtime SDK and fails expli
   f.seed(event); assert.equal((await f.send(event)).status, 200);
   const claim = await f.worker.jobs.claim('billing.reconcile');
   assert.ok(claim);
-  const env = {
+  const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl!,
     ...authJsEnvironment(f.origin), ...settings,
   };

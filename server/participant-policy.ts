@@ -13,7 +13,7 @@ export class ParticipantPolicyConfigurationError extends Error {
 type ConfigurationFailure = (setting: string, requirement: string) => never;
 
 export function loadParticipantPolicy(
-  env: NodeJS.ProcessEnv = process.env,
+  env: Readonly<Record<string, string | undefined>> = process.env,
   fail: ConfigurationFailure = (setting, requirement) => {
     throw new ParticipantPolicyConfigurationError(setting, requirement);
   },

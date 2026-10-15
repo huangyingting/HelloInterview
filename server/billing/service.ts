@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { sandboxServicePolicy } from '../../shared/billing-ledger';
-import type { BillingConfig } from '../config';
+import type { BillingConfig } from './config';
 import type { Database } from '../db/connection';
 import { Entitlements } from '../entitlements';
 import { TerminalJobFailure } from '../jobs';

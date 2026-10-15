@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
-import express from 'express';
 import Stripe from 'stripe';
 import { once } from 'node:events';
-import { createServer } from 'node:http';
 import type { TestContext } from 'node:test';
 import { z } from 'zod';
 import { openIdentityFixture, type IdentityBrowser } from './identity';
@@ -10,6 +8,7 @@ import { BillingNotifications } from '../../server/billing';
 import { stripeApiVersion } from '../../server/billing/schema';
 import type { SandboxBillingView, SandboxOffer } from '../../shared/billing';
 import { randomUUID } from 'node:crypto';
+import { createJsonFixtureServer } from './http-json';
 
 export const sandboxSettings = {
   STRIPE_TEST_ACCOUNT_ID: 'acct_SyntheticCheckoutFixture',
@@ -42,7 +41,7 @@ const sessionPost = z.strictObject({
 export const sandboxPortalConfiguration = 'bpc_SyntheticRestricted';
 export const sandboxCardConfiguration = 'pmc_SyntheticCardOnly';
 const portalPost = z.strictObject({ customer: z.string(), configuration: z.literal(sandboxPortalConfiguration), return_url: z.string() });
-export async function openBillingFixture(t: TestContext, overrides: NodeJS.ProcessEnv = {}) {
+export async function openBillingFixture(t: TestContext, overrides: Readonly<Record<string, string | undefined>> = {}) {
   const customers = new Map<string, Record<string, unknown>>(), sessions = new Map<string, Record<string, unknown>>();
   const portals = new Map<string, Record<string, unknown>>();
   const portalConfiguration = { id: sandboxPortalConfiguration, object: 'billing_portal.configuration', active: true, livemode: false, application: null,
@@ -75,9 +74,7 @@ export async function openBillingFixture(t: TestContext, overrides: NodeJS.Proce
   let account = sandboxSettings.STRIPE_TEST_ACCOUNT_ID, pagination = '', failPath = '';
   let portalResponse: Record<string, unknown> = {};
   let barrier: ((path: string, method: string) => Promise<void>) | undefined;
-  const app = express();
-  app.use(express.urlencoded({ extended: true }));
-  app.all('/{*path}', async (req, res) => {
+  const server = createJsonFixtureServer(async (req, res) => {
     requests.push({ method: req.method, path: req.path, key: req.get('Idempotency-Key'), body: req.body, version: req.get('Stripe-Version') });
     if (barrier) await barrier(req.path, req.method);
     if (req.path === failPath) return res.status(503).json({ error: { type: 'api_error', message: 'Synthetic sandbox provider outage.' } });
@@ -164,7 +161,6 @@ export async function openBillingFixture(t: TestContext, overrides: NodeJS.Proce
     }
     res.status(404).json({ error: { type: 'invalid_request_error', message: 'Synthetic provider object is missing.' } });
   });
-  const server = createServer(app);
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   const client = new Stripe(sandboxSettings.STRIPE_TEST_SECRET_KEY, { host: '127.0.0.1', port: address.port, protocol: 'http',
@@ -249,7 +245,7 @@ export async function openBillingFixture(t: TestContext, overrides: NodeJS.Proce
       subscriptions.push(sub); invoices.set(invoiceId, invoice); invoiceLines.set(invoiceId, [line]); invoicePayments.set(invoiceId, [payment]);
       return { sub, invoice, line, payment, charge, intent };
     },
-    async login(browser = f.browser(), subject = 'auth0|checkout-fixture-owner') {
+    async login(browser = f.browser(), subject = 'google|checkout-fixture-owner') {
       assert.equal((await f.complete(browser, await f.begin(browser, 'email'), { sub: subject })).status, 303);
       const data = await browser.bootstrap(); assert.ok(data.user);
       return { browser, owner: data.user.id };

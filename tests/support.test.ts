@@ -5,7 +5,6 @@ import type { SupportHistory, SupportReceipt } from '../shared/types';
 import { postgresConnection } from '../server/db/connection';
 import { assertDatabaseVersion, migrateDatabase, migrations } from '../server/db/migrations';
 import { IdentityLimits } from '../server/identity/limits';
-import { ManagedIdentity } from '../server/identity';
 import { SupportRequests } from '../server/support';
 import { HttpError } from '../server/http-error';
 import { openIdentityFixture, type IdentityBrowser } from './fixtures/identity';
@@ -57,9 +56,16 @@ test('owned support rejects changed retry content, unknown authority fields, mis
   assert.deepEqual((await history(f.browser)).tickets, [saved]);
 });
 
-test('support cannot use a different identity adapter or adopt a serialized member object as authenticated session authority', async t => {
-  const f = await fixture(t), replica = await f.replica(); assert.ok(f.config.identity);
-  const identity = new ManagedIdentity(f.db, f.config.identity, f.origin, new AbortController().signal);
+test('support cannot use a different authority adapter or adopt a serialized member object as authenticated session authority', async t => {
+  const f = await fixture(t), replica = await f.replica();
+  const identity = {
+    assertDatabase(db: typeof f.db) {
+      if (db !== f.db) throw new Error('Support and identity must share the exact database adapter.');
+    },
+    async assertSupport() { throw new HttpError(401, 'Sign in again.'); },
+    async assertStaff() { throw new HttpError(401, 'Sign in again.'); },
+    async staffRoles() { return []; },
+  };
   assert.throws(() => new SupportRequests(replica.db, identity), /exact database adapter/);
   const user = (await f.browser.bootstrap()).user; assert.ok(user);
   await assert.rejects(new SupportRequests(f.db, identity).save(user, command()),
@@ -71,7 +77,7 @@ test('owned support pagination includes old owned requests, ties by stable ID, r
   const f = await fixture(t), other = f.newBrowser(); await f.complete(other, await f.begin(other), { sub: 'google-oauth2|support-other', email: 'other@example.invalid' });
   assert.ok((await other.bootstrap()).user); const theirs = await save(other);
   const anonymous = f.newBrowser(); await anonymous.bootstrap();
-  assert.equal((await anonymous.request('/api/support', { email: 'owner@example.invalid', body })).status, 200);
+  assert.equal((await anonymous.request('/api/support', { email: 'owner@example.invalid', body })).status, 401);
   assert.equal((await anonymous.request('/api/support/requests')).status, 401);
   await save(f.browser);
   for (let index = 0; index < 22; index++) await f.db.prepare('INSERT INTO support(id,user_id,email,body,created_at) VALUES(?,?,?,?,?)')
@@ -97,23 +103,26 @@ test('pending and restricted owners retain support-only access without acquiring
     const saved = await save(f.browser);
     assert.ok((await history(f.browser)).tickets.some(ticket => ticket.id === saved.id));
     assert.equal((await f.browser.request('/api/targets', { company: 'Amazon', role: 'Backend', level: 'Senior', date: '2026-12-01' })).status, 403);
-    assert.equal((await f.browser.request('/api/admin/support')).status, 403);
+    assert.equal((await f.browser.request('/api/staff/support')).status, 403);
   }
 });
 
 test('actual support INSERT followed by security or private-byte changes rolls back the receipt instead of returning saved success', async t => {
   for (const mode of ['epoch', 'session', 'body', 'whitespace']) {
-    const f = await fixture(t);
-    const effect = mode === 'epoch' ? 'UPDATE managed_accounts SET session_epoch=session_epoch+1;' :
-      mode === 'session' ? 'DELETE FROM sessions;' : mode === 'whitespace' ? "UPDATE support SET body=' '||body;" :
-      "UPDATE support SET body='Changed private support body after actual INSERT.';";
-    await f.db.exec(`CREATE SEQUENCE support_insert_witness; CREATE FUNCTION support_insert_guard() RETURNS trigger LANGUAGE plpgsql AS $$
-      BEGIN PERFORM nextval('support_insert_witness'); ${effect} RETURN NEW; END; $$;
-      CREATE TRIGGER support_insert_guard AFTER INSERT ON support FOR EACH ROW EXECUTE FUNCTION support_insert_guard();`);
-    const response = await f.browser.request('/api/support', command()); assert.equal(response.status, ['body','whitespace'].includes(mode) ? 409 : 403);
-    assert.equal((await f.db.prepare('SELECT is_called FROM support_insert_witness').get())?.is_called, true);
-    assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM support').get())?.count, 0);
-    assert.equal((await f.browser.bootstrap()).user?.id, f.owner);
+    await t.test(mode, async t => {
+      const f = await fixture(t);
+      const effect = mode === 'epoch' ? 'UPDATE managed_accounts SET session_epoch=session_epoch+1;' :
+        mode === 'session' ? 'DELETE FROM sessions;' : mode === 'whitespace' ? "UPDATE support SET body=' '||body;" :
+        "UPDATE support SET body='Changed private support body after actual INSERT.';";
+      await f.db.exec(`CREATE SEQUENCE support_insert_witness; CREATE FUNCTION support_insert_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN PERFORM nextval('support_insert_witness'); ${effect} RETURN NEW; END; $$;
+        CREATE TRIGGER support_insert_guard AFTER INSERT ON support FOR EACH ROW EXECUTE FUNCTION support_insert_guard();`);
+      const response = await f.browser.request('/api/support', command());
+      assert.equal(response.status, ['body','whitespace'].includes(mode) ? 409 : 403);
+      assert.equal((await f.db.prepare('SELECT is_called FROM support_insert_witness').get())?.is_called, true);
+      assert.equal((await f.db.prepare('SELECT count(*)::integer AS count FROM support').get())?.count, 0);
+      assert.equal((await f.browser.bootstrap()).user?.id, f.owner);
+    });
   }
 });
 
@@ -135,7 +144,8 @@ test('shared support account admission survives replica and network changes, kee
     if (index === 30) assert.ok(Number(response.headers.get('retry-after')) >= 1);
   }
   assert.equal((await history(f.browser)).tickets.length, 0);
-  assert.equal((await f.begin(f.browser)).origin, new URL(f.issuer).origin);
+  assert.equal((await new IdentityLimits(f.db, f.config.identity.clientSecret)
+    .consume('network', '198.18.0.88')).allowed, true);
   const other = replica.browser(); await f.complete(other, await f.begin(other), { sub: 'google-oauth2|support-independent', email: 'independent@example.invalid' });
   await other.bootstrap(); assert.equal((await save(other)).delivery, 'not-connected');
   const buckets = await f.db.prepare("SELECT * FROM identity_abuse_buckets WHERE scope LIKE 'support-%'").all();
@@ -144,12 +154,8 @@ test('shared support account admission survives replica and network changes, kee
   assert.ok(!JSON.stringify(buckets).includes('example.invalid'));
 });
 
-test('anonymous support shares a network budget and a missing shared limiter fails closed without affecting saved-history reads', async t => {
-  const f = await fixture(t), anonymous = f.newBrowser(); await anonymous.bootstrap();
-  for (let index = 0; index < 31; index++) {
-    const response = await anonymous.request('/api/support', { email: 'invalid', body });
-    assert.equal(response.status, index < 30 ? 400 : 429);
-  }
+test('a missing shared support limiter fails closed without affecting saved-history reads', async t => {
+  const f = await fixture(t);
   await f.db.exec('ALTER TABLE identity_abuse_buckets RENAME TO unavailable_support_admission');
   const response = await f.browser.request('/api/support', command()); assert.equal(response.status, 503);
   assert.match(String((await response.json()).error), /support protection/);

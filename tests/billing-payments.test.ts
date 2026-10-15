@@ -260,7 +260,7 @@ test('legacy observation payloads remain explicitly unevaluated; compiled mainte
   await f.db.prepare("UPDATE stripe_owned_invoice_ledger SET payload=(payload::jsonb-'funding')::text").run();
   assert.equal(await funding(f), null);
   assert.equal((await f.ownerBrowser.request('/api/billing/reconcile', {})).status, 202);
-  const env = { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl!,
+  const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl!,
     ...authJsEnvironment(f.origin), ...sandboxSettings };
   const code = `import Stripe from 'stripe'; import { runBillingCommand } from './dist-server/billing/cli.js';
     const client = new Stripe(process.env.STRIPE_TEST_SECRET_KEY, { host: '127.0.0.1', port: ${f.port}, protocol: 'http',

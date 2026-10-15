@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import type { BillingConfig } from '../config';
+import type { BillingConfig } from './config';
 import type { Database } from '../db/connection';
 import { HttpError } from '../http-error';
 import { TerminalJobFailure } from '../jobs';
@@ -20,7 +20,7 @@ export class SandboxPortal {
       configurationId: this.settings.portalConfiguration, origin: this.origin, authEpoch: epoch, createdAt: created?.now });
     await this.db.prepare(`INSERT INTO stripe_portal_access
       (id,user_id,customer_ref,customer_id,configuration_id,origin,auth_epoch,policy_version,created_at,state)
-      VALUES (?,?,?,?,?,?,?,?,?,'requested')`).run(scope.id, owner, customer.id, customer.customer_id, scope.configurationId,
+      VALUES (?,?,?,?,?,?,?,?,?::timestamptz,'requested')`).run(scope.id, owner, customer.id, customer.customer_id, scope.configurationId,
         scope.origin, scope.authEpoch, portalAuthority, scope.createdAt.toISOString());
     return scope;
   }

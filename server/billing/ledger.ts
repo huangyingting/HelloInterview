@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { OwnedBillingLedgerView } from '../../shared/billing-ledger';
-import type { BillingConfig } from '../config';
+import type { BillingConfig } from './config';
 import type { Database } from '../db/connection';
 import { HttpError } from '../http-error';
 import { DurableJobs, TerminalJobFailure, type JobClaim, type Operation } from '../jobs';

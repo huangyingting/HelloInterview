@@ -49,7 +49,6 @@ function maskEmail(value:string) {
 
 export class SupportRequests {
   constructor(private readonly db: Database, private readonly identity: SupportIdentityAuthority) {
-    if (db.dialect !== 'postgres') throw new Error('Managed support receipts require controlled PostgreSQL.');
     identity.assertDatabase(db);
   }
   async save(user: User, input: unknown) {

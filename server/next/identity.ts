@@ -6,7 +6,7 @@ import { HttpError } from '../http-error';
 import { assertCsrf } from '../auth/csrf';
 import type { ManagedAuthSession } from '../auth/adapter';
 import { currentManagedAuthSession } from '../auth/session';
-import { lockSubject } from '../identity/lifecycle';
+import { lockSubject } from '../identity/subject-lock';
 import { IdentityLimits } from '../identity/limits';
 import { authCookieNames, loadAuthSettings } from '../auth/config';
 
@@ -144,6 +144,8 @@ export async function identitySecurity(request: Request) {
 }
 
 export async function updateProfile(request: Request, input: unknown) {
+  const current = await currentManagedAuthSession(request);
+  assertCsrf(request, current);
   const session = await requireAccountSession(request);
   assertCsrf(request, session);
   const { name } = z.strictObject({ name: z.string().trim().min(2).max(60) }).parse(input);
