@@ -50,9 +50,12 @@ not a launch or cutover:
 - owned sandbox billing view, checkout reserve/open/refresh, restricted Portal,
   canonical reconciliation, cancellation/resumption and raw Stripe webhook
   transport now use Route Handlers and the Prisma transaction authority;
+- the separately supervised billing worker and reconciliation command now use
+  that same Prisma adapter for business mutations and transaction-coupled
+  pg-boss completion;
 - anonymous managed support remains fail-closed until trusted edge address
   handling can restore network-scoped abuse protection;
-- managed-AI feedback and the remaining usage, worker, deployment and
+- managed-AI feedback and the remaining non-billing worker, deployment and
   operational surfaces still block participant access;
 - Caddy must continue returning the hardened unavailable response.
 

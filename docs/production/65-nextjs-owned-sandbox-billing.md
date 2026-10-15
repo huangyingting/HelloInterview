@@ -79,13 +79,26 @@ complete Auth.js configuration, PostgreSQL and the canonical HTTPS
 `NEXTAUTH_URL`. The bootstrap capability advertises only sandbox availability;
 global commerce remains `disabled`.
 
+## Worker authority
+
+The separately supervised `billing:worker` and one-pass `billing:reconcile`
+commands now open the same Prisma-backed `Database` adapter as the Route
+Handlers. Provider calls remain outside SQL transactions. Claim completion,
+ledger mutation, entitlement evidence and the pg-boss completion command share
+one Prisma transaction client, so a worker cannot publish success independently
+of its business mutation.
+
+The controlled database and pg-boss schema migration entrypoint intentionally
+retains the PostgreSQL driver because queue installation uses multi-statement
+DDL. That exception does not grant runtime billing workers a second relational
+authority.
+
 ## Remaining boundary
 
-The browser producer now uses Next.js and Prisma, but the separately supervised
-billing worker and reconciliation CLI still require final worker/deployment
-migration. Authentic Stripe test-account evidence, commercial prices, tax and
-refund/grace policies, paid deletion, financial retention and operated recovery
-remain launch gates. No Azure traffic switch is authorized by this checkpoint.
+Authentic Stripe test-account evidence, deployment-unit migration, commercial
+prices, tax and refund/grace policies, paid deletion, financial retention and
+operated recovery remain launch gates. No Azure traffic switch is authorized by
+this checkpoint.
 
 ## Acceptance evidence
 
@@ -93,4 +106,6 @@ Disposable PostgreSQL coverage verifies visitor capability disclosure,
 authenticated owner views, CSRF denial, UUID retry replay, changed-offer
 conflict, private pre-open denial, unavailable Portal behavior, compressed and
 invalid webhook rejection, exact signed raw webhook ingestion and duplicate
-event replay through the Prisma transaction adapter.
+event replay through the Prisma transaction adapter. Compiled worker death,
+retry, reconciliation and canonical-ledger suites execute the maintained
+billing CLI through that same adapter.

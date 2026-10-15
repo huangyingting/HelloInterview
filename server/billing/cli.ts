@@ -2,7 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import Stripe from 'stripe';
 import { loadConfig } from '../config';
-import { postgresConnection } from '../db/connection';
+import { prismaConnection } from '../db/prisma';
 import { assertDatabaseVersion } from '../db/migrations';
 import { BillingNotifications } from './index';
 import { checkoutJobKinds } from './checkout';
@@ -12,7 +12,7 @@ export async function runBillingCommand(command: string, client?: Stripe) {
   if (!['reconcile', 'worker'].includes(command)) throw new Error('Choose billing reconcile or worker.');
   const config = loadConfig();
   if (!config.databaseUrl || !config.billing) throw new Error('Billing maintenance requires explicit sandbox billing, managed identity and PostgreSQL configuration.');
-  const db = postgresConnection(config.databaseUrl), shutdown = new AbortController();
+  const db = prismaConnection(), shutdown = new AbortController();
   let billing: BillingNotifications | undefined;
   const stop = () => shutdown.abort();
   process.once('SIGTERM', stop); process.once('SIGINT', stop);
