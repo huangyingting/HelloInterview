@@ -40,6 +40,49 @@ export class BillingNotifications {
   }
   private source() { return `stripe:${this.settings.accountId}:sandbox`; }
   private resource(eventId: string) { return `stripe:${digest(`${this.settings.accountId}:${eventId}`)}`; }
+  async acceptWebhook(body: Buffer, signature: string) {
+    const timestamps = signature.split(',').filter(part => part.startsWith('t='));
+    const timestamp = timestamps.length === 1 ? timestamps[0].match(/^t=(\d{1,12})$/)?.[1] : undefined;
+    if (signature.length > 4096 || !timestamp || Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) {
+      throw new HttpError(403, 'The billing event could not be authenticated.');
+    }
+    let value: unknown;
+    try { value = this.provider.verify(body, signature); }
+    catch (error) {
+      if (error instanceof Stripe.errors.StripeSignatureVerificationError) {
+        throw new HttpError(403, 'The billing event could not be authenticated.');
+      }
+      if (error instanceof SyntaxError) throw new HttpError(400, 'The authenticated billing event is malformed.');
+      throw error;
+    }
+    let event: Notification;
+    try { event = notification(value, this.settings.accountId); }
+    catch (error) {
+      if (error instanceof z.ZodError || error instanceof InvalidBillingNotification || error instanceof InvalidJobPayload) {
+        throw new HttpError(400, `The authenticated event must use own-account sandbox snapshots with API ${stripeApiVersion} and a matching billing object.`);
+      }
+      throw error;
+    }
+    return this.db.transaction(async () => {
+      await bindBillingReference(this.db, this.settings.accountId);
+      const result = await this.jobs.ingestVerifiedEvent({
+        source: this.source(), eventId: event.eventId, payload: event,
+        operation: { kind: 'billing.reconcile', resource: this.resource(event.eventId), payload: event, retryMode: 'idempotent' },
+      });
+      await this.db.prepare(`INSERT INTO stripe_event_notifications
+        (account_id,event_id,event_type,object_id,object_kind,operation_id,classification,payload)
+        VALUES (?,?,?,?,?,?,?,?) ON CONFLICT (account_id,event_id) DO NOTHING`).run(
+        event.accountId, event.eventId, event.eventType, event.objectId, event.objectKind, result.operation.id,
+        event.classification, encodePayload(event, 4096));
+      const saved = await this.db.prepare(`
+        SELECT operation_id,payload FROM stripe_event_notifications WHERE account_id=? AND event_id=?
+      `).get(event.accountId, event.eventId);
+      if (!saved || saved.operation_id !== result.operation.id || saved.payload !== encodePayload(event, 4096)) {
+        throw new HttpError(409, 'The billing notification conflicts with its saved evidence.');
+      }
+      return { accepted: true, duplicate: result.duplicate };
+    });
+  }
   register(app: express.Express) {
     const raw = express.raw({ type: 'application/json', limit: '256kb', inflate: false });
     app.post('/api/webhooks/stripe', (req, res, next) => raw(req, res, (error: unknown) => {
@@ -49,40 +92,9 @@ export class BillingNotifications {
       }
       next(error);
     }), async (req, res) => {
-      const signature = req.get('Stripe-Signature'), timestamps = signature?.split(',').filter(part => part.startsWith('t=')) ?? [];
-      const timestamp = timestamps.length === 1 ? timestamps[0].match(/^t=(\d{1,12})$/)?.[1] : undefined;
-      if (!Buffer.isBuffer(req.body) || !signature || signature.length > 4096 || !timestamp ||
-        Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) throw new HttpError(403, 'The billing event could not be authenticated.');
-      let value: unknown;
-      try { value = this.provider.verify(req.body, signature); }
-      catch (error) {
-        if (error instanceof Stripe.errors.StripeSignatureVerificationError) throw new HttpError(403, 'The billing event could not be authenticated.');
-        if (error instanceof SyntaxError) throw new HttpError(400, 'The authenticated billing event is malformed.');
-        throw error;
-      }
-      let event: Notification;
-      try { event = notification(value, this.settings.accountId); }
-      catch (error) {
-        if (error instanceof z.ZodError || error instanceof InvalidBillingNotification || error instanceof InvalidJobPayload) {
-          throw new HttpError(400, `The authenticated event must use own-account sandbox snapshots with API ${stripeApiVersion} and a matching billing object.`);
-        }
-        throw error;
-      }
-      const accepted = await this.db.transaction(async () => {
-        await bindBillingReference(this.db, this.settings.accountId);
-        const result = await this.jobs.ingestVerifiedEvent({
-          source: this.source(), eventId: event.eventId, payload: event,
-          operation: { kind: 'billing.reconcile', resource: this.resource(event.eventId), payload: event, retryMode: 'idempotent' },
-        });
-        await this.db.prepare(`INSERT INTO stripe_event_notifications
-          (account_id,event_id,event_type,object_id,object_kind,operation_id,classification,payload)
-          VALUES (?,?,?,?,?,?,?,?) ON CONFLICT (account_id,event_id) DO NOTHING`).run(
-          event.accountId, event.eventId, event.eventType, event.objectId, event.objectKind, result.operation.id, event.classification, encodePayload(event, 4096));
-        const saved = await this.db.prepare('SELECT operation_id,payload FROM stripe_event_notifications WHERE account_id=? AND event_id=?').get(event.accountId, event.eventId);
-        if (!saved || saved.operation_id !== result.operation.id || saved.payload !== encodePayload(event, 4096)) throw new HttpError(409, 'The billing notification conflicts with its saved evidence.');
-        return result;
-      });
-      res.json({ accepted: true, duplicate: accepted.duplicate });
+      const signature = req.get('Stripe-Signature');
+      if (!Buffer.isBuffer(req.body) || !signature) throw new HttpError(403, 'The billing event could not be authenticated.');
+      res.json(await this.acceptWebhook(req.body, signature));
     });
   }
   async runClaim(claim: JobClaim, signal?: AbortSignal) {

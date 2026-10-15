@@ -2,8 +2,10 @@ import { createHmac } from 'node:crypto';
 import { isIP } from 'node:net';
 import path from 'node:path';
 import { z } from 'zod';
-import { sandboxServicePolicy } from '../shared/billing-ledger';
 import type { ParticipantPolicy } from '../shared/types';
+import { loadBillingConfig, type BillingConfig } from './billing/config';
+
+export type { BillingConfig } from './billing/config';
 
 export const privateBetaDurabilityNotice = 'This invite-only private beta has no backup, recovery point objective, or recovery time objective. Saved data may be lost, so participants must keep another copy of important information.';
 
@@ -15,14 +17,6 @@ export interface IdentityConfig {
   readonly inviteEmailHashes: readonly string[] | null;
   readonly legacyLinkUntil: number | null;
   readonly lifecycle: Readonly<{ origin: string; clientId: string; clientSecret: string; hookSecret: string }> | null;
-}
-export interface BillingConfig {
-  readonly accountId: string;
-  readonly secretKey: string;
-  readonly webhookSecret: string;
-  readonly offers: Readonly<{ pro_monthly: string; pro_annual: string }> | null;
-  readonly accessPolicy: typeof sandboxServicePolicy | null;
-  readonly portalConfiguration: string | null;
 }
 export interface ServerConfig {
   readonly environment: 'development' | 'test' | 'production';
@@ -237,38 +231,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, rootDir = proce
     }
     identity = Object.freeze({ issuer: `${issuer.origin}/`, clientId, clientSecret, connections: Object.freeze(connections), inviteEmailHashes, legacyLinkUntil, lifecycle });
   }
-  let billing: Readonly<BillingConfig> | null = null;
-  const billingSettings = ['STRIPE_TEST_ACCOUNT_ID', 'STRIPE_TEST_SECRET_KEY', 'STRIPE_TEST_WEBHOOK_SECRET', 'STRIPE_TEST_OFFERS', 'STRIPE_TEST_ACCESS_POLICY', 'STRIPE_TEST_PORTAL_CONFIGURATION'];
-  const providedBillingSettings = Object.keys(env).filter(key => key.startsWith('STRIPE_') && env[key] !== undefined);
-  if (providedBillingSettings.length) {
-    if (providedBillingSettings.some(key => !billingSettings.includes(key))) throw new ConfigurationError('Stripe configuration', 'contains an unsupported setting; live billing is not enabled.');
-    if (!identity || !databaseUrl || !publicOrigin?.startsWith('https://')) throw new ConfigurationError('Stripe configuration', 'requires managed identity, PostgreSQL and a canonical HTTPS origin.');
-    const accountId = env.STRIPE_TEST_ACCOUNT_ID, secretKey = env.STRIPE_TEST_SECRET_KEY, webhookSecret = env.STRIPE_TEST_WEBHOOK_SECRET;
-    if (!accountId || !/^acct_[A-Za-z0-9]{1,100}$/.test(accountId)) throw new ConfigurationError('STRIPE_TEST_ACCOUNT_ID', 'must be an explicit reference account identifier.');
-    if (!secretKey || !/^(?:sk|rk)_test_[A-Za-z0-9]{8,200}$/.test(secretKey)) throw new ConfigurationError('STRIPE_TEST_SECRET_KEY', 'must be a test-mode SDK key; live keys are refused.');
-    if (!webhookSecret || !/^whsec_[A-Za-z0-9]{8,200}$/.test(webhookSecret)) throw new ConfigurationError('STRIPE_TEST_WEBHOOK_SECRET', 'must be the private signing secret for the own-account snapshot endpoint.');
-    let offers: BillingConfig['offers'] = null;
-    if (env.STRIPE_TEST_OFFERS !== undefined) {
-      try {
-        const price = z.string().regex(/^price_[A-Za-z0-9]{1,100}$/);
-        const parsed = z.strictObject({ pro_monthly: price, pro_annual: price }).parse(JSON.parse(env.STRIPE_TEST_OFFERS));
-        if (parsed.pro_monthly === parsed.pro_annual) throw new ConfigurationError('STRIPE_TEST_OFFERS', 'must use distinct allowlisted reference prices.');
-        offers = Object.freeze(parsed);
-      } catch (error) {
-        if (error instanceof SyntaxError || error instanceof z.ZodError) throw new ConfigurationError('STRIPE_TEST_OFFERS', 'must map exactly pro_monthly and pro_annual to distinct sandbox Price IDs.');
-        throw error;
-      }
-    }
-    if (env.STRIPE_TEST_ACCESS_POLICY !== undefined && env.STRIPE_TEST_ACCESS_POLICY !== sandboxServicePolicy) {
-      throw new ConfigurationError('STRIPE_TEST_ACCESS_POLICY', 'must select the explicit sandbox-only service policy; real commerce remains disabled.');
-    }
-    const portalConfiguration = env.STRIPE_TEST_PORTAL_CONFIGURATION;
-    if (portalConfiguration !== undefined && !/^bpc_[A-Za-z0-9]{1,100}$/.test(portalConfiguration)) {
-      throw new ConfigurationError('STRIPE_TEST_PORTAL_CONFIGURATION', 'must identify an explicit restricted sandbox Portal configuration.');
-    }
-    billing = Object.freeze({ accountId, secretKey, webhookSecret, offers, accessPolicy: env.STRIPE_TEST_ACCESS_POLICY === undefined ? null : sandboxServicePolicy,
-      portalConfiguration: portalConfiguration ?? null });
-  }
+  const billing = loadBillingConfig(env, { identity: !!identity, databaseUrl, publicOrigin },
+    (setting, requirement) => { throw new ConfigurationError(setting, requirement); });
   const root = path.resolve(rootDir);
   const frontendDir = path.join(root, 'dist');
   const retainedFrontendDirs=(env.RETAINED_FRONTEND_DIRS??'').split(path.delimiter).filter(Boolean).map(value=>path.resolve(root,value));

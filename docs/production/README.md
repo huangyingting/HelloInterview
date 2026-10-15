@@ -96,6 +96,7 @@ service with defined recovery and support commitments.
 | [62 - Service launch preflight](62-service-launch-preflight.md) | Exact-release no-listener configuration/database/queue validation with bounded secret-free evidence | Platform, identity and operations |
 | [63 - Next.js, Auth.js and Prisma migration](63-nextjs-authjs-prisma-migration.md) | No-legacy target architecture, social-provider policy, Prisma authority, route/session migration and cutover gates | Full-stack, identity and platform |
 | [64 - Auth.js TOTP MFA and recovery](64-authjs-totp-mfa.md) | Encrypted app-owned TOTP, replay fencing, one-time recovery codes, session step-up and active-credential staff admission in migration 39; no support bypass or routine key rotation | Identity and security |
+| [65 - Next.js owned sandbox billing](65-nextjs-owned-sandbox-billing.md) | Auth.js/CSRF owned billing Route Handlers, bounded raw Stripe webhooks and Prisma transaction reuse; sandbox only with worker/deployment and live-commerce gates remaining | Billing, identity and full-stack |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to

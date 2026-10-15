@@ -47,10 +47,13 @@ not a launch or cutover:
 - Auth.js accounts can now enroll encrypted TOTP, complete session-scoped MFA
   step-up, consume or replace one-time recovery codes and disable MFA through
   fresh, CSRF-protected account controls;
+- owned sandbox billing view, checkout reserve/open/refresh, restricted Portal,
+  canonical reconciliation, cancellation/resumption and raw Stripe webhook
+  transport now use Route Handlers and the Prisma transaction authority;
 - anonymous managed support remains fail-closed until trusted edge address
   handling can restore network-scoped abuse protection;
-- managed-AI feedback and the remaining billing, usage and operational
-  surfaces still block participant access;
+- managed-AI feedback and the remaining usage, worker, deployment and
+  operational surfaces still block participant access;
 - Caddy must continue returning the hardened unavailable response.
 
 ## Final architecture
@@ -276,6 +279,16 @@ never refreshes `authenticated_at`.
 Staff mutations add application CSRF, revision fencing and immutable audit or
 evidence records. Support replies remain in-app only; moderation suggestions
 remain non-punitive until a staff member records an explicit review.
+
+Owned sandbox billing retains its existing server-owned offers, customer and
+checkout correlations, canonical ledger, funding/service policy, stop/resume
+cycles and durable operations. Route mutations require an active Auth.js
+session, application CSRF, provider authentication within ten minutes and the
+shared billing admission bucket before and after the business transaction.
+Stripe webhooks read bounded raw `application/json` bytes, reject compressed
+bodies, verify the official signature over the exact bytes and atomically
+publish the same minimized inbox/outbox evidence. Provider Portal I/O remains
+outside SQL transactions and is fenced again before and after the call.
 
 Before participant launch, the remaining security surfaces must:
 

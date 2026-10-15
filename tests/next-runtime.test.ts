@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import test from 'node:test';
+import Stripe from 'stripe';
 import { GET as bootstrap } from '../app/api/bootstrap/route';
 import { GET as health } from '../app/api/health/route';
 import { GET as ready } from '../app/api/ready/route';
@@ -51,6 +52,11 @@ import { GET as privacyExportsRoute, POST as requestPrivacyExportRoute } from '.
 import { GET as downloadPrivacyExportRoute } from '../app/api/privacy/exports/[id]/download/route';
 import { GET as privacyDeletionRoute, POST as requestPrivacyDeletionRoute } from '../app/api/privacy/deletion/route';
 import { POST as cancelPrivacyDeletionRoute } from '../app/api/privacy/deletion/cancel/route';
+import { GET as billingViewRoute } from '../app/api/billing/route';
+import { POST as reserveCheckoutRoute } from '../app/api/billing/checkouts/route';
+import { POST as openCheckoutRoute } from '../app/api/billing/checkouts/[id]/open/route';
+import { POST as billingPortalRoute } from '../app/api/billing/portal/route';
+import { POST as stripeWebhookRoute } from '../app/api/webhooks/stripe/route';
 import { POST as saveSupportRoute } from '../app/api/support/route';
 import { GET as supportHistoryRoute } from '../app/api/support/requests/route';
 import { POST as updateProgressRoute } from '../app/api/progress/route';
@@ -110,7 +116,9 @@ import { loadAuthSettings } from '../server/auth/config';
 import { completeSocialLink } from '../server/auth/linking';
 import { recordAuthAdmission, withAuthRequest } from '../server/auth/request-context';
 import { totpCode } from '../server/auth/totp';
+import { stripeApiVersion } from '../server/billing/schema';
 import { closeNextPrivacyService } from '../server/next/privacy';
+import { closeNextBillingService } from '../server/next/billing';
 import { migrateJobs } from '../server/jobs';
 import { Entitlements } from '../server/entitlements';
 
@@ -132,7 +140,8 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
   process.env.DATABASE_URL = url.href;
   for (const key of ['NEXTAUTH_URL', 'NEXTAUTH_SECRET', 'AUTH_GOOGLE_CLIENT_ID', 'AUTH_GOOGLE_CLIENT_SECRET',
     'AUTH_FACEBOOK_CLIENT_ID', 'AUTH_FACEBOOK_CLIENT_SECRET', 'AUTH_INVITED_EMAILS',
-    'AUTH_MFA_ENCRYPTION_KEY']) delete process.env[key];
+    'AUTH_MFA_ENCRYPTION_KEY', 'STRIPE_TEST_ACCOUNT_ID', 'STRIPE_TEST_SECRET_KEY',
+    'STRIPE_TEST_WEBHOOK_SECRET', 'STRIPE_TEST_OFFERS']) delete process.env[key];
   Object.assign(process.env, {
     NEXTAUTH_URL: 'https://studio.fixture',
     NEXTAUTH_SECRET: 'a'.repeat(64),
@@ -142,8 +151,16 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     AUTH_FACEBOOK_CLIENT_SECRET: 'facebook-secret',
     AUTH_INVITED_EMAILS: 'next-auth-owner@example.test',
     AUTH_MFA_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64url'),
+    STRIPE_TEST_ACCOUNT_ID: 'acct_NextRuntimeFixture',
+    STRIPE_TEST_SECRET_KEY: 'rk_test_NextRuntimeFixtureOnly',
+    STRIPE_TEST_WEBHOOK_SECRET: 'whsec_NextRuntimeFixtureOnly',
+    STRIPE_TEST_OFFERS: JSON.stringify({
+      pro_monthly: 'price_NextMonthlyFixture',
+      pro_annual: 'price_NextAnnualFixture',
+    }),
   });
   t.after(async () => {
+    await closeNextBillingService();
     await closeNextPrivacyService();
     await prismaConnection().close();
     if (previous === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = previous;
@@ -166,6 +183,7 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
   assert.equal(bootstrapPayload.user, null);
   assert.equal(bootstrapPayload.capabilities.auth.system, 'authjs');
   assert.equal(bootstrapPayload.capabilities.access.state, 'visitor');
+  assert.deepEqual(bootstrapPayload.capabilities.billing, { mode: 'sandbox', checkout: true });
   const owner = 'next-public-owner';
   const postId = 'a/b?c#d%\\e';
   await db.prepare('INSERT INTO users(id,name,email,password,demo) VALUES(?,?,?,?,0)')
@@ -415,6 +433,126 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     },
   ));
   assert.equal(replacementVerification.status, 200);
+  const initialBilling = await billingViewRoute(new Request('https://studio.fixture/api/billing', {
+    headers: { Cookie: accountCookies },
+  }));
+  assert.equal(initialBilling.status, 200);
+  assert.deepEqual(await initialBilling.json(), {
+    mode: 'sandbox',
+    enabled: true,
+    portalEnabled: false,
+    customerReady: false,
+    checkout: null,
+    ledger: null,
+    accessAuthority: 'none',
+  });
+  const billingRequestId = randomUUID();
+  const missingBillingCsrf = await reserveCheckoutRoute(new Request(
+    'https://studio.fixture/api/billing/checkouts',
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: billingRequestId, offer: 'pro_monthly' }),
+    },
+  ));
+  assert.equal(missingBillingCsrf.status, 403);
+  const reservedCheckout = await reserveCheckoutRoute(new Request(
+    'https://studio.fixture/api/billing/checkouts',
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ key: billingRequestId, offer: 'pro_monthly' }),
+    },
+  ));
+  const reserved = await reservedCheckout.json();
+  assert.equal(reservedCheckout.status, 202);
+  assert.match(reserved.id, /^[\da-f-]{36}$/);
+  const replayedCheckout = await reserveCheckoutRoute(new Request(
+    'https://studio.fixture/api/billing/checkouts',
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ key: billingRequestId, offer: 'pro_monthly' }),
+    },
+  ));
+  assert.equal((await replayedCheckout.json()).id, reserved.id);
+  const changedCheckout = await reserveCheckoutRoute(new Request(
+    'https://studio.fixture/api/billing/checkouts',
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ key: billingRequestId, offer: 'pro_annual' }),
+    },
+  ));
+  assert.equal(changedCheckout.status, 409);
+  const ownedBilling = await billingViewRoute(new Request('https://studio.fixture/api/billing', {
+    headers: { Cookie: accountCookies },
+  }));
+  const ownedBillingView = await ownedBilling.json();
+  assert.equal(ownedBillingView.checkout.id, reserved.id);
+  assert.equal(ownedBillingView.checkout.state, 'waiting-customer');
+  assert.equal(ownedBillingView.checkout.processing, 'created');
+  const unopenedCheckout = await openCheckoutRoute(new Request(
+    `https://studio.fixture/api/billing/checkouts/${reserved.id}/open`,
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: '{}',
+    },
+  ), { params: Promise.resolve({ id: reserved.id }) });
+  assert.equal(unopenedCheckout.status, 409);
+  const unavailablePortal = await billingPortalRoute(new Request('https://studio.fixture/api/billing/portal', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: '{}',
+  }));
+  assert.equal(unavailablePortal.status, 503);
+  const compressedWebhook = await stripeWebhookRoute(new Request('https://studio.fixture/api/webhooks/stripe', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Encoding': 'gzip',
+      'Stripe-Signature': `t=${Math.floor(Date.now() / 1000)},v1=fixture`,
+    },
+    body: '{}',
+  }));
+  assert.equal(compressedWebhook.status, 415);
+  const invalidWebhook = await stripeWebhookRoute(new Request('https://studio.fixture/api/webhooks/stripe', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Stripe-Signature': `t=${Math.floor(Date.now() / 1000)},v1=fixture`,
+    },
+    body: '{}',
+  }));
+  assert.equal(invalidWebhook.status, 403);
+  const stripe = new Stripe(process.env.STRIPE_TEST_SECRET_KEY!, { apiVersion: stripeApiVersion });
+  const unsupportedEvent = JSON.stringify({
+    id: 'evt_NextUnsupportedFixture',
+    object: 'event',
+    type: 'fixture.unsupported',
+    api_version: stripeApiVersion,
+    livemode: false,
+    created: Math.floor(Date.now() / 1000),
+    data: { object: { id: 'obj_NextUnsupportedFixture', object: 'fixture.object' } },
+  });
+  const unsupportedSignature = stripe.webhooks.generateTestHeaderString({
+    payload: unsupportedEvent,
+    secret: process.env.STRIPE_TEST_WEBHOOK_SECRET!,
+  });
+  const acceptedWebhook = await stripeWebhookRoute(new Request('https://studio.fixture/api/webhooks/stripe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Stripe-Signature': unsupportedSignature },
+    body: unsupportedEvent,
+  }));
+  assert.deepEqual(await acceptedWebhook.json(), { accepted: true, duplicate: false });
+  const replayedWebhook = await stripeWebhookRoute(new Request('https://studio.fixture/api/webhooks/stripe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Stripe-Signature': unsupportedSignature },
+    body: unsupportedEvent,
+  }));
+  assert.deepEqual(await replayedWebhook.json(), { accepted: true, duplicate: true });
+  assert.equal((await db.prepare('SELECT count(*)::integer AS count FROM stripe_event_notifications').get())?.count, 1);
   await assert.rejects(admitSocialIdentity(loadAuthSettings()!, {
     provider: 'google',
     providerAccountId: 'different-invited-subject',

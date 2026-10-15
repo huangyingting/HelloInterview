@@ -4,6 +4,7 @@ import { authUserFromManagedSession, currentManagedAuthSession } from '../../../
 import { prismaConnection } from '../../../server/db/prisma';
 import { StateRepository } from '../../../server/db/state-repository';
 import { Entitlements } from '../../../server/entitlements';
+import { nextBillingCapability } from '../../../server/next/billing';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +15,7 @@ export async function GET(request: Request) {
     const user = session ? authUserFromManagedSession(session) : null;
     const csrf = await issueCsrf(request, session);
     const active = user?.identity?.status === 'active';
+    const billing = nextBillingCapability();
     const [state, access] = await Promise.all([
       user && active ? new StateRepository(db).read(user.id) : Promise.resolve(emptyState()),
       new Entitlements(db).view(user?.id ?? null),
@@ -34,6 +36,7 @@ export async function GET(request: Request) {
           legacyLink: false,
           securityLifecycle: false,
         },
+        ...(billing ? { billing } : {}),
         access,
       },
       csrf: csrf.token,
