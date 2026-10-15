@@ -547,9 +547,10 @@ sending controls and AI budgets. Staging contains synthetic data by default.
 Never use production customer credentials in browser fixtures.
 
 W01 now builds server JavaScript into `dist-server/` and frontend assets into
-`dist/`; `npm start` uses Node.js without development tooling. Vite is a
-development-only dynamic import. `npm run test:runtime` verifies an isolated
-`npm ci --omit=dev` release, including `.env` loading and restart persistence.
+`.next/standalone`; `npm start` uses Node.js without development tooling. The
+exact container acceptance verifies an isolated
+runtime-only release, including Auth.js state, restart persistence and encrypted
+backup restore.
 Build before omitting development dependencies, and never put the server
 bundle in the public frontend directory. CI/IaC, immutable artifact promotion,
 readiness/SLO monitoring, and managed recovery remain W03 and later work.

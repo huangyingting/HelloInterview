@@ -1,7 +1,6 @@
 import express from 'express';
 import { stat } from 'node:fs/promises';
 import path from 'node:path';
-import type { ViteDevServer } from 'vite';
 import { createApp, handleError } from './app';
 import type { ServerConfig } from './config';
 import { localConnection, postgresConnection } from './db/connection';
@@ -40,7 +39,6 @@ export async function createApplication(config: ServerConfig): Promise<Applicati
   const db = config.databaseUrl ? postgresConnection(config.databaseUrl) : localConnection(config.dataDir);
   const shutdown = new AbortController();
   const draining = new AbortController();
-  let vite: ViteDevServer | undefined;
   let lifecycle: IdentityLifecycle | undefined;
   let billing: BillingNotifications | undefined;
   let privacy:PrivacyExports|undefined;
@@ -49,13 +47,9 @@ export async function createApplication(config: ServerConfig): Promise<Applicati
     return closing ??= (async () => {
       shutdown.abort();
       draining.abort();
-      try {
-        await vite?.close();
-      } finally {
-        try { await privacy?.close(); } finally {
-          try { await billing?.close(); } finally {
-            try { await lifecycle?.close(); } finally { await db.close(); }
-          }
+      try { await privacy?.close(); } finally {
+        try { await billing?.close(); } finally {
+          try { await lifecycle?.close(); } finally { await db.close(); }
         }
       }
     })();
@@ -80,10 +74,6 @@ export async function createApplication(config: ServerConfig): Promise<Applicati
       app.get('/assets/{*path}',(_req,res)=>res.status(404).type('text/plain').send('Asset not found.'));
       app.use(express.static(config.frontendDir));
       app.get('/{*path}', (_req, res) => res.sendFile(path.join(config.frontendDir, 'index.html')));
-    } else {
-      const { createServer } = await import('vite');
-      vite = await createServer({ root: config.rootDir, server: { middlewareMode: true }, appType: 'spa' });
-      app.use(vite.middlewares);
     }
     const addressError: express.ErrorRequestHandler = (error: unknown, req, res, next) => {
       if (config.environment === 'production' && error instanceof URIError && !res.headersSent &&

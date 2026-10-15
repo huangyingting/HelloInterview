@@ -111,10 +111,10 @@ The shortcut does not apply to an independent iframe browsing context.
 
 ```sh
 npm run build
-CHROME_PATH=/usr/bin/google-chrome npm run test:screens
+TEST_DATABASE_URL=postgresql://... npm test
 ```
 
-The production-built browser suite checks the skip link and following Tab,
+The Next.js browser suite checks the skip link and following Tab,
 ready/delayed/superseded navigation, failure recovery tab order, visible main
 focus, preserved theme/form/Search focus, real rapid typing/caret editing,
 Unicode/punctuation and URL/history behavior, mobile hidden/open/dismissed/

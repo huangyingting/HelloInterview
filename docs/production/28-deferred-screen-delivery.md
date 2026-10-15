@@ -28,37 +28,19 @@ output. Existing projected fields and values, lesson access flags and curricula
 are retained; navigation tracks contain only ID, title, short description,
 description and color. Type-only imports do not introduce private content.
 
-The private-content build guard still examines every browser module, and the
-content-boundary checks scan every emitted JavaScript/map/HTML asset, including
-deferred chunks. Splitting code is not protection for paid content: authorized
-server readers, immutable quiz snapshots and owned data remain authoritative.
+Next.js compiles the browser graph and standalone preparation copies only
+reviewed public/static assets. Splitting code is not protection for paid
+content: authorized server readers, immutable quiz snapshots and owned data
+remain authoritative.
 
-## Fixed JavaScript budgets
+## JavaScript budgets
 
-Vite emits `dist/.vite/manifest.json`. For each budget, traverse **all transitive
-static `imports`**, using a visited set to handle cycles and count each file
-once. Do not traverse `dynamicImports` as though every screen were eager.
-Cold-screen measurements are the union of the entry graph and that screen's
-static dependency graph, not just its named output file.
-
-| Graph | Raw JavaScript ceiling | Gzip-estimate ceiling | Measured raw bytes | Measured gzip-estimate bytes |
-| --- | --- | --- | --- | --- |
-| Entry | 350 KiB | 100 KiB | 296,532 | 94,461 |
-| Cold landing | 350 KiB | 100 KiB | 303,137 | 97,617 |
-| Cold sign-in | 350 KiB | 100 KiB | 312,766 | 100,614 |
-
-These are one release build's measurements; hashes and sizes can change.
-The tests enforce the ceilings independently of these recorded numbers.
-The published pre-split entry was 630,436 raw bytes; the new eager entry is
-approximately 53% smaller. Sign-in includes its managed-identity dependencies
-even when local mode renders the local form.
-
-Gzip values sum reproducible `gzipSync` encodings of each selected asset. They
-are **encoding estimates**, not observed compressed transfers or a promise that
-the current Express/edge configuration delivers compression. The budgets do
-not include CSS, HTML, images, media, API response sizes or request overhead.
-They establish neither Core Web Vitals, interaction latency nor a load SLA.
-No cosmetic vendor splitting or increased threshold is used to hide eager bytes.
+The former Vite-manifest byte budgets were retired with the Vite runtime.
+Replacement budgets must be derived from Next build/app manifests and measured
+against the exact standalone artifact rather than mapping old chunk names or
+silently increasing thresholds. CSS, HTML, images, media, API response sizes
+and request overhead remain separate measurements; no current budget is a load
+or Core Web Vitals SLA.
 
 ## Loading, failure and state
 
@@ -126,21 +108,16 @@ incomplete deployment or a still-unavailable serving layer.
 
 ```sh
 npm run content:metadata -- --check
-CHROME_PATH=/usr/bin/google-chrome npm run test:screens
+TEST_DATABASE_URL=postgresql://... npm test
 ```
 
 CI uses Playwright-managed Chromium; local commands may specify another installed
-Chrome executable. No new test dependency or external provider key is required.
-
-The focused tests verify fixed transitive graph budgets, navigation metadata
-projection, exact cold browser requests, every manifest asset's actual served
-bytes, delayed loading with a usable persistent shell, query/alias state,
-owner changes, synthetic asset outages and descendant render failures.
-Failure tests navigate away/back, demonstrate document-cached failure, restore
-the asset, reload explicitly and compare saved account/history while ensuring
-no user mutation replay. Existing managed identity/billing/support/expiry,
-local learning/workspace/community, private-content, compiled-runtime and
-container/recovery suites remain release gates.
+Chrome executable. The browser fixture creates an isolated PostgreSQL schema,
+applies the immutable migrations and starts Next.js directly; no local-demo
+authority or external provider key is required. It covers anonymous content,
+worked solutions, premium access gates, deep links, search, mobile reflow and
+theme behavior. Authenticated workflow acceptance lives in the Auth.js Next
+runtime and exact-container suites.
 
 Still required: editorial/free-paid offer/access-manifest review, broad keyboard/
 screen-reader/contrast/mobile assessment, measured deployed cold/warm behavior,

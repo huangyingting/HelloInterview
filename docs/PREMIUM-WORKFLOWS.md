@@ -134,7 +134,7 @@ exposed, and no remote upload is performed.
 canonical grading, every company/level/schedule combination, progress rules,
 source paths, and actual Git patch application.
 
-`npm run test:ai` uses a loopback provider fixture to verify mock/project grading,
+The managed-AI and Next runtime suites use loopback provider fixtures to verify mock/project grading,
 stale-response protection, access ending during grading, and persistence of
 all premium record types across an application-process restart. No real AI key
 or external provider is used by these tests.

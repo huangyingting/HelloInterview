@@ -46,7 +46,7 @@ explicit gates; issue creation or closure cannot supply them.
 | Package | Status | Delivered boundary |
 | --- | --- | --- |
 | W00 | Invite-only free-beta scope approved; public/legal/retention details remain | Auth.js Google/Facebook clean-data beta target; payments, managed AI and community writing disabled; Azure Southeast Asia `WebStack`, USD 200 ceiling and owner selected |
-| W01 | Next.js release runtime implemented; legacy source deletion remains | App Router standalone server is now the application container and CI release artifact; Prisma, Auth.js, worker entrypoints, restart and encrypted-restore acceptance are included. Vite/Express/React Router/SQLite source, tests and dependencies remain temporary and must be deleted before cutover |
+| W01 | Next.js release runtime implemented; legacy source deletion remains | App Router standalone server is now the application container and CI release artifact; Prisma, Auth.js, worker entrypoints, restart and encrypted-restore acceptance are included. Vite/React Router and their local-demo browser harness are deleted; Express/SQLite/Auth0 compatibility source and tests remain temporary |
 | W02 | Persistence checkpoint implemented; real-data cutover pending D05 | Async SQLite/PostgreSQL boundary; controlled migrations; owned record tables; atomic writes and revision conflicts; explicit dry-run/reconciled import without demo or password authority; two-replica PostgreSQL tests |
 | W03 | Azure target and Next standalone release authority implemented; application deployment still pending | Existing Southeast Asia `WebStack` VM with guest PostgreSQL and no RPO/RTO promise selected; exact `interview.genisisiq.com` Caddy ingress uses a public certificate, closed loopback upstream and truthful 503; the release image now starts Next standalone with authenticated restart/restore acceptance, while authentic secrets, guest operation and rollback remain unverified |
 | W05 | Content-delivery checkpoint implemented; editorial/service authority pending W06/W12 | Allowlisted browser discovery graph; private readers/briefs/media; version-pinned server quiz sessions/checks/reports; readable/exportable owned history; migration 2 and replica/bundle checks |
@@ -372,21 +372,14 @@ Current commands, to run in implementation CI as appropriate:
 npm ci
 npm run build
 npm run test:unit
-npm run test:server
-npm run test:runtime
-npm run test:ai
 npm run test:db
-npm run test:content
 npm run test:jobs
 npm run test:identity
-npm run test:identity-browser
 npm run test:container
 npm test
 ```
 
-The build type-checks and emits frontend and standalone server artifacts.
-Server tests cover configuration/startup, static/API behavior, isolation,
-persistence, readiness, proxy/telemetry boundaries, and graceful/bounded shutdown.
+The build type-checks and emits the Next standalone and worker artifacts.
 Database tests require an explicitly dedicated `TEST_DATABASE_URL`.
 Container tests require Docker and own isolated images, projects/volumes, and
 fixture data for read-only execution and encrypted dump/restore. Runtime tests install an isolated

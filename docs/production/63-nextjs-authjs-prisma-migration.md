@@ -102,10 +102,10 @@ segments where a server boundary, metadata, loading state or route-specific data
 fetch provides value. Opaque community identifiers, query strings, focus
 recovery and direct browser navigation must remain exact.
 
-Vite temporarily aliases the navigation boundary back to React Router so the
-pre-cutover release continues to build. That alias, `src/main.tsx`,
-`index.html`, `vite.config.ts` and all React Router dependencies are mandatory
-deletions before migration completion.
+The Vite entrypoint, React Router alias, `src/main.tsx`, `index.html`,
+`vite.config.ts` and their package dependencies have been deleted. Playwright
+now starts a freshly migrated PostgreSQL-backed Next.js fixture; local-demo and
+password browser scenarios are no longer release authority.
 
 ## Auth.js identity policy
 

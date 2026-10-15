@@ -31,23 +31,9 @@ test('object design discovery distinguishes runnable exercises from original ref
   await expect(page.getByRole('heading',{name:'What you will learn'})).toBeVisible();
   await expect(page.locator('.content-sources a[href="'+contentSources['fowler-unit'].url+'"]')).toBeVisible();
   await page.goto('/practice/low-level-design/rate-limiter/writeup');
-  await expect(page.getByRole('heading',{name:'A deeper practice opportunity.'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Current access does not include this feature.'})).toBeVisible();
   await page.goto('/learn/low-level-design/concurrency');
-  await expect(page.getByRole('heading',{name:'A deeper practice opportunity.'})).toBeVisible();
-});
-
-test('all eight trusted stateful references pass the real isolated browser worker protocol', async ({ page }) => {
-  test.setTimeout(90000);
-  await page.goto('/learn/low-level-design/solutions');
-  const checks=await page.evaluate(async exercises => {
-    const path='/src/sandbox.ts', sandbox:typeof import('../src/sandbox')=await import(path);
-    const results=[];
-    for (const exercise of exercises) results.push({id:exercise.id,results:await sandbox.runCode(exercise.code,exercise.cases)});
-    return results;
-  },problems.filter(problem => problem.track==='low-level-design').map(problem => ({id:problem.id,code:problem.solution!.code,cases:problem.solution!.examples!})));
-  expect(checks).toHaveLength(8);
-  for (const check of checks) for (const result of check.results) expect(result.passed,`${check.id}: ${result.label}: ${result.error || result.actual}`).toBe(true);
-  await expect(page.locator('iframe[title="Isolated code runner"]')).toHaveCount(0);
+  await expect(page.getByRole('heading',{name:'Current access does not include this feature.'})).toBeVisible();
 });
 
 test('stateful reference diagrams, examples and libraries remain bounded on mobile in both themes', async ({ page }) => {

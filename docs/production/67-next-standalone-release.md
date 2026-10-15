@@ -72,9 +72,10 @@ or image layers.
 
 ## Remaining cutover work
 
-The source repository still contains the Vite/Express/React Router/SQLite and
-legacy OIDC compatibility implementation. It is no longer part of the release
-web or worker process, but must still be deleted with its remaining tests,
-dependencies and configuration before the zero-legacy gate passes. Authentic
-provider acceptance, exact-SHA Azure smoke/rollback evidence and Caddy cutover
-also remain required.
+The Vite entrypoint, React Router dependency and their local-demo browser
+harness have been removed. The source repository still contains the
+Express/SQLite and legacy OIDC compatibility implementation used by remaining
+domain/compatibility tests. It is not part of the release web or worker process,
+but must still be deleted with those tests and configuration before the
+zero-legacy gate passes. Authentic provider acceptance, exact-SHA Azure
+smoke/rollback evidence and Caddy cutover also remain required.

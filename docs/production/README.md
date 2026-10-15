@@ -11,8 +11,8 @@ application as production-ready.
 Migrate the React/TypeScript experience to a **Next.js App Router modular
 monolith** with Auth.js/NextAuth, Prisma-backed PostgreSQL and separately
 deployed workers from the same codebase. The completed repository must not
-retain Vite, Express, React Router, Auth0 compatibility or the SQLite service
-runtime. Buy OAuth identity, hosted checkout, transactional email and
+retain Express, Auth0 compatibility or the SQLite service runtime. The Vite and
+React Router runtime has been removed. Buy OAuth identity, hosted checkout, transactional email and
 infrastructure rather than building those provider systems. Separate public
 content metadata from protected content before charging for it.
 

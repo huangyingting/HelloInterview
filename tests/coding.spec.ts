@@ -30,22 +30,7 @@ test('coding discovery connects sourced lessons, dedicated practice and actual r
   await page.goto('/learn/code/two-pointers');
   await expect(page.locator('.algorithm-lab')).toHaveCount(1);
   await page.goto('/learn/code/dynamic-programming');
-  await expect(page.getByRole('heading', { name: 'A deeper practice opportunity.' })).toBeVisible();
-});
-
-test('every authored reference also executes through the browser worker and its serialization contract', async ({ page }) => {
-  test.setTimeout(90000);
-  await page.goto('/learn/code/solutions');
-  const checks = await page.evaluate(async exercises => {
-    const path = '/src/sandbox.ts';
-    const sandbox: typeof import('../src/sandbox') = await import(path);
-    const results = [];
-    for (const exercise of exercises) results.push({ id: exercise.id, results: await sandbox.runCode(exercise.code, exercise.cases) });
-    return results;
-  }, problems.filter(problem => problem.track === 'code').map(problem => ({ id: problem.id, code: problem.solution!.code, cases: problem.testCases! })));
-  expect(checks).toHaveLength(24);
-  for (const check of checks) for (const result of check.results) expect(result.passed, `${check.id}: ${result.label}: ${result.error || result.actual}`).toBe(true);
-  await expect(page.locator('iframe[title="Isolated code runner"]')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Current access does not include this feature.' })).toBeVisible();
 });
 
 test('coding readers and navigation stay bounded on mobile in both themes', async ({ page }) => {

@@ -6,8 +6,6 @@ import { BillingNotifications } from '../server/billing';
 import { hostedPortalUrl, portalAuthority } from '../server/billing/portal-schema';
 import { sandboxServicePolicy } from '../shared/billing-ledger';
 import { problems } from '../shared/catalog';
-import { spawn } from 'node:child_process';
-import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 
 async function fixture(t: TestContext, overrides: NodeJS.ProcessEnv = {}) {
@@ -364,34 +362,4 @@ test('provider response secrets and contacts are omitted from actual request/err
   for (const secret of ['test_SyntheticRestricted', 'private-portal-contact', 'cus_Foreign', 'cus_Synthetic', 'bpc_SyntheticRestricted']) {
     assert.ok(!messages.join('\n').includes(secret)); assert.ok(!(await response.clone().text()).includes(secret));
   }
-});
-
-test('compiled production entry serves the fresh managed default-off Portal boundary without development loaders or provider I/O', async t => {
-  const f = await fixture(t), databaseUrl = f.config.databaseUrl; assert.ok(databaseUrl);
-  const child = spawn(process.execPath, ['dist-server/index.js'], {
-    stdio: ['ignore', 'pipe', 'pipe'], env: { PATH: process.env.PATH, NODE_ENV: 'production', HOST: '127.0.0.1', PORT: '0',
-      DATABASE_URL: databaseUrl, PUBLIC_ORIGIN: f.origin, COOKIE_SECURE: 'true', TRUST_PROXY: '127.0.0.1/32',
-      LOG_REQUESTS: 'false', OIDC_ISSUER: f.issuer, OIDC_CLIENT_ID: 'synthetic-client',
-      OIDC_CLIENT_SECRET: 'synthetic-client-secret', ...sandboxSettings },
-  });
-  const exited = once(child, 'exit');
-  f.cleanup.push(async () => {
-    if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
-    const [code, signal] = await exited; assert.equal(code, 0); assert.equal(signal, null);
-  });
-  let stdout = '', stderr = '';
-  child.stderr.on('data', value => { stderr += String(value); });
-  const address = await new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Compiled Portal entry did not start: ${stderr}`)), 15000);
-    child.once('error', error => { clearTimeout(timer); reject(error); });
-    child.once('exit', code => { clearTimeout(timer); reject(new Error(`Compiled Portal entry exited (${code}): ${stderr}`)); });
-    child.stdout.on('data', value => {
-      stdout += String(value); const address = stdout.match(/http:\/\/127\.0\.0\.1:\d+/)?.[0];
-      if (address) { clearTimeout(timer); resolve(address); }
-    });
-  });
-  assert.equal((await fetch(`${address}/api/ready`)).status, 200); f.proxyTo(address);
-  assert.equal((await f.view(f.browser)).portalEnabled, false);
-  assert.equal((await f.browser.request(endpoint, {})).status, 503);
-  assert.deepEqual(await audit(f), []); assert.equal(f.requests.length, 0);
 });

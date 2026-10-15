@@ -1,7 +1,4 @@
 import { defineConfig, devices } from '@playwright/test';
-import { randomUUID } from 'node:crypto';
-
-const testDataDir = `data/tests/${randomUUID()}`;
 
 export default defineConfig({
   testDir: './tests',
@@ -19,7 +16,7 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command: `PORT=3100 DATA_DIR=${testDataDir} TRUST_PROXY=127.0.0.1/32 npm run dev`,
+    command: 'tsx scripts/start-next-browser-fixture.ts',
     url: 'http://127.0.0.1:3100/api/health',
     reuseExistingServer: false,
     timeout: 60000,

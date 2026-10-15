@@ -1,8 +1,8 @@
 # Interview Studio
 
-An original, locally runnable interview-preparation application inspired by the
-observable workflows of Hello Interview. Built with React, TypeScript, Vite,
-Express, and persistent SQLite or PostgreSQL.
+An original interview-preparation application inspired by the observable
+workflows of Hello Interview. Built with Next.js, React, Auth.js, Prisma and
+PostgreSQL.
 
 **This is not Hello Interview, is not affiliated with it, and does not reproduce
 its proprietary lessons, videos, branding, interview reports, or production
@@ -33,41 +33,36 @@ Requirements:
 - Google Chrome for browser tests and media/screenshot generation. The default
   executable is `/usr/bin/google-chrome`; set `CHROME_PATH` for another location.
   CI uses Playwright-managed Chromium, installed with `npx playwright install chromium`.
-- No reference-site credentials, external service keys, or payment account are
-  needed for local use.
+- A dedicated PostgreSQL database and synthetic or real Auth.js provider
+  configuration.
 
 ```bash
 npm ci
+npm run build
+npm run db:migrate
 npm run dev
 ```
 
-Open **http://127.0.0.1:3000**. Choose **Your Studio**, then **Try the local demo**,
-or create a separate local account. Each demo entry creates a fresh account;
-its session and progress persist until you sign out or its cookie expires.
-Create an account if you want to sign back in after signing out.
+Set `DATABASE_URL`, `NEXTAUTH_URL`, `NEXTAUTH_SECRET`, Google/Facebook provider
+credentials, `AUTH_INVITED_EMAILS` and `AUTH_MFA_ENCRYPTION_KEY` in the process
+environment. Open **http://127.0.0.1:3000** and sign in with an invited Google
+account; Facebook remains link-only from an existing account.
 
-For the new premium tools, open **Plans**, activate a clearly labeled local demo
-plan, then choose **Open Premium Studio**. No payment or reference account is
-used. Saved completed reports and project snapshots remain accessible when
-the demo entitlement ends.
-
-For the compiled frontend and server build:
+For the standalone release build:
 
 ```bash
 npm run build
 npm start
 ```
 
-`npm run build` creates the browser assets in `dist/` and a standalone server
-bundle in `dist-server/`. `npm start` runs that bundle with Node.js and serves
-the frontend and API from the same process. Vite is loaded only by the development
-server; the compiled runtime does not require `tsx`, TypeScript, esbuild, or Vite.
+`npm run build` creates `.next/standalone` plus the separately compiled
+migration and worker entrypoints in `dist-server`. `npm start` runs the Next.js
+standalone server.
 
 For a runtime-only installation, first build with all dependencies installed.
-Deploy `dist/`, `dist-server/`, `package.json`, and `package-lock.json` together,
-then run `npm ci --omit=dev` and `npm start` from the release directory. Keep
-`.env` and the data directory private and outside the frontend assets. Do not
-omit build dependencies before building.
+Deploy `.next/standalone`, `dist-server`, `package.json`, and
+`package-lock.json` together. Keep environment and data files outside the
+artifact.
 
 Screens load on demand while navigation stays available. A screen-load failure
 offers explicit navigation or manual reload rather than automatically reloading
@@ -621,38 +616,22 @@ quota, and this is not an independent sandbox security approval. See
 ```bash
 npm run build
 npm run test:unit
-npm run test:server
-npm run test:runtime
-npm run test:ai
-npm run test:screens
 npm test
+npm run test:container
 ```
 
 - Domain tests check catalogs, canonical scoring, review behavior, streaks,
   entitlements, rubric labels, and course-completion invariants.
 - Configuration tests reject invalid settings and verify immutable startup
-  snapshots. Server tests cover static serving, account isolation, restart
-  persistence, startup errors, and graceful/bounded shutdown.
-- `test:runtime` creates a disposable release with `npm ci --omit=dev`, verifies
-  that development tooling is absent, and exercises the compiled server, `.env`
-  loading, session persistence, and SIGTERM shutdown. It may require access to
-  the npm registry/cache. It never copies your `.env` or runtime database.
-- Server/runtime/provider test commands build their required artifacts first.
-- `test:screens` enforces complete eager/cold graph byte budgets and exercises
-  actual production-built asset requests, delayed/failed screens, shell state
-  and deliberate reload recovery without replaying user mutations.
+  snapshots.
 - Content tests enforce exact inventory, instructional-depth floors, valid
   source/resource links, difficulty/answer-position coverage, and the arithmetic
   of every worked-design capacity calculation.
-- Provider-contract tests use a loopback fixture, check valid/malformed/outage
-  responses and persisted sessions/state after an application restart. They
-  require no real provider key and do not contact an external AI service.
-- Playwright checks 30 end-user workflows, including actual video playback,
-  completion-record download, isolated-code execution/timeout, persistence,
-  community actions, premium conversations/quizzes/plans/imported projects,
-  mobile layout, credential denial, and user isolation.
-- Browser tests use port 3100 and a fresh UUID-named database under `data/tests/`
-  for each run. Reports/traces are local ignored artifacts.
+- Playwright starts Next.js on port 3100 against a freshly migrated isolated
+  PostgreSQL schema and checks anonymous content, deep links, premium gates,
+  search, mobile layout and themes.
+- Container acceptance verifies the exact standalone image, Auth.js-owned state,
+  restart persistence and encrypted backup restore.
 
 With the app running:
 

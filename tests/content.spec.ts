@@ -1,82 +1,19 @@
-import { test, expect, type Page } from './browser-fixtures';
-import { problems, quizQuestions } from '../shared/catalog';
-import { contentSources } from '../shared/content/sources';
-import type { Bootstrap, UserState } from '../shared/types';
+import { test, expect } from './browser-fixtures';
+import { problems } from '../shared/catalog';
 
-async function demo(page: Page) {
-  await page.goto('/login');
-  await page.getByRole('button', { name: 'Try the local demo', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Good to see you, Alex.' })).toBeVisible();
-}
-
-test('substantial sourced lessons and the complete text-based course are discoverable', async ({ page }) => {
-  test.setTimeout(90000);
-  await demo(page);
-  await page.goto('/learn/system-design/http-caching');
-  await expect(page.getByRole('heading', { name: 'What you will learn' })).toBeVisible();
-  expect(await page.locator('.lesson-article > section p').count()).toBeGreaterThanOrEqual(10);
-  await expect(page.locator('.content-sources a[href="' + contentSources['http-cache'].url + '"]')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Check your understanding' })).toHaveAttribute('href', '/quiz/caching');
-  await page.goto('/learn/system-design');
-  await page.getByRole('link', { name: 'Explore the course', exact: false }).click();
-  await expect(page.getByRole('heading', { name: '0 of 52 steps complete' })).toBeVisible();
-  await expect(page.getByText('Written lessons, quizzes, and practice', { exact: false })).toBeVisible();
-  await expect(page.getByText('0 original animated walkthrough', { exact: false })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Enroll in this course', exact: true }).click();
-  await expect(page.getByRole('link', { name: 'Continue your path', exact: false })).toHaveAttribute('href', '/learn/system-design/introduction');
-  await page.reload();
-  await expect(page.getByRole('link', { name: 'Continue your path', exact: false })).toBeVisible();
-  await page.goto('/learn/courses/coding-complete');
-  await expect(page.getByRole('heading', { name: '0 of 60 steps complete' })).toBeVisible();
-  await page.getByRole('button', { name: 'Enroll in this course', exact: true }).click();
-  await expect(page.getByRole('link', { name: 'Continue your path', exact: false })).toHaveAttribute('href', '/learn/code/introduction');
-  await page.reload();
-  await expect(page.getByRole('link', { name: 'Continue your path', exact: false })).toBeVisible();
-  const problem = problems.find(problem => problem.id === 'alg-pair-load')!;
-  await page.goto(`/practice/code/${problem.id}`);
-  await expect(page.getByRole('link', { name: 'Read the worked solution', exact: false })).toHaveAttribute('href', `/practice/code/${problem.id}/writeup`);
-  await page.getByRole('button', { name: 'Start practice', exact: true }).click();
-  await page.getByRole('textbox', { name: 'Code editor', exact: true }).fill(problem.solution!.code);
-  await page.getByRole('button', { name: 'Run tests', exact: true }).click();
-  await expect(page.locator('.test-results .passed')).toHaveCount(problem.testCases!.length);
-  await expect(page.locator('.test-results .failed')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
-  await page.reload();
-  await expect(page.getByRole('textbox', { name: 'Code editor', exact: true })).toHaveValue(problem.solution!.code);
-  await expect(page.getByRole('link', { name: 'Read the worked solution', exact: false })).toHaveCount(0);
-  const response = await page.request.get('/api/bootstrap'), payload: Bootstrap = await response.json();
-  const attempt = payload.state.attempts.find(attempt => attempt.problemId === problem.id)!;
-  expect(attempt.code).toBe(problem.solution!.code);
-  expect(attempt.completed).toBe(false);
-  await page.goto('/learn/courses/low-level-design-complete');
-  await expect(page.getByRole('heading', { name: '0 of 28 steps complete' })).toBeVisible();
-  await page.getByRole('button', { name: 'Enroll in this course', exact: true }).click();
-  await expect(page.getByRole('link', { name: 'Continue your path', exact: false })).toHaveAttribute('href', '/learn/low-level-design/introduction');
-  await page.reload();
-  await expect(page.getByRole('link', { name: 'Continue your path', exact: false })).toBeVisible();
-  const ledger = problems.find(problem => problem.id === 'lld-inventory-ledger')!;
-  await page.goto(`/practice/low-level-design/${ledger.id}`);
-  await page.getByRole('button', { name: 'Start practice', exact: true }).click();
-  await page.getByRole('textbox', { name: 'Code editor', exact: true }).fill(ledger.solution!.code);
-  await page.getByRole('button', { name: 'Run tests', exact: true }).click();
-  await expect(page.locator('.test-results .passed')).toHaveCount(6);
-  await expect(page.locator('.test-results .failed')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Save draft', exact: true }).click();
-  await page.reload();
-  await expect(page.getByRole('textbox', { name: 'Code editor', exact: true })).toHaveValue(ledger.solution!.code);
-  const lldResponse = await page.request.get('/api/bootstrap'), lldPayload: Bootstrap = await lldResponse.json();
-  expect(lldPayload.state.enrollments).toContain('low-level-design-complete');
-  expect(lldPayload.state.attempts.find(attempt => attempt.problemId === ledger.id)?.code).toBe(ledger.solution!.code);
-});
-
-test('practice write-ups lead to real worked designs with capacity, sources and follow-ups', async ({ page }) => {
-  const problem = problems.find(problem => problem.id === 'short-links')!, study = problem.workedCase!;
+test('practice write-ups expose worked designs, capacity, sources and follow-ups through Next.js', async ({ page }) => {
+  const problem = problems.find(problem => problem.id === 'short-links')!;
+  const study = problem.workedCase!;
   await page.goto('/practice/system-design');
   await page.getByRole('link', { name: `Read worked design: ${problem.title}`, exact: true }).click();
   await expect(page).toHaveURL(/\/practice\/system-design\/short-links\/writeup$/);
   await expect(page.getByRole('figure', { name: 'Reference architecture' })).toBeVisible();
   await expect(page.locator('.capacity-calculations .panel')).toHaveCount(study.calculations.length);
-  for (const calculation of study.calculations) await expect(page.locator('.capacity-calculations')).toContainText(`${calculation.result.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${calculation.unit}`);
+  for (const calculation of study.calculations) {
+    await expect(page.locator('.capacity-calculations')).toContainText(
+      `${calculation.result.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${calculation.unit}`,
+    );
+  }
   await expect(page.locator('.content-sources a')).toHaveCount(study.sourceIds.length);
   await page.locator('.case-followup summary').first().click();
   await expect(page.locator('.case-followup').first().locator('p').first()).toBeVisible();
@@ -85,74 +22,6 @@ test('practice write-ups lead to real worked designs with capacity, sources and 
   await page.goto('/search?q=short-link');
   await page.getByRole('button', { name: 'Worked designs', exact: true }).click();
   await expect(page.locator('.search-results a[href="/practice/system-design/short-links/writeup"]')).toBeVisible();
-  await page.goto('/practice/system-design/object-storage');
-  await expect(page.getByRole('link', { name: 'Read the worked design', exact: false })).toHaveAttribute('href', '/practice/system-design/object-storage/writeup');
-});
-
-test('historical topic and custom quiz reports preserve their selected questions and cited explanations', async ({ page }) => {
-  await demo(page);
-  await page.route('**/api/quiz-reports/legacy-*', async route => {
-    const id=new URL(route.request().url()).pathname.split('/').at(-1)!;
-    const ids=id==='legacy-custom-report'?['api-1','cache-1']:id==='legacy-pointer-report'?['pointer-1','pointer-2','pointer-3']:id==='legacy-object-report'?['object-1','object-2','object-3']:['api-1','api-2','api-3'];
-    const questions=ids.map(id=>quizQuestions.find(question=>question.id===id)!);
-    const answers=Object.fromEntries(questions.map(question=>[question.id,id==='legacy-api-report'?(question.id==='api-2'?0:question.id==='api-3'?-1:1):question.correct]));
-    await route.fulfill({json:{id,questions,answers,score:id==='legacy-api-report'?1:questions.length,total:questions.length,contentVersion:'legacy-unversioned',provenance:'legacy-unversioned'}});
-  });
-  await page.route('**/api/bootstrap', async route => {
-    const response = await route.fetch(), payload: Bootstrap = await response.json();
-    payload.state.quizzes.unshift({ id: 'legacy-api-report', topic: 'api-design', answers: { 'api-1': 1, 'api-2': 0, 'api-3': -1 }, score: 1, total: 3, completedAt: '2026-10-01T12:00:00Z' });
-    payload.state.quizzes.unshift({ id: 'legacy-pointer-report', topic: 'two-pointers', answers: { 'pointer-1': 1, 'pointer-2': 1, 'pointer-3': 0 }, score: 3, total: 3, completedAt: '2026-10-01T12:00:00Z' });
-    payload.state.quizzes.unshift({ id: 'legacy-object-report', topic: 'design-principles', answers: { 'object-1': 1, 'object-2': 1, 'object-3': 0 }, score: 3, total: 3, completedAt: '2026-10-01T12:00:00Z' });
-    payload.state.customQuizzes.unshift({ id: 'legacy-custom-report', title: 'A saved two-question session', topics: ['api-design', 'caching'], mode: 'all', questionIds: ['api-1', 'cache-1'], answers: { 'api-1': 1, 'cache-1': 2 }, revision: 2, createdAt: '2026-10-01T12:00:00Z', completedAt: '2026-10-01T12:02:00Z', score: 2 });
-    await route.fulfill({ response, json: payload });
-  });
-  await page.goto('/quiz/api-design?result=legacy-api-report');
-  await expect(page.locator('.result-score')).toHaveText('1/ 3');
-  await expect(page.locator('.quiz-explanations > article')).toHaveCount(3);
-  await expect(page.locator('.quiz-explanations').getByText('Skipped', { exact: false })).toHaveCount(1);
-  await expect(page.locator('.quiz-explanations .content-sources')).toHaveCount(3);
-  await page.getByRole('link', { name: 'Try again', exact: false }).click();
-  await expect(page.getByText('15 questions.', { exact: false })).toBeVisible();
-  await page.goto('/quiz/custom/legacy-custom-report');
-  await expect(page.locator('.result-score')).toHaveText('2/ 2');
-  await expect(page.locator('.quiz-explanations > article')).toHaveCount(2);
-  await expect(page.locator('.quiz-explanations .content-sources')).toHaveCount(2);
-  const sparse = await page.request.post('/api/quiz', { data: { topic: 'api-design', answers: { 'api-1': 1 } } });
-  expect(sparse.status()).toBe(200);
-  const current: UserState = await sparse.json(), report = current.quizzes[0];
-  expect(report.score).toBe(1);
-  expect(report.total).toBe(15);
-  expect(Object.keys(report.answers)).toEqual(quizQuestions.filter(question => question.topic === 'api-design').map(question => question.id));
-  expect(report.answers['api-2']).toBe(-1);
-  await page.goto(`/quiz/api-design?result=${report.id}`);
-  await expect(page.locator('.quiz-explanations > article')).toHaveCount(15);
-  const review = await page.request.post('/api/quiz', { data: { topic: 'review', answers: { 'api-2': 1 } } });
-  expect(review.status()).toBe(200);
-  const reviewed: UserState = await review.json();
-  expect(reviewed.quizzes[0].total).toBe(1);
-  expect(reviewed.quizzes[0].answers).toEqual({ 'api-2': 1 });
-  await page.goto('/quiz/two-pointers?result=legacy-pointer-report');
-  await expect(page.locator('.result-score')).toHaveText('3/ 3');
-  await expect(page.locator('.quiz-explanations > article')).toHaveCount(3);
-  await page.getByRole('link', { name: 'Try again', exact: false }).click();
-  await expect(page.getByText('15 questions.', { exact: false })).toBeVisible();
-  const coding = await page.request.post('/api/quiz', { data: { topic: 'two-pointers', answers: { 'pointer-1': 1 } } });
-  expect(coding.status()).toBe(200);
-  const codingState: UserState = await coding.json();
-  expect(codingState.quizzes[0].total).toBe(15);
-  expect(codingState.quizzes[0].score).toBe(1);
-  expect(Object.keys(codingState.quizzes[0].answers)).toEqual(quizQuestions.filter(question => question.topic === 'two-pointers').map(question => question.id));
-  await page.goto('/quiz/design-principles?result=legacy-object-report');
-  await expect(page.locator('.result-score')).toHaveText('3/ 3');
-  await expect(page.locator('.quiz-explanations > article')).toHaveCount(3);
-  await page.getByRole('link', { name: 'Try again', exact: false }).click();
-  await expect(page.getByText('10 questions.', { exact: false })).toBeVisible();
-  const object = await page.request.post('/api/quiz', { data: { topic: 'design-principles', answers: { 'object-1': 1 } } });
-  expect(object.status()).toBe(200);
-  const objectState: UserState = await object.json();
-  expect(objectState.quizzes[0].score).toBe(1);
-  expect(objectState.quizzes[0].total).toBe(10);
-  expect(Object.keys(objectState.quizzes[0].answers)).toEqual(quizQuestions.filter(question => question.topic === 'design-principles').map(question => question.id));
 });
 
 test('worked diagrams, references and lesson links remain usable on mobile in both themes', async ({ page }) => {
