@@ -1685,6 +1685,36 @@ export const migrations = [{
       ALTER TABLE auth_transactions ADD CONSTRAINT auth_transactions_provider_check
         CHECK (provider IN ('email','google','github','facebook'));
     `,
+  }, {
+    version: 39,
+    name: 'authjs-totp-mfa',
+    sql: `
+      CREATE TABLE managed_totp_credentials (
+        user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        secret_ciphertext TEXT NOT NULL CHECK(length(secret_ciphertext) BETWEEN 80 AND 2048),
+        status TEXT NOT NULL CHECK(status IN ('pending','active')),
+        pending_expires BIGINT,
+        last_used_step BIGINT NOT NULL DEFAULT -1 CHECK(last_used_step>=-1),
+        created_at BIGINT NOT NULL CHECK(created_at>0),
+        verified_at BIGINT,
+        updated_at BIGINT NOT NULL CHECK(updated_at>=created_at),
+        CHECK(
+          status='pending' AND pending_expires IS NOT NULL AND pending_expires>created_at AND
+            verified_at IS NULL AND last_used_step=-1 OR
+          status='active' AND pending_expires IS NULL AND verified_at IS NOT NULL AND
+            verified_at>=created_at
+        )
+      );
+      CREATE TABLE managed_mfa_recovery_codes (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        code_hash TEXT NOT NULL CHECK(code_hash ~ '^[0-9a-f]{64}$'),
+        created_at BIGINT NOT NULL CHECK(created_at>0),
+        used_at BIGINT CHECK(used_at IS NULL OR used_at>=created_at),
+        PRIMARY KEY(user_id,code_hash)
+      );
+      CREATE INDEX managed_mfa_recovery_available
+        ON managed_mfa_recovery_codes(user_id,created_at) WHERE used_at IS NULL;
+    `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

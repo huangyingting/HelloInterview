@@ -3,6 +3,15 @@ import test from 'node:test';
 import type { Account, Profile } from 'next-auth';
 import { assertSocialAdmission, socialProof, type SocialProof } from '../server/auth/admission';
 import { AuthConfigurationError, invitationHash, loadAuthSettings } from '../server/auth/config';
+import {
+  decryptTotpSecret,
+  encryptTotpSecret,
+  generateRecoveryCodes,
+  generateTotpSecret,
+  recoveryCodeHash,
+  totpCode,
+  verifyTotp,
+} from '../server/auth/totp';
 
 const secret = 'a'.repeat(64);
 const environment = {
@@ -13,6 +22,7 @@ const environment = {
   AUTH_FACEBOOK_CLIENT_ID: '123456789',
   AUTH_FACEBOOK_CLIENT_SECRET: 'facebook-secret',
   AUTH_INVITED_EMAILS: 'invited@example.com,second@example.com',
+  AUTH_MFA_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64url'),
 };
 
 test('Auth.js configuration is all-or-nothing, canonical and stores only invitation fingerprints', () => {
@@ -25,6 +35,7 @@ test('Auth.js configuration is all-or-nothing, canonical and stores only invitat
     invitationHash(secret, 'second@example.com'),
   ]);
   assert.equal(JSON.stringify(config).includes('invited@example.com'), false);
+  assert.equal(config.mfaEncryptionKey.byteLength, 32);
   for (const [key, value] of Object.entries(environment)) {
     const malformed = { ...environment, [key]: undefined };
     assert.throws(() => loadAuthSettings(malformed), (error: unknown) => {
@@ -33,6 +44,33 @@ test('Auth.js configuration is all-or-nothing, canonical and stores only invitat
       return true;
     });
   }
+  for (const value of ['short', 'a'.repeat(43), `${environment.AUTH_MFA_ENCRYPTION_KEY}=`]) {
+    assert.throws(() => loadAuthSettings({ ...environment, AUTH_MFA_ENCRYPTION_KEY: value }),
+      /AUTH_MFA_ENCRYPTION_KEY/);
+  }
+});
+
+test('TOTP secrets are encrypted per owner and authenticator or recovery values are one-way and replay-aware', () => {
+  const key = Buffer.from(environment.AUTH_MFA_ENCRYPTION_KEY, 'base64url');
+  const secret = generateTotpSecret();
+  const envelope = encryptTotpSecret(secret, key, 'owner-a');
+  assert.equal(envelope.includes(secret), false);
+  assert.equal(decryptTotpSecret(envelope, key, 'owner-a'), secret);
+  assert.throws(() => decryptTotpSecret(envelope, key, 'owner-b'));
+  const now = Date.now(), code = totpCode(secret, now);
+  const step = verifyTotp(secret, code, now);
+  assert.ok(step !== null);
+  assert.equal(verifyTotp(secret, code, now, step!), null);
+  const recoveryCodes = generateRecoveryCodes();
+  assert.equal(recoveryCodes.length, 10);
+  assert.equal(new Set(recoveryCodes).size, 10);
+  assert.ok(recoveryCodes.every(value => /^[A-Z2-7]{5}(?:-[A-Z2-7]{5}){3}$/.test(value)));
+  assert.equal(
+    recoveryCodeHash(secret, 'owner-a', recoveryCodes[0].toLowerCase()),
+    recoveryCodeHash(secret, 'owner-a', recoveryCodes[0]),
+  );
+  assert.notEqual(recoveryCodeHash(secret, 'owner-a', recoveryCodes[0]),
+    recoveryCodeHash(secret, 'owner-b', recoveryCodes[0]));
 });
 
 test('social proofs trust Google verified-email evidence but never infer Facebook verification', () => {

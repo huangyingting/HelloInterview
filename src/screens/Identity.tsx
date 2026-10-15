@@ -71,6 +71,8 @@ export function ManagedAccountPage() {
   const [name, setName] = useState(data.user?.name ?? ''), [security, setSecurity] = useState<IdentitySecurity | null>(null), [error, setError] = useState('');
   const [exports,setExports]=useState<PrivacyExportHistory|null>(null);
   const [deletion,setDeletion]=useState<PrivacyDeletionView|null>(null),[deleteConfirmation,setDeleteConfirmation]=useState('');
+  const [mfaEnrollment,setMfaEnrollment]=useState<{secret:string;uri:string;expiresAt:number;qr:string}|null>(null);
+  const [mfaCode,setMfaCode]=useState(''),[recoveryCodes,setRecoveryCodes]=useState<string[]>([]);
   const loadSecurity = async () => {
     const result = await request<IdentitySecurity>('/api/identity/security');
     setSecurity(result); setError('');
@@ -212,6 +214,65 @@ export function ManagedAccountPage() {
       </>}
     </section>
     {security && <>
+      {authjs&&<section className="panel"><h2>Authenticator MFA</h2>
+        {!security.mfa?.enabled ? <>
+          <p>Add a time-based authenticator for staff and other sensitive actions. Enrollment requires a provider confirmation from the last ten minutes.</p>
+          <button className="button secondary small" disabled={pending || !security.fresh} onClick={()=>act(async()=>{
+            const enrollment=await request<{secret:string;uri:string;expiresAt:number}>('/api/identity/mfa/enrollment',{});
+            const {toDataURL}=await import('qrcode');
+            const qr=await toDataURL(enrollment.uri,{margin:1,width:240,errorCorrectionLevel:'M'});
+            setMfaEnrollment({...enrollment,qr});setRecoveryCodes([]);setMfaCode('');
+          })}>{security.mfa?.enrollmentPending?'Restart authenticator enrollment':'Set up authenticator'}</button>
+          {!security.fresh&&<p className="fine-print">Confirm a connected sign-in method above before starting enrollment.</p>}
+          {mfaEnrollment&&<div className="panel">
+            <h3>Scan and verify</h3>
+            <p>Scan this code with a TOTP authenticator. If scanning is unavailable, enter the setup key manually. This enrollment expires {new Date(mfaEnrollment.expiresAt).toLocaleTimeString()}.</p>
+            <img src={mfaEnrollment.qr} width={240} height={240} alt="Authenticator setup QR code"/>
+            <p><strong>Setup key:</strong> <code>{mfaEnrollment.secret}</code></p>
+            <form onSubmit={event=>{event.preventDefault();void act(async()=>{
+              const result=await request<{recoveryCodes:string[]}>('/api/identity/mfa/enrollment/verify',{code:mfaCode});
+              setRecoveryCodes(result.recoveryCodes);setMfaEnrollment(null);setMfaCode('');await loadSecurity();
+              notify('Authenticator MFA enabled. Save the recovery codes now.');
+            });}}>
+              <label>Six-digit authenticator code<input required inputMode="numeric" autoComplete="one-time-code"
+                pattern="[0-9]{6}" maxLength={6} value={mfaCode} onChange={event=>setMfaCode(event.target.value.replace(/\D/g,''))}/></label>
+              <button className="button small" disabled={pending||mfaCode.length!==6}>Verify and enable MFA</button>
+            </form>
+          </div>}
+        </> : <>
+          <p><Badge tone="green">Enabled</Badge> {security.mfa?.recoveryCodesRemaining??0} unused recovery codes remain.</p>
+          {!security.mfa?.sessionVerified&&<form onSubmit={event=>{event.preventDefault();void act(async()=>{
+            const compact=mfaCode.trim();
+            await request('/api/identity/mfa/challenge',/^\d{6}$/.test(compact)?{code:compact}:{recoveryCode:compact});
+            setMfaCode('');await loadSecurity();notify('MFA verified for this Studio session.');
+          });}}>
+            <p>Enter a current authenticator code or one unused recovery code to unlock sensitive staff actions for ten minutes.</p>
+            <label>Authenticator or recovery code<input required autoComplete="one-time-code" maxLength={23}
+              value={mfaCode} onChange={event=>setMfaCode(event.target.value.toUpperCase())}/></label>
+            <button className="button small" disabled={pending||mfaCode.trim().length<6}>Verify MFA</button>
+          </form>}
+          {security.mfa?.sessionVerified&&<p><Badge tone="green">Verified now</Badge> Sensitive actions are unlocked for this session for ten minutes. Provider confirmation is still checked separately.</p>}
+          <button className="button secondary small" disabled={pending||!security.fresh||!security.mfa?.sessionVerified}
+            onClick={()=>act(async()=>{
+              const result=await request<{recoveryCodes:string[]}>('/api/identity/mfa/recovery-codes',{});
+              setRecoveryCodes(result.recoveryCodes);await loadSecurity();notify('Previous recovery codes were replaced.');
+            })}>Replace recovery codes</button>{' '}
+          <button className="text-button" disabled={pending||!security.fresh||!security.mfa?.sessionVerified}
+            onClick={()=>act(async()=>{
+              await request('/api/identity/mfa',undefined,'DELETE');setRecoveryCodes([]);setMfaCode('');
+              await loadSecurity();notify('Authenticator MFA disabled for every Studio session.');
+            })}>Disable MFA</button>
+          {(!security.fresh||!security.mfa?.sessionVerified)&&<p className="fine-print">Changing MFA requires both a provider confirmation and MFA verification from the last ten minutes.</p>}
+        </>}
+        {recoveryCodes.length>0&&<div className="panel" role="status">
+          <h3>Save these one-time recovery codes now</h3>
+          <p>Each code works once. Studio stores only keyed hashes and cannot show these values again.</p>
+          <ul>{recoveryCodes.map(code=><li key={code}><code>{code}</code></li>)}</ul>
+          <button className="button secondary small" onClick={()=>act(async()=>{
+            await navigator.clipboard.writeText(recoveryCodes.join('\n'));notify('Recovery codes copied.');
+          })}>Copy recovery codes</button>
+        </div>}
+      </section>}
       <section className="panel"><h2>Studio sessions</h2><p>Sessions expire after 30 days or seven days without use. No provider tokens, device fingerprints or precise locations are displayed or stored here.</p>
         {security.sessions.map(session => <div className="panel" key={session.id}><strong>{session.current ? 'This session' : 'Other sign-in session'}</strong><p>Created {new Date(session.createdAt).toLocaleString()} - last used {new Date(session.lastUsed).toLocaleString()}</p>{!session.current && <button className="text-button" disabled={pending || !security.fresh} onClick={() => act(async () => { await request(`/api/identity/sessions/${session.id}`, undefined, 'DELETE'); await loadSecurity(); notify('Session revoked.'); })}>Revoke session</button>}</div>)}
         <button className="button secondary small" disabled={pending || !security.fresh} onClick={() => act(async () => { await request('/api/identity/sessions/revoke-others', {}); await loadSecurity(); notify('Other Studio sessions were revoked.'); })}>Sign out other sessions</button>

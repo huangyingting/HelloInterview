@@ -95,6 +95,7 @@ service with defined recovery and support commitments.
 | [61 - Participant policy runtime](61-participant-policy-runtime.md) | Fail-closed public controller/contact/age/retention/deletion/no-durability contract and managed privacy rendering | Privacy, identity and operations |
 | [62 - Service launch preflight](62-service-launch-preflight.md) | Exact-release no-listener configuration/database/queue validation with bounded secret-free evidence | Platform, identity and operations |
 | [63 - Next.js, Auth.js and Prisma migration](63-nextjs-authjs-prisma-migration.md) | No-legacy target architecture, social-provider policy, Prisma authority, route/session migration and cutover gates | Full-stack, identity and platform |
+| [64 - Auth.js TOTP MFA and recovery](64-authjs-totp-mfa.md) | Encrypted app-owned TOTP, replay fencing, one-time recovery codes, session step-up and active-credential staff admission in migration 39; no support bypass or routine key rotation | Identity and security |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to

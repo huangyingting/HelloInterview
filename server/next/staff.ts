@@ -62,12 +62,13 @@ async function staffContext(request: Request, mutation = false) {
         JOIN sessions s ON s.user_id=a.user_id
         JOIN managed_sessions m ON m.token=s.token
         JOIN managed_identities i ON i.id=m.identity_id AND i.user_id=a.user_id
+        JOIN managed_totp_credentials t ON t.user_id=a.user_id AND t.status='active'
         WHERE a.user_id=? AND s.token=? AND a.status='active' AND a.contact_verified=1
           AND a.session_epoch=m.epoch AND s.expires>${clock}
           AND m.last_used>${clock}-? AND m.created_at>${clock}-?
           AND m.authenticated_at>${clock}-? AND m.mfa_at>${clock}-?
           AND i.available=1 AND m.authenticated_at>a.security_cutoff
-        FOR UPDATE OF a,s,m,i
+        FOR UPDATE OF a,s,m,i,t
       `).get(session.userId, session.tokenHash, staffIdle, staffSessionLifetime, freshness, freshness);
       if (!row) {
         throw new HttpError(403, 'Staff actions require an active account, verified MFA and a fresh sign-in. Confirm your identity again.');

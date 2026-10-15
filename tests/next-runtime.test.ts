@@ -41,6 +41,11 @@ import { GET as identitySecurityRoute } from '../app/api/identity/security/route
 import { DELETE as revokeSessionRoute } from '../app/api/identity/sessions/[id]/route';
 import { DELETE as removeIdentityRoute } from '../app/api/identity/methods/[id]/route';
 import { POST as beginIdentityLinkRoute } from '../app/api/identity/link/route';
+import { DELETE as disableMfaRoute } from '../app/api/identity/mfa/route';
+import { POST as beginMfaEnrollmentRoute } from '../app/api/identity/mfa/enrollment/route';
+import { POST as verifyMfaEnrollmentRoute } from '../app/api/identity/mfa/enrollment/verify/route';
+import { POST as completeMfaChallengeRoute } from '../app/api/identity/mfa/challenge/route';
+import { POST as regenerateMfaRecoveryCodesRoute } from '../app/api/identity/mfa/recovery-codes/route';
 import { PATCH as profileRoute } from '../app/api/profile/route';
 import { GET as privacyExportsRoute, POST as requestPrivacyExportRoute } from '../app/api/privacy/exports/route';
 import { GET as downloadPrivacyExportRoute } from '../app/api/privacy/exports/[id]/download/route';
@@ -104,6 +109,7 @@ import { admitSocialIdentity } from '../server/auth/admission';
 import { loadAuthSettings } from '../server/auth/config';
 import { completeSocialLink } from '../server/auth/linking';
 import { recordAuthAdmission, withAuthRequest } from '../server/auth/request-context';
+import { totpCode } from '../server/auth/totp';
 import { closeNextPrivacyService } from '../server/next/privacy';
 import { migrateJobs } from '../server/jobs';
 import { Entitlements } from '../server/entitlements';
@@ -125,7 +131,8 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
   const previous = process.env.DATABASE_URL;
   process.env.DATABASE_URL = url.href;
   for (const key of ['NEXTAUTH_URL', 'NEXTAUTH_SECRET', 'AUTH_GOOGLE_CLIENT_ID', 'AUTH_GOOGLE_CLIENT_SECRET',
-    'AUTH_FACEBOOK_CLIENT_ID', 'AUTH_FACEBOOK_CLIENT_SECRET', 'AUTH_INVITED_EMAILS']) delete process.env[key];
+    'AUTH_FACEBOOK_CLIENT_ID', 'AUTH_FACEBOOK_CLIENT_SECRET', 'AUTH_INVITED_EMAILS',
+    'AUTH_MFA_ENCRYPTION_KEY']) delete process.env[key];
   Object.assign(process.env, {
     NEXTAUTH_URL: 'https://studio.fixture',
     NEXTAUTH_SECRET: 'a'.repeat(64),
@@ -134,6 +141,7 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     AUTH_FACEBOOK_CLIENT_ID: '123456789',
     AUTH_FACEBOOK_CLIENT_SECRET: 'facebook-secret',
     AUTH_INVITED_EMAILS: 'next-auth-owner@example.test',
+    AUTH_MFA_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64url'),
   });
   t.after(async () => {
     await closeNextPrivacyService();
@@ -262,6 +270,12 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
   assert.equal(securityResponse.status, 200);
   assert.equal(security.identities[0].provider, 'google');
   assert.equal(security.sessions[0].current, true);
+  assert.deepEqual(security.mfa, {
+    enabled: false,
+    enrollmentPending: false,
+    sessionVerified: false,
+    recoveryCodesRemaining: 0,
+  });
   await db.prepare(`UPDATE managed_sessions
     SET authenticated_at=floor(extract(epoch from clock_timestamp())*1000)::bigint-600001
     WHERE token=?`).run(storedToken);
@@ -276,6 +290,131 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     headers: { Cookie: accountCookies },
   }));
   assert.equal((await refreshedSecurity.json()).fresh, true);
+  const mfaEnrollmentResponse = await beginMfaEnrollmentRoute(new Request(
+    'https://studio.fixture/api/identity/mfa/enrollment',
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: '{}',
+    },
+  ));
+  const mfaEnrollment = await mfaEnrollmentResponse.json();
+  assert.equal(mfaEnrollmentResponse.status, 200);
+  assert.match(mfaEnrollment.secret, /^[A-Z2-7]{32}$/);
+  assert.match(mfaEnrollment.uri, /^otpauth:\/\/totp\//);
+  const pendingCredential = await db.prepare(`
+    SELECT secret_ciphertext,status,pending_expires FROM managed_totp_credentials WHERE user_id=?
+  `).get(authOwner);
+  assert.equal(pendingCredential?.status, 'pending');
+  assert.equal(String(pendingCredential?.secret_ciphertext).includes(mfaEnrollment.secret), false);
+  assert.ok(Number(pendingCredential?.pending_expires) > Date.now());
+  const enrollmentCode = totpCode(mfaEnrollment.secret);
+  const wrongEnrollment = await verifyMfaEnrollmentRoute(new Request(
+    'https://studio.fixture/api/identity/mfa/enrollment/verify',
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ code: enrollmentCode === '000000' ? '000001' : '000000' }),
+    },
+  ));
+  assert.equal(wrongEnrollment.status, 403);
+  const verifiedEnrollment = await verifyMfaEnrollmentRoute(new Request(
+    'https://studio.fixture/api/identity/mfa/enrollment/verify',
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ code: enrollmentCode }),
+    },
+  ));
+  const firstRecovery = await verifiedEnrollment.json();
+  assert.equal(verifiedEnrollment.status, 200);
+  assert.equal(firstRecovery.recoveryCodes.length, 10);
+  assert.equal(new Set(firstRecovery.recoveryCodes).size, 10);
+  assert.ok(firstRecovery.recoveryCodes.every((value: string) => /^[A-Z2-7]{5}(?:-[A-Z2-7]{5}){3}$/.test(value)));
+  const activeSecurity = await identitySecurityRoute(new Request('https://studio.fixture/api/identity/security', {
+    headers: { Cookie: accountCookies },
+  }));
+  assert.deepEqual((await activeSecurity.json()).mfa, {
+    enabled: true,
+    enrollmentPending: false,
+    sessionVerified: true,
+    recoveryCodesRemaining: 10,
+  });
+  const storedMfa = JSON.stringify(await db.prepare(`
+    SELECT credential.secret_ciphertext,codes.code_hash
+    FROM managed_totp_credentials credential
+    JOIN managed_mfa_recovery_codes codes ON codes.user_id=credential.user_id
+    WHERE credential.user_id=?
+  `).all(authOwner));
+  assert.equal(storedMfa.includes(mfaEnrollment.secret), false);
+  assert.equal(firstRecovery.recoveryCodes.some((value: string) => storedMfa.includes(value)), false);
+  const replayedTotp = await completeMfaChallengeRoute(new Request(
+    'https://studio.fixture/api/identity/mfa/challenge',
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ code: enrollmentCode }),
+    },
+  ));
+  assert.equal(replayedTotp.status, 403);
+  await db.prepare('UPDATE managed_sessions SET mfa_at=0 WHERE token=?').run(storedToken);
+  const recoveryChallenge = await completeMfaChallengeRoute(new Request(
+    'https://studio.fixture/api/identity/mfa/challenge',
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ recoveryCode: firstRecovery.recoveryCodes[0] }),
+    },
+  ));
+  assert.equal(recoveryChallenge.status, 200);
+  assert.equal((await recoveryChallenge.json()).recovery, true);
+  const replayedRecovery = await completeMfaChallengeRoute(new Request(
+    'https://studio.fixture/api/identity/mfa/challenge',
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ recoveryCode: firstRecovery.recoveryCodes[0] }),
+    },
+  ));
+  assert.equal(replayedRecovery.status, 403);
+  const regenerated = await regenerateMfaRecoveryCodesRoute(new Request(
+    'https://studio.fixture/api/identity/mfa/recovery-codes',
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: '{}',
+    },
+  ));
+  const replacementRecovery = await regenerated.json();
+  assert.equal(regenerated.status, 200);
+  assert.equal(replacementRecovery.recoveryCodes.length, 10);
+  assert.equal(replacementRecovery.recoveryCodes.includes(firstRecovery.recoveryCodes[1]), false);
+  const disabled = await disableMfaRoute(new Request('https://studio.fixture/api/identity/mfa', {
+    method: 'DELETE',
+    headers: { Cookie: accountCookies, 'X-CSRF-Token': csrf },
+  }));
+  assert.equal(disabled.status, 200);
+  assert.equal((await db.prepare('SELECT count(*)::integer AS count FROM managed_totp_credentials').get())?.count, 0);
+  assert.equal((await db.prepare('SELECT count(*)::integer AS count FROM managed_mfa_recovery_codes').get())?.count, 0);
+  assert.equal(Number((await db.prepare('SELECT mfa_at FROM managed_sessions WHERE token=?').get(storedToken))?.mfa_at), 0);
+  const replacementEnrollmentResponse = await beginMfaEnrollmentRoute(new Request(
+    'https://studio.fixture/api/identity/mfa/enrollment',
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: '{}',
+    },
+  ));
+  const replacementEnrollment = await replacementEnrollmentResponse.json();
+  const replacementVerification = await verifyMfaEnrollmentRoute(new Request(
+    'https://studio.fixture/api/identity/mfa/enrollment/verify',
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ code: totpCode(replacementEnrollment.secret) }),
+    },
+  ));
+  assert.equal(replacementVerification.status, 200);
   await assert.rejects(admitSocialIdentity(loadAuthSettings()!, {
     provider: 'google',
     providerAccountId: 'different-invited-subject',
@@ -559,6 +698,22 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
   );
   await db.prepare(`UPDATE managed_sessions SET authenticated_at=${'floor(extract(epoch from clock_timestamp())*1000)::bigint'},
     mfa_at=${'floor(extract(epoch from clock_timestamp())*1000)::bigint'} WHERE token=?`).run(storedToken);
+  const activeCredential = await db.prepare(`
+    SELECT secret_ciphertext,status,pending_expires,last_used_step,created_at,verified_at,updated_at
+    FROM managed_totp_credentials WHERE user_id=?
+  `).get(authOwner);
+  await db.prepare('DELETE FROM managed_totp_credentials WHERE user_id=?').run(authOwner);
+  const staffWithoutCredential = await staffSessionRoute(new Request('https://studio.fixture/api/staff/session', {
+    headers: { Cookie: accountCookies },
+  }));
+  assert.equal(staffWithoutCredential.status, 403);
+  await db.prepare(`
+    INSERT INTO managed_totp_credentials
+      (user_id,secret_ciphertext,status,pending_expires,last_used_step,created_at,verified_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?)
+  `).run(authOwner, activeCredential?.secret_ciphertext, activeCredential?.status,
+    activeCredential?.pending_expires, activeCredential?.last_used_step, activeCredential?.created_at,
+    activeCredential?.verified_at, activeCredential?.updated_at);
   const staffSessionResponse = await staffSessionRoute(new Request('https://studio.fixture/api/staff/session', {
     headers: { Cookie: accountCookies },
   }));

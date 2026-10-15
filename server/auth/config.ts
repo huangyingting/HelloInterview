@@ -10,6 +10,7 @@ const settings = [
   'AUTH_FACEBOOK_CLIENT_ID',
   'AUTH_FACEBOOK_CLIENT_SECRET',
   'AUTH_INVITED_EMAILS',
+  'AUTH_MFA_ENCRYPTION_KEY',
 ] as const;
 
 export class AuthConfigurationError extends Error {
@@ -25,6 +26,7 @@ export interface AuthSettings {
   readonly google: Readonly<{ clientId: string; clientSecret: string }>;
   readonly facebook: Readonly<{ clientId: string; clientSecret: string }>;
   readonly inviteEmailHashes: readonly string[];
+  readonly mfaEncryptionKey: Buffer;
 }
 
 export function authCookieNames(settings: Pick<AuthSettings, 'origin'>) {
@@ -82,11 +84,20 @@ export function loadAuthSettings(env: NodeJS.ProcessEnv = process.env): Readonly
   if (invitations.length > 200 || invitations.some(value => !email.safeParse(value).success) || new Set(invitations).size !== invitations.length) {
     throw new AuthConfigurationError('AUTH_INVITED_EMAILS', 'must contain 1 to 200 distinct comma-separated email addresses.');
   }
+  const encodedMfaKey = env.AUTH_MFA_ENCRYPTION_KEY;
+  if (!encodedMfaKey || !/^[A-Za-z0-9_-]{43}$/.test(encodedMfaKey)) {
+    throw new AuthConfigurationError('AUTH_MFA_ENCRYPTION_KEY', 'must be an unpadded base64url-encoded 32-byte key.');
+  }
+  const mfaEncryptionKey = Buffer.from(encodedMfaKey, 'base64url');
+  if (mfaEncryptionKey.byteLength !== 32 || mfaEncryptionKey.toString('base64url') !== encodedMfaKey) {
+    throw new AuthConfigurationError('AUTH_MFA_ENCRYPTION_KEY', 'must be an unpadded base64url-encoded 32-byte key.');
+  }
   return Object.freeze({
     origin: origin.origin,
     secret,
     google,
     facebook,
     inviteEmailHashes: Object.freeze(invitations.map(value => invitationHash(secret, value))),
+    mfaEncryptionKey,
   });
 }

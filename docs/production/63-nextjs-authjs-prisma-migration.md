@@ -44,6 +44,9 @@ not a launch or cutover:
 - staff account suspension/reactivation, support assignment and in-app replies,
   moderation and spam-triage decisions, reviewed restrictions and both appeal
   workflows now use CSRF-protected Route Handlers under that same authority;
+- Auth.js accounts can now enroll encrypted TOTP, complete session-scoped MFA
+  step-up, consume or replace one-time recovery codes and disable MFA through
+  fresh, CSRF-protected account controls;
 - anonymous managed support remains fail-closed until trusted edge address
   handling can restore network-scoped abuse protection;
 - managed-AI feedback and the remaining billing, usage and operational
@@ -109,6 +112,7 @@ fresh authentication and staff/security policy.
 | `AUTH_GOOGLE_CLIENT_ID` / `AUTH_GOOGLE_CLIENT_SECRET` | Google OAuth confidential-client credentials |
 | `AUTH_FACEBOOK_CLIENT_ID` / `AUTH_FACEBOOK_CLIENT_SECRET` | Facebook OAuth application credentials |
 | `AUTH_INVITED_EMAILS` | One to 200 distinct invited email addresses |
+| `AUTH_MFA_ENCRYPTION_KEY` | Stable unpadded base64url-encoded 32-byte key used only for TOTP secret encryption |
 | `DATABASE_URL` | Migrated PostgreSQL database |
 
 Invitation addresses are normalized once and retained in configuration only as
@@ -214,7 +218,13 @@ than JWT browser sessions. The delivered adapter:
 - exposes minimized security history, exact session revocation, other-session
   revocation and guarded sign-in-method removal;
 - links Google or Facebook only through a one-use database action bound to the
-  current fresh owner session and exact provider subject.
+  current fresh owner session and exact provider subject;
+- encrypts app-owned TOTP secrets with AES-256-GCM and owner-bound additional
+  data, stores only keyed recovery-code hashes and rejects reused TOTP time
+  steps or consumed recovery codes;
+- requires recent provider authentication to enroll, replace recovery codes or
+  disable MFA, while successful TOTP/recovery verification updates only the
+  separate session MFA timestamp.
 
 Owned support now uses the same exact Prisma-backed `Database` adapter for
 session authority and support transactions. Its Route Handlers preserve UUID
@@ -258,9 +268,11 @@ submission receipts, owner-only revisions, tombstone deletion and atomic
 recognition updates.
 Staff read authority requires an active verified account, a session created
 within 12 hours, activity within 30 minutes, sign-in and MFA within 10 minutes,
-an unexpired role grant and account-scoped admission. Auth.js does not yet
-provide the MFA enrollment/challenge flow, so this remains fail-closed unless a
-session already has reviewed MFA evidence.
+an active TOTP credential, an unexpired role grant and account-scoped
+admission. The account page now provides inline QR/manual enrollment,
+session-scoped challenge, one-time recovery-code replacement and disable
+controls. Provider confirmation and MFA remain separate requirements; an OTP
+never refreshes `authenticated_at`.
 Staff mutations add application CSRF, revision fencing and immutable audit or
 evidence records. Support replies remain in-app only; moderation suggestions
 remain non-punitive until a staff member records an explicit review.

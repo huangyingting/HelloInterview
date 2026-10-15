@@ -54,7 +54,7 @@ async function audit(db: Database, owner: string, action: string) {
     .run(randomUUID(), owner, action);
 }
 
-async function enforceAccountLimit(owner: string) {
+export async function enforceAccountLimit(owner: string) {
   const settings = loadAuthSettings();
   if (!settings) throw new HttpError(503, 'Authentication is not configured.');
   const decision = await new IdentityLimits(prismaConnection(), settings.secret).consume('account-security', owner);
@@ -121,7 +121,26 @@ export async function identitySecurity(request: Request) {
     const row = z.object({ id: z.string(), action: z.string(), created_at: z.coerce.date() }).parse(value);
     return { id: row.id, action: row.action, createdAt: row.created_at.toISOString() };
   });
-  return { identities, sessions, events, fresh: now - session.authenticatedAt <= freshness };
+  const mfa = await db.prepare(`
+    SELECT credential.status,credential.pending_expires,
+      count(code.code_hash) FILTER (WHERE code.used_at IS NULL)::integer AS recovery_codes
+    FROM managed_totp_credentials credential
+    LEFT JOIN managed_mfa_recovery_codes code ON code.user_id=credential.user_id
+    WHERE credential.user_id=?
+    GROUP BY credential.user_id,credential.status,credential.pending_expires
+  `).get(session.userId);
+  return {
+    identities,
+    sessions,
+    events,
+    fresh: now - session.authenticatedAt <= freshness,
+    mfa: {
+      enabled: mfa?.status === 'active',
+      enrollmentPending: mfa?.status === 'pending' && Number(mfa.pending_expires) > now,
+      sessionVerified: now - session.mfaAt <= freshness && session.mfaAt > 0,
+      recoveryCodesRemaining: mfa?.status === 'active' ? Number(mfa.recovery_codes) : 0,
+    },
+  };
 }
 
 export async function updateProfile(request: Request, input: unknown) {

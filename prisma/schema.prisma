@@ -858,6 +858,31 @@ model managed_sessions {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model managed_totp_credentials {
+  user_id           String   @id
+  secret_ciphertext String
+  status            String
+  pending_expires   BigInt?
+  last_used_step    BigInt   @default(-1)
+  created_at        BigInt
+  verified_at       BigInt?
+  updated_at        BigInt
+  users             users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model managed_mfa_recovery_codes {
+  user_id    String
+  code_hash  String
+  created_at BigInt
+  used_at    BigInt?
+  users      users   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, code_hash])
+  @@index([user_id, created_at], map: "managed_mfa_recovery_available")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model mock_sessions {
   user_id    String
@@ -1480,6 +1505,8 @@ model users {
   legacy_state_snapshots                                                         legacy_state_snapshots?
   managed_accounts                                                               managed_accounts?
   managed_identities                                                             managed_identities[]
+  managed_mfa_recovery_codes                                                     managed_mfa_recovery_codes[]
+  managed_totp_credentials                                                       managed_totp_credentials?
   mock_sessions                                                                  mock_sessions[]
   posts                                                                          posts[]
   privacy_deletions                                                              privacy_deletions[]

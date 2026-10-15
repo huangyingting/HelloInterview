@@ -531,4 +531,10 @@ export interface IdentitySecurity {
   sessions: { id: string; createdAt: number; lastUsed: number; authenticatedAt: number; mfa:boolean;current: boolean }[];
   events: { id: string; action: string; createdAt: string }[];
   fresh: boolean;
+  mfa?: {
+    enabled: boolean;
+    enrollmentPending: boolean;
+    sessionVerified: boolean;
+    recoveryCodesRemaining: number;
+  };
 }

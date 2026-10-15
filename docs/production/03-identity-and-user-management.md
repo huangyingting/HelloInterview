@@ -193,6 +193,9 @@ Account security page:
   qualified location where legally appropriate; no raw token display.
 - Revoke one session or all others; logout revokes the current local session.
 - Connected identities, verified contact status, and recent security changes.
+- App-owned TOTP enrollment with encrypted secrets, replay-fenced verification,
+  one-time recovery codes and session-scoped MFA step-up. Provider
+  reauthentication remains a separate freshness proof.
 - Clear distinction between signing out of Studio and signing out of a social
   provider; do not unexpectedly log the user out of all Google/GitHub services.
 
@@ -201,9 +204,11 @@ Account security page:
 The [owned support checkpoint](26-owned-support-receipts.md) provides narrowly
 scoped member receipts/history and shared support-write admission. The
 [staff administration checkpoint](35-mfa-staff-account-administration.md)
-adds verified OIDC MFA evidence, expiring append-only role grants, exact masked
-account lookup, revision-fenced suspension/reactivation, session revocation and
-immutable minimal audit. The
+adds MFA evidence, expiring append-only role grants, exact masked account
+lookup, revision-fenced suspension/reactivation, session revocation and
+immutable minimal audit. The Next.js/Auth.js runtime additionally requires an
+active app-owned TOTP credential, fresh provider authentication and fresh
+session MFA evidence. The
 [in-app support operations checkpoint](38-mfa-in-app-support-operations.md)
 adds an MFA/role-gated bounded queue, assignment/status revisions and
 owner-visible replies without exposing staff identities. These checkpoints add

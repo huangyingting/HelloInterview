@@ -13,10 +13,14 @@ before starting the release.
 - Verified OIDC ID-token `amr` is strictly typed. Only the explicit value
   `mfa` records MFA evidence; freshness or a combination such as `pwd` plus
   `otp` is not inferred to mean MFA.
+- The Next.js/Auth.js runtime additionally supplies app-owned TOTP enrollment.
+  Secrets are AES-256-GCM encrypted with owner-bound additional data; recovery
+  codes are shown once and retained only as keyed hashes.
 - Ordinary managed sessions remain compatible without MFA. Staff APIs require
   an active account with verified contact, the actual current session, a
   12-hour absolute staff lifetime, 30-minute idle limit, authentication within
-  ten minutes and verified MFA within ten minutes.
+  ten minutes, verified MFA within ten minutes and an active TOTP credential
+  under Auth.js.
 - Role grants are append-only events with an operator reference, 20-500
   character reason and mandatory expiry no more than 90 days away. Revocation
   is another append-only event. The latest unexpired event is authoritative.
@@ -58,6 +62,11 @@ Role and audit rows reject updates through database triggers. A user deletion
 removes role events with the account, while audit references remain minimal and
 unlinked so the approved audit-retention policy can later govern them.
 Published migrations 1-25 remain immutable.
+
+Migration 39 adds the Auth.js TOTP credential and one-time recovery-code
+tables. TOTP time steps are revision-like replay fences: a code from an already
+accepted step cannot be accepted again. Recovery-code consumption, session MFA
+evidence and security audit commit in one transaction.
 
 ## Controlled role operation
 
