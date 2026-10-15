@@ -1,6 +1,8 @@
 # 24 - Owned AI reservation/native intents
 
-**Status: internal W09 admission checkpoint, not enabled provider execution.**
+**Status: internal W09 admission checkpoint; operation-specific provider
+execution is added by [66](66-managed-ai-native-worker.md), while browser
+admission remains disabled.**
 This composes the [usage ledger](23-sandbox-ai-usage-ledger.md) with the maintained
 queue. It does not expose an endpoint, add an AI handler, approve a provider or
 grant `ai.feedback.consume`. Local grading/tutoring remains unchanged.
@@ -73,7 +75,7 @@ again, recreate a pruned job, reset a timestamp or refill capacity. Changed
 input/revision/cost/consent/evidence conflicts. A known finished standalone
 reservation cannot receive its first native binding.
 
-## Provider authority remains explicitly denied
+## Generic provider authority remains explicitly denied
 
 The existing generic managed `jobs.enqueue({kind: 'ai.evaluate', ...})` still
 requires `ai.feedback.consume` and remains denied under current Pro policy.
@@ -93,10 +95,11 @@ dispatch path or capacity from being released while leaving a live native
 intent. Generic `jobs:replay`, even with `providerReconciled: true`, cannot
 advance a bound operation or assign another job/generation.
 
-No SDK transport, user-facing consent flow, provider execution policy,
-tokenization, model price attestation, circuit breaker or customer allowance UI
-is supplied. `providerEnabled` remains false. This is not an end-to-end managed
-AI feature or permission to weaken these gates.
+This checkpoint itself supplied no SDK transport or user-facing consent flow.
+The later operation-specific worker in [66](66-managed-ai-native-worker.md)
+retains the generic denial while adding pinned Azure execution and atomic
+publication for these exact bindings. `providerEnabled` remains false at the
+input-admission interface until owned Route Handlers and participant UX ship.
 
 ## Atomic known-undispatched cancellation
 

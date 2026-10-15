@@ -53,10 +53,13 @@ not a launch or cutover:
 - the separately supervised billing worker and reconciliation command now use
   that same Prisma adapter for business mutations and transaction-coupled
   pg-boss completion;
+- an operation-specific managed AI worker now uses the same Prisma adapter to
+  fence native claims, record dispatch before Azure I/O and atomically publish
+  validated saved-work results, measured usage settlement and queue completion;
 - anonymous managed support remains fail-closed until trusted edge address
   handling can restore network-scoped abuse protection;
-- managed-AI feedback and the remaining non-billing worker, deployment and
-  operational surfaces still block participant access;
+- managed-AI browser admission/status UX and the remaining non-billing worker,
+  deployment and operational surfaces still block participant access;
 - Caddy must continue returning the hardened unavailable response.
 
 ## Final architecture

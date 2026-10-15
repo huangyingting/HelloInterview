@@ -7,7 +7,7 @@ import { digest, encodePayload, readOperation, requestDigest, type Operation, ty
 import { monthlyUsageWindow, utcCostWindows } from './calendar';
 import { amount, budgetRowSchema, completionSchema, evidenceSchema, instant, releaseSchema,
   reservationRequestSchema, reservationRowSchema, usagePolicySchema, windowRowSchema,
-  type ReservationRequest, type ReservationRow, type UsagePolicy } from './schema';
+  sandboxUsagePolicy, type ReservationRequest, type ReservationRow, type UsagePolicy } from './schema';
 export { sandboxUsagePolicy, type ReservationRequest, type UsagePolicy } from './schema';
 export { SandboxInputs } from './inputs';
 export { sandboxInputPolicy, type InputPolicy, type InputRequest } from './schema';
@@ -185,8 +185,123 @@ export class SandboxUsage {
     }
     return operation;
   }
+  private async native(operation: Operation) {
+    if (operation.kind !== 'ai.evaluate' || operation.principal.type !== 'user'
+      || operation.ownerId !== null && operation.ownerId !== operation.principal.id) {
+      throw new HttpError(409, 'The native AI operation does not have exact owned authority.');
+    }
+    const payload = z.strictObject({
+      reservationId: z.uuid(),
+      authority: z.literal(sandboxUsagePolicy),
+      requestHash: z.string().regex(/^[a-f0-9]{64}$/),
+    }).parse(operation.payload);
+    const { row, request } = await this.reservation(operation.principal.id, payload.reservationId);
+    const bound = await this.binding(row, true);
+    if (!bound || bound.id !== operation.id || bound.jobId !== operation.jobId
+      || bound.generation !== operation.generation || payload.requestHash !== row.request_hash) {
+      throw new HttpError(409, 'The native AI operation no longer matches its immutable reservation binding.');
+    }
+    return { row, request };
+  }
   assertDatabase(db: Database) {
     if (db !== this.db) throw new Error('Usage and native jobs must share the exact database adapter and transaction.');
+  }
+  async assertNativeOperation(operation: Operation) {
+    return this.db.transaction(async () => {
+      await this.lockOwner(operation.principal.id, undefined, true);
+      const { row } = await this.native(operation);
+      await this.integrity(row);
+      return { owner: row.owner_ref, reservationId: row.id, state: row.state };
+    });
+  }
+  async markNativeDispatched(db: Database, operation: Operation, evidence: z.input<typeof evidenceSchema>) {
+    this.assertDatabase(db);
+    const proof = evidenceSchema.parse(evidence);
+    return this.db.transaction(async () => {
+      await this.lockOwner(operation.principal.id);
+      const { row, request } = await this.native(operation);
+      const { budgets } = await this.integrity(row);
+      if (row.user_id !== operation.principal.id) throw new HttpError(409, 'Retired native AI usage cannot be dispatched.');
+      await this.lockOwner(operation.principal.id, request.authEpoch);
+      await this.assertPaid(operation.principal.id);
+      if (row.state !== 'reserved') {
+        throw new HttpError(409, 'The native AI provider call was already dispatched or resolved.');
+      }
+      await this.assertDispatchWindow(row, budgets);
+      const counts = z.object({
+        global: z.number().int().nonnegative(),
+        owner: z.number().int().nonnegative(),
+      }).parse(await this.db.prepare(`SELECT count(*)::integer AS global,
+        count(*) FILTER(WHERE owner_ref=?)::integer AS owner
+        FROM ai_usage_reservations WHERE state IN ('dispatched','unknown')`).get(operation.principal.id));
+      if (counts.global >= this.policy.globalConcurrency || counts.owner >= this.policy.ownerConcurrency) {
+        throw new HttpError(429, 'Managed AI concurrency is occupied, including unresolved outcomes.');
+      }
+      await this.db.prepare("UPDATE ai_usage_reservations SET state='dispatched',dispatched_at=clock_timestamp() WHERE id=?").run(row.id);
+      await this.audit(row, 'dispatched', proof);
+      await this.lockOwner(operation.principal.id, request.authEpoch);
+      await this.assertPaid(operation.principal.id);
+      const current = (await this.reservation(operation.principal.id, row.id)).row;
+      this.sameRequest(current, row);
+      if (current.state !== 'dispatched' || (await this.native(operation)).row.id !== row.id) {
+        throw new HttpError(409, 'Native AI dispatch publication changed.');
+      }
+      await this.assertDispatchWindow(current, (await this.integrity(current)).budgets);
+      return { owner: row.owner_ref, reservationId: row.id };
+    });
+  }
+  async markNativeUnknown(db: Database, operation: Operation, evidence: z.input<typeof evidenceSchema>) {
+    this.assertDatabase(db);
+    const proof = evidenceSchema.parse(evidence);
+    return this.db.transaction(async () => {
+      await this.lockOwner(operation.principal.id, undefined, true);
+      const { row } = await this.native(operation);
+      await this.integrity(row);
+      if (row.state === 'unknown') return;
+      if (row.state !== 'dispatched') {
+        throw new HttpError(409, 'Only a recorded native AI dispatch can become an unknown outcome.');
+      }
+      await this.db.prepare("UPDATE ai_usage_reservations SET state='unknown' WHERE id=?").run(row.id);
+      await this.audit(row, 'unknown', proof);
+      const current = (await this.native(operation)).row;
+      if (current.state !== 'unknown') throw new HttpError(409, 'Native AI unknown-outcome publication changed.');
+      await this.integrity(current);
+    });
+  }
+  async completeNative(
+    db: Database,
+    operation: Operation,
+    input: z.input<typeof completionSchema>,
+    publish: () => Promise<void>,
+  ) {
+    this.assertDatabase(db);
+    const completion = completionSchema.parse(input);
+    const hash = digest(encodePayload({ state: 'consumed', completion }));
+    return this.db.transaction(async () => {
+      await this.lockOwner(operation.principal.id);
+      const { row, request } = await this.native(operation);
+      await this.integrity(row);
+      if (row.user_id !== operation.principal.id) throw new HttpError(409, 'Retired native AI results cannot be published.');
+      if (row.state === 'consumed') {
+        if (row.settlement_hash !== hash) throw new HttpError(409, 'The native AI settlement conflicts with its first result.');
+        return;
+      }
+      if (!['dispatched', 'unknown'].includes(row.state)) {
+        throw new HttpError(409, 'Only a dispatched native AI result can consume reserved usage.');
+      }
+      if (completion.actualCostMicros > row.cost_ceiling) {
+        throw new HttpError(409, 'Actual managed AI cost exceeds its captured ceiling; reconcile before publishing.');
+      }
+      await this.lockOwner(operation.principal.id, request.authEpoch);
+      await this.assertPaid(operation.principal.id);
+      await publish();
+      await this.lockOwner(operation.principal.id, request.authEpoch);
+      await this.assertPaid(operation.principal.id);
+      await this.settle(row, 'consumed', completion.actualCostMicros, hash, completion.resultHash, completion.evidence);
+      await this.lockOwner(operation.principal.id, request.authEpoch);
+      await this.assertPaid(operation.principal.id);
+      await this.native(operation);
+    });
   }
   private async assertUnbound(row: ReservationRow) {
     if (await this.binding(row)) throw new HttpError(409, 'A bound native intent cannot use standalone dispatch or settlement; provider execution remains disabled.');

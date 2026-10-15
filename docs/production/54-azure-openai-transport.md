@@ -1,8 +1,9 @@
 # 54 - Azure OpenAI transport compatibility
 
 **Status: adapter implemented, fixture-verified and authentically probed with
-the authorized `gpt-6.1-sol` Azure deployment; managed dispatch remains
-separately denied.**
+the authorized `gpt-6.1-sol` Azure deployment; operation-specific managed
+dispatch now exists in [66](66-managed-ai-native-worker.md), while participant
+admission remains disabled.**
 
 This checkpoint tracks
 [#47](https://github.com/huangyingting/HelloInterview/issues/47). The user
@@ -49,7 +50,8 @@ feedback with a bounded numeric score.
 
 ## Authority boundary
 
-This adapter supports the existing local AI path. Managed identity still
-disables direct provider calls. It does not grant native intent claim, provider
-dispatch/publication, token/cost policy, consent or launch authority. Those
-remain parent #10 work after the deployment and operating policies are valid.
+The original adapter continues to support only the legacy local AI path. The
+managed worker uses a separate all-or-nothing configuration, explicit pricing,
+native claim fencing and atomic usage/result publication. Neither adapter grants
+browser admission, consent UX, unknown-outcome reconciliation or launch
+authority; those remain parent #10 work.

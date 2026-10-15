@@ -2,11 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { problems } from '../../shared/catalog';
 import { emptyState } from '../../shared/domain';
-import { mockTurnProblem, projectPatch, sourcePathIssue } from '../../shared/premium';
+import { mockTurnProblem, nextMockQuestion, projectPatch, sourcePathIssue } from '../../shared/premium';
 import type { PracticeProblem, Problem } from '../../shared/types';
 import type { Capability } from '../../shared/access';
+import { managedAiResultSchema, type ManagedAiResult } from '../ai/schema';
 import type { Database } from '../db/connection';
 import { assertDatabaseVersion, recordTables } from '../db/migrations';
+import { StateRepository } from '../db/state-repository';
 import { userStateSchema } from '../db/state-schema';
 import { Entitlements } from '../entitlements';
 import { HttpError } from '../http-error';
@@ -198,6 +200,93 @@ export class SandboxInputs {
       await this.access(saved.command.request);
       await usage.assertQueuedAdmission(owner, saved.row.reservation_id);
       return { id: saved.row.id, providerEnabled: false as const, input: saved.envelope };
+    });
+  }
+  async publish(owner: string, operationId: string, input: ManagedAiResult) {
+    const result = managedAiResultSchema.parse(input);
+    return this.db.transaction(async () => {
+      await this.owner(owner);
+      const raw = await this.db.prepare(`SELECT s.* FROM ai_input_snapshots s
+        JOIN ai_usage_operations o ON o.reservation_id=s.reservation_id
+        WHERE s.owner_ref=? AND o.operation_id=? FOR UPDATE OF s`).get(z.uuid().parse(owner), z.uuid().parse(operationId));
+      if (!raw) throw new HttpError(404, 'Owned managed AI input not found.');
+      const saved = this.row(raw);
+      if (saved.row.kind !== result.kind) throw new HttpError(409, 'Managed AI output belongs to another saved workflow.');
+      await this.access(saved.command.request);
+      const current = await this.source(saved.command.request);
+      if (current.payload !== saved.row.payload) {
+        throw new HttpError(409, 'Saved work changed before managed AI publication; the newer work was not overwritten.');
+      }
+      const states = new StateRepository(this.db);
+      let revision = saved.row.source_revision;
+      await states.mutate(owner, state => {
+        if (result.kind === 'feedback') {
+          const attempt = state.attempts.find(value => value.id === saved.row.source_id);
+          if (!attempt || (attempt.revision ?? 0) !== saved.row.source_revision) {
+            throw new HttpError(409, 'The saved practice attempt changed before managed AI publication.');
+          }
+          if (!attempt.completed) state.recognition += 5;
+          attempt.feedback = { ...result.output, source: 'ai' };
+          attempt.completed = true;
+          attempt.revision = saved.row.source_revision + 1;
+          revision = attempt.revision;
+        } else if (result.kind === 'mock') {
+          const mock = state.mocks.find(value => value.id === saved.row.source_id);
+          if (!mock || mock.completedAt || mock.revision !== saved.row.source_revision || mock.draft.trim().length < 30) {
+            throw new HttpError(409, 'The saved mock turn changed before managed AI publication.');
+          }
+          const problem = problems.find(value => value.id === mock.problemId);
+          if (!problem) throw new Error('The saved mock exercise is unavailable.');
+          mock.turns.push({
+            question: mock.question,
+            focus: mock.focus,
+            answer: mock.draft,
+            feedback: { ...result.output, source: 'ai' },
+          });
+          mock.draft = '';
+          mock.revision += 1;
+          revision = mock.revision;
+          if (mock.turns.length === mock.length) {
+            mock.completedAt = new Date().toISOString();
+            state.recognition += 10;
+          } else {
+            Object.assign(mock, nextMockQuestion(problem, mock));
+          }
+        } else if (result.kind === 'project') {
+          const project = state.projects.find(value => value.id === saved.row.source_id);
+          if (!project || project.revision !== saved.row.source_revision) {
+            throw new HttpError(409, 'The saved project changed before managed AI publication.');
+          }
+          if (!project.completedAt) state.recognition += 5;
+          project.feedback = { ...result.output, source: 'ai' };
+          project.completedAt = new Date().toISOString();
+          project.revision += 1;
+          revision = project.revision;
+        } else {
+          const question = state.chat.find(value => value.id === saved.row.source_id && value.role === 'user');
+          if (!question) throw new HttpError(409, 'The saved tutor question changed before managed AI publication.');
+          const existing = state.chat.find(value => value.id === operationId);
+          if (existing) {
+            if (existing.role !== 'assistant' || existing.source !== 'ai' || existing.text !== result.output.text) {
+              throw new HttpError(409, 'The managed AI tutor publication conflicts with its first result.');
+            }
+          } else {
+            state.chat.push({
+              id: operationId,
+              role: 'assistant',
+              text: result.output.text,
+              createdAt: new Date().toISOString(),
+              source: 'ai',
+            });
+            state.chat = state.chat.slice(-100);
+          }
+        }
+        const today = new Date().toISOString().slice(0, 10);
+        if (!state.activity.includes(today)) state.activity.push(today);
+        state.activity = state.activity.slice(-370);
+      });
+      await this.access(saved.command.request);
+      return { kind: result.kind, sourceId: saved.row.source_id, revision };
     });
   }
 }

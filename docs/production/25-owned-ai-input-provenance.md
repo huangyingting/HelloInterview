@@ -1,6 +1,8 @@
 # 25 - Owned AI saved-input provenance
 
-**Status: internal W09 input-admission checkpoint, not enabled provider AI.**
+**Status: internal W09 input-admission checkpoint; the exact snapshots can now
+be consumed only by the operation-specific worker in
+[66](66-managed-ai-native-worker.md), with browser admission still disabled.**
 This extends the [usage ledger](23-sandbox-ai-usage-ledger.md) and
 [native intents](24-owned-ai-native-intents.md) with actual owned saved-input
 snapshots. It supplies no public endpoint, provider transport or worker handler.
@@ -131,7 +133,9 @@ retired, stale or corrupted input produces an explicit failure and leaves capaci
 held for reviewed cancellation/reconciliation.
 
 Both methods return `providerEnabled: false`. A prepared envelope is **not** a
-native claim, provider dispatch token or result-publication authority.
+native claim, provider dispatch token or result-publication authority. The
+worker in [66](66-managed-ai-native-worker.md) separately proves the exact
+active claim and marks dispatch before provider I/O.
 
 ## Private payload lifecycle
 

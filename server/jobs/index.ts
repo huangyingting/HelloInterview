@@ -184,6 +184,13 @@ export class DurableJobs {
     const operation = await this.operation(claimDataSchema.parse(claim.data).operationId);
     await this.assertClaim(operation, claim, signal);
   }
+  async assertReservedAiClaim(usage: SandboxUsage, claim: JobClaim, signal?: AbortSignal): Promise<Operation> {
+    this.assertOpen();
+    usage.assertDatabase(this.db);
+    const operation = await this.operation(claimDataSchema.parse(claim.data).operationId);
+    await this.assertClaim(operation, claim, signal, current => usage.assertNativeOperation(current).then(() => undefined));
+    return operation;
+  }
   async heartbeat(claim: JobClaim, signal?: AbortSignal): Promise<void> {
     await this.assertCurrentClaim(claim, signal);
     if (commandResponseSchema.parse(await this.boss.touch(claim.name, claim)).affected !== 1) throw new LostJobClaim();
@@ -195,6 +202,28 @@ export class DurableJobs {
     return { status: await this.status(readOperation(row)) };
   }
   async finish(claim: JobClaim, mutation: (db: Database, operation: Operation) => Promise<Payload>, signal?: AbortSignal): Promise<void> {
+    return this.finishAuthorized(claim, mutation, signal, operation => this.assertAuthority(operation));
+  }
+  async finishReservedAi(
+    usage: SandboxUsage,
+    claim: JobClaim,
+    mutation: (db: Database, operation: Operation) => Promise<Payload>,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    usage.assertDatabase(this.db);
+    return this.finishAuthorized(
+      claim,
+      mutation,
+      signal,
+      operation => usage.assertNativeOperation(operation).then(() => undefined),
+    );
+  }
+  private async finishAuthorized(
+    claim: JobClaim,
+    mutation: (db: Database, operation: Operation) => Promise<Payload>,
+    signal: AbortSignal | undefined,
+    authorize: (operation: Operation) => Promise<void>,
+  ): Promise<void> {
     const data = claimDataSchema.parse(claim.data);
     const observed = await this.operation(data.operationId);
     await this.db.transaction(async () => {
@@ -202,16 +231,21 @@ export class DurableJobs {
       const row = await this.db.prepare('SELECT * FROM durable_operations WHERE id=? FOR UPDATE').get(data.operationId);
       if (!row) throw new LostJobClaim();
       const operation = readOperation(row);
-      await this.assertClaim(operation, claim, signal);
+      await this.assertClaim(operation, claim, signal, authorize);
       const receipt = encodePayload(await mutation(this.db, operation), 16384);
-      await this.assertClaim(operation, claim, signal);
+      await this.assertClaim(operation, claim, signal, authorize);
       const result = await this.boss.complete(claim.name, claim, { operationId: operation.id }, { db: this.db });
       if (commandResponseSchema.parse(result).affected !== 1) throw new LostJobClaim();
       await this.db.prepare('UPDATE durable_operations SET completed_at=clock_timestamp(),receipt=? WHERE id=?').run(receipt, operation.id);
     });
   }
-  private async assertClaim(operation: Operation, claim: JobClaim, signal?: AbortSignal): Promise<void> {
-    await this.assertAuthority(operation);
+  private async assertClaim(
+    operation: Operation,
+    claim: JobClaim,
+    signal?: AbortSignal,
+    authorize: (operation: Operation) => Promise<void> = current => this.assertAuthority(current),
+  ): Promise<void> {
+    await authorize(operation);
     const [current] = await this.boss.findJobs<ClaimData>(claim.name, { id: claim.id });
     const now = await this.db.prepare('SELECT clock_timestamp() AS now').get();
     const time = z.date().parse(now?.now).getTime();
