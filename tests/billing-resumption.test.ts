@@ -3,7 +3,7 @@ import { test, type TestContext } from 'node:test';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { openBillingFixture, sandboxSettings } from './fixtures/billing';
+import { authJsEnvironment, openBillingFixture, sandboxSettings } from './fixtures/billing';
 import { sandboxResumptionAuthority, sandboxRenewalAuthority, sandboxRenewalCycleAuthority, sandboxServicePolicy } from '../shared/billing-ledger';
 import { LostJobClaim, TerminalJobFailure } from '../server/jobs';
 import { createBoss } from '../server/jobs/queue';
@@ -427,9 +427,8 @@ test('compiled maintained reconciliation claims new renewal work and publishes c
       apiVersion:'${stripeApiVersion}',timeout:1000,maxNetworkRetries:0}); await runBillingCommand('reconcile',client);`;
   assert.ok(f.config.databaseUrl);
   await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script], { cwd: process.cwd(),
-    env: { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl, PUBLIC_ORIGIN: f.origin,
-      COOKIE_SECURE: 'true', OIDC_ISSUER: f.issuer, OIDC_CLIENT_ID: 'synthetic-client', OIDC_CLIENT_SECRET: 'synthetic-client-secret',
-      ...sandboxSettings }, timeout: 30000 });
+    env: { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl,
+      ...authJsEnvironment(f.origin), ...sandboxSettings }, timeout: 30000 });
   assert.equal((await resumption(f))?.state, 'confirmed');
   assert.equal((await f.view(f.browser)).ledger?.subscriptions[0].nonrenewing, false);
   assert.equal((await f.view(f.browser)).ledger?.stale, false); assert.equal(posts(f).length, 1);

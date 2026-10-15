@@ -37,6 +37,13 @@ services:
       AUTH_FACEBOOK_CLIENT_SECRET: ${AUTH_FACEBOOK_CLIENT_SECRET:?Set the Facebook app secret}
       AUTH_INVITED_EMAILS: ${AUTH_INVITED_EMAILS:?Set the invited test addresses}
       AUTH_MFA_ENCRYPTION_KEY: ${AUTH_MFA_ENCRYPTION_KEY:?Set the MFA encryption key}
+      PRIVACY_CONTROLLER_NAME: ${PRIVACY_CONTROLLER_NAME:?Set the privacy controller name}
+      PRIVACY_CONTACT_URL: ${PRIVACY_CONTACT_URL:?Set the privacy contact URL}
+      PARTICIPANT_MINIMUM_AGE: ${PARTICIPANT_MINIMUM_AGE:?Set the participant minimum age}
+      PRIVACY_RETENTION_NOTICE: ${PRIVACY_RETENTION_NOTICE:?Set the retention notice}
+      PRIVACY_DELETION_NOTICE: ${PRIVACY_DELETION_NOTICE:?Set the deletion notice}
+      PRIVATE_BETA_NO_DURABILITY_ACK: ${PRIVATE_BETA_NO_DURABILITY_ACK:?Acknowledge the private-beta durability boundary}
+      TRUST_PROXY: ${TRUST_PROXY:?Set the private ingress proxy allowlist}
       HOSTNAME: 0.0.0.0
       PORT: "3000"
     ports:

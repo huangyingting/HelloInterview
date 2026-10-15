@@ -17,6 +17,18 @@ export const sandboxSettings = {
   STRIPE_TEST_WEBHOOK_SECRET: 'whsec_SyntheticCheckoutFixtureOnly',
   STRIPE_TEST_OFFERS: JSON.stringify({ pro_monthly: 'price_SyntheticMonthly', pro_annual: 'price_SyntheticAnnual' }),
 };
+export function authJsEnvironment(origin: string) {
+  return {
+    NEXTAUTH_URL: origin,
+    NEXTAUTH_SECRET: 'billing-auth-secret-billing-auth-secret-billing-auth-secret',
+    AUTH_GOOGLE_CLIENT_ID: 'billing-google-client',
+    AUTH_GOOGLE_CLIENT_SECRET: 'billing-google-secret',
+    AUTH_FACEBOOK_CLIENT_ID: '123456789',
+    AUTH_FACEBOOK_CLIENT_SECRET: 'billing-facebook-secret',
+    AUTH_INVITED_EMAILS: 'billing-owner@example.invalid',
+    AUTH_MFA_ENCRYPTION_KEY: Buffer.alloc(32, 13).toString('base64url'),
+  };
+}
 const customerPost = z.strictObject({ metadata: z.strictObject({ studio_customer_ref: z.uuid() }) });
 const sessionPost = z.strictObject({
   mode: z.literal('subscription'), ui_mode: z.literal('hosted_page'), customer: z.string(),

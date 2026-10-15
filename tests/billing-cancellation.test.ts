@@ -3,7 +3,7 @@ import { test, type TestContext } from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { openBillingFixture, sandboxSettings } from './fixtures/billing';
+import { authJsEnvironment, openBillingFixture, sandboxSettings } from './fixtures/billing';
 import { sandboxRenewalAuthority, sandboxServicePolicy } from '../shared/billing-ledger';
 import { TerminalJobFailure, LostJobClaim } from '../server/jobs';
 import { createBoss } from '../server/jobs/queue';
@@ -262,8 +262,8 @@ test('compiled maintained reconciliation claims cancellation and publishes owned
   const code = `import Stripe from 'stripe'; import { runBillingCommand } from './dist-server/billing/cli.js';
     const client = new Stripe(process.env.STRIPE_TEST_SECRET_KEY, { host: '127.0.0.1', port: ${f.port}, protocol: 'http',
       apiVersion: '${stripeApiVersion}', maxNetworkRetries: 0, timeout: 1000 }); await runBillingCommand('reconcile', client);`;
-  const env = { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl!, PUBLIC_ORIGIN: f.origin,
-    COOKIE_SECURE: 'true', OIDC_ISSUER: f.issuer, OIDC_CLIENT_ID: 'synthetic-client', OIDC_CLIENT_SECRET: 'synthetic-client-secret', ...sandboxSettings };
+  const env = { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl!,
+    ...authJsEnvironment(f.origin), ...sandboxSettings };
   const result = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', code], { env, timeout: 15000 });
   assert.equal(JSON.parse(result.stdout).event, 'billing.sandbox.reconciled');
   assert.equal((await cancellation(f))?.state, 'confirmed'); assert.equal((await f.view(f.browser)).ledger?.subscriptions[0].nonrenewing, true);

@@ -1,6 +1,56 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
+import { loadServicePreflightConfig, ServicePreflightConfigurationError } from '../server/preflight/config';
+
+const serviceEnvironment = {
+  NODE_ENV: 'production',
+  HOSTNAME: '127.0.0.1',
+  PORT: '10006',
+  TRUST_PROXY: '127.0.0.1/32',
+  DATABASE_URL: 'postgresql://studio:synthetic-password@127.0.0.1:5432/studio',
+  NEXTAUTH_URL: 'https://interview.genisisiq.com',
+  NEXTAUTH_SECRET: 'a'.repeat(64),
+  AUTH_GOOGLE_CLIENT_ID: 'google-client',
+  AUTH_GOOGLE_CLIENT_SECRET: 'google-secret',
+  AUTH_FACEBOOK_CLIENT_ID: '123456789',
+  AUTH_FACEBOOK_CLIENT_SECRET: 'facebook-secret',
+  AUTH_INVITED_EMAILS: 'owner@example.invalid',
+  AUTH_MFA_ENCRYPTION_KEY: Buffer.alloc(32, 5).toString('base64url'),
+  PRIVACY_CONTROLLER_NAME: 'Interview Studio Operator',
+  PRIVACY_CONTACT_URL: 'https://interview.genisisiq.com/privacy',
+  PARTICIPANT_MINIMUM_AGE: '18',
+  PRIVACY_RETENTION_NOTICE: 'Private-beta records use the reviewed bounded retention policy.',
+  PRIVACY_DELETION_NOTICE: 'Deletion requests use the reviewed private-beta completion workflow.',
+  PRIVATE_BETA_NO_DURABILITY_ACK: 'true',
+};
+
+test('Auth.js service preflight configuration is complete, secret-free and rejects legacy OIDC settings', () => {
+  const config = loadServicePreflightConfig(serviceEnvironment);
+  assert.equal(config.auth.origin, 'https://interview.genisisiq.com');
+  assert.equal(config.auth.inviteEmailHashes.length, 1);
+  assert.equal(config.participantPolicy.minimumAge, 18);
+  assert.equal(config.ai, null);
+  assert.equal(config.billing, null);
+  for (const malformed of [
+    { NEXTAUTH_SECRET: undefined },
+    { AUTH_INVITED_EMAILS: undefined },
+    { PRIVACY_RETENTION_NOTICE: undefined },
+    { TRUST_PROXY: undefined },
+    { OIDC_ISSUER: 'https://legacy.example.invalid/' },
+  ]) {
+    assert.throws(() => loadServicePreflightConfig({ ...serviceEnvironment, ...malformed }), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.message.includes('synthetic-password'), false);
+      assert.equal(error.message.includes(serviceEnvironment.NEXTAUTH_SECRET), false);
+      return true;
+    });
+  }
+  assert.throws(
+    () => loadServicePreflightConfig({ ...serviceEnvironment, OIDC_ISSUER: 'https://legacy.example.invalid/' }),
+    (error: unknown) => error instanceof ServicePreflightConfigurationError && /must be removed/.test(error.message),
+  );
+});
 
 test('Azure VM ingress uses the exact canonical host, loopback upstream and explicit unavailable fallback', async () => {
   const caddy = await readFile('deploy/azure-vm/interview.caddy', 'utf8');
@@ -15,7 +65,6 @@ test('Azure VM ingress uses the exact canonical host, loopback upstream and expl
 test('Azure VM runtime consumes only the verified release and remains secret-gated', async () => {
   const files = [
     'deploy/azure-vm/interview-studio.service',
-    'deploy/azure-vm/interview-studio-identity-worker.service',
     'deploy/azure-vm/interview-studio-privacy-worker.service',
     'deploy/azure-vm/interview-studio-preflight.service',
     'deploy/azure-vm/interview-studio-migrate.service',
@@ -31,17 +80,17 @@ test('Azure VM runtime consumes only the verified release and remains secret-gat
     assert.doesNotMatch(unit, /docker build|npm run build/);
     assert.match(unit, /docker image inspect --format=\{\{\.Id\}\}/);
   }
-  for (const file of [...files.slice(0, 3), files[3]]) {
+  for (const file of files.slice(0, 3)) {
     const unit = await readFile(file, 'utf8');
     assert.match(unit, /^ConditionPathExists=\/etc\/interview-studio\/service\.env$/m);
     assert.match(unit, /--env-file \/etc\/interview-studio\/runtime\.env --env-file \/etc\/interview-studio\/service\.env/);
     assert.doesNotMatch(unit, /APP_MODE=local/);
   }
-  const preflight = await readFile(files[3], 'utf8');
+  const preflight = await readFile(files[2], 'utf8');
   assert.match(preflight, /node dist-server\/preflight\/cli\.js/);
   assert.doesNotMatch(preflight, /APP_MODE=local/);
   assert.doesNotMatch(preflight, /(?:--publish|-p) /);
-  const migration = await readFile(files[4], 'utf8');
+  const migration = await readFile(files[3], 'utf8');
   assert.match(migration, /--env-file \/etc\/interview-studio\/migrate\.env --env APP_MODE=local/);
   const release = await readFile('deploy/azure-vm/Dockerfile.release', 'utf8');
   assert.match(release, /^FROM node:24-bookworm-slim@sha256:[a-f0-9]{64}$/m);
@@ -54,6 +103,8 @@ test('Azure VM runtime consumes only the verified release and remains secret-gat
   const installer = await readFile('deploy/azure-vm/install-runtime-units.sh', 'utf8');
   assert.match(installer, /interview-studio-preflight\.service/);
   assert.match(installer, /systemctl disable interview-studio\.service/);
+  assert.match(installer, /systemctl disable --now interview-studio-identity-worker\.service/);
+  assert.match(installer, /rm -f "\$obsolete_identity_unit"/);
   assert.doesNotMatch(installer, /systemctl (?:enable|start|restart)/);
 
   const serviceEnv = await readFile('deploy/azure-vm/service.env.example', 'utf8');
@@ -66,6 +117,7 @@ test('Azure VM runtime consumes only the verified release and remains secret-gat
     'PRIVACY_RETENTION_NOTICE', 'PRIVACY_DELETION_NOTICE', 'PRIVATE_BETA_NO_DURABILITY_ACK']) {
     assert.match(serviceEnv, new RegExp(`^${setting}=`, 'm'));
   }
+  assert.doesNotMatch(serviceEnv, /^OIDC_/m);
 });
 
 test('Azure VM database authority separates migration from runtime DML', async () => {
@@ -75,6 +127,8 @@ test('Azure VM database authority separates migration from runtime DML', async (
   assert.match(provision, /NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION/g);
   assert.match(provision, /install -o root -g root -m 0600/);
   assert.match(provision, /^FIELD_METRICS_ENABLED=false$/m);
+  assert.match(provision, /^HOSTNAME=127\.0\.0\.1$/m);
+  assert.doesNotMatch(provision, /^(?:APP_MODE|HOST|PUBLIC_ORIGIN|COOKIE_SECURE|LOG_REQUESTS)=/m);
   assert.doesNotMatch(provision, /^FIELD_METRICS=/m);
   assert.doesNotMatch(provision, /echo.*password|set -x/);
 

@@ -45,8 +45,8 @@ The root Dockerfile and `deploy/azure-vm/Dockerfile.release` both:
 - check `/api/ready` on the loopback application port.
 
 The Compose staging runtime supplies PostgreSQL and the complete Auth.js
-Google/Facebook/MFA configuration. It no longer enables local/demo application
-authority.
+Google/Facebook/MFA and participant-policy configuration. It no longer enables
+local/demo application authority.
 
 ## Container acceptance
 
@@ -57,6 +57,8 @@ authority.
   are absent;
 - development/build tools are absent while migration/privacy worker entrypoints
   remain;
+- the legacy identity lifecycle worker is absent and the Auth.js-only preflight
+  succeeds without exposing private configuration;
 - a database-backed Auth.js session can save owned state through Next Route
   Handlers;
 - application restart preserves the exact owned state;
@@ -70,10 +72,9 @@ or image layers.
 
 ## Remaining cutover work
 
-The source repository still contains the Vite/Express/React Router/SQLite
-compatibility application and the legacy OIDC identity lifecycle worker. They
-are no longer the release web process, but must still be deleted with their
-tests, dependencies, configuration and systemd unit before the zero-legacy gate
-passes. Authentic provider acceptance, preflight migration to Auth.js-only
-configuration, exact-SHA Azure smoke/rollback evidence and Caddy cutover also
-remain required.
+The source repository still contains the Vite/Express/React Router/SQLite and
+legacy OIDC compatibility implementation. It is no longer part of the release
+web or worker process, but must still be deleted with its remaining tests,
+dependencies and configuration before the zero-legacy gate passes. Authentic
+provider acceptance, exact-SHA Azure smoke/rollback evidence and Caddy cutover
+also remain required.

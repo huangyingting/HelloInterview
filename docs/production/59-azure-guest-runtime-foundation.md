@@ -41,19 +41,22 @@ The migration role owns schema changes but is never supplied to the app or worke
 | Unit | Purpose | Startup |
 |---|---|---|
 | `interview-studio-migrate.service` | One-shot application and queue migration | Manual per promoted release |
+| `interview-studio-preflight.service` | One-shot Auth.js, policy, database and queue validation | Manual before service enablement |
 | `interview-studio.service` | HTTPS-ingress upstream on `127.0.0.1:10006` | Disabled until launch approval |
-| `interview-studio-identity-worker.service` | Identity reconciliation lifecycle | Disabled until launch approval |
 | `interview-studio-privacy-worker.service` | Export/deletion lifecycle | Disabled until launch approval |
+
+The installer disables and removes any previously installed legacy identity
+lifecycle unit before reloading systemd.
 
 Every container uses the exact image named in `release.env`, host networking, a read-only root filesystem, bounded tmpfs storage, all Linux capabilities dropped, `no-new-privileges`, PID/CPU/memory limits and journald logs. Only the app binds a socket, and service configuration fixes it to loopback.
 
-The three long-running units require all of:
+The two long-running units and the preflight require all of:
 
 - `/etc/interview-studio/release.env`;
 - `/etc/interview-studio/runtime.env`;
 - `/etc/interview-studio/service.env`.
 
-`service.env` is intentionally absent at this checkpoint. Copying the example is not approval to start: real Google and Facebook application credentials, an Auth.js secret and MFA key, exact invited addresses, participant-facing privacy facts and callback verification must exist first. The legacy OIDC lifecycle settings remain transitional only for its still-disabled worker unit and must be removed before final cutover. Stripe and AI variables remain absent unless their separate launch gates are approved.
+`service.env` is intentionally absent at this checkpoint. Copying the example is not approval to start: real Google and Facebook application credentials, an Auth.js secret and MFA key, exact invited addresses, participant-facing privacy facts and callback verification must exist first. Legacy OIDC lifecycle settings are rejected by preflight. Stripe and AI variables remain absent unless their separate launch gates are approved.
 
 ## Verification and rollback
 
@@ -67,6 +70,6 @@ Before opening the beta, verify:
 - the runtime role cannot create a table or schema;
 - configuration files are root-owned `0600`, while journal and process inspection expose no connection URLs or provider secrets.
 
-Rollback before launch is to leave the long-running units disabled, retain the exact image/database for investigation, and keep Caddy's explicit `503`. After launch, rollback means stop/disable the three services, restore the prior exact release tag and run only forward-compatible controlled migrations; never edit migration history or expose local mode.
+Rollback before launch is to leave the long-running units disabled, retain the exact image/database for investigation, and keep Caddy's explicit `503`. After launch, rollback means stop/disable the application and privacy worker, restore the prior exact release tag and run only forward-compatible controlled migrations; never edit migration history or expose local mode.
 
 This checkpoint does not prove application operation, authentic identity, participant notice, backup durability, recovery targets, spend controls, accessibility review or invite-cohort acceptance. Those gates remain open.

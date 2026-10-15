@@ -1,9 +1,11 @@
 # 12 - Managed identity engineering checkpoint
 
-**Status: private-staging foundation and invite-only service authority
-implemented; W04 is not complete and public accounts are not approved.** Auth0
-is the approved private-beta account model but no real tenant, email/social
-credential, customer migration or vendor purchase was configured here.
+**Status: superseded compatibility design.** The operated release uses the
+Auth.js architecture in
+[`63-nextjs-authjs-prisma-migration.md`](63-nextjs-authjs-prisma-migration.md).
+The Auth0/OIDC implementation described here remains only until its legacy
+Express compatibility source and tests are deleted; it is not a release
+runtime or deployment authority.
 
 ## Delivered boundary
 
@@ -329,14 +331,9 @@ deletion state is never automatically reinstated. Existing locally valid
 sessions do not call the broker on every ordinary read; a provider outage blocks
 new authority but leaves unrelated valid sessions usable.
 
-The web process opens the hook/producer service but **does not start a worker**.
-An operator must run and supervise the compiled maintenance process separately:
-
-```bash
-npm run identity:reconcile
-npm run identity:worker
-npm run jobs:status
-```
+The historical web process opened the hook/producer service but did not start a
+worker. Its compiled reconciliation command and Azure worker unit have been
+removed from the Auth.js release surface.
 
 These use the same private lifecycle configuration and migrated PostgreSQL.
 The one-pass command enqueues a paginated, minute-keyed idempotent sweep and

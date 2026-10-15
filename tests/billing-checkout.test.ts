@@ -5,7 +5,7 @@ import { once } from 'node:events';
 import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import { test } from 'node:test';
-import { openBillingFixture, sandboxSettings } from './fixtures/billing';
+import { authJsEnvironment, openBillingFixture, sandboxSettings } from './fixtures/billing';
 import { stripeApiVersion } from '../server/billing/schema';
 import { canonicalOriginSchema, hostedCheckoutUrl } from '../server/billing/checkout-schema';
 import { TerminalJobFailure, LostJobClaim, type JobClaim } from '../server/jobs';
@@ -287,8 +287,8 @@ test('compiled worker death after external checkout success recovers exactly one
   const boss = await createBoss(f.db); await boss.start(); f.cleanup.push(() => boss.stop());
   const entered = barrier(), release = barrier();
   f.barrier(async path => { if (path.startsWith('/v1/checkout/sessions/')) { entered.resolve(); await release.promise; } });
-  const env = { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl!, PUBLIC_ORIGIN: f.origin,
-    COOKIE_SECURE: 'true', OIDC_ISSUER: f.issuer, OIDC_CLIENT_ID: 'synthetic-client', OIDC_CLIENT_SECRET: 'synthetic-client-secret', ...sandboxSettings };
+  const env = { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl!,
+    ...authJsEnvironment(f.origin), ...sandboxSettings };
   const code = `import Stripe from 'stripe'; import { runBillingCommand } from './dist-server/billing/cli.js';
     const client = new Stripe(process.env.STRIPE_TEST_SECRET_KEY, { host: '127.0.0.1', port: ${f.port}, protocol: 'http',
       apiVersion: '${stripeApiVersion}', maxNetworkRetries: 0, timeout: 10000 }); await runBillingCommand('worker', client);`;
@@ -315,8 +315,8 @@ test('compiled worker death after external checkout success recovers exactly one
 test('compiled reconciliation processes customer and checkout children, and a later bounded sweep refreshes open sessions without SDK writes', async t => {
   const f = await openBillingFixture(t), { browser } = await f.login();
   await f.reserve(browser, 'pro_annual');
-  const env = { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl!, PUBLIC_ORIGIN: f.origin,
-    COOKIE_SECURE: 'true', OIDC_ISSUER: f.issuer, OIDC_CLIENT_ID: 'synthetic-client', OIDC_CLIENT_SECRET: 'synthetic-client-secret', ...sandboxSettings };
+  const env = { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl!,
+    ...authJsEnvironment(f.origin), ...sandboxSettings };
   const code = `import Stripe from 'stripe'; import { runBillingCommand } from './dist-server/billing/cli.js';
     const client = new Stripe(process.env.STRIPE_TEST_SECRET_KEY, { host: '127.0.0.1', port: ${f.port}, protocol: 'http',
       apiVersion: '${stripeApiVersion}', maxNetworkRetries: 0, timeout: 1000 }); await runBillingCommand('reconcile', client);`;

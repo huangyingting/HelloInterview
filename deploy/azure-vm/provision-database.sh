@@ -42,13 +42,9 @@ DATABASE_URL=postgresql://interview_studio_migrator:${migrator_password}@127.0.0
 EOF
 cat >"$runtime_tmp" <<EOF
 NODE_ENV=production
-APP_MODE=service
-HOST=127.0.0.1
+HOSTNAME=127.0.0.1
 PORT=10006
-PUBLIC_ORIGIN=https://interview.genisisiq.com
-COOKIE_SECURE=true
 TRUST_PROXY=127.0.0.1/32
-LOG_REQUESTS=true
 FIELD_METRICS_ENABLED=false
 DATABASE_URL=postgresql://interview_studio_runtime:${runtime_password}@127.0.0.1:5432/interview_studio
 EOF

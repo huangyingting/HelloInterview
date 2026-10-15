@@ -9,9 +9,13 @@ fi
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 install -d -o root -g root -m 0755 /usr/local/share/interview-studio
 install -o root -g root -m 0644 "$script_dir/grant-runtime.sql" /usr/local/share/interview-studio/grant-runtime.sql
+obsolete_identity_unit=/etc/systemd/system/interview-studio-identity-worker.service
+if [ -e "$obsolete_identity_unit" ]; then
+  systemctl disable --now interview-studio-identity-worker.service >/dev/null 2>&1 || true
+  rm -f "$obsolete_identity_unit"
+fi
 for unit in \
   interview-studio.service \
-  interview-studio-identity-worker.service \
   interview-studio-privacy-worker.service \
   interview-studio-preflight.service \
   interview-studio-migrate.service
@@ -19,5 +23,5 @@ do
   install -o root -g root -m 0644 "$script_dir/$unit" "/etc/systemd/system/$unit"
 done
 systemctl daemon-reload
-systemctl disable interview-studio.service interview-studio-identity-worker.service interview-studio-privacy-worker.service >/dev/null 2>&1 || true
+systemctl disable interview-studio.service interview-studio-privacy-worker.service >/dev/null 2>&1 || true
 echo "Interview Studio units were installed and remain disabled."

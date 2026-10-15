@@ -6,6 +6,7 @@ import { StateRepository } from '../../../server/db/state-repository';
 import { Entitlements } from '../../../server/entitlements';
 import { nextBillingCapability } from '../../../server/next/billing';
 import { nextAiCapability } from '../../../server/next/ai';
+import { loadParticipantPolicy } from '../../../server/participant-policy';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +19,10 @@ export async function GET(request: Request) {
     const active = user?.identity?.status === 'active';
     const billing = nextBillingCapability();
     const ai = nextAiCapability();
+    const participantPolicy = loadParticipantPolicy();
+    if (process.env.NODE_ENV === 'production' && !participantPolicy) {
+      throw new Error('The operated participant policy is not configured.');
+    }
     const [state, access] = await Promise.all([
       user && active ? new StateRepository(db).read(user.id) : Promise.resolve(emptyState()),
       new Entitlements(db).view(user?.id ?? null),
@@ -39,6 +44,7 @@ export async function GET(request: Request) {
           legacyLink: false,
           securityLifecycle: false,
         },
+        ...(participantPolicy ? { participantPolicy } : {}),
         ...(billing ? { billing } : {}),
         access,
       },

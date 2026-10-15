@@ -1,14 +1,18 @@
 import { pathToFileURL } from 'node:url';
-import { ConfigurationError, loadConfig, privateBetaDurabilityNotice, type ServerConfig } from '../config';
-import { postgresConnection } from '../db/connection';
+import { ManagedAiConfigurationError } from '../ai/config';
+import { AuthConfigurationError } from '../auth/config';
+import { prismaConnection } from '../db/prisma';
 import { assertDatabaseVersion } from '../db/migrations';
 import { inspectMaintainedJobs } from '../jobs';
+import { privateBetaDurabilityNotice } from '../participant-policy';
+import {
+  loadServicePreflightConfig,
+  ServicePreflightConfigurationError,
+  type ServicePreflightConfig,
+} from './config';
 
-export async function runServicePreflight(config: ServerConfig = loadConfig()) {
-  if (config.appMode !== 'service' || !config.databaseUrl || !config.identity?.lifecycle || !config.participantPolicy) {
-    throw new Error('Service preflight requires the complete service-mode configuration.');
-  }
-  const db = postgresConnection(config.databaseUrl);
+export async function runServicePreflight(config: ServicePreflightConfig = loadServicePreflightConfig()) {
+  const db = prismaConnection();
   try {
     await assertDatabaseVersion(db);
     const queue = await inspectMaintainedJobs(db);
@@ -18,13 +22,13 @@ export async function runServicePreflight(config: ServerConfig = loadConfig()) {
     }
     return {
       event: 'service.preflight.ready',
-      mode: config.appMode,
+      mode: 'service',
       listener: { loopback: ['127.0.0.1', '::1', 'localhost'].includes(config.host), port: config.port },
       trustedProxyCount: config.trustedProxies.length,
       identity: {
-        providers: Object.keys(config.identity.connections).sort(),
-        lifecycle: true,
-        inviteCount: config.identity.inviteEmailHashes?.length ?? 0,
+        system: 'authjs',
+        providers: ['facebook', 'google'],
+        inviteCount: config.auth.inviteEmailHashes.length,
       },
       participantPolicy: {
         minimumAge: config.participantPolicy.minimumAge,
@@ -37,7 +41,11 @@ export async function runServicePreflight(config: ServerConfig = loadConfig()) {
         operationCount: queue.operationCount,
         maintainedQueueCount: queue.maintainedQueueCount,
       },
-      features: { ai: false, billing: false, community: 'read-only' },
+      features: {
+        ai: Boolean(config.ai),
+        billing: config.billing ? 'sandbox' : false,
+        community: 'read-only',
+      },
     };
   } finally {
     await db.close();
@@ -46,7 +54,9 @@ export async function runServicePreflight(config: ServerConfig = loadConfig()) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   runServicePreflight().then(result => console.log(JSON.stringify(result))).catch((error: unknown) => {
-    const message = error instanceof ConfigurationError ? error.message :
+    const message = error instanceof ServicePreflightConfigurationError
+      || error instanceof AuthConfigurationError
+      || error instanceof ManagedAiConfigurationError ? error.message :
       'Service preflight failed. Check root-only configuration, database migrations, and queue health; no credentials are logged.';
     console.error(message);
     process.exitCode = 1;

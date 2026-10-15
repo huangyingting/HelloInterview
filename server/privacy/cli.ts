@@ -1,16 +1,15 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
-import { loadConfig } from '../config';
-import { postgresConnection } from '../db/connection';
+import { loadAuthSettings } from '../auth/config';
+import { prismaConnection } from '../db/prisma';
 import { assertDatabaseVersion } from '../db/migrations';
 import { TerminalJobFailure } from '../jobs';
 import { PrivacyExports } from '../privacy';
 
 export async function runPrivacyCommand(command:string) {
   if(!['process','worker'].includes(command))throw new Error('Choose privacy process or worker.');
-  const config=loadConfig();
-  if(!config.databaseUrl||!config.identity)throw new Error('Privacy operation processing requires managed identity and controlled PostgreSQL.');
-  const db=postgresConnection(config.databaseUrl),shutdown=new AbortController();
+  if(!process.env.DATABASE_URL||!loadAuthSettings())throw new Error('Privacy operation processing requires Auth.js and controlled PostgreSQL.');
+  const db=prismaConnection(),shutdown=new AbortController();
   let privacy:PrivacyExports|undefined;
   const stop=()=>shutdown.abort();
   process.once('SIGTERM',stop);process.once('SIGINT',stop);

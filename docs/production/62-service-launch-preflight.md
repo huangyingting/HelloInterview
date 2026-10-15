@@ -27,9 +27,9 @@ It uses the exact promoted image, host networking for guest PostgreSQL, a read-o
 
 ## Verified scope
 
-The command uses the same `loadConfig()` path as the application. Service mode must therefore satisfy the complete production, HTTPS/proxy, Auth0 lifecycle/invite and participant-policy contract before any database work occurs.
+The command uses the Auth.js, participant-policy, managed-AI and sandbox-billing loaders used by the Next.js application. It requires production mode, the standalone listener, PostgreSQL, the private ingress allowlist, complete Google/Facebook/invite/MFA configuration and the approved participant policy before any database work occurs. Any legacy `OIDC_*` setting is rejected.
 
-After configuration succeeds, the runtime database role:
+After configuration succeeds, the Prisma-backed runtime database role:
 
 - verifies all checksum-pinned application migrations;
 - validates the installed maintained queues with the same immutable policy checks used immediately before normal queue startup, without starting pg-boss;
@@ -40,15 +40,15 @@ Successful output is one compact JSON object containing only:
 
 - service mode and loopback/port classification;
 - trusted-proxy count;
-- provider names, lifecycle presence and invite count;
+- Auth.js provider names and invite count;
 - participant minimum age, contact protocol and no-durability acknowledgement;
 - migration/queue counts;
-- disabled AI/billing and read-only community state.
+- actual managed-AI/sandbox-billing configuration state and read-only community state.
 
-It never prints database URLs, issuer/management URLs, client IDs or secrets, invite addresses/hashes, controller/contact values, retention/deletion text, operation IDs or user records. Configuration errors may name the invalid setting and requirement but never echo its submitted value; other failures use one generic diagnostic.
+It never prints database URLs, provider client IDs or secrets, invite addresses/hashes, controller/contact values, retention/deletion text, operation IDs or user records. Configuration errors may name the invalid setting and requirement but never echo its submitted value; other failures use one generic diagnostic.
 
 ## Boundary
 
-The preflight proves local exact-release syntax and database/queue composition only. It does not contact or authenticate to Auth0, verify callbacks/connections/reset delivery, approve policy text, start the app/workers, admit a participant or prove public smoke behavior.
+The preflight proves local exact-release syntax and database/queue composition only. It does not contact Google, Facebook, Stripe or Azure OpenAI, verify callbacks, approve policy text, start the app/workers, admit a participant or prove public smoke behavior.
 
-`service.env` remains absent and the unit remains condition-gated until the owner supplies the final private configuration. A successful preflight becomes required evidence immediately before enabling the three long-running services.
+`service.env` remains absent and the unit remains condition-gated until the owner supplies the final private configuration. A successful preflight becomes required evidence immediately before enabling the application and privacy worker.

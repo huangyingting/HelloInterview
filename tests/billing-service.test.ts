@@ -3,7 +3,7 @@ import { test, type TestContext } from 'node:test';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { z } from 'zod';
-import { openBillingFixture, sandboxSettings } from './fixtures/billing';
+import { authJsEnvironment, openBillingFixture, sandboxSettings } from './fixtures/billing';
 import { sandboxServicePolicy } from '../shared/billing-ledger';
 import { Entitlements } from '../server/entitlements';
 import { assertBillingConfiguration, BillingNotifications } from '../server/billing';
@@ -329,9 +329,8 @@ test('deletion inside actual service SQL fences completion and rolls new authori
 
 test('compiled maintained reconciliation issues gated sandbox service authority without dev loaders and fails closed if policy is removed', async t => {
   const f = await fixture(t);
-  const env = { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl!, PUBLIC_ORIGIN: f.origin,
-    COOKIE_SECURE: 'true', OIDC_ISSUER: f.issuer, OIDC_CLIENT_ID: 'synthetic-client', OIDC_CLIENT_SECRET: 'synthetic-client-secret',
-    ...sandboxSettings, ...optIn };
+  const env = { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl!,
+    ...authJsEnvironment(f.origin), ...sandboxSettings, ...optIn };
   const code = `import Stripe from 'stripe'; import { runBillingCommand } from './dist-server/billing/cli.js';
     const client = new Stripe(process.env.STRIPE_TEST_SECRET_KEY, { host: '127.0.0.1', port: ${f.port}, protocol: 'http',
       apiVersion: '${stripeApiVersion}', maxNetworkRetries: 0, timeout: 1000 }); await runBillingCommand('reconcile', client);`;

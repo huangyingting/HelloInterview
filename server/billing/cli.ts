@@ -1,24 +1,33 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import Stripe from 'stripe';
-import { loadConfig } from '../config';
+import { loadAuthSettings } from '../auth/config';
 import { prismaConnection } from '../db/prisma';
 import { assertDatabaseVersion } from '../db/migrations';
 import { BillingNotifications } from './index';
 import { checkoutJobKinds } from './checkout';
 import { TerminalJobFailure } from '../jobs';
+import { loadBillingConfig } from './config';
 
 export async function runBillingCommand(command: string, client?: Stripe) {
   if (!['reconcile', 'worker'].includes(command)) throw new Error('Choose billing reconcile or worker.');
-  const config = loadConfig();
-  if (!config.databaseUrl || !config.billing) throw new Error('Billing maintenance requires explicit sandbox billing, managed identity and PostgreSQL configuration.');
+  const auth = loadAuthSettings();
+  if (!auth || !process.env.DATABASE_URL) throw new Error('Billing maintenance requires explicit sandbox billing, Auth.js and PostgreSQL configuration.');
+  const billingConfig = loadBillingConfig(process.env, {
+    identity: true,
+    databaseUrl: process.env.DATABASE_URL,
+    publicOrigin: auth.origin,
+  }, (setting, requirement) => {
+    throw new Error(`${setting} ${requirement}`);
+  });
+  if (!billingConfig) throw new Error('Billing maintenance requires explicit sandbox billing, Auth.js and PostgreSQL configuration.');
   const db = prismaConnection(), shutdown = new AbortController();
   let billing: BillingNotifications | undefined;
   const stop = () => shutdown.abort();
   process.once('SIGTERM', stop); process.once('SIGINT', stop);
   try {
     await assertDatabaseVersion(db);
-    billing = await BillingNotifications.open(db, config.billing, shutdown.signal, true, client, config.publicOrigin ?? undefined);
+    billing = await BillingNotifications.open(db, billingConfig, shutdown.signal, true, client, auth.origin);
     let completed = 0, owned = false, ledger = false, nextSweep = 0;
     while (!shutdown.signal.aborted) {
       if (Date.now() >= nextSweep && (command === 'worker' || nextSweep === 0)) {
@@ -40,9 +49,9 @@ export async function runBillingCommand(command: string, client?: Stripe) {
         const row = await db.prepare("SELECT count(*)::integer AS pending FROM durable_operations WHERE kind LIKE 'billing.%' AND completed_at IS NULL").get();
         if (row?.pending !== 0) throw new Error('Sandbox billing reconciliation has deferred, active or failed operations. Inspect queue diagnostics; the pass is incomplete.');
         const reviewRequired = await billing.ledger.reviewRequiredCustomers();
-        if (reviewRequired) console.warn(JSON.stringify({ event: 'billing.ledger.review-required', customers: reviewRequired, authority: config.billing.accessPolicy ?? 'sandbox-ledger-observation-only' }));
+        if (reviewRequired) console.warn(JSON.stringify({ event: 'billing.ledger.review-required', customers: reviewRequired, authority: billingConfig.accessPolicy ?? 'sandbox-ledger-observation-only' }));
         console.log(JSON.stringify({ event: owned ? 'billing.sandbox.reconciled' : 'billing.notifications.reconciled', completed,
-          authority: ledger ? config.billing.accessPolicy ?? 'sandbox-ledger-observation-only' : owned ? 'sandbox-correlation-only' : 'notification-evidence-only' }));
+          authority: ledger ? billingConfig.accessPolicy ?? 'sandbox-ledger-observation-only' : owned ? 'sandbox-correlation-only' : 'notification-evidence-only' }));
         return;
       } else {
         try { await delay(1000, undefined, { signal: shutdown.signal }); }

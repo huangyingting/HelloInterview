@@ -3,7 +3,7 @@ import { test, type TestContext } from 'node:test';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { openBillingFixture, sandboxSettings } from './fixtures/billing';
+import { authJsEnvironment, openBillingFixture, sandboxSettings } from './fixtures/billing';
 import { sandboxRecheckoutAuthority } from '../shared/billing';
 import { sandboxServicePolicy } from '../shared/billing-ledger';
 import { BillingNotifications } from '../server/billing';
@@ -350,8 +350,8 @@ test('compiled maintained reconciliation creates the exact new owned hosted sess
     const client=new Stripe(process.env.STRIPE_TEST_SECRET_KEY,{host:'127.0.0.1',port:${f.port},protocol:'http',
       apiVersion:'${stripeApiVersion}',timeout:1000,maxNetworkRetries:0});await runBillingCommand('reconcile',client);`;
   await promisify(execFile)(process.execPath, ['--input-type=module', '-e', code], { timeout: 30000,
-    env: { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl, PUBLIC_ORIGIN: f.origin,
-      COOKIE_SECURE: 'true', OIDC_ISSUER: f.issuer, OIDC_CLIENT_ID: 'synthetic-client', OIDC_CLIENT_SECRET: 'synthetic-client-secret', ...sandboxSettings } });
+    env: { PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl,
+      ...authJsEnvironment(f.origin), ...sandboxSettings } });
   assert.equal((await f.view(f.browser)).checkout?.id, attempt.id); assert.equal((await f.view(f.browser)).checkout?.state, 'open');
   assert.equal(f.customers.size, 1); assert.equal(posts(f).length, 2);
 });

@@ -7,6 +7,7 @@ import { once } from 'node:events';
 import { promisify } from 'node:util';
 import { test, type TestContext } from 'node:test';
 import { fixtureFetch, openIdentityFixture } from './fixtures/identity';
+import { authJsEnvironment } from './fixtures/billing';
 import { BillingNotifications, assertBillingConfiguration } from '../server/billing';
 import { stripeApiVersion, notification } from '../server/billing/schema';
 import { LostJobClaim } from '../server/jobs';
@@ -291,8 +292,8 @@ test('compiled billing maintenance uses the official runtime SDK and fails expli
   const claim = await f.worker.jobs.claim('billing.reconcile');
   assert.ok(claim);
   const env = {
-    PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl!, PUBLIC_ORIGIN: f.origin,
-    COOKIE_SECURE: 'true', OIDC_ISSUER: f.issuer, OIDC_CLIENT_ID: 'synthetic-client', OIDC_CLIENT_SECRET: 'synthetic-client-secret', ...settings,
+    PATH: process.env.PATH, NODE_ENV: 'production', DATABASE_URL: f.config.databaseUrl!,
+    ...authJsEnvironment(f.origin), ...settings,
   };
   const code = `import Stripe from 'stripe'; import { runBillingCommand } from './dist-server/billing/cli.js';
     const client = new Stripe(process.env.STRIPE_TEST_SECRET_KEY, { host: '127.0.0.1', port: ${f.port}, protocol: 'http',

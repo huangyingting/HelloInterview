@@ -30,6 +30,16 @@ test('Next standalone release is hardened and preserves Auth.js-owned state thro
     AUTH_INVITED_EMAILS: 'container-owner@example.test',
     AUTH_MFA_ENCRYPTION_KEY: Buffer.alloc(32, 11).toString('base64url'),
   };
+  const service = {
+    ...auth,
+    PRIVACY_CONTROLLER_NAME: 'Container Studio Operator',
+    PRIVACY_CONTACT_URL: 'https://interview.genisisiq.com/privacy',
+    PARTICIPANT_MINIMUM_AGE: '18',
+    PRIVACY_RETENTION_NOTICE: 'Container fixture records use a bounded private-beta retention policy.',
+    PRIVACY_DELETION_NOTICE: 'Container fixture deletion requests use the reviewed private-beta workflow.',
+    PRIVATE_BETA_NO_DURABILITY_ACK: 'true',
+    TRUST_PROXY: '127.0.0.1/32',
+  };
   const databaseUrl = `postgresql://studio:${password}@database:5432/studio`;
   const env = {
     ...process.env,
@@ -37,7 +47,7 @@ test('Next standalone release is hardened and preserves Auth.js-owned state thro
     DATABASE_URL: databaseUrl,
     STUDIO_IMAGE: image,
     STUDIO_PORT: '0',
-    ...auth,
+    ...service,
   };
   const composeArgs = ['compose', '--env-file', '/dev/null', '-f', 'compose.staging.yml', '-p', project];
   const compose = (...commands: string[]) => execute('docker', [...composeArgs, ...commands], {
@@ -96,6 +106,7 @@ test('Next standalone release is hardened and preserves Auth.js-owned state thro
   assert.equal(visitorResponse.status, 200);
   assert.equal(visitor.user, null);
   assert.equal(visitor.capabilities.auth?.system, 'authjs');
+  assert.equal(visitor.capabilities.participantPolicy?.minimumAge, 18);
 
   const inspection = await docker('exec', apiContainer, 'node', '-e', `
     const fs=require('node:fs');
@@ -103,6 +114,7 @@ test('Next standalone release is hardened and preserves Auth.js-owned state thro
       uid:process.getuid(),
       next:fs.existsSync('/app/server.js')&&fs.existsSync('/app/.next/server'),
       workers:fs.existsSync('/app/dist-server/db/cli.js')&&fs.existsSync('/app/dist-server/privacy/cli.js'),
+      identityWorkerAbsent:!fs.existsSync('/app/dist-server/identity/cli.js'),
       developmentAbsent:['vite','tsx','typescript','esbuild'].every(value=>!fs.existsSync('/app/node_modules/'+value)),
       privateAbsent:['.env','data','src','server','dist','index.html','vite.config.ts'].every(value=>!fs.existsSync('/app/'+value))
     }));
@@ -111,9 +123,32 @@ test('Next standalone release is hardened and preserves Auth.js-owned state thro
     uid: 1000,
     next: true,
     workers: true,
+    identityWorkerAbsent: true,
     developmentAbsent: true,
     privateAbsent: true,
   });
+  const preflight = await docker('exec', apiContainer, 'node', 'dist-server/preflight/cli.js');
+  const preflightResult = JSON.parse(preflight.stdout);
+  assert.deepEqual(preflightResult.identity, {
+    system: 'authjs',
+    providers: ['facebook', 'google'],
+    inviteCount: 1,
+  });
+  assert.deepEqual(preflightResult.participantPolicy, {
+    minimumAge: 18,
+    contactProtocol: 'https:',
+    noDurability: true,
+  });
+  assert.deepEqual(preflightResult.features, { ai: false, billing: false, community: 'read-only' });
+  assert.equal(preflightResult.mode, 'service');
+  assert.equal(preflightResult.listener.loopback, false);
+  assert.equal(preflightResult.trustedProxyCount, 1);
+  assert.ok(preflightResult.database.migrationCount > 0);
+  assert.ok(preflightResult.database.maintainedQueueCount > 0);
+  for (const privateValue of [password, auth.NEXTAUTH_SECRET, auth.AUTH_GOOGLE_CLIENT_SECRET,
+    service.PRIVACY_CONTROLLER_NAME, service.PRIVACY_RETENTION_NOTICE]) {
+    assert.equal(preflight.stdout.includes(privateValue), false);
+  }
 
   const now = Date.now();
   const sql = `
@@ -197,7 +232,7 @@ test('Next standalone release is hardened and preserves Auth.js-owned state thro
 
   const runArgs = ['run', '-d', '--network', `${project}_default`, '--read-only', '--tmpfs', '/tmp',
     '-e', `DATABASE_URL=postgresql://studio:${password}@database:5432/restore_fixture`,
-    ...Object.entries(auth).flatMap(([name, value]) => ['-e', `${name}=${value}`]),
+    ...Object.entries(service).flatMap(([name, value]) => ['-e', `${name}=${value}`]),
     '-e', 'HOSTNAME=0.0.0.0', '-e', 'PORT=3000',
     '-p', '127.0.0.1::3000', image];
   recovery = (await docker(...runArgs)).stdout.trim();
