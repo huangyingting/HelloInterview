@@ -209,7 +209,12 @@ with provider dispatch explicitly denied.
 The [saved-input provenance checkpoint](docs/production/25-owned-ai-input-provenance.md)
 captures bounded private snapshots from actual owned work with immutable
 model/prompt/source fingerprints and transactional raw-payload retirement.
-Preparation is not provider permission; managed AI remains disabled.
+The [managed AI native worker checkpoint](docs/production/66-managed-ai-native-worker.md)
+adds explicit Azure model/pricing/data-use configuration, consent-gated Next.js
+admission for saved practice, mock and project work, owner-only durable status
+and cancellation, measured provider cost and atomic Prisma publication. It
+remains operationally disabled until authentic Azure, reconciliation, alerting,
+retention and deployment acceptance pass.
 The [private-safe community-read checkpoint](docs/production/27-private-safe-community-reads.md)
 removes public account IDs, derives ownership on the server, and provides bounded
 cursor filtering/search/sort with independently addressable full post details.

@@ -1,11 +1,11 @@
 import { ArrowLeft, ArrowRight, CalendarDays, Check, ClipboardCheck, Code2, Download, MessageSquare, Target, Volume2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from '../navigation';
 import { companies, levels, practiceLabels, problems } from "../../shared/public-catalog";
 import { companyProblems, mockReport, planTaskComplete } from '../../shared/premium';
 import type { MockSession, PlanTask, StudyPlan, UserState } from '../../shared/types';
 import { AuthPrompt, Badge, CardLink, Empty, NotFound, PageHeading, PremiumAccess, Progress } from '../components';
-import { request, useStudio } from '../store';
+import { request, useStudio, waitForManagedAi, type ManagedAiReceipt } from '../store';
 import { ContentStatus, useContent } from '../content';
 import type { PracticeProblem } from '../../shared/types';
 import { download } from '../download';
@@ -63,10 +63,12 @@ function MockArchive() {
   return data.state.mocks.length ? <div className="premium-archive">{data.state.mocks.map(m => <Link key={m.id} to={`/premium/mock/${m.id}`}><div><strong>{problems.find(p => p.id === m.problemId)?.title}</strong><p>{m.company} · {m.level} · {m.turns.length}/{m.length} turns</p></div><Badge>{m.completedAt ? `${mockReport(m).score}/100` : 'Resume draft'}</Badge><ArrowRight size={16} /></Link>)}</div> : <Empty title="Your next conversation starts here" description="Saved drafts and completed reports appear in this archive." />;
 }
 function MockSessionPage({ id }: { id: string }) {
-  const { can, data, act, pending, setState, notify } = useStudio();
+  const { can, data, act, pending, setState, notify, refresh } = useStudio();
   const session = data.state.mocks.find(m => m.id === id);
   const resource = useContent<PracticeProblem>(session && !session.completedAt && can('mock.create') ? `/api/content/problems/${encodeURIComponent(session.problemId)}` : null);
   const [answer, setAnswer] = useState(session?.draft || '');
+  const [aiConsent,setAiConsent]=useState(false);
+  const aiRequest=useRef<{requestId:string;revision:number;operationId?:string}|null>(null);
   useEffect(() => setAnswer(session?.draft || ''), [session?.revision, id]);
   if (!data.user) return <AuthPrompt />;
   if (!session) return <NotFound />;
@@ -91,12 +93,12 @@ function MockSessionPage({ id }: { id: string }) {
     <PageHeading eyebrow={`${session.company} · ${session.level}`} title={problem.title} description="Take one question at a time. Save a draft whenever you need to pause." action={<Badge>{session.turns.length + 1} of {session.length} turns</Badge>} />
     <PremiumAccess><Progress value={session.turns.length / session.length * 100} label="Interview progress" />
       <div className="mock-workspace"><aside className="panel"><h2>The brief</h2><p>{resource.value?.description}</p><ul>{resource.value?.requirements.map(r => <li key={r}>{r}</li>)}</ul><p className="fine-print">Follow-ups prioritize topics not covered in earlier answers. {data.capabilities.ai ? 'Grading uses your configured AI provider.' : 'Grading uses a local rubric, not AI.'}</p></aside>
-        <form className="panel mock-response" onSubmit={e => { e.preventDefault(); void act(async () => { const saved = await save(); setState(await request<UserState>(`/api/mocks/${id}/respond`, { revision: saved.revision })); }); }}>
+        <form className="panel mock-response" onSubmit={e => { e.preventDefault(); void act(async () => { if(data.capabilities.ai){let intended=aiRequest.current;if(!intended){const saved=await save();intended={requestId:crypto.randomUUID(),revision:saved.revision};aiRequest.current=intended;}if(!intended.operationId){const receipt=await request<ManagedAiReceipt>(`/api/mocks/${id}/respond`,{requestId:intended.requestId,revision:intended.revision,consent:'sandbox-ai-usage-v1',acknowledged:true});intended.operationId=receipt.operationId;}await waitForManagedAi(intended.operationId);await refresh(true);aiRequest.current=null;}else{const saved=await save();setState(await request<UserState>(`/api/mocks/${id}/respond`, { revision: saved.revision }));} }); }}>
           <div className="section-heading"><span className="eyebrow">INTERVIEWER · TURN {session.turns.length + 1}</span><button type="button" className="icon-button" aria-label="Read mock question aloud" onClick={() => { if (!('speechSynthesis' in window)) { notify('Speech synthesis is unavailable in this browser.', true); return; } speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(session.question)); }}><Volume2 size={18} /></button></div>
           <h2>{session.question}</h2>
-          <label>Your response<textarea aria-label="Mock answer" value={answer} disabled={pending} onChange={e => setAnswer(e.target.value)} minLength={30} maxLength={8000} required rows={9} placeholder="Make your assumptions and reasoning visible." /></label>
-          <div className="hero-actions"><button type="button" className="button secondary" disabled={pending} onClick={() => act(async () => { await save(); notify('Interview draft saved.'); })}>Save interview draft</button><button className="button" disabled={pending}>{pending ? 'Saving and grading…' : session.turns.length + 1 === session.length ? 'Finish interview' : 'Submit and continue'} <ArrowRight size={16} /></button></div>
-          <p className="fine-print">Answers are saved before provider requests. An error leaves your draft available for retry.</p>
+          <label>Your response<textarea aria-label="Mock answer" value={answer} disabled={pending} onChange={e => {aiRequest.current=null;setAnswer(e.target.value);}} minLength={30} maxLength={8000} required rows={9} placeholder="Make your assumptions and reasoning visible." /></label>
+          {data.capabilities.ai&&<label className="checkbox-label"><input type="checkbox" checked={aiConsent} onChange={e=>setAiConsent(e.target.checked)}/> Send this saved interview turn to {data.capabilities.aiModel}. {data.capabilities.aiPolicy?.notice}</label>}<div className="hero-actions"><button type="button" className="button secondary" disabled={pending} onClick={() => act(async () => { await save(); notify('Interview draft saved.'); })}>Save interview draft</button><button className="button" disabled={pending||(data.capabilities.ai&&!aiConsent)}>{pending ? 'Saving and grading…' : session.turns.length + 1 === session.length ? 'Finish interview' : 'Submit and continue'} <ArrowRight size={16} /></button></div>
+          <p className="fine-print">Answers are saved before provider requests. Queue acceptance is not feedback; unknown outcomes keep your draft unchanged for reconciliation.</p>
         </form></div>
     </PremiumAccess>{!can('mock.create') && <section className="panel"><h2>{answer === session.draft ? 'Your saved interview draft' : 'Your unsaved interview draft'}</h2><p>{session.question}</p><pre>{answer || 'No answer was saved for this turn.'}</pre>{answer !== session.draft && <p>These editor changes have not been saved to the server. Export them before leaving this page.</p>}<button className="button secondary small" onClick={() => download('mock-interview-draft.json', JSON.stringify({ ...session, draft: answer }, null, 2))}><Download size={15}/> {answer === session.draft ? 'Export saved draft' : 'Export current draft'}</button></section>}<MockTranscript session={session} />
   </>;

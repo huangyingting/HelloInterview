@@ -73,6 +73,7 @@ import { POST as saveStoryRoute } from '../app/api/stories/route';
 import { DELETE as deleteStoryRoute } from '../app/api/stories/[id]/route';
 import { POST as saveAttemptRoute } from '../app/api/attempts/route';
 import { POST as evaluateAttemptRoute } from '../app/api/attempts/[id]/evaluate/route';
+import { DELETE as cancelAiOperationRoute, GET as aiOperationRoute } from '../app/api/ai/operations/[id]/route';
 import { POST as createMockRoute } from '../app/api/mocks/route';
 import { POST as saveMockDraftRoute } from '../app/api/mocks/[id]/draft/route';
 import { POST as respondToMockRoute } from '../app/api/mocks/[id]/respond/route';
@@ -119,6 +120,7 @@ import { totpCode } from '../server/auth/totp';
 import { stripeApiVersion } from '../server/billing/schema';
 import { closeNextPrivacyService } from '../server/next/privacy';
 import { closeNextBillingService } from '../server/next/billing';
+import { closeNextAiService } from '../server/next/ai';
 import { migrateJobs } from '../server/jobs';
 import { Entitlements } from '../server/entitlements';
 
@@ -141,7 +143,11 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
   for (const key of ['NEXTAUTH_URL', 'NEXTAUTH_SECRET', 'AUTH_GOOGLE_CLIENT_ID', 'AUTH_GOOGLE_CLIENT_SECRET',
     'AUTH_FACEBOOK_CLIENT_ID', 'AUTH_FACEBOOK_CLIENT_SECRET', 'AUTH_INVITED_EMAILS',
     'AUTH_MFA_ENCRYPTION_KEY', 'STRIPE_TEST_ACCOUNT_ID', 'STRIPE_TEST_SECRET_KEY',
-    'STRIPE_TEST_WEBHOOK_SECRET', 'STRIPE_TEST_OFFERS']) delete process.env[key];
+    'STRIPE_TEST_WEBHOOK_SECRET', 'STRIPE_TEST_OFFERS', 'MANAGED_AI_ENABLED', 'MANAGED_AI_MODEL_REVISION',
+    'MANAGED_AI_INPUT_PRICE_MICROS_PER_MILLION_TOKENS',
+    'MANAGED_AI_OUTPUT_PRICE_MICROS_PER_MILLION_TOKENS', 'MANAGED_AI_DATA_USE_NOTICE',
+    'AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_ENDPOINT', 'AZURE_OPENAI_DEPLOYMENT',
+    'AZURE_OPENAI_API_VERSION']) delete process.env[key];
   Object.assign(process.env, {
     NEXTAUTH_URL: 'https://studio.fixture',
     NEXTAUTH_SECRET: 'a'.repeat(64),
@@ -160,6 +166,7 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     }),
   });
   t.after(async () => {
+    await closeNextAiService();
     await closeNextBillingService();
     await closeNextPrivacyService();
     await prismaConnection().close();
@@ -1669,6 +1676,110 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
   }));
   assert.equal(restrictedProgress.status, 403);
   await db.prepare("UPDATE managed_accounts SET status='active' WHERE user_id=?").run(authOwner);
+  Object.assign(process.env, {
+    MANAGED_AI_ENABLED: 'true',
+    MANAGED_AI_MODEL_REVISION: 'next-runtime-model-revision',
+    MANAGED_AI_INPUT_PRICE_MICROS_PER_MILLION_TOKENS: '1000000',
+    MANAGED_AI_OUTPUT_PRICE_MICROS_PER_MILLION_TOKENS: '2000000',
+    MANAGED_AI_DATA_USE_NOTICE: 'Saved practice input is sent to the configured Azure fixture and retained only under the approved private-beta policy.',
+    AZURE_OPENAI_API_KEY: 'next-runtime-fixture-key',
+    AZURE_OPENAI_ENDPOINT: 'https://next-runtime.openai.azure.com',
+    AZURE_OPENAI_DEPLOYMENT: 'next-runtime-deployment',
+    AZURE_OPENAI_API_VERSION: '2025-04-01-preview',
+  });
+  const aiBootstrapResponse = await bootstrap(new Request('https://studio.fixture/api/bootstrap', {
+    headers: { Cookie: accountCookies },
+  }));
+  const aiBootstrap = await aiBootstrapResponse.json();
+  assert.equal(aiBootstrapResponse.status, 200);
+  assert.equal(aiBootstrap.capabilities.ai, true);
+  assert.equal(aiBootstrap.capabilities.aiModel, 'next-runtime-deployment');
+  assert.equal(aiBootstrap.capabilities.aiPolicy.consent, 'sandbox-ai-usage-v1');
+  const aiAttemptResponse = await saveAttemptRoute(new Request('https://studio.fixture/api/attempts', {
+    method: 'POST',
+    headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ ...attemptInput, answer: `${attemptInput.answer} This request exercises managed AI admission.` }),
+  }));
+  const aiAttempt = (await aiAttemptResponse.json()).attempt;
+  const aiRequestId = randomUUID();
+  const aiBody = {
+    requestId: aiRequestId,
+    revision: aiAttempt.revision,
+    consent: 'sandbox-ai-usage-v1',
+    acknowledged: true,
+  };
+  const missingAiConsent = await evaluateAttemptRoute(new Request(
+    `https://studio.fixture/api/attempts/${aiAttempt.id}/evaluate`,
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ requestId: randomUUID(), revision: aiAttempt.revision }),
+    },
+  ), { params: Promise.resolve({ id: aiAttempt.id }) });
+  assert.equal(missingAiConsent.status, 400);
+  const missingAiCsrf = await evaluateAttemptRoute(new Request(
+    `https://studio.fixture/api/attempts/${aiAttempt.id}/evaluate`,
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json' },
+      body: JSON.stringify(aiBody),
+    },
+  ), { params: Promise.resolve({ id: aiAttempt.id }) });
+  assert.equal(missingAiCsrf.status, 403);
+  const queuedAiResponse = await evaluateAttemptRoute(new Request(
+    `https://studio.fixture/api/attempts/${aiAttempt.id}/evaluate`,
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify(aiBody),
+    },
+  ), { params: Promise.resolve({ id: aiAttempt.id }) });
+  const queuedAi = await queuedAiResponse.json();
+  assert.equal(queuedAiResponse.status, 202);
+  assert.equal(queuedAi.state, 'queued');
+  const replayedAi = await evaluateAttemptRoute(new Request(
+    `https://studio.fixture/api/attempts/${aiAttempt.id}/evaluate`,
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify(aiBody),
+    },
+  ), { params: Promise.resolve({ id: aiAttempt.id }) });
+  assert.equal((await replayedAi.json()).operationId, queuedAi.operationId);
+  const changedAi = await evaluateAttemptRoute(new Request(
+    `https://studio.fixture/api/attempts/${aiAttempt.id}/evaluate`,
+    {
+      method: 'POST',
+      headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({ ...aiBody, revision: aiAttempt.revision + 1 }),
+    },
+  ), { params: Promise.resolve({ id: aiAttempt.id }) });
+  assert.equal(changedAi.status, 409);
+  const queuedAiStatus = await aiOperationRoute(new Request(
+    `https://studio.fixture/api/ai/operations/${queuedAi.operationId}`,
+    { headers: { Cookie: accountCookies } },
+  ), { params: Promise.resolve({ id: queuedAi.operationId }) });
+  assert.equal((await queuedAiStatus.json()).state, 'queued');
+  const anonymousAiStatus = await aiOperationRoute(new Request(
+    `https://studio.fixture/api/ai/operations/${queuedAi.operationId}`,
+  ), { params: Promise.resolve({ id: queuedAi.operationId }) });
+  assert.equal(anonymousAiStatus.status, 401);
+  const invalidAiStatus = await aiOperationRoute(new Request(
+    'https://studio.fixture/api/ai/operations/not-a-uuid',
+    { headers: { Cookie: accountCookies } },
+  ), { params: Promise.resolve({ id: 'not-a-uuid' }) });
+  assert.equal(invalidAiStatus.status, 404);
+  const cancelledAi = await cancelAiOperationRoute(new Request(
+    `https://studio.fixture/api/ai/operations/${queuedAi.operationId}`,
+    { method: 'DELETE', headers: { Cookie: accountCookies, 'X-CSRF-Token': csrf } },
+  ), { params: Promise.resolve({ id: queuedAi.operationId }) });
+  assert.equal(cancelledAi.status, 200);
+  assert.equal((await cancelledAi.json()).state, 'cancelled');
+  const cancelledAiStatus = await aiOperationRoute(new Request(
+    `https://studio.fixture/api/ai/operations/${queuedAi.operationId}`,
+    { headers: { Cookie: accountCookies } },
+  ), { params: Promise.resolve({ id: queuedAi.operationId }) });
+  assert.equal((await cancelledAiStatus.json()).state, 'cancelled');
   for (let index = 0; index < 10; index += 1) {
     await db.prepare(`INSERT INTO support(id,user_id,email,body,created_at)
       VALUES(?,?,?,?,?)`).run(`next-owned-support-${index}`, authOwner, 'next-auth-owner@example.test',

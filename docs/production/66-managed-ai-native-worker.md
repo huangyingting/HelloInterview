@@ -1,12 +1,12 @@
 # Managed AI native worker
 
-**Status: internal worker and provider-publication checkpoint; no participant
-Route Handler or Azure traffic enablement.**
+**Status: participant admission and internal provider-publication checkpoint;
+no authentic Azure traffic or public private-beta enablement.**
 
-This checkpoint connects the existing owned input snapshots, usage ledger and
-pinned `ai.evaluate` jobs to a separately invoked Prisma-backed worker. It does
-not make the browser an AI authority and does not change the public private-beta
-503 boundary.
+This checkpoint connects participant-facing Next.js admission, existing owned
+input snapshots, the usage ledger and pinned `ai.evaluate` jobs to a separately
+invoked Prisma-backed worker. It does not make the browser an AI authority and
+does not change the public private-beta 503 boundary.
 
 ## Immutable configuration
 
@@ -99,11 +99,40 @@ saved attempt, mock turn, project revision or tutor question and refuses to
 overwrite newer work. Model output never grants access, changes billing, claims
 code execution or makes a hiring prediction.
 
+## Participant admission and status
+
+Practice feedback, mock responses and project reviews use owned Next.js Route
+Handlers. Managed admission requires:
+
+- an active Auth.js database session and current `pro-v1` grant;
+- exact session-bound CSRF for enqueue and cancellation;
+- a fresh UUID request key, the exact saved source revision and literal
+  `sandbox-ai-usage-v1` consent;
+- an explicitly checked inline data-use notice before browser submission;
+- the account-scoped `ai` abuse budget introduced by migration 40.
+
+Admission first saves the participant's work, then atomically captures the
+private input snapshot, reserves usage and cost capacity, creates the durable
+operation and binds its zero-retry pg-boss job. HTTP 202 means only `queued`.
+The browser polls the owner-only `/api/ai/operations/[id]` resource and treats
+`queued`, `running`, `completed`, `cancelled`, `unknown` and `failed` as distinct
+states. Status reads do not consume admission capacity. Completed receipts
+expose only the saved source ID and resulting revision; prompts, provider bodies,
+cost evidence and native job metadata remain private.
+
+Participants may cancel only a known-undispatched owned intent. Owner lookup
+precedes native operation lookup so foreign and missing IDs both return the same
+not-found boundary. The original attempt, mock draft or project revision remains
+saved when admission, polling, provider execution or publication fails.
+
+When managed AI is absent, the same routes preserve the existing local rubric
+behavior. Tutor admission remains local until its user question can be saved and
+idempotently bound before provider dispatch.
+
 ## Remaining work
 
-No Next.js Route Handler currently admits participant requests into this worker.
-The next checkpoint must add explicit inline consent, UUID idempotency, owned
-queued/running/unknown/cancelled/completed status, bounded polling and usage
-history without exposing native job internals. Authentic Azure execution,
-quality measurement, operator reconciliation, alerts/circuit breakers,
-deployment units and privacy-retention acceptance remain launch gates.
+The browser currently performs bounded foreground polling but does not yet show
+an account-level operation history after navigation or a participant
+cancellation control. Authentic Azure execution, quality measurement, operator
+reconciliation, alerts/circuit breakers, deployment units and privacy-retention
+acceptance remain launch gates.

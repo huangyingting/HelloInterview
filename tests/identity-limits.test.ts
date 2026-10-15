@@ -19,6 +19,7 @@ test('shared authentication budgets remain exact under concurrent pools, restart
   assert.equal((await restarted.consume('legacy-account', '198.18.0.99')).allowed, true);
   assert.equal((await restarted.consume('community-network', '198.18.0.99')).allowed, true);
   assert.equal((await restarted.consume('community-account', 'owner-1')).allowed, true);
+  assert.equal((await restarted.consume('ai', 'owner-1')).allowed, true);
   const rows = await f.db.prepare('SELECT * FROM identity_abuse_buckets').all();
   assert.ok(rows.every(row => /^[a-f0-9]{64}$/.test(String(row.fingerprint))));
   assert.ok(rows.every(row => Number(row.attempts) <= 31));
@@ -27,7 +28,7 @@ test('shared authentication budgets remain exact under concurrent pools, restart
   await f.db.prepare("UPDATE identity_abuse_buckets SET started=0,expires=1 WHERE scope='network'").run();
   assert.equal((await first.consume('network', '198.18.0.99')).allowed, true);
   const remaining = await f.db.prepare('SELECT count(*)::integer AS count FROM identity_abuse_buckets').get();
-  assert.equal(remaining?.count, 4);
+  assert.equal(remaining?.count, 5);
 });
 
 test('canonical address handling cannot create separate mapped IPv4 or alternate IPv6 budgets', () => {

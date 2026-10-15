@@ -516,6 +516,7 @@ export interface Bootstrap {
   capabilities: {
     access?: AccessView;
     billing?: { mode: 'sandbox'; checkout: boolean };
+    aiPolicy?: { model: string; notice: string; consent: 'sandbox-ai-usage-v1'; monthlyUnits: number };
     ai: boolean;
     commerce: 'demo' | 'disabled';
     community: 'local' | 'read-only';

@@ -5,6 +5,19 @@ import { canUse, proCapabilities, type Capability } from '../shared/access';
 
 let csrfToken: string | undefined;
 let fieldMetricsStarted=false;
+export interface ManagedAiReceipt {
+  operationId: string;
+  reservationId: string;
+  state: 'queued';
+}
+export interface ManagedAiStatus {
+  operationId: string;
+  kind: 'tutor' | 'feedback' | 'mock' | 'project';
+  state: 'queued' | 'running' | 'unknown' | 'completed' | 'cancelled' | 'failed';
+  createdAt: string;
+  completedAt: string | null;
+  result?: { sourceId: string | null; revision: number | null };
+}
 export async function request<T>(url: string, data?: unknown, method?: string, signal?: AbortSignal): Promise<T> {
   const verb = method || (data === undefined ? 'GET' : 'POST');
   const response = await fetch(url, {
@@ -20,6 +33,29 @@ export async function request<T>(url: string, data?: unknown, method?: string, s
   }
   if (url === '/api/bootstrap') csrfToken = payload && typeof payload === 'object' && 'csrf' in payload && typeof payload.csrf === 'string' ? payload.csrf : undefined;
   return payload as T;
+}
+export async function waitForManagedAi(operationId: string, signal?: AbortSignal) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    signal?.throwIfAborted();
+    if (attempt) await new Promise<void>((resolve, reject) => {
+      const aborted = () => {
+        clearTimeout(timeout);
+        signal?.removeEventListener('abort', aborted);
+        reject(signal?.reason);
+      };
+      const timeout = setTimeout(() => {
+        signal?.removeEventListener('abort', aborted);
+        resolve();
+      }, 2000);
+      signal?.addEventListener('abort', aborted, { once: true });
+    });
+    const status = await request<ManagedAiStatus>(`/api/ai/operations/${encodeURIComponent(operationId)}`, undefined, 'GET', signal);
+    if (status.state === 'completed') return status;
+    if (status.state === 'unknown') throw new Error('The provider outcome is unknown. Your saved work is unchanged and support can reconcile this request.');
+    if (status.state === 'cancelled') throw new Error('The request was cancelled before provider dispatch. Your saved work is unchanged.');
+    if (status.state === 'failed') throw new Error('The managed AI request could not run. Your saved work is unchanged.');
+  }
+  throw new Error('Feedback is still queued. Your saved work is safe; return later to refresh its status.');
 }
 interface Store {
   data: Bootstrap;

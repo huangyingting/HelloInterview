@@ -209,9 +209,9 @@ export class SandboxUsage {
   async assertNativeOperation(operation: Operation) {
     return this.db.transaction(async () => {
       await this.lockOwner(operation.principal.id, undefined, true);
-      const { row } = await this.native(operation);
+      const { row, request } = await this.native(operation);
       await this.integrity(row);
-      return { owner: row.owner_ref, reservationId: row.id, state: row.state };
+      return { owner: row.owner_ref, reservationId: row.id, state: row.state, kind: request.kind };
     });
   }
   async markNativeDispatched(db: Database, operation: Operation, evidence: z.input<typeof evidenceSchema>) {

@@ -5,6 +5,7 @@ import { prismaConnection } from '../../../server/db/prisma';
 import { StateRepository } from '../../../server/db/state-repository';
 import { Entitlements } from '../../../server/entitlements';
 import { nextBillingCapability } from '../../../server/next/billing';
+import { nextAiCapability } from '../../../server/next/ai';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +17,7 @@ export async function GET(request: Request) {
     const csrf = await issueCsrf(request, session);
     const active = user?.identity?.status === 'active';
     const billing = nextBillingCapability();
+    const ai = nextAiCapability();
     const [state, access] = await Promise.all([
       user && active ? new StateRepository(db).read(user.id) : Promise.resolve(emptyState()),
       new Entitlements(db).view(user?.id ?? null),
@@ -24,10 +26,11 @@ export async function GET(request: Request) {
       user,
       state,
       capabilities: {
-        ai: false,
+        ai: Boolean(ai),
         commerce: 'disabled',
         community: 'read-only',
-        aiModel: null,
+        aiModel: ai?.model ?? null,
+        ...(ai ? { aiPolicy: ai } : {}),
         fieldMetrics: false,
         auth: {
           mode: 'managed',

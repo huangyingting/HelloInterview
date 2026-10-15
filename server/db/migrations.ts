@@ -1715,6 +1715,15 @@ export const migrations = [{
       CREATE INDEX managed_mfa_recovery_available
         ON managed_mfa_recovery_codes(user_id,created_at) WHERE used_at IS NULL;
     `,
+  }, {
+    version: 40,
+    name: 'managed-ai-account-admission',
+    sql: `
+      ALTER TABLE identity_abuse_buckets DROP CONSTRAINT identity_abuse_buckets_scope_check;
+      ALTER TABLE identity_abuse_buckets ADD CONSTRAINT identity_abuse_buckets_scope_check
+        CHECK (scope IN ('network','legacy-account','account-security','billing','support-network','support-account',
+          'community-network','community-account','ai'));
+    `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }
