@@ -98,6 +98,7 @@ service with defined recovery and support commitments.
 | [64 - Auth.js TOTP MFA and recovery](64-authjs-totp-mfa.md) | Encrypted app-owned TOTP, replay fencing, one-time recovery codes, session step-up and active-credential staff admission in migration 39; no support bypass or routine key rotation | Identity and security |
 | [65 - Next.js owned sandbox billing](65-nextjs-owned-sandbox-billing.md) | Auth.js/CSRF owned billing Route Handlers, bounded raw Stripe webhooks and Prisma transaction-coupled worker completion; sandbox only with deployment and live-commerce gates remaining | Billing, identity and full-stack |
 | [66 - Managed AI native worker](66-managed-ai-native-worker.md) | Explicit Azure policy, consent-gated Next.js admission/status/cancellation, native claim fencing, measured token cost and atomic Prisma publication; no authentic Azure or public-beta enablement | AI, privacy and operations |
+| [67 - Next.js standalone release](67-next-standalone-release.md) | Sanitized standalone artifact, Next-only application container, retained worker entrypoints and authenticated restart/encrypted-restore acceptance; legacy source deletion and Azure cutover remain | Platform, full-stack and operations |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to

@@ -94,15 +94,16 @@ the broader accessibility or deployed-performance gates.
 
 ## Release and deployment
 
-Build before packaging and promote `dist/`, `dist-server/`, `package.json` and
-`package-lock.json` together. The manifest accompanies the browser artifact.
-Every referenced script, CSS and other manifest asset must exist and be served
-as its original bytes, not an HTML SPA fallback. Runtime-only verification
-checks the complete manifest from a copied release without development tooling.
-CI explicitly includes hidden files for its allowlisted release paths so the
-`.vite/manifest.json` is not silently omitted by artifact upload. Environment
-and data directories remain outside those paths. Verification must inspect
-the actual downloadable archive as well as the pre-upload build directory.
+Build before packaging and promote `.next/standalone/`, `dist-server/`,
+`package.json` and `package-lock.json` together. Next build and route manifests,
+static chunks and public assets accompany the standalone runtime. Every
+referenced script, CSS and media object must exist and be served as its original
+bytes, not a compatibility SPA fallback. Runtime-only verification checks the
+copied release without development tooling. CI explicitly includes hidden files
+for the allowlisted `.next/standalone` path. Environment and data directories
+remain outside those paths, and standalone preparation explicitly deletes any
+traced `data` directory before upload. Verification must inspect the actual
+downloadable archive as well as the pre-upload build directory.
 
 An already open browser can request an old hashed route chunk long after its
 initial page load. Do not overwrite/delete old hashed assets immediately during

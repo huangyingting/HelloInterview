@@ -28,9 +28,17 @@ services:
     image: ${STUDIO_IMAGE:-interview-studio:staging}
     build: .
     environment:
-      APP_MODE: local
       DATABASE_URL: ${DATABASE_URL:?Set a private PostgreSQL URL for database:5432/studio}
-      LOG_REQUESTS: "true"
+      NEXTAUTH_URL: ${NEXTAUTH_URL:?Set the canonical Auth.js origin}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?Set the Auth.js session secret}
+      AUTH_GOOGLE_CLIENT_ID: ${AUTH_GOOGLE_CLIENT_ID:?Set the Google client ID}
+      AUTH_GOOGLE_CLIENT_SECRET: ${AUTH_GOOGLE_CLIENT_SECRET:?Set the Google client secret}
+      AUTH_FACEBOOK_CLIENT_ID: ${AUTH_FACEBOOK_CLIENT_ID:?Set the Facebook app ID}
+      AUTH_FACEBOOK_CLIENT_SECRET: ${AUTH_FACEBOOK_CLIENT_SECRET:?Set the Facebook app secret}
+      AUTH_INVITED_EMAILS: ${AUTH_INVITED_EMAILS:?Set the invited test addresses}
+      AUTH_MFA_ENCRYPTION_KEY: ${AUTH_MFA_ENCRYPTION_KEY:?Set the MFA encryption key}
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
     ports:
       - "127.0.0.1:${STUDIO_PORT:-3000}:3000"
     read_only: true

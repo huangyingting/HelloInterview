@@ -4,13 +4,13 @@ LABEL org.opencontainers.image.title="Interview Studio" \
       org.opencontainers.image.revision="${RELEASE_SHA}" \
       org.opencontainers.image.source="https://github.com/huangyingting/HelloInterview"
 WORKDIR /app
-ENV NODE_ENV=production APP_MODE=service HOST=127.0.0.1 PORT=10006
+ENV NODE_ENV=production HOSTNAME=127.0.0.1 PORT=10006
+RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
-COPY dist ./dist
+RUN npm ci --omit=dev --no-audit --no-fund && rm -rf node_modules/prisma node_modules/typescript && npm cache clean --force
+COPY .next/standalone ./
 COPY dist-server ./dist-server
-RUN mkdir /app/data && chown node:node /app/data
 USER node
 EXPOSE 10006
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/api/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["node", "dist-server/index.js"]
+CMD ["node", "server.js"]

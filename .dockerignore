@@ -2,8 +2,14 @@
 !package.json
 !package-lock.json
 !tsconfig.json
-!vite.config.ts
-!index.html
+!tsconfig.next.json
+!next.config.ts
+!types/
+!types/**
+!app/
+!app/**
+!prisma/
+!prisma/**
 !server/
 !server/**
 !shared/
@@ -12,7 +18,7 @@
 !src/**
 !scripts/
 !scripts/generate-public-content.ts
-!scripts/copy-private-media.ts
+!scripts/prepare-next-standalone.ts
 !public/
 !public/**
 **/.env

@@ -21,9 +21,9 @@ SQLite is for local use, not the proposed multi-replica production substrate.
 
 Application construction owns the connection and awaits disposal. Startup
 checks PostgreSQL migration history but never creates or modifies PostgreSQL
-schema. The production release contains `dist-server/index.js`,
+schema. The production release contains the Next standalone `server.js`,
 `dist-server/db/cli.js`, and the reusable `dist-server/jobs/index.js` module;
-none is served as a browser asset.
+none of the worker or migration entrypoints is served as a browser asset.
 
 ## Current PostgreSQL schema
 

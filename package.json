@@ -6,6 +6,7 @@
   "scripts": {
     "dev:next": "npm run content:metadata && next dev",
     "build:next": "npm run content:metadata && npm run prisma:generate && next build && tsx scripts/prepare-next-standalone.ts",
+    "build:release": "npm run build:next && npm run build:workers",
     "start:next": "node .next/standalone/server.js",
     "prisma:generate": "DATABASE_URL=\"${DATABASE_URL:-postgresql://localhost/unavailable}\" prisma generate",
     "prisma:pull": "prisma db pull && prisma generate",
@@ -13,6 +14,7 @@
     "build": "npm run content:metadata && tsc --noEmit && vite build && npm run build:server",
     "content:metadata": "tsx scripts/generate-public-content.ts",
     "build:server": "esbuild server/index.ts server/db/cli.ts server/jobs/index.ts server/identity/cli.ts server/billing/cli.ts server/ai/cli.ts server/staff/cli.ts server/privacy/cli.ts server/preflight/cli.ts server/usage/index.ts --bundle --platform=node --target=node24 --format=esm --packages=external --outdir=dist-server --outbase=server && tsx scripts/copy-private-media.ts",
+    "build:workers": "rm -rf dist-server && esbuild server/db/cli.ts server/jobs/index.ts server/identity/cli.ts server/billing/cli.ts server/ai/cli.ts server/staff/cli.ts server/privacy/cli.ts server/preflight/cli.ts server/usage/index.ts --bundle --platform=node --target=node24 --format=esm --packages=external --outdir=dist-server --outbase=server",
     "start": "NODE_ENV=production node --env-file-if-exists=.env dist-server/index.js",
     "test": "playwright test",
     "test:unit": "tsx --test tests/config.test.ts tests/deployment.test.ts tests/domain.test.ts tests/premium.test.ts tests/content.test.ts tests/coding.test.ts tests/low-level-design.test.ts tests/access.test.ts tests/usage-calendar.test.ts tests/web-vitals.test.ts",

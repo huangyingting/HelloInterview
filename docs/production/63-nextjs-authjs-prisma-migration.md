@@ -8,9 +8,9 @@ public content/community reads, durable account security, privacy lifecycle and
 owned support APIs without changing the operated Azure 503 boundary. This is
 not a launch or cutover:
 
-- the current Express application remains the deployed artifact;
-- the Next.js UI shell builds and serves deep links, but authenticated writes
-  and most owner/staff APIs have not yet moved to Route Handlers;
+- the release application artifact now starts the Next.js standalone server;
+- the Next.js UI shell, authenticated owner/staff workflows and migrated
+  application APIs run through App Router pages and Route Handlers;
 - health, readiness and visitor bootstrap now run as Route Handlers through a
   Prisma-backed compatibility interface that preserves nested transaction
   identity for existing domain repositories;
@@ -58,8 +58,9 @@ not a launch or cutover:
   validated saved-work results, measured usage settlement and queue completion;
 - anonymous managed support remains fail-closed until trusted edge address
   handling can restore network-scoped abuse protection;
-- managed-AI browser admission/status UX and the remaining non-billing worker,
-  deployment and operational surfaces still block participant access;
+- managed-AI browser admission/status UX and the sanitized Next standalone
+  container/recovery path are implemented; legacy worker configuration and
+  remaining operational surfaces still block participant access;
 - Caddy must continue returning the hardened unavailable response.
 
 ## Final architecture

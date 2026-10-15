@@ -1,6 +1,6 @@
 # Azure guest runtime foundation
 
-Issue [#52](https://github.com/huangyingting/HelloInterview/issues/52) establishes the database and supervised-process foundation on `WebStack`. It deliberately does **not** open the private beta: the app and workers remain disabled and condition-gated until authentic Auth0, invite and participant-policy configuration exists.
+Issue [#52](https://github.com/huangyingting/HelloInterview/issues/52) establishes the database and supervised-process foundation on `WebStack`. It deliberately does **not** open the private beta: the app and workers remain disabled and condition-gated until authentic Auth.js provider, invite and participant-policy configuration exists.
 
 ## Release authority
 
@@ -16,7 +16,7 @@ The VM must run the downloadable artifact produced by the successful CI run for 
    STUDIO_IMAGE=interview-studio:<full commit>
    ```
 
-5. Verify `org.opencontainers.image.revision`, `/app/package.json`, `/app/package-lock.json`, `dist/.vite/manifest.json`, and the complete `dist/` and `dist-server/` file hashes against the extracted artifact.
+5. Verify `org.opencontainers.image.revision`, `/app/package.json`, `/app/package-lock.json`, `/app/server.js`, the complete `/app/.next` and `/app/dist-server` file hashes, and the absence of `/app/data`, `/app/dist`, source and environment files against the extracted artifact.
 
 The release image installs only lockfile-pinned production dependencies on the digest-pinned Node image. It never contains source, development dependencies, a compiler or provider secrets.
 
@@ -53,7 +53,7 @@ The three long-running units require all of:
 - `/etc/interview-studio/runtime.env`;
 - `/etc/interview-studio/service.env`.
 
-`service.env` is intentionally absent at this checkpoint. Copying the example is not approval to start: real Auth0 tenant credentials, separate read-only Management API authority, hook secret, exact invited addresses, participant-facing privacy facts and callback verification must exist first. Stripe and AI variables remain absent.
+`service.env` is intentionally absent at this checkpoint. Copying the example is not approval to start: real Google and Facebook application credentials, an Auth.js secret and MFA key, exact invited addresses, participant-facing privacy facts and callback verification must exist first. The legacy OIDC lifecycle settings remain transitional only for its still-disabled worker unit and must be removed before final cutover. Stripe and AI variables remain absent unless their separate launch gates are approved.
 
 ## Verification and rollback
 

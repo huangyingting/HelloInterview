@@ -45,8 +45,10 @@ test('Azure VM runtime consumes only the verified release and remains secret-gat
   assert.match(migration, /--env-file \/etc\/interview-studio\/migrate\.env --env APP_MODE=local/);
   const release = await readFile('deploy/azure-vm/Dockerfile.release', 'utf8');
   assert.match(release, /^FROM node:24-bookworm-slim@sha256:[a-f0-9]{64}$/m);
-  assert.match(release, /^COPY dist \.\/dist$/m);
+  assert.match(release, /^COPY \.next\/standalone \.\/$/m);
   assert.match(release, /^COPY dist-server \.\/dist-server$/m);
+  assert.match(release, /^CMD \["node", "server\.js"\]$/m);
+  assert.doesNotMatch(release, /dist-server\/index\.js|COPY dist \.\/dist/);
   assert.doesNotMatch(release, /npm run build|COPY \. \./);
 
   const installer = await readFile('deploy/azure-vm/install-runtime-units.sh', 'utf8');
@@ -55,6 +57,11 @@ test('Azure VM runtime consumes only the verified release and remains secret-gat
   assert.doesNotMatch(installer, /systemctl (?:enable|start|restart)/);
 
   const serviceEnv = await readFile('deploy/azure-vm/service.env.example', 'utf8');
+  for (const setting of ['NEXTAUTH_URL', 'NEXTAUTH_SECRET', 'AUTH_GOOGLE_CLIENT_ID',
+    'AUTH_GOOGLE_CLIENT_SECRET', 'AUTH_FACEBOOK_CLIENT_ID', 'AUTH_FACEBOOK_CLIENT_SECRET',
+    'AUTH_INVITED_EMAILS', 'AUTH_MFA_ENCRYPTION_KEY']) {
+    assert.match(serviceEnv, new RegExp(`^${setting}=`, 'm'));
+  }
   for (const setting of ['PRIVACY_CONTROLLER_NAME', 'PRIVACY_CONTACT_URL', 'PARTICIPANT_MINIMUM_AGE',
     'PRIVACY_RETENTION_NOTICE', 'PRIVACY_DELETION_NOTICE', 'PRIVATE_BETA_NO_DURABILITY_ACK']) {
     assert.match(serviceEnv, new RegExp(`^${setting}=`, 'm'));

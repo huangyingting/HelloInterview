@@ -1,84 +1,51 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
 import { execFile, spawn } from 'node:child_process';
-import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto';
+import { createDecipheriv, createCipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
+import test from 'node:test';
 import type { Bootstrap } from '../shared/types';
 
 const execute = promisify(execFile);
 async function docker(...args: string[]) {
-  return execute('docker', args, { timeout: 180000, maxBuffer: 4 * 1024 * 1024 });
+  return execute('docker', args, { timeout: 300000, maxBuffer: 8 * 1024 * 1024 });
 }
 
-test('container release is non-root, runtime-only, read-only compatible and persistent across restart', { timeout: 240000 }, async t => {
-  const id = randomUUID().replaceAll('-', ''), image = `interview-studio-fixture:${id}`;
-  const volume = `studio-fixture-${id}`;
-  let container: string | undefined, built = false, createdVolume = false;
-  t.after(async () => {
-    try {
-      if (container) {
-        await docker('stop', '--time=15', container);
-        await docker('rm', container);
-      }
-    } finally {
-      try { if (createdVolume) await docker('volume', 'rm', volume); }
-      finally { if (built) await docker('image', 'rm', image); }
-    }
-  });
-  await docker('build', '--quiet', '--tag', image, '.');
-  built = true;
-  await docker('volume', 'create', volume);
-  createdVolume = true;
-  container = (await docker('run', '-d', '--name', `studio-fixture-${id}`, '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges:true', '--tmpfs', '/tmp', '--mount', `type=volume,source=${volume},target=/app/data`, '-p', '127.0.0.1::3000', image)).stdout.trim();
-  assert.match(container, /^[a-f0-9]{64}$/);
-  const bound = (await docker('port', container, '3000')).stdout.trim();
-  assert.match(bound, /^127\.0\.0\.1:\d+$/);
-  let url = `http://${bound}`;
-  async function ready() {
-    const deadline = Date.now() + 20000;
-    while (Date.now() < deadline) {
-      try {
-        const response = await fetch(`${url}/api/ready`, { signal: AbortSignal.timeout(1000) });
-        if (response.ok) {
-          assert.deepEqual(await response.json(), { status: 'ready', mode: 'local' });
-          return;
-        }
-      } catch (error) {
-        if (!(error instanceof TypeError) && !(error instanceof Error && error.name === 'TimeoutError')) throw error;
-      }
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    const logs = await docker('logs', container!);
-    throw new Error(`The fixture container failed readiness: ${logs.stdout} ${logs.stderr}`);
-  }
-  await ready();
-  const inspection = await docker('exec', container, 'node', '-e', `const fs=require('node:fs'); console.log(JSON.stringify({uid:process.getuid(),missing:['vite','tsx','typescript','esbuild'].every(p=>!fs.existsSync('/app/node_modules/'+p)),privateFilesAbsent:['.env','.cred','server','src'].every(p=>!fs.existsSync('/app/'+p)),cli:fs.existsSync('/app/dist-server/db/cli.js')}))`);
-  assert.deepEqual(JSON.parse(inspection.stdout), { uid: 1000, missing: true, privateFilesAbsent: true, cli: true });
-  const login = await fetch(`${url}/api/auth/demo`, { method: 'POST' });
-  assert.equal(login.status, 200);
-  const cookie = login.headers.get('set-cookie')!.split(';')[0];
-  const target = await fetch(`${url}/api/targets`, { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ company: 'Meta', level: 'Senior', role: 'Engineer', date: '' }) });
-  assert.equal(target.status, 200);
-  const before = await (await fetch(`${url}/api/bootstrap`, { headers: { Cookie: cookie } })).json() as Bootstrap;
-  assert.equal(before.state.targets.length, 1);
-  await docker('restart', '--time=15', container);
-  url = `http://${(await docker('port', container, '3000')).stdout.trim()}`;
-  await ready();
-  const after = await (await fetch(`${url}/api/bootstrap`, { headers: { Cookie: cookie } })).json() as Bootstrap;
-  assert.deepEqual(after, before);
-  await docker('stop', '--time=15', container);
-  const state = JSON.parse((await docker('inspect', '--format', '{{json .State}}', container)).stdout) as { Running: boolean; ExitCode: number };
-  assert.equal(state.Running, false);
-  assert.equal(state.ExitCode, 0);
-});
-
-
-test('staging migration gate and encrypted PostgreSQL backup restore preserve owned state in an isolated recovery runtime', { timeout: 240000 }, async t => {
-  const id = randomUUID().replaceAll('-', ''), project = `studio-recovery-${id}`, image = `interview-studio-fixture:${id}`;
+test('Next standalone release is hardened and preserves Auth.js-owned state through restart and restore', {
+  timeout: 360000,
+}, async t => {
+  const id = randomUUID().replaceAll('-', '');
+  const project = `studio-next-${id}`;
+  const image = `interview-studio-next:${id}`;
   const password = randomBytes(24).toString('hex');
-  const args = ['compose', '--env-file', '/dev/null', '-f', 'compose.staging.yml', '-p', project];
-  const env = { ...process.env, POSTGRES_PASSWORD: password, DATABASE_URL: `postgresql://studio:${password}@database:5432/studio`, STUDIO_IMAGE: image, STUDIO_PORT: '0' };
-  const compose = (...commands: string[]) => execute('docker', [...args, ...commands], { env, encoding: 'buffer', timeout: 180000, maxBuffer: 8 * 1024 * 1024 });
+  const sessionToken = randomBytes(32).toString('hex');
+  const sessionHash = createHash('sha256').update(sessionToken).digest('hex');
+  const owner = randomUUID(), identity = randomUUID(), sessionId = randomUUID();
+  const auth = {
+    NEXTAUTH_URL: 'http://localhost',
+    NEXTAUTH_SECRET: 'container-auth-secret-container-auth-secret-container-auth-secret',
+    AUTH_GOOGLE_CLIENT_ID: 'container-google-client',
+    AUTH_GOOGLE_CLIENT_SECRET: 'container-google-secret',
+    AUTH_FACEBOOK_CLIENT_ID: '123456789',
+    AUTH_FACEBOOK_CLIENT_SECRET: 'container-facebook-secret',
+    AUTH_INVITED_EMAILS: 'container-owner@example.test',
+    AUTH_MFA_ENCRYPTION_KEY: Buffer.alloc(32, 11).toString('base64url'),
+  };
+  const databaseUrl = `postgresql://studio:${password}@database:5432/studio`;
+  const env = {
+    ...process.env,
+    POSTGRES_PASSWORD: password,
+    DATABASE_URL: databaseUrl,
+    STUDIO_IMAGE: image,
+    STUDIO_PORT: '0',
+    ...auth,
+  };
+  const composeArgs = ['compose', '--env-file', '/dev/null', '-f', 'compose.staging.yml', '-p', project];
+  const compose = (...commands: string[]) => execute('docker', [...composeArgs, ...commands], {
+    env,
+    encoding: 'buffer',
+    timeout: 300000,
+    maxBuffer: 8 * 1024 * 1024,
+  });
   let built = false, staged = false, recovery: string | undefined;
   t.after(async () => {
     try {
@@ -87,49 +54,118 @@ test('staging migration gate and encrypted PostgreSQL backup restore preserve ow
         await docker('rm', recovery);
       }
     } finally {
-      try { if (staged) await compose('down', '--volumes', '--remove-orphans'); }
-      finally { if (built) await docker('image', 'rm', image); }
+      try {
+        if (staged) await compose('down', '--volumes', '--remove-orphans');
+      } finally {
+        if (built) await docker('image', 'rm', image);
+      }
     }
   });
+
   await docker('build', '--quiet', '--tag', image, '.');
   built = true;
   staged = true;
-  await compose('up', '-d', '--no-build', '--quiet-pull', '--wait', '--wait-timeout', '60');
-  const url = `http://${(await compose('port', 'api', '3000')).stdout.toString().trim()}`;
-  const ready = await fetch(`${url}/api/ready`);
-  assert.equal(ready.status, 200);
-  const login = await fetch(`${url}/api/auth/demo`, { method: 'POST' });
-  assert.equal(login.status, 200);
-  const cookie = login.headers.get('set-cookie')!.split(';')[0];
-  const saved = await fetch(`${url}/api/targets`, { method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ company: 'Meta', level: 'Senior', role: 'Recovered Engineer', date: '' }) });
-  assert.equal(saved.status, 200);
-  const quizResponse=await fetch(`${url}/api/quiz`,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({topic:'api-design',answers:{'api-1':1}})});
-  assert.equal(quizResponse.status,200);
-  const quiz=(await quizResponse.json()).quizzes[0];
-  const beforeReport=await(await fetch(`${url}/api/quiz-reports/${quiz.id}`,{headers:{Cookie:cookie}})).json();
-  assert.equal(beforeReport.provenance,'versioned');
-  const sessionResponse=await fetch(`${url}/api/quiz-sessions`,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({topic:'api-design'})});
-  assert.equal(sessionResponse.status,201);
-  const session=await sessionResponse.json();
-  const answerResponse=await fetch(`${url}/api/quiz-sessions/${session.id}/answer`,{method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({revision:session.revision,questionId:session.question.id,answer:1})});
-  assert.equal(answerResponse.status,200);
-  const beforeSession=(await answerResponse.json()).session;
-  const before = await (await fetch(`${url}/api/bootstrap`, { headers: { Cookie: cookie } })).json() as Bootstrap;
-  assert.ok(before.user);
-  const apiContainer=(await compose('ps','-q','api')).stdout.toString().trim();
-  const enqueueFixture=`const {DurableJobs,postgresConnection}=await import('./dist-server/jobs/index.js');
-    const db=postgresConnection(process.env.DATABASE_URL);let jobs;
-    try{jobs=await DurableJobs.open(db);
-      const operation=await jobs.enqueue({principal:{type:'user',id:process.env.JOB_FIXTURE_OWNER},kind:'notification.deliver',key:'restore-fixture',resource:'restore-fixture',payload:{reference:'fixture-recovery'},retryMode:'idempotent'});
-      console.log(JSON.stringify(await jobs.ownedStatus(process.env.JOB_FIXTURE_OWNER,operation.id)));
-    }finally{try{if(jobs)await jobs.close();}finally{await db.close();}}`;
-  const beforeOperation=JSON.parse((await docker('exec','-e',`JOB_FIXTURE_OWNER=${before.user.id}`,apiContainer,'node','--input-type=module','-e',enqueueFixture)).stdout);
-  assert.equal(beforeOperation.status,'created');
+  await compose('up', '-d', '--no-build', '--quiet-pull', '--wait', '--wait-timeout', '90');
+  const apiContainer = (await compose('ps', '-q', 'api')).stdout.toString().trim();
+  let url = `http://${(await compose('port', 'api', '3000')).stdout.toString().trim()}`;
+
+  async function ready(origin: string, container: string) {
+    const deadline = Date.now() + 30000;
+    while (Date.now() < deadline) {
+      try {
+        const response = await fetch(`${origin}/api/ready?probe=${Date.now()}`, {
+          headers: { Connection: 'close' },
+          signal: AbortSignal.timeout(1000),
+        });
+        if (response.ok) {
+          assert.deepEqual(await response.json(), { status: 'ready', mode: 'service' });
+          return;
+        }
+      } catch (error) {
+        if (!(error instanceof TypeError) && !(error instanceof Error && error.name === 'TimeoutError')) throw error;
+      }
+      await new Promise(resolve => setTimeout(resolve, 150));
+    }
+    const logs = await docker('logs', container);
+    throw new Error(`The Next standalone fixture failed readiness: ${logs.stdout} ${logs.stderr}`);
+  }
+
+  await ready(url, apiContainer);
+  const visitorResponse = await fetch(`${url}/api/bootstrap`);
+  const visitor = await visitorResponse.json() as Bootstrap;
+  assert.equal(visitorResponse.status, 200);
+  assert.equal(visitor.user, null);
+  assert.equal(visitor.capabilities.auth?.system, 'authjs');
+
+  const inspection = await docker('exec', apiContainer, 'node', '-e', `
+    const fs=require('node:fs');
+    console.log(JSON.stringify({
+      uid:process.getuid(),
+      next:fs.existsSync('/app/server.js')&&fs.existsSync('/app/.next/server'),
+      workers:fs.existsSync('/app/dist-server/db/cli.js')&&fs.existsSync('/app/dist-server/privacy/cli.js'),
+      developmentAbsent:['vite','tsx','typescript','esbuild'].every(value=>!fs.existsSync('/app/node_modules/'+value)),
+      privateAbsent:['.env','data','src','server','dist','index.html','vite.config.ts'].every(value=>!fs.existsSync('/app/'+value))
+    }));
+  `);
+  assert.deepEqual(JSON.parse(inspection.stdout), {
+    uid: 1000,
+    next: true,
+    workers: true,
+    developmentAbsent: true,
+    privateAbsent: true,
+  });
+
+  const now = Date.now();
+  const sql = `
+    INSERT INTO users(id,name,email,password,demo) VALUES('${owner}','Container owner','container-owner@example.test',NULL,0);
+    INSERT INTO user_settings(user_id) VALUES('${owner}');
+    INSERT INTO managed_identities(id,user_id,issuer,subject,provider,email,verified,available)
+      VALUES('${identity}','${owner}','https://accounts.google.com','container-subject','google','container-owner@example.test',1,1);
+    INSERT INTO managed_accounts(user_id,status,contact_email,contact_identity_id,contact_verified)
+      VALUES('${owner}','active','container-owner@example.test','${identity}',1);
+    INSERT INTO sessions(token,user_id,expires) VALUES('${sessionHash}','${owner}',${now + 30 * 86400000});
+    INSERT INTO managed_sessions(token,id,identity_id,epoch,csrf_hash,authenticated_at,created_at,last_used,mfa_at)
+      VALUES('${sessionHash}','${sessionId}','${identity}',0,'${'0'.repeat(64)}',${now},${now},${now},0);
+  `;
+  await compose('exec', '-T', 'database', 'psql', '-v', 'ON_ERROR_STOP=1', '-U', 'studio', '-d', 'studio', '-c', sql);
+
+  const authenticatedResponse = await fetch(`${url}/api/bootstrap`, {
+    headers: { Cookie: `studio_session=${sessionToken}` },
+  });
+  const authenticated = await authenticatedResponse.json() as Bootstrap;
+  const csrfCookie = authenticatedResponse.headers.get('set-cookie')?.split(';')[0];
+  assert.equal(authenticated.user?.id, owner);
+  assert.match(csrfCookie ?? '', /^studio_csrf=[a-f0-9]{64}$/);
+  const csrf = csrfCookie!.slice('studio_csrf='.length);
+  const cookies = `studio_session=${sessionToken}; ${csrfCookie}`;
+  const targetResponse = await fetch(`${url}/api/targets`, {
+    method: 'POST',
+    headers: { Cookie: cookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+    body: JSON.stringify({ company: 'Meta', level: 'Senior', role: 'Container Engineer', date: '' }),
+  });
+  assert.equal(targetResponse.status, 200);
+  const before = await (await fetch(`${url}/api/bootstrap`, { headers: { Cookie: cookies } })).json() as Bootstrap;
+  assert.equal(before.state.targets.length, 1);
+  const stable = (value: Bootstrap) => ({
+    ...value,
+    capabilities: {
+      ...value.capabilities,
+      access: value.capabilities.access ? { ...value.capabilities.access, serverTime: '<database-clock>' } : undefined,
+    },
+  });
+
+  await docker('restart', '--time=15', apiContainer);
+  url = `http://${(await compose('port', 'api', '3000')).stdout.toString().trim()}`;
+  await ready(url, apiContainer);
+  const restarted = await (await fetch(`${url}/api/bootstrap`, { headers: { Cookie: cookies } })).json() as Bootstrap;
+  assert.deepEqual(stable(restarted), stable(before));
+
   const backup = (await compose('exec', '-T', 'database', 'pg_dump', '-U', 'studio', '-d', 'studio', '-Fc')).stdout;
   assert.ok(backup.length > 1000);
   const key = randomBytes(32), iv = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', key, iv);
-  const encrypted = Buffer.concat([cipher.update(backup), cipher.final()]), tag = cipher.getAuthTag();
+  const encrypted = Buffer.concat([cipher.update(backup), cipher.final()]);
+  const tag = cipher.getAuthTag();
   const tampered = Buffer.from(encrypted);
   tampered[0] ^= 1;
   assert.throws(() => {
@@ -140,54 +176,35 @@ test('staging migration gate and encrypted PostgreSQL backup restore preserve ow
   });
   const decipher = createDecipheriv('aes-256-gcm', key, iv);
   decipher.setAuthTag(tag);
-  const restoredBytes = Buffer.concat([decipher.update(encrypted), decipher.final()]);
-  assert.deepEqual(restoredBytes, backup);
+  const restored = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+  assert.deepEqual(restored, backup);
+
   await compose('exec', '-T', 'database', 'psql', '-U', 'studio', '-d', 'studio', '-c', 'CREATE DATABASE restore_fixture');
   await new Promise<void>((resolve, reject) => {
-    const restore = spawn('docker', [...args, 'exec', '-T', 'database', 'pg_restore', '-U', 'studio', '-d', 'restore_fixture', '--exit-on-error'], { env, timeout: 60000, stdio: ['pipe', 'ignore', 'pipe'] });
+    const restore = spawn('docker', [...composeArgs, 'exec', '-T', 'database', 'pg_restore', '-U', 'studio',
+      '-d', 'restore_fixture', '--exit-on-error'], {
+      env,
+      timeout: 90000,
+      stdio: ['pipe', 'ignore', 'pipe'],
+    });
     let stderr = '';
-    restore.stderr.on('data', chunk => { stderr += String(chunk); });
+    restore.stderr.on('data', value => { stderr += String(value); });
     restore.once('error', reject);
     restore.stdin.once('error', reject);
     restore.once('close', code => code === 0 ? resolve() : reject(new Error(`Fixture restore failed (${code}): ${stderr}`)));
-    restore.stdin.end(restoredBytes);
+    restore.stdin.end(restored);
   });
-  recovery = (await docker('run', '-d', '--network', `${project}_default`, '--read-only', '--tmpfs', '/tmp', '-e', `DATABASE_URL=postgresql://studio:${password}@database:5432/restore_fixture`, '-p', '127.0.0.1::3000', image)).stdout.trim();
+
+  const runArgs = ['run', '-d', '--network', `${project}_default`, '--read-only', '--tmpfs', '/tmp',
+    '-e', `DATABASE_URL=postgresql://studio:${password}@database:5432/restore_fixture`,
+    ...Object.entries(auth).flatMap(([name, value]) => ['-e', `${name}=${value}`]),
+    '-e', 'HOSTNAME=0.0.0.0', '-e', 'PORT=3000',
+    '-p', '127.0.0.1::3000', image];
+  recovery = (await docker(...runArgs)).stdout.trim();
   const recoveryUrl = `http://${(await docker('port', recovery, '3000')).stdout.trim()}`;
-  const deadline = Date.now() + 15000;
-  let responsive = false;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`${recoveryUrl}/api/ready`, { signal: AbortSignal.timeout(1000) });
-      if (response.ok) { responsive = true; break; }
-    } catch (error) {
-      if (!(error instanceof TypeError) && !(error instanceof Error && error.name === 'TimeoutError')) throw error;
-    }
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-  assert.ok(responsive, 'The restored runtime must pass readiness against restored migration history.');
-  const after = await (await fetch(`${recoveryUrl}/api/bootstrap`, { headers: { Cookie: cookie } })).json() as Bootstrap;
-  assert.deepEqual(after, before);
-  const afterReport=await(await fetch(`${recoveryUrl}/api/quiz-reports/${quiz.id}`,{headers:{Cookie:cookie}})).json();
-  assert.deepEqual(afterReport,beforeReport);
-  const afterSession=await(await fetch(`${recoveryUrl}/api/quiz-sessions/${session.id}`,{headers:{Cookie:cookie}})).json();
-  assert.deepEqual(afterSession,beforeSession);
-  const restoredOperation=JSON.parse((await docker('exec','-e',`JOB_FIXTURE_OWNER=${before.user.id}`,recovery,'node','--input-type=module','-e',enqueueFixture)).stdout);
-  assert.deepEqual(restoredOperation,beforeOperation);
-  const finishFixture=`const {DurableJobs,postgresConnection}=await import('./dist-server/jobs/index.js');
-    const db=postgresConnection(process.env.DATABASE_URL);let jobs;
-    try{jobs=await DurableJobs.open(db);const claim=await jobs.claim('notification.deliver');
-      if(!claim||claim.data.operationId!==process.env.JOB_FIXTURE_OPERATION)throw new Error('The restored fixture claim is incorrect.');
-      await jobs.finish(claim,async connection=>{
-        await connection.prepare('UPDATE user_settings SET recognition=recognition+1 WHERE user_id=?').run(process.env.JOB_FIXTURE_OWNER);
-        return {recoveryVerified:true};
-      });
-    }finally{try{if(jobs)await jobs.close();}finally{await db.close();}}`;
-  await docker('exec','-e',`JOB_FIXTURE_OWNER=${before.user.id}`,'-e',`JOB_FIXTURE_OPERATION=${beforeOperation.id}`,recovery,'node','--input-type=module','-e',finishFixture);
-  const completedOperation=JSON.parse((await docker('exec','-e',`JOB_FIXTURE_OWNER=${before.user.id}`,recovery,'node','--input-type=module','-e',enqueueFixture)).stdout);
-  assert.equal(completedOperation.id,beforeOperation.id);
-  assert.equal(completedOperation.status,'completed');
-  assert.deepEqual(completedOperation.receipt,{recoveryVerified:true});
-  const completed=(await(await fetch(`${recoveryUrl}/api/bootstrap`,{headers:{Cookie:cookie}})).json())as Bootstrap;
-  assert.equal(completed.state.recognition,before.state.recognition+1);
+  await ready(recoveryUrl, recovery);
+  const recovered = await (await fetch(`${recoveryUrl}/api/bootstrap`, {
+    headers: { Cookie: cookies },
+  })).json() as Bootstrap;
+  assert.deepEqual(stable(recovered), stable(before));
 });

@@ -68,7 +68,7 @@ creates a uniquely named isolated compose project for migration and restore.
 Fixtures use generated credentials and original synthetic preparation data,
 not customer databases or live identity/payment/AI accounts.
 
-Successful runs upload `dist/`, `dist-server/`, `package.json`, and
+Successful runs upload `.next/standalone/`, `dist-server/`, `package.json`, and
 `package-lock.json` together under an artifact named with the commit SHA.
 Artifacts do not include `.env`, credentials, source databases, node_modules,
 or private user exports. Failure-only browser diagnostics contain synthetic
@@ -90,13 +90,13 @@ docker build -t interview-studio:staging .
 
 The build stage installs the locked development dependencies and compiles.
 The runtime dependency stage prunes development packages. The final image
-copies only runtime packages, manifests, public browser assets, and compiled
-server/migration commands. It does not contain `tsx`, TypeScript, Vite, esbuild,
-the original source directories, or environment/credential files.
+copies only the Next standalone runtime, public/static assets and compiled
+migration/worker commands. It does not contain `tsx`, TypeScript, Vite, esbuild,
+Prisma CLI, the original source directories, traced `data`, legacy `dist`, or
+environment/credential files.
 
-The image starts Node directly so process signals reach the HTTP runtime.
-UID 1000 owns `/app/data`; mount persistent writable storage there only when
-using local SQLite. PostgreSQL mode does not require a writable application
+The image starts the standalone `server.js` directly so process signals reach
+the Next HTTP runtime. It requires PostgreSQL and no writable application data
 directory. A read-only root filesystem, `/tmp` tmpfs, dropped capabilities,
 and no-new-privileges are verified by the container fixture.
 
