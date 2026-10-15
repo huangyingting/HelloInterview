@@ -277,6 +277,199 @@ function StaffAppealCard({value,administrator,onChange}:{value:StaffCommunityApp
   </article>;
 }
 
+interface AdminInvitationRecord {
+  id: string;
+  email: string;
+  normalizedEmail: string;
+  status: 'PENDING' | 'ACCEPTED' | 'REVOKED' | 'EXPIRED';
+  expiresAt: string;
+  acceptedAt: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  invitedByEmail: string | null;
+  acceptedByEmail: string | null;
+}
+
+interface AdminInvitationsPayload {
+  admissionMode: 'invitation-only' | 'public';
+  emailDeliveryConfigured: boolean;
+  invitations: AdminInvitationRecord[];
+}
+
+export function StaffInvitationsSection() {
+  const { notify } = useStudio();
+  const [state, setState] = useState<AdminInvitationsPayload | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [expiresInDays, setExpiresInDays] = useState(7);
+  const [sendEmail, setSendEmail] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [latestAcceptUrl, setLatestAcceptUrl] = useState<string | null>(null);
+  const [latestAcceptEmail, setLatestAcceptEmail] = useState<string | null>(null);
+
+  async function loadInvitations() {
+    setLoading(true);
+    try {
+      const result = await request<AdminInvitationsPayload>('/api/admin/invitations');
+      setState(result);
+      setError('');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not load account invitations.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadInvitations();
+  }, []);
+
+  async function createInvite() {
+    setSubmitting(true);
+    try {
+      const result = await request<{
+        invitation: AdminInvitationRecord;
+        acceptUrl: string;
+        emailDelivery: { queued: boolean; reason?: string };
+      }>('/api/admin/invitations', {
+        email: inviteEmail.trim(),
+        expiresInDays,
+        sendEmail,
+      });
+      setInviteEmail('');
+      setLatestAcceptUrl(result.acceptUrl);
+      setLatestAcceptEmail(result.invitation.email);
+      await loadInvitations();
+      notify(result.emailDelivery.queued
+        ? 'Invitation created and email queued.'
+        : 'Invitation created. Copy and share the one-time invitation link.');
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : 'Failed to create invitation.', true);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function rotateInvite(invitationId: string) {
+    setSubmitting(true);
+    try {
+      const result = await request<{
+        invitation: AdminInvitationRecord;
+        acceptUrl: string;
+        emailDelivery: { queued: boolean; reason?: string };
+      }>(`/api/admin/invitations/${invitationId}/rotate`, {
+        expiresInDays,
+        sendEmail,
+      });
+      setLatestAcceptUrl(result.acceptUrl);
+      setLatestAcceptEmail(result.invitation.email);
+      await loadInvitations();
+      notify('Invitation link rotated. Previous token invalidated.');
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : 'Failed to rotate invitation.', true);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function revokeInvite(invitationId: string) {
+    setSubmitting(true);
+    try {
+      await request(`/api/admin/invitations/${invitationId}`, undefined, 'DELETE');
+      await loadInvitations();
+      notify('Invitation revoked.');
+    } catch (cause) {
+      notify(cause instanceof Error ? cause.message : 'Failed to revoke invitation.', true);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return <section className="panel">
+    <h2>Account admission & invitations</h2>
+    <p>
+      Current mode: <Badge tone={state?.admissionMode === 'public' ? 'amber' : 'green'}>
+        {state?.admissionMode ?? 'invitation-only'}
+      </Badge>{' '}
+      · Outbox email encryption: <Badge tone={state?.emailDeliveryConfigured ? 'green' : 'amber'}>
+        {state?.emailDeliveryConfigured ? 'configured' : 'manual links'}
+      </Badge>
+    </p>
+    {error && <p role="alert">{error}</p>}
+    <form onSubmit={event => { event.preventDefault(); void createInvite(); }}>
+      <label>Invite email address
+        <input required type="email" maxLength={254} value={inviteEmail} onChange={event => setInviteEmail(event.target.value)} placeholder="candidate@example.com"/>
+      </label>
+      <label>Expires in days
+        <select value={expiresInDays} onChange={event => setExpiresInDays(Number(event.target.value))}>
+          <option value={1}>1 day</option>
+          <option value={3}>3 days</option>
+          <option value={7}>7 days</option>
+          <option value={14}>14 days</option>
+          <option value={30}>30 days</option>
+        </select>
+      </label>
+      <label>
+        <input type="checkbox" checked={sendEmail} onChange={event => setSendEmail(event.target.checked)}/>{' '}
+        Queue invitation email when outbox delivery is configured
+      </label>
+      <button className="button small" disabled={submitting || !inviteEmail.trim()}>
+        {submitting ? 'Creating invitation…' : 'Create invitation'}
+      </button>{' '}
+      <button type="button" className="button secondary small" disabled={loading} onClick={() => void loadInvitations()}>
+        Refresh list
+      </button>
+    </form>
+
+    {latestAcceptUrl && <div className="panel" role="status">
+      <h3>One-time invitation link for {latestAcceptEmail}</h3>
+      <p className="fine-print">This plaintext token is shown once and stored only as a SHA-256 hash.</p>
+      <p><code>{latestAcceptUrl}</code></p>
+      <button className="button secondary small" onClick={() => {
+        void navigator.clipboard.writeText(latestAcceptUrl);
+        notify('Invitation link copied to clipboard.');
+      }}>Copy invitation link</button>
+    </div>}
+
+    {loading && !state && <p role="status">Loading invitations…</p>}
+    {state && state.invitations.length === 0 && <p className="fine-print">No invitations have been created yet.</p>}
+    {state && state.invitations.map(item => (
+      <article className="panel" key={item.id}>
+        <h3>{item.email}</h3>
+        <p>
+          <Badge tone={item.status === 'ACCEPTED' ? 'green' : item.status === 'PENDING' ? 'amber' : 'neutral'}>
+            {item.status}
+          </Badge>{' '}
+          created {new Date(item.createdAt).toLocaleString()} · expires {new Date(item.expiresAt).toLocaleString()}
+          {item.acceptedAt ? ` · accepted ${new Date(item.acceptedAt).toLocaleString()}` : ''}
+          {item.revokedAt ? ` · revoked ${new Date(item.revokedAt).toLocaleString()}` : ''}
+        </p>
+        {item.status === 'PENDING' && <>
+          <button className="button secondary small" disabled={submitting} onClick={() => void rotateInvite(item.id)}>
+            Rotate link
+          </button>{' '}
+          <button className="text-button" disabled={submitting} onClick={() => void revokeInvite(item.id)}>
+            Revoke
+          </button>
+        </>}
+      </article>
+    ))}
+  </section>;
+}
+
+export function AdminInvitationsPage() {
+  return <>
+    <PageHeading
+      eyebrow="ADMINISTRATOR INVITATIONS"
+      title="Invite-only account admission."
+      description="Create, rotate, and revoke one-time account invitations. Tokens are hashed at rest with SHA-256."
+    />
+    <StaffInvitationsSection />
+  </>;
+}
+
 export function StaffPage() {
   const {data,notify}=useStudio(),[roles,setRoles]=useState<StaffRole[]|null>(null),[error,setError]=useState(''),[email,setEmail]=useState('');
   const [accounts,setAccounts]=useState<StaffAccount[]>([]),[searching,setSearching]=useState(false),[audit,setAudit]=useState<StaffAuditPage>();
@@ -361,6 +554,7 @@ export function StaffPage() {
     {error&&<section className="panel"><h2>Confirm privileged access</h2><p role="alert">{error}</p><p>Use an MFA-enabled identity provider and confirm that sign-in again. Fresh authentication alone is not treated as MFA.</p><Link className="button secondary small" to="/account">Open sign-in security</Link></section>}
     {!roles&&!error&&<p role="status">Verifying staff session and role…</p>}
     {roles&&<><section className="panel"><h2>Current authority</h2><p>{roles.map(role=>roleLabels[role]).join(', ')}. Role grants expire automatically and cannot be changed from this screen.</p><p className="fine-print">This checkpoint does not permit impersonation, private preparation access, billing changes, staff self-suspension or changes to another staff account.</p></section>
+      {administrator&&<StaffInvitationsSection/>}
       {canSearch&&<section className="panel"><h2>Exact managed-account lookup</h2><p>Search requires the full contact email. Results return masked contact, state, revision and session count only.</p>
         <form onSubmit={event=>{event.preventDefault();void search();}}>
           <label>Exact contact email<input required type="email" autoComplete="off" maxLength={254} value={email} onChange={event=>setEmail(event.target.value)}/></label>

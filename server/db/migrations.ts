@@ -1724,6 +1724,72 @@ export const migrations = [{
         CHECK (scope IN ('network','legacy-account','account-security','billing','support-network','support-account',
           'community-network','community-account','ai'));
     `,
+  }, {
+    version: 41,
+    name: 'account-invitation-admission',
+    sql: `
+      CREATE TABLE account_invitations (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL CHECK (length(email) BETWEEN 3 AND 320),
+        normalized_email TEXT NOT NULL CHECK (length(normalized_email) BETWEEN 3 AND 320),
+        active_for_email TEXT UNIQUE,
+        token_hash TEXT UNIQUE,
+        status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING','ACCEPTED','REVOKED','EXPIRED')),
+        invited_by_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+        accepted_by_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        accepted_at TIMESTAMPTZ,
+        revoked_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+        CHECK (
+          (status = 'PENDING' AND active_for_email = normalized_email AND token_hash IS NOT NULL AND accepted_at IS NULL AND revoked_at IS NULL) OR
+          (status IN ('ACCEPTED','REVOKED','EXPIRED') AND active_for_email IS NULL AND token_hash IS NULL)
+        )
+      );
+      CREATE INDEX account_invitations_email_status_idx ON account_invitations(normalized_email, status);
+      CREATE INDEX account_invitations_status_expires_idx ON account_invitations(status, expires_at);
+
+      CREATE TABLE password_credentials (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        password_hash TEXT NOT NULL,
+        password_changed_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+        reset_token_hash TEXT UNIQUE,
+        reset_expires_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+      );
+      CREATE INDEX password_credentials_reset_expires_idx ON password_credentials(reset_expires_at);
+
+      CREATE TABLE pending_registrations (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL CHECK (length(email) BETWEEN 3 AND 320),
+        normalized_email TEXT NOT NULL UNIQUE CHECK (length(normalized_email) BETWEEN 3 AND 320),
+        name TEXT,
+        password_hash TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+      );
+      CREATE INDEX pending_registrations_expires_idx ON pending_registrations(expires_at);
+
+      CREATE TABLE account_email_outbox (
+        id TEXT PRIMARY KEY,
+        payload TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','sending','sent','failed','unconfirmed','expired')),
+        claim_token TEXT,
+        last_attempt_at TIMESTAMPTZ,
+        last_error TEXT,
+        sent_at TIMESTAMPTZ,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+        invitation_id TEXT REFERENCES account_invitations(id) ON DELETE SET NULL
+      );
+      CREATE INDEX account_email_outbox_status_expires_idx ON account_email_outbox(status, expires_at, created_at);
+      CREATE INDEX account_email_outbox_invitation_idx ON account_email_outbox(invitation_id, created_at);
+    `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

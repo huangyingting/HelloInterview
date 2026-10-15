@@ -4,19 +4,49 @@ import type { Prisma } from '@prisma/client';
 import type { Database, DatabaseRow } from './connection';
 import { postgresParameters } from './connection';
 
-const globalPrisma = globalThis as typeof globalThis & { studioPrisma?: PrismaClient };
+const globalPrisma = globalThis as typeof globalThis & {
+  studioPrisma?: PrismaClient;
+  studioPrismaUrl?: string;
+};
 const transactionContext = new AsyncLocalStorage<Prisma.TransactionClient>();
+
+function normalizePrismaDatabaseUrl(rawUrl: string): string {
+  try {
+    const parsed = new URL(rawUrl);
+    if (!parsed.searchParams.has('schema')) {
+      const options = parsed.searchParams.get('options') ?? '';
+      const match = options.match(/search_path=([A-Za-z0-9_]+)/);
+      if (match?.[1]) {
+        parsed.searchParams.set('schema', match[1]);
+      }
+    }
+    return parsed.href;
+  } catch {
+    return rawUrl;
+  }
+}
 
 export function prismaClient() {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required for Prisma database access.');
-  return globalPrisma.studioPrisma ??= new PrismaClient({
-    log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : [],
-  });
+  const url = normalizePrismaDatabaseUrl(process.env.DATABASE_URL);
+  if (globalPrisma.studioPrisma && globalPrisma.studioPrismaUrl !== url) {
+    void globalPrisma.studioPrisma.$disconnect().catch(() => {});
+    delete globalPrisma.studioPrisma;
+  }
+  if (!globalPrisma.studioPrisma) {
+    globalPrisma.studioPrisma = new PrismaClient({
+      datasources: { db: { url } },
+      log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : [],
+    });
+    globalPrisma.studioPrismaUrl = url;
+  }
+  return globalPrisma.studioPrisma;
 }
 
 export async function closePrismaConnection() {
   const prisma = globalPrisma.studioPrisma;
   delete globalPrisma.studioPrisma;
+  delete globalPrisma.studioPrismaUrl;
   if (prisma) await prisma.$disconnect();
 }
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from '../navigation';
-import { Download, ShieldCheck, Trash2 } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from '../navigation';
+import { Download, KeyRound, MailCheck, ShieldCheck, Trash2 } from 'lucide-react';
 import type { IdentitySecurity, PrivacyDeletionView, PrivacyExportHistory } from '../../shared/types';
 import { proCapabilities } from '../../shared/access';
 import { AuthPrompt } from '../components/access';
@@ -22,10 +22,17 @@ const flowErrors: Record<string, string> = {
 };
 
 export function ManagedAuthPage() {
-  const { data } = useStudio(), [params] = useSearchParams();
-  const error = flowErrors[params.get('error') ?? ''];
+  const { data, act, refresh, pending, notify } = useStudio();
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const error = flowErrors[params.get('error') ?? ''] || loginError;
   const available = (data.capabilities.auth?.providers ?? []).filter((provider): provider is 'google' => provider === 'google');
+  const admissionMode = data.capabilities.auth?.admissionMode ?? 'invitation-only';
   const signIn = (provider: 'google') => `/api/auth/signin/${provider}?callbackUrl=${encodeURIComponent('/dashboard')}`;
+
   return <section className="auth-card">
     <ShieldCheck size={28}/><h1>{data.user ? 'Your account security.' : 'Welcome to the Studio.'}</h1>
     {error && <p role="alert">{error}</p>}
@@ -33,11 +40,346 @@ export function ManagedAuthPage() {
       <p>{data.user.identity?.status === 'active' ? `Signed in as ${data.user.name}.` : data.user.identity?.status === 'pending-verification' ? 'Add or verify a contact email before saving preparation or using member features.' : 'Account access is restricted. Open Account for support and sign-out options.'}</p>
       <Link className="button" to="/account">Open Account</Link>
     </> : <>
+      <form onSubmit={event => {
+        event.preventDefault();
+        setLoginError('');
+        void act(async () => {
+          try {
+            await request('/api/auth/password/login', { email, password });
+            await refresh();
+            notify('Signed in.');
+            navigate('/dashboard');
+          } catch (cause) {
+            const message = cause instanceof Error ? cause.message : 'Unable to sign in.';
+            setLoginError(message);
+            throw cause;
+          }
+        });
+      }}>
+        <label>Email address
+          <input required type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="you@example.com"/>
+        </label>
+        <label>Password
+          <input required type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Enter your password"/>
+        </label>
+        <button className="button" disabled={pending || !email.trim() || !password}>
+          {pending ? 'Signing in…' : 'Sign in with password'}
+        </button>
+      </form>
+      <p className="fine-print">
+        <Link className="text-link" to="/forgot-password">Forgot password?</Link>
+        {admissionMode === 'public' ? <> · <Link className="text-link" to="/register">Create an account</Link></> : null}
+      </p>
       <p>Sign in with Google. Facebook identities can be linked only after an existing Studio account is authenticated.</p>
       {available.map(value => <p key={value}><a className="button secondary" href={signIn(value)}>Continue with {labels[value]}</a></p>)}
-      {!available.length && <p role="alert">Google sign-in is not configured. This deployment remains fail-closed.</p>}
-      <p className="fine-print">New private-beta accounts require an invited Google address with a verified email claim. Matching email addresses never merge accounts, and Facebook cannot create an account.</p>
+      {!available.length && <p className="fine-print">Google OAuth is not configured on this deployment; use your invited email and password or an invitation link.</p>}
+      <p className="fine-print">
+        {admissionMode === 'invitation-only'
+          ? 'New private-beta accounts require an administrator invitation link or an invited Google address with a verified email claim. Matching email addresses never merge accounts, and Facebook cannot create an account.'
+          : 'Matching email addresses never merge accounts automatically, and Facebook cannot create an account.'}
+      </p>
     </>}
+  </section>;
+}
+
+interface InvitationPreview {
+  status: 'pending' | 'accepted' | 'revoked' | 'expired' | 'invalid';
+  maskedEmail?: string | null;
+  expiresAt?: string | null;
+}
+
+export function InviteClaimPage({ token }: { token: string }) {
+  const { data, act, refresh, pending, notify } = useStudio();
+  const navigate = useNavigate();
+  const [preview, setPreview] = useState<InvitationPreview | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(true);
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [formError, setFormError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    setLoadingPreview(true);
+    request<{ invitation: InvitationPreview }>('/api/auth/invitation', { token })
+      .then(result => {
+        if (active) {
+          setPreview(result.invitation);
+          setLoadingPreview(false);
+        }
+      })
+      .catch(cause => {
+        if (active) {
+          setFormError(cause instanceof Error ? cause.message : 'Unable to inspect invitation.');
+          setLoadingPreview(false);
+        }
+      });
+    return () => { active = false; };
+  }, [token]);
+
+  const available = (data.capabilities.auth?.providers ?? []).filter((provider): provider is 'google' => provider === 'google');
+
+  return <section className="auth-card">
+    <MailCheck size={28}/>
+    <h1>Claim your Studio invitation.</h1>
+    {loadingPreview && <p role="status">Verifying invitation token…</p>}
+    {formError && <p role="alert">{formError}</p>}
+    {!loadingPreview && preview && preview.status !== 'pending' && <>
+      <p role="alert">
+        {preview.status === 'expired'
+          ? 'This invitation has expired. Ask an administrator to rotate and resend your invitation link.'
+          : preview.status === 'revoked'
+            ? 'This invitation has been revoked by an administrator.'
+            : preview.status === 'accepted'
+              ? 'This invitation has already been claimed. Sign in with your account credentials.'
+              : 'This invitation link is invalid or has been replaced by a newer link.'}
+      </p>
+      <Link className="button secondary" to="/login">Go to sign in</Link>
+    </>}
+    {!loadingPreview && preview?.status === 'pending' && <>
+      <p>
+        Invited address: <strong>{preview.maskedEmail}</strong>
+        {preview.expiresAt ? ` · expires ${new Date(preview.expiresAt).toLocaleString()}` : ''}
+      </p>
+      <form onSubmit={event => {
+        event.preventDefault();
+        setFormError('');
+        if (password !== confirmPassword) {
+          setFormError('Passwords do not match.');
+          return;
+        }
+        void act(async () => {
+          try {
+            await request('/api/auth/register', {
+              token,
+              email,
+              name: name.trim() || undefined,
+              password,
+            });
+            await refresh();
+            notify('Invitation claimed. Welcome to Interview Studio.');
+            navigate('/dashboard');
+          } catch (cause) {
+            setFormError(cause instanceof Error ? cause.message : 'Could not claim invitation.');
+            throw cause;
+          }
+        });
+      }}>
+        <label>Invited email address
+          <input required type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="Enter the exact invited email"/>
+        </label>
+        <label>Display name
+          <input maxLength={60} autoComplete="name" value={name} onChange={event => setName(event.target.value)} placeholder="Your name"/>
+        </label>
+        <label>Create password (12–128 characters)
+          <input required type="password" minLength={12} maxLength={128} autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)}/>
+        </label>
+        <label>Confirm password
+          <input required type="password" minLength={12} maxLength={128} autoComplete="new-password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)}/>
+        </label>
+        <button className="button" disabled={pending || !email.trim() || password.length < 12}>
+          {pending ? 'Activating account…' : 'Claim invitation & sign in'}
+        </button>
+      </form>
+      {available.includes('google') && <p className="fine-print">
+        Prefer Google sign-in? <a className="text-link" href={`/api/auth/signin/google?callbackUrl=${encodeURIComponent('/dashboard')}`}>Continue with Google</a> using the invited email address.
+      </p>}
+    </>}
+  </section>;
+}
+
+export function RegisterPage() {
+  const { data, act, pending, notify } = useStudio();
+  const [params] = useSearchParams();
+  const token = params.get('token')?.trim() ?? '';
+  const admissionMode = data.capabilities.auth?.admissionMode ?? 'invitation-only';
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [submittedMessage, setSubmittedMessage] = useState('');
+  const [formError, setFormError] = useState('');
+
+  if (token) {
+    return <InviteClaimPage token={token} />;
+  }
+
+  if (admissionMode === 'invitation-only') {
+    return <section className="auth-card">
+      <ShieldCheck size={28}/>
+      <h1>Invitation required.</h1>
+      <p>Interview Studio is currently in invitation-only mode. Open the invitation link sent by an administrator to create your account.</p>
+      <Link className="button secondary" to="/login">Back to sign in</Link>
+    </section>;
+  }
+
+  return <section className="auth-card">
+    <ShieldCheck size={28}/>
+    <h1>Create your Studio account.</h1>
+    {formError && <p role="alert">{formError}</p>}
+    {submittedMessage ? <>
+      <p role="status">{submittedMessage}</p>
+      <Link className="button secondary" to="/login">Return to sign in</Link>
+    </> : <form onSubmit={event => {
+      event.preventDefault();
+      setFormError('');
+      if (password !== confirmPassword) {
+        setFormError('Passwords do not match.');
+        return;
+      }
+      void act(async () => {
+        try {
+          const res = await request<{ message: string }>('/api/auth/register', {
+            email,
+            name: name.trim() || undefined,
+            password,
+          });
+          setSubmittedMessage(res.message);
+          notify('Check your email to verify your account.');
+        } catch (cause) {
+          setFormError(cause instanceof Error ? cause.message : 'Registration failed.');
+          throw cause;
+        }
+      });
+    }}>
+      <label>Email address
+        <input required type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)}/>
+      </label>
+      <label>Display name
+        <input maxLength={60} autoComplete="name" value={name} onChange={event => setName(event.target.value)}/>
+      </label>
+      <label>Password (12–128 characters)
+        <input required type="password" minLength={12} maxLength={128} autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)}/>
+      </label>
+      <label>Confirm password
+        <input required type="password" minLength={12} maxLength={128} autoComplete="new-password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)}/>
+      </label>
+      <button className="button" disabled={pending || !email.trim() || password.length < 12}>
+        {pending ? 'Submitting…' : 'Create account'}
+      </button>
+    </form>}
+  </section>;
+}
+
+export function VerifyEmailPage({ token }: { token: string }) {
+  const { refresh, notify } = useStudio();
+  const navigate = useNavigate();
+  const [status, setStatus] = useState<'verifying' | 'verified' | 'error'>('verifying');
+  const [message, setMessage] = useState('Verifying your email address…');
+
+  useEffect(() => {
+    let active = true;
+    request('/api/auth/verify-email', { token })
+      .then(async () => {
+        await refresh();
+        if (active) {
+          setStatus('verified');
+          setMessage('Your email has been verified and your account is active.');
+          notify('Email verified.');
+        }
+      })
+      .catch(cause => {
+        if (active) {
+          setStatus('error');
+          setMessage(cause instanceof Error ? cause.message : 'Verification link is invalid or expired.');
+        }
+      });
+    return () => { active = false; };
+  }, [token, refresh, notify]);
+
+  return <section className="auth-card">
+    <MailCheck size={28}/>
+    <h1>Email verification</h1>
+    <p role={status === 'error' ? 'alert' : 'status'}>{message}</p>
+    {status === 'verified' ? (
+      <button className="button" onClick={() => navigate('/dashboard')}>Continue to Studio</button>
+    ) : (
+      <Link className="button secondary" to="/login">Go to sign in</Link>
+    )}
+  </section>;
+}
+
+export function ForgotPasswordPage() {
+  const { act, pending } = useStudio();
+  const [email, setEmail] = useState('');
+  const [submittedMessage, setSubmittedMessage] = useState('');
+  const [formError, setFormError] = useState('');
+
+  return <section className="auth-card">
+    <KeyRound size={28}/>
+    <h1>Reset your password.</h1>
+    {formError && <p role="alert">{formError}</p>}
+    {submittedMessage ? <>
+      <p role="status">{submittedMessage}</p>
+      <Link className="button secondary" to="/login">Back to sign in</Link>
+    </> : <form onSubmit={event => {
+      event.preventDefault();
+      setFormError('');
+      void act(async () => {
+        try {
+          const res = await request<{ message: string }>('/api/auth/password/forgot', { email });
+          setSubmittedMessage(res.message);
+        } catch (cause) {
+          setFormError(cause instanceof Error ? cause.message : 'Could not request password reset.');
+          throw cause;
+        }
+      });
+    }}>
+      <p>Enter the email address for your Studio account. If a password reset is available, we will queue a reset link.</p>
+      <label>Email address
+        <input required type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)}/>
+      </label>
+      <button className="button" disabled={pending || !email.trim()}>
+        {pending ? 'Sending…' : 'Send reset link'}
+      </button>
+      <p className="fine-print"><Link className="text-link" to="/login">Back to sign in</Link></p>
+    </form>}
+  </section>;
+}
+
+export function ResetPasswordPage({ token }: { token: string }) {
+  const { act, pending, notify } = useStudio();
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [completed, setCompleted] = useState(false);
+  const [formError, setFormError] = useState('');
+
+  return <section className="auth-card">
+    <KeyRound size={28}/>
+    <h1>Choose a new password.</h1>
+    {formError && <p role="alert">{formError}</p>}
+    {completed ? <>
+      <p role="status">Your password has been updated. Sign in with your new password.</p>
+      <Link className="button" to="/login">Sign in</Link>
+    </> : <form onSubmit={event => {
+      event.preventDefault();
+      setFormError('');
+      if (password !== confirmPassword) {
+        setFormError('Passwords do not match.');
+        return;
+      }
+      void act(async () => {
+        try {
+          await request('/api/auth/password/reset', { token, password });
+          setCompleted(true);
+          notify('Password updated.');
+        } catch (cause) {
+          setFormError(cause instanceof Error ? cause.message : 'Password reset failed.');
+          throw cause;
+        }
+      });
+    }}>
+      <label>New password (12–128 characters)
+        <input required type="password" minLength={12} maxLength={128} autoComplete="new-password" value={password} onChange={event => setPassword(event.target.value)}/>
+      </label>
+      <label>Confirm new password
+        <input required type="password" minLength={12} maxLength={128} autoComplete="new-password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)}/>
+      </label>
+      <button className="button" disabled={pending || password.length < 12}>
+        {pending ? 'Updating…' : 'Update password'}
+      </button>
+    </form>}
   </section>;
 }
 
@@ -49,9 +391,18 @@ export function ManagedAccountPage() {
   const [deletion,setDeletion]=useState<PrivacyDeletionView|null>(null),[deleteConfirmation,setDeleteConfirmation]=useState('');
   const [mfaEnrollment,setMfaEnrollment]=useState<{secret:string;uri:string;expiresAt:number;qr:string}|null>(null);
   const [mfaCode,setMfaCode]=useState(''),[recoveryCodes,setRecoveryCodes]=useState<string[]>([]);
+  const [authMethods, setAuthMethods] = useState<{ hasPassword: boolean; passwordUpdatedAt: string | null } | null>(null);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
   const loadSecurity = async () => {
     const result = await request<IdentitySecurity>('/api/identity/security');
     setSecurity(result); setError('');
+  };
+  const loadAuthMethods = async () => {
+    const result = await request<{ hasPassword: boolean; passwordUpdatedAt: string | null }>('/api/account/auth-methods');
+    setAuthMethods(result);
   };
   const loadExports=async()=>setExports(await request<PrivacyExportHistory>('/api/privacy/exports'));
   useEffect(() => {
@@ -60,6 +411,9 @@ export function ManagedAccountPage() {
     request<IdentitySecurity>('/api/identity/security', undefined, undefined, controller.signal)
       .then(value => { if (!controller.signal.aborted) setSecurity(value); })
       .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Account security could not be loaded.'); });
+    request<{ hasPassword: boolean; passwordUpdatedAt: string | null }>('/api/account/auth-methods', undefined, undefined, controller.signal)
+      .then(value => { if (!controller.signal.aborted) setAuthMethods(value); })
+      .catch(() => { /* optional */ });
     request<PrivacyExportHistory>('/api/privacy/exports',undefined,undefined,controller.signal)
       .then(value=>{if(!controller.signal.aborted)setExports(value);})
       .catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Privacy exports could not be loaded.');});
@@ -175,6 +529,55 @@ export function ManagedAccountPage() {
         {!security?.fresh&&<p className="fine-print">Confirm an existing sign-in method again before requesting deletion.</p>}
       </section>
     </div>
+    <section className="panel"><h2>Password credential</h2>
+      <p>
+        {authMethods?.hasPassword
+          ? `Password sign-in is enabled${authMethods.passwordUpdatedAt ? ` (updated ${new Date(authMethods.passwordUpdatedAt).toLocaleString()})` : ''}.`
+          : 'Set a password so you can sign in directly with your verified email address.'}
+      </p>
+      {passwordError && <p role="alert">{passwordError}</p>}
+      <form onSubmit={event => {
+        event.preventDefault();
+        setPasswordError('');
+        if (newPassword !== confirmNewPassword) {
+          setPasswordError('New passwords do not match.');
+          return;
+        }
+        void act(async () => {
+          try {
+            await request('/api/account/auth-methods', {
+              currentPassword: authMethods?.hasPassword ? currentPassword : null,
+              newPassword,
+            }, 'PUT');
+            setCurrentPassword('');
+            setNewPassword('');
+            setConfirmNewPassword('');
+            await loadAuthMethods();
+            await loadSecurity();
+            notify(authMethods?.hasPassword ? 'Password updated.' : 'Password added to your account.');
+          } catch (cause) {
+            setPasswordError(cause instanceof Error ? cause.message : 'Could not update password.');
+            throw cause;
+          }
+        });
+      }}>
+        {authMethods?.hasPassword && <label>Current password
+          <input required type="password" autoComplete="current-password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)}/>
+        </label>}
+        <label>{authMethods?.hasPassword ? 'New password (12–128 characters)' : 'Create password (12–128 characters)'}
+          <input required type="password" minLength={12} maxLength={128} autoComplete="new-password" value={newPassword} onChange={event => setNewPassword(event.target.value)}/>
+        </label>
+        <label>Confirm password
+          <input required type="password" minLength={12} maxLength={128} autoComplete="new-password" value={confirmNewPassword} onChange={event => setConfirmNewPassword(event.target.value)}/>
+        </label>
+        <button className="button secondary small" disabled={pending || !active || newPassword.length < 12}>
+          {authMethods?.hasPassword ? 'Update password' : 'Set password'}
+        </button>
+      </form>
+      {data.capabilities.staff?.roles.includes('administrator') && <p className="fine-print">
+        Administrator shortcut: <Link className="text-link" to="/admin/invitations">Manage account invitations</Link>
+      </p>}
+    </section>
     <section className="panel"><h2>Connected sign-in methods</h2>
       {error && <><p role="alert">{error}</p><button className="button secondary small" disabled={pending} onClick={() => act(loadSecurity)}>Retry security settings</button></>}
       {!security && !error && <p role="status">Loading sign-in and session information...</p>}

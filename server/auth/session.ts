@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth';
 import type { User } from '../../shared/types';
 import { managedAuthSession, type ManagedAuthSession } from './adapter';
 import { authCookieNames, loadAuthSettings } from './config';
+import { resolveSessionOriginAndSecret } from '../account-admission/session';
 import { prismaConnection } from '../db/prisma';
 import { createAuthOptions } from './options';
 
@@ -13,9 +14,9 @@ function exactCookie(request: Request, name: string) {
 }
 
 export async function currentManagedAuthSession(request: Request, touch = true): Promise<ManagedAuthSession | null> {
-  const settings = loadAuthSettings();
-  if (!settings) return null;
-  const token = exactCookie(request, authCookieNames(settings).session);
+  const resolved = resolveSessionOriginAndSecret();
+  if (!resolved) return null;
+  const token = exactCookie(request, authCookieNames(resolved).session);
   return token ? managedAuthSession(token, touch) : null;
 }
 
@@ -47,12 +48,14 @@ export function authUserFromManagedSession(session: ManagedAuthSession): User {
 }
 
 export async function currentAuthUser(request?: Request): Promise<User | null> {
-  const settings = loadAuthSettings();
-  if (!settings) return null;
+  const resolved = resolveSessionOriginAndSecret();
+  if (!resolved) return null;
   if (request) {
     const managed = await currentManagedAuthSession(request);
     return managed ? authUserFromManagedSession(managed) : null;
   }
+  const settings = loadAuthSettings();
+  if (!settings) return null;
   const id = (await getServerSession(createAuthOptions()))?.user?.id;
   if (!id) return null;
   const rows = await prismaConnection().executeSql(`

@@ -523,7 +523,15 @@ export interface Bootstrap {
     aiModel: string | null;
     fieldMetrics: boolean;
     participantPolicy?: ParticipantPolicy;
-    auth?: { mode: 'managed'; system?: 'oidc' | 'authjs'; providers: readonly ('email' | 'google' | 'github' | 'facebook')[]; legacyLink: boolean; securityLifecycle: boolean };
+    auth?: {
+      mode: 'managed';
+      system?: 'oidc' | 'authjs';
+      providers: readonly ('email' | 'google' | 'github' | 'facebook')[];
+      legacyLink: boolean;
+      securityLifecycle: boolean;
+      admissionMode?: 'invitation-only' | 'public';
+      emailDelivery?: boolean;
+    };
     staff?: {roles:StaffRole[]};
   };
 }

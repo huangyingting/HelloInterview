@@ -1526,6 +1526,77 @@ model users {
   user_resources                                                                 user_resources[]
   user_settings                                                                  user_settings?
   votes                                                                          votes[]
+  account_invitations_invited_by                                                 account_invitations[]           @relation("account_invitations_invited_byTousers")
+  account_invitations_accepted_by                                                account_invitations[]           @relation("account_invitations_accepted_byTousers")
+  password_credentials                                                           password_credentials?
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model account_invitations {
+  id                   String                 @id
+  email                String
+  normalized_email     String
+  active_for_email     String?                @unique
+  token_hash           String?                @unique
+  status               String                 @default("PENDING")
+  invited_by_id        String?
+  accepted_by_id       String?
+  expires_at           DateTime               @db.Timestamptz(6)
+  accepted_at          DateTime?              @db.Timestamptz(6)
+  revoked_at           DateTime?              @db.Timestamptz(6)
+  created_at           DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_at           DateTime               @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  invited_by           users?                 @relation("account_invitations_invited_byTousers", fields: [invited_by_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  accepted_by          users?                 @relation("account_invitations_accepted_byTousers", fields: [accepted_by_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  account_email_outbox account_email_outbox[]
+
+  @@index([normalized_email, status], map: "account_invitations_email_status_idx")
+  @@index([status, expires_at], map: "account_invitations_status_expires_idx")
+}
+
+model password_credentials {
+  id                  String    @id
+  user_id             String    @unique
+  password_hash       String
+  password_changed_at DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  reset_token_hash    String?   @unique
+  reset_expires_at    DateTime? @db.Timestamptz(6)
+  created_at          DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_at          DateTime  @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  users               users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([reset_expires_at], map: "password_credentials_reset_expires_idx")
+}
+
+model pending_registrations {
+  id               String   @id
+  email            String
+  normalized_email String   @unique
+  name             String?
+  password_hash    String
+  token_hash       String   @unique
+  expires_at       DateTime @db.Timestamptz(6)
+  created_at       DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  updated_at       DateTime @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+
+  @@index([expires_at], map: "pending_registrations_expires_idx")
+}
+
+model account_email_outbox {
+  id                  String               @id
+  payload             String
+  status              String               @default("pending")
+  claim_token         String?
+  last_attempt_at     DateTime?            @db.Timestamptz(6)
+  last_error          String?
+  sent_at             DateTime?            @db.Timestamptz(6)
+  expires_at          DateTime             @db.Timestamptz(6)
+  created_at          DateTime             @default(dbgenerated("clock_timestamp()")) @db.Timestamptz(6)
+  invitation_id       String?
+  account_invitations account_invitations? @relation(fields: [invitation_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([status, expires_at, created_at], map: "account_email_outbox_status_expires_idx")
+  @@index([invitation_id, created_at], map: "account_email_outbox_invitation_idx")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.

@@ -45,9 +45,18 @@ npm run dev
 ```
 
 Set `DATABASE_URL`, `NEXTAUTH_URL`, `NEXTAUTH_SECRET`, Google/Facebook provider
-credentials, `AUTH_INVITED_EMAILS` and `AUTH_MFA_ENCRYPTION_KEY` in the process
-environment. Open **http://127.0.0.1:3000** and sign in with an invited Google
-account; Facebook remains link-only from an existing account.
+credentials, `AUTH_INVITED_EMAILS`, `ACCOUNT_ADMISSION_MODE=INVITATION` and
+`AUTH_MFA_ENCRYPTION_KEY` in the process environment. Bootstrap an initial
+administrator account with:
+
+```bash
+npm run bootstrap:admin -- --email admin@example.com --password "Your-Strong-Password-1234"
+```
+
+Open **http://127.0.0.1:3000** to sign in with an invited Google account or
+verified password credential, manage invitations at `/admin/invitations` (or
+under `/staff`), and share one-time `/invite/<token>` links; Facebook remains
+link-only from an existing account.
 
 For the standalone release build:
 

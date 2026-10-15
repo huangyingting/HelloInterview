@@ -1,5 +1,6 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { authCookieNames, loadAuthSettings } from './config';
+import { authCookieNames } from './config';
+import { resolveSessionOriginAndSecret } from '../account-admission/session';
 import { prismaClient } from '../db/prisma';
 import { HttpError } from '../http-error';
 import type { ManagedAuthSession } from './adapter';
@@ -26,7 +27,7 @@ function cookie(name: string, value: string, secure: boolean) {
 }
 
 export async function issueCsrf(request: Request, session: ManagedAuthSession | null) {
-  const settings = loadAuthSettings();
+  const settings = resolveSessionOriginAndSecret();
   if (!settings) throw new HttpError(503, 'Authentication is not configured.');
   const names = authCookieNames(settings);
   const existing = exactCookie(request, names.csrf);
@@ -43,7 +44,7 @@ export async function issueCsrf(request: Request, session: ManagedAuthSession | 
 }
 
 export function assertCsrf(request: Request, session: ManagedAuthSession | null) {
-  const settings = loadAuthSettings();
+  const settings = resolveSessionOriginAndSecret();
   if (!settings) throw new HttpError(503, 'Authentication is not configured.');
   const submitted = request.headers.get('X-CSRF-Token');
   const expected = exactCookie(request, authCookieNames(settings).csrf);

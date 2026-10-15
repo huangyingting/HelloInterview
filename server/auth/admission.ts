@@ -3,6 +3,7 @@ import type { Account, Profile } from 'next-auth';
 import { z } from 'zod';
 import { invitationHash, type AuthSettings } from './config';
 import { prismaClient } from '../db/prisma';
+import { getAccountAdmissionMode, type AccountAdmissionMode } from '../account-admission/policy';
 
 const providerSchema = z.enum(['google', 'facebook']);
 export type SocialProvider = z.infer<typeof providerSchema>;
@@ -39,7 +40,15 @@ export function socialProof(account: Account, profile: Profile): SocialProof {
   };
 }
 
-export function assertSocialAdmission(settings: AuthSettings, proof: SocialProof, existing: ExistingIdentity | null) {
+export function assertSocialAdmission(
+  settings: AuthSettings,
+  proof: SocialProof,
+  existing: ExistingIdentity | null,
+  options?: {
+    hasDatabaseInvitation?: boolean;
+    admissionMode?: AccountAdmissionMode;
+  },
+) {
   if (existing && !['active', 'pending-verification', 'deletion-pending'].includes(existing.status)) {
     throw new Error('This account is not available for product access.');
   }
@@ -48,7 +57,10 @@ export function assertSocialAdmission(settings: AuthSettings, proof: SocialProof
     return;
   }
   if (!proof.verifiedEmail || !proof.email) throw new Error('Google must provide a verified contact email.');
-  if (!existing && !settings.inviteEmailHashes.includes(invitationHash(settings.secret, proof.email))) {
+  const invitedByEnv = settings.inviteEmailHashes.includes(invitationHash(settings.secret, proof.email));
+  const invitedByDb = Boolean(options?.hasDatabaseInvitation);
+  const isPublicMode = options?.admissionMode === 'public';
+  if (!existing && !invitedByEnv && !invitedByDb && !isPublicMode) {
     throw new Error('This private beta requires an invitation for the verified contact email.');
   }
 }
@@ -56,6 +68,7 @@ export function assertSocialAdmission(settings: AuthSettings, proof: SocialProof
 export async function admitSocialIdentity(settings: AuthSettings, account: Account, profile: Profile, currentOwner: string | null = null) {
   const proof = socialProof(account, profile);
   const prisma = prismaClient();
+  const admissionMode = getAccountAdmissionMode();
   return prisma.$transaction(async tx => {
     await tx.$queryRaw`
       SELECT 1 AS locked
@@ -75,7 +88,50 @@ export async function admitSocialIdentity(settings: AuthSettings, account: Accou
         ? 'That provider identity belongs to another Studio account.'
         : 'Sign out before registering a different Studio account.');
     }
-    assertSocialAdmission(settings, proof, existing);
+
+    let pendingInvitationId: string | null = null;
+    if (!existing && proof.provider === 'google' && proof.verifiedEmail && proof.email) {
+      const now = new Date();
+      await tx.account_invitations.updateMany({
+        where: {
+          normalized_email: proof.email,
+          status: 'PENDING',
+          expires_at: { lte: now },
+        },
+        data: {
+          status: 'EXPIRED',
+          active_for_email: null,
+          token_hash: null,
+          updated_at: now,
+        },
+      });
+      const pendingInvite = await tx.account_invitations.findFirst({
+        where: {
+          normalized_email: proof.email,
+          status: 'PENDING',
+          expires_at: { gt: now },
+        },
+        select: { id: true },
+      });
+      pendingInvitationId = pendingInvite?.id ?? null;
+
+      const existingEmailAccount = await tx.$queryRaw<Array<{ user_id: string }>>`
+        SELECT a.user_id
+        FROM managed_accounts a
+        WHERE lower(a.contact_email) = ${proof.email}
+        LIMIT 1
+      `;
+      if (existingEmailAccount.length > 0) {
+        throw new Error(
+          'An account with that email already exists. Sign in with your existing method first, then connect Google from Account.',
+        );
+      }
+    }
+
+    assertSocialAdmission(settings, proof, existing, {
+      hasDatabaseInvitation: Boolean(pendingInvitationId),
+      admissionMode,
+    });
     if (existing) {
       if (proof.provider === 'google') {
         await tx.$executeRaw`UPDATE managed_identities SET email=${proof.email},verified=1,available=1 WHERE id=${existing.id}`;
@@ -104,6 +160,20 @@ export async function admitSocialIdentity(settings: AuthSettings, account: Accou
       INSERT INTO managed_accounts (user_id,status,contact_email,contact_identity_id,contact_verified)
       VALUES (${userId},'active',${proof.email},${identityId},1)
     `;
+    if (pendingInvitationId) {
+      const now = new Date();
+      await tx.account_invitations.update({
+        where: { id: pendingInvitationId },
+        data: {
+          status: 'ACCEPTED',
+          accepted_by_id: userId,
+          accepted_at: now,
+          active_for_email: null,
+          token_hash: null,
+          updated_at: now,
+        },
+      });
+    }
     await tx.$executeRaw`
       INSERT INTO identity_security_events (id,user_id,action,identity_id)
       VALUES (${randomUUID()},${userId},'social-registration',${identityId})

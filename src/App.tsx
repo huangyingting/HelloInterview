@@ -23,6 +23,12 @@ const QuizRunner = lazy(() => import('./screens/Quiz').then(module => ({ default
 const CommunityPage = lazy(() => import('./screens/Community').then(module => ({ default: module.CommunityPage })));
 const AccountPage = lazy(() => import('./screens/Identity').then(module => ({ default: module.ManagedAccountPage })));
 const AuthPage = lazy(() => import('./screens/Identity').then(module => ({ default: module.ManagedAuthPage })));
+const InviteClaimPage = lazy(() => import('./screens/Identity').then(module => ({ default: module.InviteClaimPage })));
+const RegisterPage = lazy(() => import('./screens/Identity').then(module => ({ default: module.RegisterPage })));
+const VerifyEmailPage = lazy(() => import('./screens/Identity').then(module => ({ default: module.VerifyEmailPage })));
+const ForgotPasswordPage = lazy(() => import('./screens/Identity').then(module => ({ default: module.ForgotPasswordPage })));
+const ResetPasswordPage = lazy(() => import('./screens/Identity').then(module => ({ default: module.ResetPasswordPage })));
+const AdminInvitationsPage = lazy(() => import('./screens/Staff').then(module => ({ default: module.AdminInvitationsPage })));
 const BlogPage = lazy(() => import('./screens/Explore').then(module => ({ default: module.BlogPage })));
 const FAQ = lazy(() => import('./screens/Explore').then(module => ({ default: module.FAQ })));
 const GuidePage = lazy(() => import('./screens/Explore').then(module => ({ default: module.GuidePage })));
@@ -54,7 +60,7 @@ export function App() {
   const path=location.pathname,address=parseStudioAddress(path,location.search),{segments}=address;
   const screenPath=address.detail?JSON.stringify([path,address.detail.kind,address.detail.id,address.detail.track ?? '']):segments[0]==='community'&&segments[1]==='post'?`${path}${location.search}`:path;
   const screenFocus=useScreenFocus(screenPath,data.user?.id,!loading&&!error);
-  const isLanding=path==='/'&&!data.user,isAuth=segments[0]==='login'||path==='/auth';
+  const isLanding=path==='/'&&!data.user,isAuth=['login','auth','register','invite','forgot-password','reset-password','verify-email'].includes(segments[0]);
   const publicLayout=isLanding||isAuth||!data.user&&['pricing','premium','aboutus','terms','privacy','security'].includes(segments[0]);
   useEffect(()=>{document.documentElement.dataset.theme=theme;localStorage.setItem('studio-theme',theme);},[theme]);
   useEffect(()=>{setMobileOpen(false);window.scrollTo(0,0);if(segments[0]==='practice')setPracticeOpen(true);if(segments[0]==='community')setCommunityOpen(true);document.title=`${segments[0]?segments[0][0].toUpperCase()+segments[0].slice(1).replaceAll('-',' '):'Your next chapter'} · Interview Studio`;},[screenPath]);
@@ -68,6 +74,12 @@ export function App() {
   else if(!segments.length)content=data.user?<Dashboard/>:<Landing/>;
   else if(segments[0]==='dashboard')content=data.user?<Dashboard/>:<AuthPrompt/>;
   else if(segments[0]==='login'||segments[0]==='auth'&&segments.length===1)content=<AuthPage/>;
+  else if(segments[0]==='invite'&&segments[1])content=<InviteClaimPage token={segments[1]} key={path}/>;
+  else if(segments[0]==='register')content=<RegisterPage key={`${path}${location.search}`}/>;
+  else if(segments[0]==='forgot-password')content=<ForgotPasswordPage/>;
+  else if(segments[0]==='reset-password'&&segments[1])content=<ResetPasswordPage token={segments[1]} key={path}/>;
+  else if(segments[0]==='verify-email'&&segments[1])content=<VerifyEmailPage token={segments[1]} key={path}/>;
+  else if(segments[0]==='admin'&&segments[1]==='invitations')content=data.capabilities.staff?.roles.includes('administrator')?<AdminInvitationsPage key={data.user?.id}/>:<NotFound/>;
   else if(segments[0]==='learn'){
     if(!segments[1])content=<LearningIndex/>;
     else if(segments[1]==='courses')content=segments[2]?<CoursePage id={segments[2]} videoId={segments[3]==='video'?segments[4]:undefined} key={path}/>:<CourseIndex/>;

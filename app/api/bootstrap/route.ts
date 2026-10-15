@@ -1,4 +1,6 @@
 import { emptyState } from '../../../shared/domain';
+import { isAccountEmailDeliveryConfigured } from '../../../server/account-admission/email';
+import { getAccountAdmissionMode } from '../../../server/account-admission/policy';
 import { issueCsrf } from '../../../server/auth/csrf';
 import { authUserFromManagedSession, currentManagedAuthSession } from '../../../server/auth/session';
 import { prismaConnection } from '../../../server/db/prisma';
@@ -45,6 +47,8 @@ export async function GET(request: Request) {
           providers: ['google', 'facebook'],
           legacyLink: false,
           securityLifecycle: false,
+          admissionMode: getAccountAdmissionMode(),
+          emailDelivery: isAccountEmailDeliveryConfigured(),
         },
         ...(staffRoles.length ? { staff: { roles: staffRoles } } : {}),
         ...(participantPolicy ? { participantPolicy } : {}),
