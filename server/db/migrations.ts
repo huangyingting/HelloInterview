@@ -1790,6 +1790,20 @@ export const migrations = [{
       CREATE INDEX account_email_outbox_status_expires_idx ON account_email_outbox(status, expires_at, created_at);
       CREATE INDEX account_email_outbox_invitation_idx ON account_email_outbox(invitation_id, created_at);
     `,
+  }, {
+    version: 42,
+    name: 'remove-user-demonstration-data',
+    sql: `
+      DELETE FROM comments WHERE user_id IN (SELECT id FROM users WHERE demo=1) OR resource IN (
+        SELECT 'post/' || id FROM posts
+        WHERE sample=1 OR author_id IN (SELECT id FROM users WHERE demo=1)
+      );
+      DELETE FROM posts WHERE sample=1;
+      DELETE FROM support WHERE user_id IN (SELECT id FROM users WHERE demo=1);
+      DELETE FROM gifts WHERE creator IN (SELECT id FROM users WHERE demo=1)
+        OR redeemed_by IN (SELECT id FROM users WHERE demo=1);
+      DELETE FROM users WHERE demo=1;
+    `,
 }] as const;
 
 function checksum(sql: string) { return createHash('sha256').update(sql).digest('hex'); }

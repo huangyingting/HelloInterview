@@ -2,6 +2,9 @@ import { ChevronRight, Sparkles, type LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link } from '../navigation';
 
+export function StudioMark() {
+  return <svg className="studio-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M5 24V8h5v16M14 24V8h5v16M23 24V8h4v16" stroke="currentColor" strokeWidth="2"/><path d="M3 28h26" stroke="currentColor" strokeWidth="2"/></svg>;
+}
 export function IconTile({ icon: Icon, color = 'var(--accent)', small = false }: { icon: LucideIcon; color?: string; small?: boolean }) {
   return <span className={`icon-tile ${small ? 'small' : ''}`} style={{ color, background: `color-mix(in srgb, ${color} 11%, var(--surface))` }}><Icon size={small ? 18 : 23} strokeWidth={1.7} /></span>;
 }

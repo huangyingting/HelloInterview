@@ -1,6 +1,8 @@
 import { pathToFileURL } from 'node:url';
 import { ManagedAiConfigurationError } from '../ai/config';
-import { AuthConfigurationError } from '../auth/config';
+import { AuthConfigurationError, configuredSocialProviders } from '../auth/config';
+import { communityParticipationEnabled } from '../next/capabilities';
+import { loadAccountMailSender } from '../account-admission/mail-config';
 import { prismaConnection } from '../db/prisma';
 import { assertDatabaseVersion } from '../db/migrations';
 import { inspectMaintainedJobs } from '../jobs';
@@ -15,6 +17,12 @@ export async function runServicePreflight(config: ServicePreflightConfig = loadS
   const db = prismaConnection();
   try {
     await assertDatabaseVersion(db);
+    const synthetic = await db.prepare(`SELECT
+      (SELECT count(*) FROM users WHERE demo=1) AS accounts,
+      (SELECT count(*) FROM posts WHERE sample=1) AS posts`).get();
+    if (Number(synthetic?.accounts) !== 0 || Number(synthetic?.posts) !== 0) {
+      throw new Error('Demo-marked account or community records remain. Review the controlled data cleanup before serving.');
+    }
     const queue = await inspectMaintainedJobs(db);
     const migration = await db.prepare('SELECT count(*)::integer AS count,max(version)::integer AS latest FROM schema_migrations').get();
     if (typeof migration?.count !== 'number' || typeof migration.latest !== 'number') {
@@ -27,7 +35,7 @@ export async function runServicePreflight(config: ServicePreflightConfig = loadS
       trustedProxyCount: config.trustedProxies.length,
       identity: {
         system: 'authjs',
-        providers: ['facebook', 'google'],
+        providers: configuredSocialProviders(config.auth),
         inviteCount: config.auth.inviteEmailHashes.length,
       },
       participantPolicy: {
@@ -44,7 +52,8 @@ export async function runServicePreflight(config: ServicePreflightConfig = loadS
       features: {
         ai: Boolean(config.ai),
         billing: config.billing ? 'sandbox' : false,
-        community: 'read-only',
+        community: communityParticipationEnabled() ? 'managed' : 'read-only',
+        accountEmail: Boolean(loadAccountMailSender()),
       },
     };
   } finally {

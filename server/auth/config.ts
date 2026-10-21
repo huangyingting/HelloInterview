@@ -23,8 +23,8 @@ export class AuthConfigurationError extends Error {
 export interface AuthSettings {
   readonly origin: string;
   readonly secret: string;
-  readonly google: Readonly<{ clientId: string; clientSecret: string }>;
-  readonly facebook: Readonly<{ clientId: string; clientSecret: string }>;
+  readonly google: Readonly<{ clientId: string; clientSecret: string }> | null;
+  readonly facebook: Readonly<{ clientId: string; clientSecret: string }> | null;
   readonly inviteEmailHashes: readonly string[];
   readonly mfaEncryptionKey: Buffer;
 }
@@ -68,22 +68,23 @@ export function loadAuthSettings(env: Readonly<Record<string, string | undefined
     }
     return value;
   };
-  const google = Object.freeze({
+  const google = !env.AUTH_GOOGLE_CLIENT_ID && !env.AUTH_GOOGLE_CLIENT_SECRET ? null : Object.freeze({
     clientId: credential('AUTH_GOOGLE_CLIENT_ID', /^[^\s\x00-\x1f\x7f]{1,1000}$/),
     clientSecret: credential('AUTH_GOOGLE_CLIENT_SECRET', /^[^\s\x00-\x1f\x7f]{8,4096}$/),
   });
-  const facebook = Object.freeze({
+  const facebook = !env.AUTH_FACEBOOK_CLIENT_ID && !env.AUTH_FACEBOOK_CLIENT_SECRET ? null : Object.freeze({
     clientId: credential('AUTH_FACEBOOK_CLIENT_ID', /^[A-Za-z0-9]{1,200}$/),
     clientSecret: credential('AUTH_FACEBOOK_CLIENT_SECRET', /^[^\s\x00-\x1f\x7f]{8,4096}$/),
   });
-  const inviteText = env.AUTH_INVITED_EMAILS;
-  if (!inviteText || inviteText.length > 65536) {
-    throw new AuthConfigurationError('AUTH_INVITED_EMAILS', 'must contain 1 to 200 invited email addresses.');
+  const inviteText = env.AUTH_INVITED_EMAILS?.trim() ?? '';
+  if (inviteText.length > 65536) {
+    throw new AuthConfigurationError('AUTH_INVITED_EMAILS', 'must contain at most 200 invited email addresses.');
   }
-  const invitations = inviteText.split(',').map(value => value.trim().toLowerCase());
+  const invitations = inviteText ? inviteText.split(',').map(value => value.trim().toLowerCase()) : [];
   if (invitations.length > 200 || invitations.some(value => !email.safeParse(value).success) || new Set(invitations).size !== invitations.length) {
-    throw new AuthConfigurationError('AUTH_INVITED_EMAILS', 'must contain 1 to 200 distinct comma-separated email addresses.');
+    throw new AuthConfigurationError('AUTH_INVITED_EMAILS', 'must contain at most 200 distinct comma-separated email addresses.');
   }
+
   const encodedMfaKey = env.AUTH_MFA_ENCRYPTION_KEY;
   if (!encodedMfaKey || !/^[A-Za-z0-9_-]{43}$/.test(encodedMfaKey)) {
     throw new AuthConfigurationError('AUTH_MFA_ENCRYPTION_KEY', 'must be an unpadded base64url-encoded 32-byte key.');
@@ -100,4 +101,11 @@ export function loadAuthSettings(env: Readonly<Record<string, string | undefined
     inviteEmailHashes: Object.freeze(invitations.map(value => invitationHash(secret, value))),
     mfaEncryptionKey,
   });
+}
+
+export function configuredSocialProviders(settings: AuthSettings | null): ('google' | 'facebook')[] {
+  return settings ? [
+    ...(settings.google ? ['google' as const] : []),
+    ...(settings.facebook ? ['facebook' as const] : []),
+  ] : [];
 }

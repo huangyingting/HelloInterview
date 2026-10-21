@@ -24,7 +24,9 @@ record the completed zero-legacy Next.js App Router runtime; authentic
 provider acceptance, Azure deployment smoke/rollback evidence and live
 operations remain explicit launch gates before Caddy cutover.
 
-![Original Interview Studio landing page](docs/screenshots/01-landing.png)
+The [editorial workspace and production data runbook](docs/production/69-editorial-product-workspace.md)
+records the redesigned experience, preserved training content, targeted demo-data
+cleanup, optional social providers and packaged account-email delivery.
 
 ## Run locally
 
@@ -34,8 +36,8 @@ Requirements:
 - Google Chrome for browser tests and media generation. The default
   executable is `/usr/bin/google-chrome`; set `CHROME_PATH` for another location.
   CI uses Playwright-managed Chromium, installed with `npx playwright install chromium`.
-- A dedicated PostgreSQL 16+ database and synthetic or real Auth.js provider
-  configuration.
+- A dedicated PostgreSQL 16+ database and Auth.js session/MFA configuration.
+  Google and Facebook are independently optional; password-only invitations work.
 
 ```bash
 npm ci
@@ -44,19 +46,30 @@ npm run db:migrate
 npm run dev
 ```
 
-Set `DATABASE_URL`, `NEXTAUTH_URL`, `NEXTAUTH_SECRET`, Google/Facebook provider
-credentials, `AUTH_INVITED_EMAILS`, `ACCOUNT_ADMISSION_MODE=INVITATION` and
-`AUTH_MFA_ENCRYPTION_KEY` in the process environment. Bootstrap an initial
-administrator account with:
+Set `DATABASE_URL`, `NEXTAUTH_URL`, `NEXTAUTH_SECRET`,
+`ACCOUNT_ADMISSION_MODE=invitation-only` and `AUTH_MFA_ENCRYPTION_KEY` in the
+process environment. Add complete Google/Facebook credential pairs only for
+providers you intend to enable. Invitations are stored in PostgreSQL;
+`AUTH_INVITED_EMAILS` is an optional static admission list. After the build and
+migration, bootstrap the administrator using private standard input:
 
 ```bash
-npm run bootstrap:admin -- --email admin@example.com --password "Your-Strong-Password-1234"
+npm run bootstrap:admin -- --email admin@example.com --password-stdin
 ```
 
 Open **http://127.0.0.1:3000** to sign in with an invited Google account or
 verified password credential, manage invitations at `/admin/invitations` (or
 under `/staff`), and share one-time `/invite/<token>` links; Facebook remains
 link-only from an existing account.
+
+Use `/admin/invitations` to create invitation links. Optional automatic delivery
+requires `ACCOUNT_MAIL_WORKFLOW_ENABLED=true`, a verified `ACCOUNT_MAIL_FROM`,
+`RESEND_API_KEY` and the separately supervised `npm run account-mail:worker`.
+Without mail configuration, administrators share the one-time links manually;
+password reset and public-registration verification do not pretend to send mail.
+`COMMUNITY_WRITES_ENABLED=true` enables member publishing only after moderation
+is staffed; reporting, safety controls and owner removal remain available when
+publishing is paused.
 
 For the standalone release build:
 
@@ -103,7 +116,7 @@ current state and progress; see the
 This is not a complete accessibility assessment or real-device/browser approval.
 
 **This is a production-format Next.js runtime, not an open public or live paid
-service.** All legacy Vite, Express, React Router, Auth0/OIDC broker, local
+service.** All legacy Vite, Express, React Router, Auth0/OIDC broker, insecure demo
 password, demo-plan, gift-code and SQLite service-runtime code has been removed.
 Public cutover at `https://interview.genisisiq.com` remains intentionally
 fail-closed behind a hardened 503 until authentic-provider, deployment, smoke
@@ -142,8 +155,9 @@ for schema details, API revisions, rehearsal, and cutover safeguards.
 ## What works
 
 Identity and sessions run through **NextAuth/Auth.js Route Handlers** backed by
-PostgreSQL. Registration requires an invited Google identity with a verified
-email claim; Facebook is link-only from a fresh authenticated Studio session;
+PostgreSQL. Invitation links support verified password-account creation; an
+optional Google provider supports admission using an invited verified email.
+Facebook is link-only from a fresh authenticated Studio session;
 email equality never merges accounts; and browser tokens are stored only as
 SHA-256 hashes with PostgreSQL-clock absolute/idle expiry, account epochs,
 session-bound CSRF, encrypted app-owned TOTP MFA and one-time recovery codes.
@@ -624,7 +638,7 @@ community moderation, support, staff administration, privacy workflows and
 launch preflight; `prisma/schema.prisma` defines the Prisma relational schema.
 
 **Not connected or equivalent to the reference:** live commercial billing,
-transactional email delivery, an external helpdesk or 24/7 support team,
+operational acceptance of configured transactional email, an external helpdesk or 24/7 support team,
 the reference community or proprietary datasets, live BYOE repository/IDE
 connectivity, and the reference's proprietary adaptive AI pipeline. The four
 generated videos and original catalogs are smaller than the reference's content

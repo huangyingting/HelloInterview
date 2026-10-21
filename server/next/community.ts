@@ -22,6 +22,7 @@ import { StateRepository } from '../db/state-repository';
 import { HttpError } from '../http-error';
 import { IdentityLimits } from '../identity/limits';
 import { assertAccountSession } from './identity';
+import { assertCommunityParticipation } from './capabilities';
 
 const activeStatus = ['active'] as const;
 const postSchema = z.strictObject({
@@ -164,9 +165,10 @@ export async function communityRestrictionAppealHistory(request: Request, input:
 }
 
 export async function createCommunityPost(request: Request, input: unknown) {
+  assertCommunityParticipation();
   const parsed = postSchema.safeParse(input);
   if (!parsed.success) throw new HttpError(400, 'Provide a supported section, interview type, level, region, title and original details.');
-  const { db, user, admit } = await ownedCommunity(request, true, false);
+  const { db, user, admit } = await ownedCommunity(request, true);
   const id = randomUUID();
   return db.transaction(async () => {
     await admit('participation');
@@ -198,9 +200,10 @@ export async function createCommunityPost(request: Request, input: unknown) {
 }
 
 export async function setCommunityPostAction(request: Request, input: unknown) {
+  assertCommunityParticipation();
   const parsed = postActionSchema.safeParse(input);
   if (!parsed.success) throw new HttpError(400, 'Provide a post identifier, vote or follow action, and a boolean desired state.');
-  const { db, user, admit } = await ownedCommunity(request, true, false);
+  const { db, user, admit } = await ownedCommunity(request, true);
   const { id, action, enabled } = parsed.data;
   await db.transaction(async () => {
     await admit('participation');
@@ -224,9 +227,10 @@ export async function setCommunityPostAction(request: Request, input: unknown) {
 }
 
 export async function createCommunityComment(request: Request, input: unknown) {
+  assertCommunityParticipation();
   const parsed = commentSchema.safeParse(input);
   if (!parsed.success) throw new HttpError(400, 'Provide an exact discussion, optional reply and 2-3,000 characters of original text.');
-  const { db, user, admit } = await ownedCommunity(request, true, false);
+  const { db, user, admit } = await ownedCommunity(request, true);
   const value = { ...parsed.data, resource: communityDiscussionResource(parsed.data.resource) };
   const id = randomUUID();
   return db.transaction(async () => {
@@ -281,6 +285,7 @@ export async function createCommunityComment(request: Request, input: unknown) {
 }
 
 export async function createCommunityCommentSubmission(request: Request, input: unknown) {
+  assertCommunityParticipation();
   const { db, user, admit } = await ownedCommunity(request, true, false);
   return new CommunitySubmissions(db).create(user, input, () => admit('participation'));
 }
@@ -301,7 +306,8 @@ export async function ownedCommunityPost(request: Request, input: unknown) {
 }
 
 export async function updateOwnedCommunityPost(request: Request, input: unknown) {
-  const { db, user, admit } = await ownedCommunity(request, true, false);
+  assertCommunityParticipation();
+  const { db, user, admit } = await ownedCommunity(request, true);
   return new CommunityContributions(db).update(input, user.id, () => admit('participation'));
 }
 
@@ -316,7 +322,8 @@ export async function ownedCommunityComment(request: Request, input: unknown) {
 }
 
 export async function updateOwnedCommunityComment(request: Request, input: unknown) {
-  const { db, user, admit } = await ownedCommunity(request, true, false);
+  assertCommunityParticipation();
+  const { db, user, admit } = await ownedCommunity(request, true);
   return new CommunityContributions(db).updateComment(input, user.id, () => admit('participation'));
 }
 

@@ -1,5 +1,6 @@
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID, scryptSync } from 'node:crypto';
 import { prismaClient } from '../db/prisma';
+import { loadAccountMailSender } from './mail-config';
 
 export interface AccountEmailMessage {
   to: string;
@@ -12,7 +13,7 @@ export interface AccountEmailMessage {
 }
 
 export interface EmailDeliveryResult {
-  status: 'sent' | 'unavailable' | 'failed';
+  status: 'queued' | 'unavailable' | 'failed';
   message: string;
 }
 
@@ -124,10 +125,8 @@ function decryptOutboxPayload(payload: string): Omit<ClaimedAccountEmail, 'id' |
 export function isAccountEmailDeliveryConfigured(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): boolean {
-  const workflowEnabled = env.ACCOUNT_MAIL_WORKFLOW_ENABLED?.trim().toLowerCase() === 'true';
-  const workerSecret = env.ACCOUNT_MAIL_WORKER_SECRET?.trim() ?? '';
   const authSecret = env.NEXTAUTH_SECRET?.trim() ?? '';
-  return workflowEnabled && workerSecret.length >= 32 && authSecret.length >= 32;
+  return Boolean(loadAccountMailSender(env)) && authSecret.length >= 32;
 }
 
 export async function sendAccountEmail(message: AccountEmailMessage): Promise<EmailDeliveryResult> {
@@ -153,10 +152,11 @@ export async function sendAccountEmail(message: AccountEmailMessage): Promise<Em
       getTestSink().push({ ...message, sentAt: new Date().toISOString() });
     }
     return {
-      status: 'sent',
+      status: 'queued',
       message: 'Email queued for delivery.',
     };
-  } catch {
+  } catch (error) {
+    console.error(JSON.stringify({ event: 'account-mail.queue-failed', reason: error instanceof Error ? error.name : 'unknown' }));
     return {
       status: 'failed',
       message: 'Email delivery could not be queued.',
@@ -238,7 +238,7 @@ export async function claimNextAccountEmail(now = new Date()): Promise<ClaimedAc
         claimToken,
         ...decrypted,
       };
-    } catch {
+    } catch (error) {
       await prisma.account_email_outbox.update({
         where: { id: candidate.id },
         data: {
@@ -247,7 +247,8 @@ export async function claimNextAccountEmail(now = new Date()): Promise<ClaimedAc
           last_error: 'Encrypted payload could not be read.',
         },
       });
-      return null;
+      console.error(JSON.stringify({ event: 'account-mail.payload-unreadable', id: candidate.id, reason: error instanceof Error ? error.name : 'unknown' }));
+      throw new Error('An account email payload could not be read. Inspect the failed outbox record.');
     }
   }
 

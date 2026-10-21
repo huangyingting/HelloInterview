@@ -10,9 +10,9 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#147d71',
+  themeColor: '#f6f5f0',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body><div id="root">{children}</div></body></html>;
+  return <html lang="en"><head><link rel="preload" href="/fonts/mona-sans.woff2" as="font" type="font/woff2" crossOrigin="anonymous"/></head><body><div id="root">{children}</div></body></html>;
 }

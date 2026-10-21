@@ -246,6 +246,7 @@ export async function beginIdentityLink(request: Request, input: unknown) {
   const { provider } = z.strictObject({ provider: z.enum(['google', 'facebook']) }).parse(input);
   const settings = loadAuthSettings();
   if (!settings) throw new HttpError(503, 'Authentication is not configured.');
+  if (!settings[provider]) throw new HttpError(503, 'This sign-in provider is not configured.');
   const db = prismaConnection();
   const token = randomBytes(32).toString('hex');
   await db.transaction(async () => {

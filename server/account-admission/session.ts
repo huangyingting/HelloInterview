@@ -13,32 +13,8 @@ const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 export function resolveSessionOriginAndSecret(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): { origin: string; secret: string } | null {
-  try {
-    const settings = loadAuthSettings(env);
-    if (settings) {
-      return { origin: settings.origin, secret: settings.secret };
-    }
-  } catch (error) {
-    const hasOAuthVars = Boolean(
-      env.AUTH_GOOGLE_CLIENT_ID ||
-        env.AUTH_GOOGLE_CLIENT_SECRET ||
-        env.AUTH_FACEBOOK_CLIENT_ID ||
-        env.AUTH_FACEBOOK_CLIENT_SECRET ||
-        env.AUTH_INVITED_EMAILS ||
-        env.AUTH_MFA_ENCRYPTION_KEY,
-    );
-    if (hasOAuthVars) {
-      throw error;
-    }
-  }
-  const secret = env.NEXTAUTH_SECRET?.trim();
-  if (!secret || secret.length < 32) {
-    return null;
-  }
-  return {
-    origin: getPublicAppOrigin(env),
-    secret,
-  };
+  const settings = loadAuthSettings(env);
+  return settings ? { origin: settings.origin, secret: settings.secret } : null;
 }
 
 export function getSessionCookieNames(
@@ -60,7 +36,8 @@ export async function createDirectDatabaseSession(params: {
   identityId: string;
 }): Promise<DirectDatabaseSession> {
   const resolved = resolveSessionOriginAndSecret();
-  const secret = resolved?.secret ?? 'studio-default-dev-session-secret-0123456789';
+  if (!resolved) throw new Error('Authentication must be configured before creating a session.');
+  const secret = resolved.secret;
   const sessionToken = randomBytes(32).toString('hex');
   const tokenHash = hash(sessionToken);
   const csrfToken = createHmac('sha256', secret)

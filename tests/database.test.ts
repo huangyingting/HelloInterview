@@ -67,6 +67,41 @@ test('controlled migrations are repeatable, serialize runners, and reject missin
   await assert.rejects(assertDatabaseVersion(db), /incompatible/);
   await assert.rejects(migrateDatabase(db), /history does not match/);
 });
+test('production cleanup removes only marked demo accounts and sample activity, preserving real state and training bytes', async t => {
+  const { db } = await fixture(t, false);
+  await db.exec('CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,name TEXT NOT NULL,checksum TEXT NOT NULL,applied_at TIMESTAMPTZ NOT NULL DEFAULT now())');
+  for (const migration of migrations.filter(item => item.version < 42)) {
+    await db.exec(migration.sql);
+    await db.prepare('INSERT INTO schema_migrations(version,name,checksum) VALUES(?,?,?)')
+      .run(migration.version, migration.name, createHash('sha256').update(migration.sql).digest('hex'));
+  }
+  const real = await account(db, { ...emptyState(), read: ['system-design/introduction'], recognition: 7 });
+  const before = await new StateRepository(db).read(real);
+  await db.prepare("INSERT INTO users(id,name,email,demo) VALUES('demo-owner','Demonstration','demo@example.invalid',1)").run();
+  await new StateRepository(db).initialize('demo-owner', { ...emptyState(), recognition: 999 });
+  for (const [id, owner, sample] of [['sample-post', real, 1], ['demo-post', 'demo-owner', 0], ['real-post', real, 0]] as const) {
+    await db.prepare(`INSERT INTO posts(id,kind,title,body,company,track,level,region,author,author_id,created_at,sample)
+      VALUES(?,'discussion','Preserved title','Preserved original body','','system-design','Senior','Global','Author',?,'2026-01-01T00:00:00.000Z',?)`).run(id, owner, sample);
+  }
+  await db.prepare(`INSERT INTO comments(id,resource,user_id,author,body,created_at)
+    VALUES('demo-comment','lesson/system-design/introduction','demo-owner','Demonstration','Fake activity','2026-01-01')`).run();
+  await db.prepare(`INSERT INTO comments(id,resource,user_id,author,body,created_at)
+    VALUES('sample-reply','post/sample-post',?,'Real member','Reply to sample','2026-01-01')`).run(real);
+  await db.prepare(`INSERT INTO comments(id,resource,user_id,author,body,created_at)
+    VALUES('real-comment','post/real-post',?,'Real member','Real discussion','2026-01-01')`).run(real);
+  await new ContentRepository(db).createSession(real, 'api-design', quizQuestions.filter(question => question.topic === 'api-design').slice(0, 2));
+  const content = await db.prepare('SELECT id,value FROM content_versions ORDER BY id').all();
+  assert.ok(content.length);
+  const post = await db.prepare("SELECT * FROM posts WHERE id='real-post'").get();
+  await migrateDatabase(db);
+  await migrateDatabase(db);
+  assert.equal(await db.prepare("SELECT id FROM users WHERE demo=1").get(), undefined);
+  assert.deepEqual((await db.prepare('SELECT id FROM posts ORDER BY id').all()).map(row => row.id), ['real-post']);
+  assert.deepEqual((await db.prepare('SELECT id FROM comments ORDER BY id').all()).map(row => row.id), ['real-comment']);
+  assert.deepEqual(await new StateRepository(db).read(real), before);
+  assert.deepEqual(await db.prepare('SELECT id,value FROM content_versions ORDER BY id').all(), content);
+  assert.deepEqual(await db.prepare("SELECT * FROM posts WHERE id='real-post'").get(), post);
+});
 test('versioned assessment answers are single-owner and revision-fenced across PostgreSQL pools',async t=>{
   const {db,url}=await fixture(t),owner=await account(db),anotherOwner=await account(db);
   const replica=postgresConnection(url);

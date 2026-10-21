@@ -113,7 +113,7 @@ test('Next standalone release is hardened and preserves Auth.js-owned state thro
     console.log(JSON.stringify({
       uid:process.getuid(),
       next:fs.existsSync('/app/server.js')&&fs.existsSync('/app/.next/server'),
-      workers:fs.existsSync('/app/dist-server/db/cli.js')&&fs.existsSync('/app/dist-server/privacy/cli.js'),
+      workers:['db/cli.js','privacy/cli.js','account-admission/cli.js','bootstrap-admin.js'].every(value=>fs.existsSync('/app/dist-server/'+value)),
       identityWorkerAbsent:!fs.existsSync('/app/dist-server/identity/cli.js'),
       developmentAbsent:['vite','tsx','typescript','esbuild'].every(value=>!fs.existsSync('/app/node_modules/'+value)),
       privateAbsent:['.env','data','src','server','dist','index.html','vite.config.ts'].every(value=>!fs.existsSync('/app/'+value))
@@ -131,7 +131,7 @@ test('Next standalone release is hardened and preserves Auth.js-owned state thro
   const preflightResult = JSON.parse(preflight.stdout);
   assert.deepEqual(preflightResult.identity, {
     system: 'authjs',
-    providers: ['facebook', 'google'],
+    providers: ['google', 'facebook'],
     inviteCount: 1,
   });
   assert.deepEqual(preflightResult.participantPolicy, {
@@ -139,7 +139,7 @@ test('Next standalone release is hardened and preserves Auth.js-owned state thro
     contactProtocol: 'https:',
     noDurability: true,
   });
-  assert.deepEqual(preflightResult.features, { ai: false, billing: false, community: 'read-only' });
+  assert.deepEqual(preflightResult.features, { ai: false, billing: false, community: 'read-only', accountEmail: false });
   assert.equal(preflightResult.mode, 'service');
   assert.equal(preflightResult.listener.loopback, false);
   assert.equal(preflightResult.trustedProxyCount, 1);
@@ -149,6 +149,17 @@ test('Next standalone release is hardened and preserves Auth.js-owned state thro
     service.PRIVACY_CONTROLLER_NAME, service.PRIVACY_RETENTION_NOTICE]) {
     assert.equal(preflight.stdout.includes(privateValue), false);
   }
+  const font = await fetch(`${url}/fonts/mona-sans.woff2`);
+  assert.equal(font.status, 200);
+  assert.ok((await font.arrayBuffer()).byteLength > 10000);
+  const bootstrapCommand = await docker('exec', '-e', 'BOOTSTRAP_ADMIN_PASSWORD=Container-fixture-only-password-123!',
+    apiContainer, 'node', 'dist-server/bootstrap-admin.js', '--email', 'release-admin@example.test');
+  assert.equal(JSON.parse(bootstrapCommand.stdout).created, true);
+  const adminLogin = await fetch(`${url}/api/auth/password/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: 'release-admin@example.test', password: 'Container-fixture-only-password-123!' }),
+  });
+  assert.equal(adminLogin.status, 200);
 
   const now = Date.now();
   const sql = `

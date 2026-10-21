@@ -88,7 +88,7 @@ export async function managedAuthSession(sessionToken: string, touch = true): Pr
     JOIN users u ON u.id=s.user_id
     JOIN managed_accounts a ON a.user_id=u.id
     JOIN managed_identities i ON i.id=m.identity_id AND i.user_id=u.id
-    WHERE s.token=${token}
+    WHERE s.token=${token} AND u.demo=0
       AND s.expires>${databaseClock}
       AND m.last_used>${databaseClock}-${sessionIdle}
       AND m.epoch=a.session_epoch

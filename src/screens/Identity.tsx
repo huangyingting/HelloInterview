@@ -25,6 +25,7 @@ export function ManagedAuthPage() {
   const { data, act, refresh, pending, notify } = useStudio();
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const confirming = Boolean(data.user && params.get('confirm') === '1');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -36,7 +37,7 @@ export function ManagedAuthPage() {
   return <section className="auth-card">
     <ShieldCheck size={28}/><h1>{data.user ? 'Your account security.' : 'Welcome to the Studio.'}</h1>
     {error && <p role="alert">{error}</p>}
-    {data.user ? <>
+    {data.user && !confirming ? <>
       <p>{data.user.identity?.status === 'active' ? `Signed in as ${data.user.name}.` : data.user.identity?.status === 'pending-verification' ? 'Add or verify a contact email before saving preparation or using member features.' : 'Account access is restricted. Open Account for support and sign-out options.'}</p>
       <Link className="button" to="/account">Open Account</Link>
     </> : <>
@@ -45,10 +46,10 @@ export function ManagedAuthPage() {
         setLoginError('');
         void act(async () => {
           try {
-            await request('/api/auth/password/login', { email, password });
+            await request('/api/auth/password/login', { email: confirming ? data.user?.email : email, password });
             await refresh();
-            notify('Signed in.');
-            navigate('/dashboard');
+            notify(confirming ? 'Password confirmed.' : 'Signed in.');
+            navigate(confirming ? '/account' : '/dashboard');
           } catch (cause) {
             const message = cause instanceof Error ? cause.message : 'Unable to sign in.';
             setLoginError(message);
@@ -57,25 +58,24 @@ export function ManagedAuthPage() {
         });
       }}>
         <label>Email address
-          <input required type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="you@example.com"/>
+          <input required type="email" autoComplete="email" readOnly={confirming} value={confirming ? data.user?.email ?? '' : email} onChange={event => setEmail(event.target.value)} placeholder="you@example.com"/>
         </label>
         <label>Password
           <input required type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Enter your password"/>
         </label>
-        <button className="button" disabled={pending || !email.trim() || !password}>
-          {pending ? 'Signing in…' : 'Sign in with password'}
+        <button className="button" disabled={pending || !(confirming ? data.user?.email : email)?.trim() || !password}>
+          {pending ? 'Signing in…' : confirming ? 'Confirm password' : 'Sign in with password'}
         </button>
       </form>
       <p className="fine-print">
         <Link className="text-link" to="/forgot-password">Forgot password?</Link>
         {admissionMode === 'public' ? <> · <Link className="text-link" to="/register">Create an account</Link></> : null}
       </p>
-      <p>Sign in with Google. Facebook identities can be linked only after an existing Studio account is authenticated.</p>
+      {available.length>0&&<p className="auth-divider">Or use your connected account</p>}
       {available.map(value => <p key={value}><a className="button secondary" href={signIn(value)}>Continue with {labels[value]}</a></p>)}
-      {!available.length && <p className="fine-print">Google OAuth is not configured on this deployment; use your invited email and password or an invitation link.</p>}
       <p className="fine-print">
         {admissionMode === 'invitation-only'
-          ? 'New private-beta accounts require an administrator invitation link or an invited Google address with a verified email claim. Matching email addresses never merge accounts, and Facebook cannot create an account.'
+          ? 'New here? Use the invitation link shared by your administrator. Your personal workspace starts with your own work, not pre-filled activity.'
           : 'Matching email addresses never merge accounts automatically, and Facebook cannot create an account.'}
       </p>
     </>}
@@ -413,7 +413,7 @@ export function ManagedAccountPage() {
       .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Account security could not be loaded.'); });
     request<{ hasPassword: boolean; passwordUpdatedAt: string | null }>('/api/account/auth-methods', undefined, undefined, controller.signal)
       .then(value => { if (!controller.signal.aborted) setAuthMethods(value); })
-      .catch(() => { /* optional */ });
+      .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Password settings could not be loaded.'); });
     request<PrivacyExportHistory>('/api/privacy/exports',undefined,undefined,controller.signal)
       .then(value=>{if(!controller.signal.aborted)setExports(value);})
       .catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Privacy exports could not be loaded.');});
@@ -425,6 +425,11 @@ export function ManagedAccountPage() {
     request<PrivacyDeletionView>('/api/privacy/deletion',undefined,undefined,controller.signal)
       .then(value=>{if(!controller.signal.aborted)setDeletion(value);})
       .catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Deletion status could not be loaded.');});
+    if(status==='deletion-pending'){
+      request<{hasPassword:boolean;passwordUpdatedAt:string|null}>('/api/account/auth-methods',undefined,'GET',controller.signal)
+        .then(value=>{if(!controller.signal.aborted)setAuthMethods(value);})
+        .catch(cause=>{if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Sign-in methods could not be loaded.');});
+    }
     return()=>controller.abort();
   },[status,data.user]);
   useEffect(()=>{
@@ -468,6 +473,7 @@ export function ManagedAccountPage() {
           </>}
           {current.status==='cooling-off'&&!current.fresh&&<>
             <p>Confirm with a sign-in method already connected to this account:</p>
+            {authMethods?.hasPassword&&<Link className="button secondary small" to="/login?confirm=1">Confirm with password</Link>}
             {(connectedProviders.length ? connectedProviders : configuredProviders).map(provider=><button className="button secondary small" key={provider} disabled={pending}
               onClick={()=>reauthenticate(provider)}>Confirm with {labels[provider]}</button>)}
           </>}
@@ -496,7 +502,7 @@ export function ManagedAccountPage() {
           <label>Display name<input required minLength={2} maxLength={60} autoComplete="name" value={name} onChange={event => setName(event.target.value)}/></label>
           <button className="button small" disabled={pending}>Save profile</button>
         </form>
-        <h3>Provider recovery</h3><p>Recover access directly with Google or Facebook. Studio sign-out does not sign you out of either provider. Studio sessions are database-backed and can be revoked below; account recovery remains with the connected provider.</p>
+        <h3>Account recovery</h3><p>Use <Link className="text-link" to="/forgot-password">password recovery</Link> for a Studio password. Recover a connected social identity directly with its provider. Signing out here does not sign you out of that provider.</p>
       </section>
       <section className="panel"><h2>Current access</h2><p>Server-verified access: <strong>{data.capabilities.access?.features.some(feature => proCapabilities.includes(feature.key) && feature.reason === 'unavailable') ? 'refresh unavailable' : data.capabilities.access?.state ?? 'unavailable'}</strong>. Content-only grants do not include premium practice, progress, projects or tutor work.</p>
         {data.capabilities.access?.nextChangeAt && <p>Next scheduled access change: {new Date(data.capabilities.access.nextChangeAt).toLocaleString()}.</p>}
@@ -583,6 +589,7 @@ export function ManagedAccountPage() {
       {!security && !error && <p role="status">Loading sign-in and session information...</p>}
       {security && <>
         {!security.fresh && <p>Confirm an existing sign-in method before linking, unlinking, revoking sessions or exporting.</p>}
+        {authMethods?.hasPassword && <p><Link className="button secondary small" to="/login?confirm=1">Confirm with password</Link></p>}
         {connectedIdentities.map(identity => <div className="panel" key={identity.id}>
           <h3>{labels[identity.provider]} {identity.current && <Badge>Current method</Badge>}</h3><p>{identity.email || 'No contact address shared'} - {identity.verified ? 'Verified' : 'Unverified'}{!identity.available && ' - Unavailable with provider'}</p>
           <button className="button secondary small" disabled={pending || !identity.available} onClick={() => reauthenticate(identity.provider)}>Confirm with {labels[identity.provider]}</button>{' '}
@@ -592,13 +599,13 @@ export function ManagedAccountPage() {
           <p>Connect another verified sign-in method. Each account is proved separately; email matching does not merge accounts.</p>
           {unconnectedProviders.map(provider => <button className="button secondary small" key={provider} disabled={pending || !security.fresh} onClick={() => act(() => linkProvider(provider))}>Connect {labels[provider]}</button>)}
           <p className="fine-print">Provider linking uses a one-use action bound to this fresh Studio session. Matching email addresses never merge accounts; Facebook can be linked only from here.</p>
-        </> : <p className="fine-print">All configured sign-in providers are connected to this account.</p>}
+        </> : <p className="fine-print">{configuredProviders.length ? 'All configured social sign-in providers are connected to this account.' : 'Social sign-in is not enabled for this workspace.'}</p>}
       </>}
     </section>
     {security && <>
       <section className="panel"><h2>Authenticator MFA</h2>
         {!security.mfa?.enabled ? <>
-          <p>Add a time-based authenticator for staff and other sensitive actions. Enrollment requires a provider confirmation from the last ten minutes.</p>
+          <p>Add a time-based authenticator for staff and other sensitive actions. Enrollment requires confirmation of your password or a connected provider within the last ten minutes.</p>
           <button className="button secondary small" disabled={pending || !security.fresh} onClick={()=>act(async()=>{
             const enrollment=await request<{secret:string;uri:string;expiresAt:number}>('/api/identity/mfa/enrollment',{});
             const {toDataURL}=await import('qrcode');
@@ -633,7 +640,7 @@ export function ManagedAccountPage() {
               value={mfaCode} onChange={event=>setMfaCode(event.target.value.toUpperCase())}/></label>
             <button className="button small" disabled={pending||mfaCode.trim().length<6}>Verify MFA</button>
           </form>}
-          {security.mfa?.sessionVerified&&<p><Badge tone="green">Verified now</Badge> Sensitive actions are unlocked for this session for ten minutes. Provider confirmation is still checked separately.</p>}
+          {security.mfa?.sessionVerified&&<p><Badge tone="green">Verified now</Badge> Sensitive actions are unlocked for this session for ten minutes. Sign-in confirmation is still checked separately.</p>}
           <button className="button secondary small" disabled={pending||!security.fresh||!security.mfa?.sessionVerified}
             onClick={()=>act(async()=>{
               const result=await request<{recoveryCodes:string[]}>('/api/identity/mfa/recovery-codes',{});
@@ -644,7 +651,7 @@ export function ManagedAccountPage() {
               await request('/api/identity/mfa',undefined,'DELETE');setRecoveryCodes([]);setMfaCode('');
               await loadSecurity();notify('Authenticator MFA disabled for every Studio session.');
             })}>Disable MFA</button>
-          {(!security.fresh||!security.mfa?.sessionVerified)&&<p className="fine-print">Changing MFA requires both a provider confirmation and MFA verification from the last ten minutes.</p>}
+          {(!security.fresh||!security.mfa?.sessionVerified)&&<p className="fine-print">Changing MFA requires both sign-in confirmation and MFA verification from the last ten minutes.</p>}
         </>}
         {recoveryCodes.length>0&&<div className="panel" role="status">
           <h3>Save these one-time recovery codes now</h3>

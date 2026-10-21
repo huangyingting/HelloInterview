@@ -62,7 +62,7 @@ export async function POST(
       acceptUrl: result.acceptUrl,
       delivery: result.delivery,
       emailDelivery: {
-        queued: result.delivery.status === 'sent',
+        queued: result.delivery.status === 'queued',
         status: result.delivery.status,
         message: result.delivery.message,
       },

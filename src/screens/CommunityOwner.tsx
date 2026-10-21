@@ -7,14 +7,15 @@ type PostProps = { post: CommunityPost; comment?: never; onSaved: (post: Communi
 type CommentProps = { comment: Comment; post?: never; onSaved: (comment: Comment) => void; onDeleted: (comment:Comment|null) => void };
 type Snapshot = OwnedCommunityPost | OwnedCommunityComment;
 function deletionMessage(props:PostProps|CommentProps,result?:CommunityCommentDeletion) {
-  if(props.post)return 'Your local post and its discussion were deleted.';
+  if(props.post)return 'Your post and its discussion were deleted.';
   return result?.comment?'Your comment text and authorship were removed; existing replies retain a deleted-comment tombstone.'
     :'This comment deletion was recorded earlier; its discussion is no longer available.';
 }
 export function CommunityOwner(props: PostProps) { return <ContributionOwner {...props} />; }
 export function CommentOwner(props: CommentProps) { return <ContributionOwner {...props} />; }
 function ContributionOwner(props: PostProps | CommentProps) {
-  const { act, notify, pending } = useStudio();
+  const { data, act, notify, pending } = useStudio();
+  const readOnly = data.capabilities.community === 'read-only';
   const [open, setOpen] = useState(!!props.comment), [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState<Snapshot>(), [current, setCurrent] = useState<Snapshot>();
   const [title, setTitle] = useState(''), [body, setBody] = useState(''), [error, setError] = useState('');
@@ -72,7 +73,7 @@ function ContributionOwner(props: PostProps | CommentProps) {
     try {
       const snapshot = await request<Snapshot>(endpoint, { id, revision: saved.revision, ...(props.post ? { title } : {}), body }, 'PUT');
       if (!alive.current) return;
-      install(snapshot); publish(snapshot); notify(`Your changes were saved to this local ${props.post ? 'post' : 'comment'}.`);
+      install(snapshot); publish(snapshot); notify(`Your changes were saved to this ${props.post ? 'post' : 'comment'}.`);
     } catch (reason) {
       if (alive.current) setError(`Saving was not confirmed. ${reason instanceof Error ? reason.message : 'Check the saved version before trying again.'}`);
       throw reason;
@@ -110,7 +111,8 @@ function ContributionOwner(props: PostProps | CommentProps) {
       {loading && <p role="status">Loading your saved contribution...</p>}
       {error && <p className="error-text" role="alert">{error}</p>}
       {moderated&&<p className="fine-print">Moderation hid this {props.post?'post':'comment'}, so it cannot be edited or receive new discussion. You may still delete your original contribution.</p>}
-      {saved && !moderated&&<form onSubmit={event => { event.preventDefault(); void save(); }}>
+      {readOnly&&<p className="fine-print">Publishing and editing are paused. You can still remove your own contribution.</p>}
+      {saved && !moderated&&!readOnly&&<form onSubmit={event => { event.preventDefault(); void save(); }}>
         <p className="fine-print">Editing saved revision {saved.revision}.</p>
         {props.post && <label>Title<input aria-label="Edit post title" required minLength={5} maxLength={200} value={title} disabled={pending} onChange={event => setTitle(event.target.value)} /></label>}
         <label>Original text<textarea aria-label={props.post ? 'Edit post details' : 'Edit comment text'} required minLength={props.post ? 20 : 2} maxLength={props.post ? 10000 : 3000} value={body} disabled={pending} onChange={event => setBody(event.target.value)} /></label>
@@ -118,13 +120,13 @@ function ContributionOwner(props: PostProps | CommentProps) {
       </form>}
       <button className="button secondary small" disabled={pending || loading || !saved && !error} onClick={() => void check()}>Check saved version</button>
       {current && <article className="panel"><h3>Current saved version</h3><p className="fine-print">Saved revision {current.revision}. Checking did not replace your draft.</p>{props.post && <strong>{values(current).title}</strong>}<p className="post-body">{values(current).body}</p><button className="button secondary small" disabled={pending} onClick={() => { install(current); publish(current); }}>Replace my draft with saved version</button></article>}
-      {saved && <div role="group" aria-label={props.post?'Delete original local post':'Delete original local comment'}>
-        <h3>Delete this local {props.post?'contribution':'comment'}</h3>
-        <p>{props.post?'This permanently removes this post, its exact local discussion, votes and follows. Minimal private submission references remain to prevent duplicate retries; they retain no original comment text. It also discards your unsaved edit. This is not account or privacy deletion.'
+      {saved && <div role="group" aria-label={props.post?'Delete original post':'Delete original comment'}>
+        <h3>Delete this {props.post?'contribution':'comment'}</h3>
+        <p>{props.post?'This permanently removes this post, its discussion, votes and follows. Minimal private submission references remain to prevent duplicate retries; they retain no original comment text. It also discards your unsaved edit. This is not account or privacy deletion.'
           :'This removes the saved comment text and public authorship. A deleted-comment tombstone keeps existing replies in context; no one can reply to the tombstone. A private request receipt remains for exact retry recovery. This is not account or privacy deletion.'}</p>
         {deletionKey&&<p className="fine-print">Deletion request: <code>{deletionKey}</code>. If the result is uncertain, retry only this same request.</p>}
         <label className="checkbox-label"><input type="checkbox" checked={confirmed} disabled={pending} onChange={event => setConfirmed(event.target.checked)} /> {props.post?'I understand this deletes my post, its discussion, votes and follows.':'I understand the original comment text and authorship cannot be restored.'}</label>
-        <button className="button secondary small" disabled={pending || !confirmed} onClick={() => void remove()}><Trash2 size={15} /> {props.post?'Delete my local post':deletionKey?'Retry same comment deletion':'Delete my local comment'}</button>
+        <button className="button secondary small" disabled={pending || !confirmed} onClick={() => void remove()}><Trash2 size={15} /> {props.post?'Delete my post':deletionKey?'Retry same comment deletion':'Delete my comment'}</button>
       </div>}
     </div>}
   </section>;

@@ -1,4 +1,6 @@
 import { emptyState } from '../../../shared/domain';
+import { configuredSocialProviders, loadAuthSettings } from '../../../server/auth/config';
+import { communityParticipationEnabled } from '../../../server/next/capabilities';
 import { isAccountEmailDeliveryConfigured } from '../../../server/account-admission/email';
 import { getAccountAdmissionMode } from '../../../server/account-admission/policy';
 import { issueCsrf } from '../../../server/auth/csrf';
@@ -23,6 +25,10 @@ export async function GET(request: Request) {
     const billing = nextBillingCapability();
     const ai = nextAiCapability();
     const participantPolicy = loadParticipantPolicy();
+    const auth = loadAuthSettings();
+    if (process.env.NODE_ENV === 'production' && !auth) {
+      throw new Error('Authentication is not configured.');
+    }
     if (process.env.NODE_ENV === 'production' && !participantPolicy) {
       throw new Error('The operated participant policy is not configured.');
     }
@@ -37,16 +43,16 @@ export async function GET(request: Request) {
       capabilities: {
         ai: Boolean(ai),
         commerce: 'disabled',
-        community: 'read-only',
+        community: communityParticipationEnabled() ? 'managed' : 'read-only',
         aiModel: ai?.model ?? null,
         ...(ai ? { aiPolicy: ai } : {}),
         fieldMetrics: false,
         auth: {
           mode: 'managed',
           system: 'authjs',
-          providers: ['google', 'facebook'],
+          providers: configuredSocialProviders(auth),
           legacyLink: false,
-          securityLifecycle: false,
+          securityLifecycle: Boolean(auth),
           admissionMode: getAccountAdmissionMode(),
           emailDelivery: isAccountEmailDeliveryConfigured(),
         },

@@ -40,6 +40,9 @@ import { loadAuthSettings } from '../server/auth/config';
 import { postgresConnection } from '../server/db/connection';
 import { migrateDatabase } from '../server/db/migrations';
 import { prismaConnection } from '../server/db/prisma';
+import { acknowledgeAccountEmail, claimNextAccountEmail, sendAccountEmail } from '../server/account-admission/email';
+import { processAccountMailBatch } from '../server/account-admission/worker';
+import { pruneAccountAdmissionRecords } from '../server/account-admission/retention';
 
 function extractCookies(response: Response): Map<string, string> {
   const map = new Map<string, string>();
@@ -129,6 +132,8 @@ test('invite-only account admission lifecycle: bootstrap admin, create/rotate/re
     ACCOUNT_MAIL_WORKFLOW_ENABLED: process.env.ACCOUNT_MAIL_WORKFLOW_ENABLED,
     ACCOUNT_MAIL_WORKER_SECRET: process.env.ACCOUNT_MAIL_WORKER_SECRET,
     ACCOUNT_EMAIL_WORKER_TOKEN: process.env.ACCOUNT_EMAIL_WORKER_TOKEN,
+    RESEND_API_KEY: process.env.RESEND_API_KEY,
+    ACCOUNT_MAIL_FROM: process.env.ACCOUNT_MAIL_FROM,
   };
 
   const workerSecret = 'worker-secret-token-fixture-32-chars-minimum';
@@ -146,6 +151,8 @@ test('invite-only account admission lifecycle: bootstrap admin, create/rotate/re
     ACCOUNT_MAIL_WORKFLOW_ENABLED: 'true',
     ACCOUNT_MAIL_WORKER_SECRET: workerSecret,
     ACCOUNT_EMAIL_WORKER_TOKEN: workerSecret,
+    RESEND_API_KEY: 're_fixture_only_not_a_real_key',
+    ACCOUNT_MAIL_FROM: 'Studio fixture <noreply@example.test>',
   });
 
   t.after(async () => {
@@ -615,4 +622,30 @@ test('invite-only account admission lifecycle: bootstrap admin, create/rotate/re
   assert.equal(verifyRes.status, 200);
   const verifyCookies = extractCookies(verifyRes);
   assert.ok(verifyCookies.get('__Host-studio_session'));
+  for (const subject of ['acceptance-fixture', 'rejection-fixture', 'ambiguity-fixture']) {
+    assert.equal((await sendAccountEmail({ to: 'mail-worker@example.test', kind: 'invitation', subject, text: 'Synthetic fixture message.', html: '<p>Synthetic fixture message.</p>' })).status, 'queued');
+  }
+  const dispatches: string[] = [];
+  const counts = await processAccountMailBatch(undefined, async (_url, options) => {
+    const subject = JSON.parse(String(options?.body)).subject as string;
+    dispatches.push(subject);
+    if (subject === 'rejection-fixture') return new Response(null, { status: 422 });
+    if (subject === 'ambiguity-fixture') throw new Error('Synthetic lost acknowledgement');
+    return Response.json({ id: 'provider-fixture-receipt' });
+  });
+  assert.deepEqual(counts, { sent: 1, failed: 1, unconfirmed: 1 });
+  assert.equal(dispatches.length, 3);
+  const workerStates = await db.prepare(`SELECT status,count(*)::integer AS count FROM account_email_outbox
+    WHERE status IN ('failed','unconfirmed') GROUP BY status ORDER BY status`).all();
+  assert.deepEqual(workerStates, [{ status: 'failed', count: 1 }, { status: 'unconfirmed', count: 1 }]);
+  assert.deepEqual(await processAccountMailBatch(undefined, async () => { throw new Error('Terminal mail must not dispatch again.'); }),
+    { sent: 0, failed: 0, unconfirmed: 0 });
+  await sendAccountEmail({ to: 'mail-worker@example.test', kind: 'invitation', subject: 'In-flight retention fixture',
+    text: 'Synthetic fixture message.', html: '<p>Synthetic fixture message.</p>' });
+  const leased = await claimNextAccountEmail();
+  assert.ok(leased);
+  await db.prepare("UPDATE account_email_outbox SET expires_at=clock_timestamp()-interval '1 second' WHERE id=?").run(leased.id);
+  await pruneAccountAdmissionRecords();
+  assert.equal((await db.prepare('SELECT status FROM account_email_outbox WHERE id=?').get(leased.id))?.status, 'sending');
+  assert.equal(await acknowledgeAccountEmail({ id: leased.id, claimToken: leased.claimToken, status: 'sent' }), true);
 });

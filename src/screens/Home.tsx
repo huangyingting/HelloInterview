@@ -1,40 +1,77 @@
-import { ArrowRight, BookOpen, CalendarDays, Check, ChevronRight, CircleCheck, Code2, Flame, GraduationCap, Layers3, Lightbulb, MessageSquare, Network, Plus, Rocket, Sparkles, Target, Trash2, Trophy } from 'lucide-react';
+import { ArrowRight, BookOpen, CalendarDays, Check, ChevronRight, Code2, Plus, Target, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from '../navigation';
-import { companies, levels, tracks } from "../../shared/public-catalog";
-import { courseCompletion, courseStepComplete, currentStreak } from '../../shared/domain';
-import { courses } from "../../shared/public-catalog";
+import { companies, courses, levels, tracks } from '../../shared/public-catalog';
+import { courseCompletion, currentStreak } from '../../shared/domain';
+import { nextPreparationStep } from '../../shared/preparation';
 import type { UserState } from '../../shared/types';
-import { CardLink, Footer, IconTile, PageHeading, Progress, ReadButton } from '../components';
+import { IconTile, Progress } from '../components/primitives';
 import { request, useStudio } from '../store';
 import { trackIcons } from '../track-icons';
 
 export function Dashboard() {
-  const { can, data, setState, act, notify, pending } = useStudio();
+  const { data, setState, act, notify, pending } = useStudio();
   const [adding, setAdding] = useState(false);
-  const [company, setCompany] = useState(''), [level, setLevel] = useState<string>('Senior'), [role, setRole] = useState('Software Engineer'), [date, setDate] = useState('');
-  const totalLessons = tracks.reduce((sum,t) => sum+t.lessons.length,0);
-  const readLessons = data.state.read.filter(key => !key.startsWith('practice/')).length;
-  const completed = data.state.attempts.filter(a => a.completed).length;
-  const firstName = data.user?.name.split(' ')[0] || 'there';
-  const week = Array.from({length:7},(_,i) => { const d = new Date(); d.setUTCDate(d.getUTCDate()-6+i); return {key:d.toISOString().slice(0,10),label:d.toLocaleDateString('en',{weekday:'short'})}; });
-  return <>
-    <div className="dashboard-intro"><div><span className="eyebrow">YOUR PREPARATION, IN FOCUS</span><h1>Good to see you, {firstName}<span className="brand-dot">.</span></h1><p>A small step today. A more confident conversation tomorrow.</p></div><Link className="button" to="/practice/system-design"><Plus size={17} /> New practice</Link></div>
-    <div className="stat-grid">{[{icon:BookOpen,label:'Lessons completed',value:readLessons,suffix:`/ ${totalLessons}`,color:'var(--accent)'},{icon:Rocket,label:'Practice sessions',value:completed,suffix:'completed',color:'#7277b9'},{icon:Flame,label:'Learning streak',value:currentStreak(data.state.activity),suffix:'days',color:'#c68b52'},{icon:Trophy,label:'Recognition',value:data.state.recognition,suffix:'points',color:'#a18c55'}].map(s => <div className="stat-card" key={s.label}><IconTile icon={s.icon} color={s.color} small /><div><span>{s.label}</span><strong>{s.value} <small>{s.suffix}</small></strong></div></div>)}</div>
+  const [company, setCompany] = useState(''), [level, setLevel] = useState('Senior'), [role, setRole] = useState('Software Engineer'), [date, setDate] = useState('');
+  const totalLessons = tracks.reduce((total, track) => total + track.lessons.length, 0);
+  const readLessons = tracks.reduce((total, track) => total + track.lessons.filter(lesson => data.state.read.includes(`${track.id}/${lesson.id}`)).length, 0);
+  const completed = data.state.attempts.filter(attempt => attempt.completed).length;
+  const next = nextPreparationStep(data.state);
+  const firstName = data.user?.name.trim().split(/\s+/)[0] || 'there';
+  const week = Array.from({ length: 7 }, (_, index) => {
+    const day = new Date();
+    day.setUTCDate(day.getUTCDate() - 6 + index);
+    return { key: day.toISOString().slice(0, 10), label: day.toLocaleDateString('en', { weekday: 'short', timeZone: 'UTC' }) };
+  });
+  return <div className="workspace-home">
+    <div className="dashboard-intro"><div><span className="eyebrow">YOUR PERSONAL WORKSPACE</span><h1>Make the next<br/><span>step count, {firstName}.</span></h1></div><Link className="button secondary" to="/practice"><Plus size={17}/> New practice</Link></div>
+    <section className="focus-panel" aria-label="Your next step">
+      <div><span className="eyebrow">{next.label}</span><h2>{next.title}</h2><p>{next.description}</p><Link className="button" to={next.to}>{next.action} <ArrowRight size={18}/></Link></div>
+      <div className="focus-glyph" aria-hidden="true"><span>→</span><small>ONE STEP FORWARD</small></div>
+    </section>
+    <div className="workspace-metrics" aria-label="Your actual progress">
+      <div><span>LESSONS COMPLETED</span><strong>{readLessons}<small> / {totalLessons}</small></strong></div>
+      <div><span>PRACTICE COMPLETED</span><strong>{completed}<small> sessions</small></strong></div>
+      <div><span>LEARNING STREAK</span><strong>{currentStreak(data.state.activity)}<small> days</small></strong></div>
+      <Link to={data.state.review.length ? '/quiz/review' : '/quiz'}><span>READY TO REVIEW</span><strong>{data.state.review.length}<small> questions <ArrowRight size={16}/></small></strong></Link>
+    </div>
+    {!data.state.activity.length && <p className="workspace-welcome"><span className="status-dot"/> A fresh workspace. Your completed lessons, saved practice, and quiz results will appear as you work.</p>}
     <div className="dashboard-grid"><div className="dashboard-main">
-      <section className="panel target-panel"><div className="section-heading"><div className="heading-icon"><Target size={20} /><h2>Your next interview</h2></div><button className="text-button" onClick={() => setAdding(!adding)}><Plus size={15} /> {adding ? 'Close form' : 'Add target'}</button></div>
-        {adding && <form className="target-form" onSubmit={e => { e.preventDefault(); void act(async () => { setState(await request<UserState>('/api/targets',{company,level,role,date})); setAdding(false); setCompany(''); notify('Interview target saved. Your preparation plan is ready.'); }); }}><label>Company<input list="companies" required minLength={2} maxLength={80} placeholder="e.g. Google" value={company} onChange={e=>setCompany(e.target.value)} /></label><datalist id="companies">{companies.map(c=><option key={c} value={c}/>)}</datalist><label>Level<select value={level} onChange={e=>setLevel(e.target.value)}>{levels.map(l=><option key={l}>{l}</option>)}</select></label><label>Role<input required value={role} onChange={e=>setRole(e.target.value)} maxLength={80}/></label><label>Interview date<input type="date" value={date} onChange={e=>setDate(e.target.value)}/></label><button className="button small" disabled={pending}>Save target</button></form>}
-        {!data.state.targets.length ? <div className="target-empty"><span className="target-illustration"><Target size={36} strokeWidth={1.2}/></span><div><h3>Give your preparation a destination.</h3><p>Add a company and interview level to keep your next step focused.</p></div><button className="button secondary small" onClick={()=>setAdding(true)}>Set a target <ArrowRight size={15}/></button></div> : <div className="target-list">{data.state.targets.map(t=><div key={t.id}><span className="company-letter">{t.company[0]}</span><div><strong>{t.company}</strong><p>{t.level} · {t.role}</p></div><span className="target-date"><CalendarDays size={15}/>{t.date ? new Date(`${t.date}T12:00:00`).toLocaleDateString('en',{month:'short',day:'numeric'}) : 'Date to be decided'}</span><Link className="text-link" to={`/guides/${encodeURIComponent(t.company.toLowerCase())}/${t.level.toLowerCase()}`}>View guide <ChevronRight size={15}/></Link><button className="icon-button" aria-label={`Remove ${t.company} target`} onClick={()=>act(async()=>setState(await request<UserState>(`/api/targets/${t.id}`,undefined,'DELETE')))}><Trash2 size={15}/></button></div>)}</div>}
+      <section className="panel learning-path">
+        <div className="section-heading"><div><span className="eyebrow">BUILD YOUR FOUNDATION</span><h2>Your learning paths</h2></div><Link className="text-link" to="/learn">All tracks <ArrowRight size={16}/></Link></div>
+        {tracks.slice(0, 4).map(track => {
+          const count = track.lessons.filter(lesson => data.state.read.includes(`${track.id}/${lesson.id}`)).length;
+          const lesson = track.lessons.find(item => !data.state.read.includes(`${track.id}/${item.id}`));
+          const to = lesson ? `/learn/${track.id}/${lesson.id}` : `/learn/${track.id}`;
+          return <div className="path-row" key={track.id}><IconTile icon={trackIcons[track.id]}/><div className="path-detail"><div><Link to={`/learn/${track.id}`}><h3>{track.title}</h3></Link><span>{count}/{track.lessons.length}</span></div><Progress value={count / track.lessons.length * 100}/><Link className="path-next" to={to}>{lesson ? `${count ? 'Continue' : 'Start'}: ${lesson.title}` : 'All lessons complete. Revisit the track.'}<ChevronRight size={14}/></Link></div><Link className="icon-button" to={to} aria-label={`Continue ${track.title}`}><ArrowRight size={19}/></Link></div>;
+        })}
       </section>
-      {(can('mock.create')||data.state.mocks.length>0||data.state.studyPlans.length>0)&&<section className="panel premium-dashboard"><div className="section-heading"><div><span className="eyebrow">DELIBERATE PRACTICE</span><h2>Your Premium Studio</h2></div><Link className="text-link" to="/premium/studio">Open Premium Studio <ArrowRight size={14}/></Link></div><p>{data.state.mocks.length} saved mock sessions · {data.state.customQuizzes.length} custom quizzes · {data.state.studyPlans.length} prep plans</p><div className="hero-actions"><Link className="button secondary small" to="/premium/mock">Mock interviews</Link><Link className="button secondary small" to="/premium/plans">Study plans</Link><Link className="button secondary small" to="/premium/projects">Project workbench</Link></div></section>}
-      {data.state.enrollments.length>0&&<section className="panel learning-path"><div className="section-heading"><h2>Your enrolled courses</h2><Link className="text-link" to="/learn/courses">All courses <ArrowRight size={14}/></Link></div>{courses.filter(c=>data.state.enrollments.includes(c.id)).map(course=>{const progress=courseCompletion(course,data.state),next=course.units.flatMap(u=>u.steps).find(s=>!courseStepComplete(s,data.state));return <div className="path-row" key={course.id}><IconTile icon={GraduationCap}/><div className="path-detail"><div><Link to={`/learn/courses/${course.id}`}><h3>{course.title}</h3></Link><span>{progress.complete}/{progress.total} steps</span></div><Progress value={progress.complete/progress.total*100}/><Link className="path-next" to={next?.to||`/learn/courses/${course.id}`}>{next?`Up next: ${next.title}`:'Course complete · review your record'}<ChevronRight size={14}/></Link></div></div>;})}</section>}
-      <section className="panel learning-path"><div className="section-heading"><div><span className="eyebrow">THE NEXT GOOD STEP</span><h2>Your learning paths</h2></div><span className="subtle-tag">{tracks.length} tracks</span></div>{tracks.slice(0,4).map(t=>{const count=t.lessons.filter(l=>data.state.read.includes(`${t.id}/${l.id}`)).length;const next=t.lessons.find(l=>!data.state.read.includes(`${t.id}/${l.id}`))||t.lessons[0];return <div className="path-row" key={t.id}><IconTile icon={trackIcons[t.id]} color={t.color}/><div className="path-detail"><div><Link to={`/learn/${t.id}`}><h3>{t.title}</h3></Link><span>{count}/{t.lessons.length} lessons</span></div><Progress value={count/t.lessons.length*100}/><Link className="path-next" to={`/learn/${t.id}/${next.id}`}>Up next: {next.title}<ChevronRight size={14}/></Link></div><Link className="icon-button" to={`/learn/${t.id}/${next.id}`} aria-label={`Continue ${t.title}`}><ArrowRight size={19}/></Link></div>;})}<Link className="all-link" to="/learn">Explore all learning tracks <ArrowRight size={16}/></Link></section>
-      <div className="dashboard-quick"><CardLink to="/community/questions" title="Explore interview questions" description="Search the local question library." icon={BookOpen}/><CardLink to="/learn/behavioral/stories" title="Build your story bank" description="Save the experience behind your impact." icon={Lightbulb} color="#a165a9"/></div>
+      {data.state.enrollments.length > 0 && <section className="panel learning-path"><div className="section-heading"><h2>Enrolled courses</h2><Link className="text-link" to="/learn/courses">All courses <ArrowRight size={15}/></Link></div>{courses.filter(course => data.state.enrollments.includes(course.id)).map(course => {
+        const progress = courseCompletion(course, data.state);
+        return <div className="path-row" key={course.id}><IconTile icon={BookOpen}/><div className="path-detail"><div><Link to={`/learn/courses/${course.id}`}><h3>{course.title}</h3></Link><span>{progress.complete}/{progress.total}</span></div><Progress value={progress.complete / progress.total * 100}/></div><Link className="icon-button" to={`/learn/courses/${course.id}`} aria-label={`Open ${course.title}`}><ArrowRight size={18}/></Link></div>;
+      })}</section>}
+      <section className="panel target-panel">
+        <div className="section-heading"><div><span className="eyebrow">PREPARE WITH INTENTION</span><h2>Your next interview</h2></div><button className="text-button" aria-expanded={adding} onClick={() => setAdding(!adding)}><Plus size={15}/>{adding ? 'Close form' : 'Add target'}</button></div>
+        {adding && <form className="target-form" onSubmit={event => {
+          event.preventDefault();
+          void act(async () => {
+            setState(await request<UserState>('/api/targets', { company, level, role, date }));
+            setAdding(false); setCompany(''); setDate(''); notify('Interview target saved.');
+          });
+        }}>
+          <label>Company<input list="companies" required minLength={2} maxLength={80} placeholder="Where are you interviewing?" value={company} onChange={event => setCompany(event.target.value)}/></label>
+          <datalist id="companies">{companies.map(item => <option key={item} value={item}/>)}</datalist>
+          <label>Level<select value={level} onChange={event => setLevel(event.target.value)}>{levels.map(item => <option key={item}>{item}</option>)}</select></label>
+          <label>Role<input required minLength={2} maxLength={80} value={role} onChange={event => setRole(event.target.value)}/></label>
+          <label>Interview date (optional)<input type="date" value={date} onChange={event => setDate(event.target.value)}/></label>
+          <button className="button" disabled={pending}>Save target <ArrowRight size={16}/></button>
+        </form>}
+        {!data.state.targets.length ? <div className="target-empty"><Target size={27} strokeWidth={1.4}/><div><h3>Give your preparation a destination.</h3><p>Add a company, role, and interview date when you have one.</p></div><button className="text-button" onClick={() => setAdding(true)}>Set a target <ArrowRight size={15}/></button></div> : <div className="target-list">{data.state.targets.map(target => <div key={target.id}><span className="company-letter">{target.company[0]}</span><div><strong>{target.company}</strong><p>{target.level} / {target.role}</p></div><span className="target-date"><CalendarDays size={15}/>{target.date ? new Date(`${target.date}T12:00:00`).toLocaleDateString('en', { month: 'short', day: 'numeric' }) : 'No date set'}</span><Link className="text-link" to={`/guides/${encodeURIComponent(target.company.toLowerCase())}/${encodeURIComponent(target.level.toLowerCase())}`}>Guide <ArrowRight size={15}/></Link><button className="icon-button" disabled={pending} aria-label={`Remove ${target.company} target`} onClick={() => act(async () => setState(await request<UserState>(`/api/targets/${encodeURIComponent(target.id)}`, undefined, 'DELETE')))}><Trash2 size={15}/></button></div>)}</div>}
+      </section>
     </div><aside className="dashboard-aside">
-      <section className="panel week-panel"><div className="section-heading"><h3>This week, at a glance</h3><Flame size={18}/></div><p>Make a little room for learning.</p><div className="week-days">{week.map(d=><div key={d.key}><span className={data.state.activity.includes(d.key)?'active':''}>{data.state.activity.includes(d.key)?<Check size={16}/>:<span/>}</span><small>{d.label}</small></div>)}</div><div className="streak-note"><strong>{currentStreak(data.state.activity)}-day streak</strong><span>Every step counts</span></div></section>
-      <section className="quiz-promo"><span className="eyebrow">A QUICK CHECK-IN</span><h3>What stuck?<br />Let’s find out.</h3><p>Turn a few minutes into a clearer picture of what you know.</p><Link className="button" to="/quiz">Take a quiz <ArrowRight size={16}/></Link><div className="quiz-promo-art" aria-hidden="true">?</div></section>
-      <section className="panel updates-panel"><div className="section-heading"><h3>From the Studio</h3><Sparkles size={17}/></div>{[{title:'Caching without surprises',tag:'SYSTEM DESIGN',to:'/learn/system-design/caching'},{title:'You own the result',tag:'AI-ASSISTED CODING',to:'/learn/ai-coding/introduction'},{title:'Make your experience concrete',tag:'BEHAVIORAL',to:'/learn/behavioral/introduction'}].map(p=><Link key={p.title} to={p.to}><span className="eyebrow">{p.tag}</span><strong>{p.title}</strong><ArrowRight size={16}/></Link>)}</section>
+      <section className="panel week-panel"><span className="eyebrow">SHOWING UP IS THE WORK</span><h3>Your last seven days</h3><div className="week-days">{week.map(day => <div key={day.key}><span className={data.state.activity.includes(day.key) ? 'active' : ''} aria-label={`${day.key}: ${data.state.activity.includes(day.key) ? 'active' : 'no activity'}`}>{data.state.activity.includes(day.key) ? <Check size={15}/> : <span/>}</span><small>{day.label}</small></div>)}</div><div className="streak-note"><strong>{week.filter(day => data.state.activity.includes(day.key)).length} active days</strong><span>UTC calendar</span></div></section>
+      <section className="review-note"><span className="eyebrow">CLOSE THE LOOP</span><h3>Know what<br/>stays with you.</h3><p>{data.state.review.length ? `${data.state.review.length} questions from your quizzes are ready for another look.` : 'A short quiz turns a good lesson into something you can recall.'}</p><Link className="text-link" to={data.state.review.length ? '/quiz/review' : '/quiz'}>{data.state.review.length ? 'Open your review' : 'Check your understanding'} <ArrowRight size={17}/></Link></section>
+      <div className="workspace-shortcuts"><Link to="/history"><Code2 size={19}/><span>Practice archive<small>Your drafts and feedback</small></span><ArrowRight size={17}/></Link><Link to="/learn/behavioral/stories"><BookOpen size={19}/><span>Story bank<small>Your experience, in your words</small></span><ArrowRight size={17}/></Link></div>
     </aside></div>
-    {data.state.read.length===0 && <section className="panel first-step"><div><h3>Start with one clear framework.</h3><p>Read the design introduction, then mark it complete to begin your learning streak.</p></div><ReadButton track="system-design" lesson="introduction"/></section>}
-  </>;
+  </div>;
 }

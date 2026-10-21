@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpen, ChevronDown, ChevronRight, ClipboardCheck, Code2, Command, GraduationCap, Home, Layers3, LifeBuoy, LogOut, Menu, MessageSquare, Moon, Network, Search, Settings2, Sparkles, Sun, Trophy, Users, X } from 'lucide-react';
+import { ArrowRight, BookOpen, CalendarDays, ChevronDown, ClipboardCheck, Code2, GraduationCap, Home, Layers3, LifeBuoy, LogOut, Menu, Moon, Network, Search, Settings2, Sparkles, Sun, Users, X } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { signOutAuth } from './auth-client';
 import { Link, useLocation, useNavigate } from './navigation';
@@ -7,6 +7,7 @@ import { isCommunityKind, parseStudioAddress } from '../shared/community-routes'
 import { AuthPrompt, NotFound } from './components/access';
 import { useStudio } from './store';
 import { ScreenBoundary, ScreenLoading, ScreenReady, useScreenFocus } from './ScreenBoundary';
+import { StudioMark } from './components/primitives';
 
 const Landing = lazy(() => import('./screens/Landing').then(module => ({ default: module.Landing })));
 const Dashboard = lazy(() => import('./screens/Home').then(module => ({ default: module.Dashboard })));
@@ -56,14 +57,14 @@ export function App() {
   const [theme,setTheme]=useState(()=>typeof window==='undefined'?'light':localStorage.getItem('studio-theme')||'light'),[mobileOpen,setMobileOpen]=useState(false);
   const navigationTrigger=useRef<HTMLButtonElement>(null),navigationClose=useRef<HTMLButtonElement>(null);
   const closeNavigation=useCallback(()=>{setMobileOpen(false);if(navigationTrigger.current?.getClientRects().length)navigationTrigger.current.focus();},[]);
-  const [learnOpen,setLearnOpen]=useState(true),[practiceOpen,setPracticeOpen]=useState(false),[communityOpen,setCommunityOpen]=useState(false);
+  const [learnOpen,setLearnOpen]=useState(false),[practiceOpen,setPracticeOpen]=useState(false),[communityOpen,setCommunityOpen]=useState(false);
   const path=location.pathname,address=parseStudioAddress(path,location.search),{segments}=address;
   const screenPath=address.detail?JSON.stringify([path,address.detail.kind,address.detail.id,address.detail.track ?? '']):segments[0]==='community'&&segments[1]==='post'?`${path}${location.search}`:path;
   const screenFocus=useScreenFocus(screenPath,data.user?.id,!loading&&!error);
   const isLanding=path==='/'&&!data.user,isAuth=['login','auth','register','invite','forgot-password','reset-password','verify-email'].includes(segments[0]);
   const publicLayout=isLanding||isAuth||!data.user&&['pricing','premium','aboutus','terms','privacy','security'].includes(segments[0]);
   useEffect(()=>{document.documentElement.dataset.theme=theme;localStorage.setItem('studio-theme',theme);},[theme]);
-  useEffect(()=>{setMobileOpen(false);window.scrollTo(0,0);if(segments[0]==='practice')setPracticeOpen(true);if(segments[0]==='community')setCommunityOpen(true);document.title=`${segments[0]?segments[0][0].toUpperCase()+segments[0].slice(1).replaceAll('-',' '):'Your next chapter'} · Interview Studio`;},[screenPath]);
+  useEffect(()=>{setMobileOpen(false);window.scrollTo(0,0);if(segments[0]==='learn')setLearnOpen(true);if(segments[0]==='practice')setPracticeOpen(true);if(segments[0]==='community')setCommunityOpen(true);document.title=`${segments[0]?segments[0][0].toUpperCase()+segments[0].slice(1).replaceAll('-',' '):'Your next chapter'} · Interview Studio`;},[screenPath]);
   useEffect(()=>{if(mobileOpen)navigationClose.current?.focus();},[mobileOpen]);
   useEffect(()=>{const shortcut=(e:KeyboardEvent)=>{if(e.defaultPrevented||e.isComposing)return;if((e.metaKey||e.ctrlKey)&&!e.altKey&&e.key.toLowerCase()==='k'){e.preventDefault();if(path==='/search')document.getElementById('studio-search')?.focus();else navigate('/search');}if(e.key==='Escape'&&mobileOpen)closeNavigation();};window.addEventListener('keydown',shortcut);return()=>window.removeEventListener('keydown',shortcut);},[navigate,path,mobileOpen,closeNavigation]);
   if(loading)return <div className="boot-screen"><div className="brand-mark">is</div><h2>Opening your Studio…</h2><span className="loading-bar"/></div>;
@@ -124,11 +125,52 @@ export function App() {
   const active=(to:string)=>navPath===to||to!=='/dashboard'&&navPath.startsWith(`${to}/`);
   const navLink=(to:string,label:string,icon?:typeof Home)=>{const Icon=icon;return <Link className={`nav-link ${active(to)?'active':''}`} to={to} aria-current={active(to)?'page':undefined} key={to}>{Icon&&<Icon size={17} strokeWidth={1.6}/>}<span>{label}</span>{active(to)&&<span className="nav-active-dot"/>}</Link>;};
   const toggleTheme=()=>setTheme(theme==='dark'?'light':'dark');
-  const brand=<Link className="brand" to={data.user?'/dashboard':'/'}><span className="brand-mark">is<span/></span><span>interview<span className="brand-light"> studio</span><b>.</b></span></Link>;
+  const brand=<Link className="brand" to={data.user?'/dashboard':'/'} aria-label="Interview Studio home"><StudioMark/><span>interview<span className="brand-light"> studio</span><b>.</b></span></Link>;
   return <div className={`app ${publicLayout?'public-layout':''}`}>
     <a className="skip-link" href="#main">Skip to content</a>
-    {!publicLayout&&<><aside id="studio-navigation" className={`sidebar ${mobileOpen?'mobile-open':''}`} aria-label="Primary navigation"><div className="sidebar-brand">{brand}<button ref={navigationClose} className="icon-button mobile-close" aria-label="Close navigation" onClick={closeNavigation}><X size={20}/></button></div><div className="sidebar-nav">{navLink('/dashboard','Your dashboard',Home)}<div className="nav-divider"/><span className="nav-section-label">MAKE YOUR NEXT STEP COUNT</span><button className={`nav-group ${segments[0]==='learn'?'current':''}`} aria-expanded={learnOpen} onClick={()=>setLearnOpen(!learnOpen)}><BookOpen size={17}/><span>Learn</span><ChevronDown size={14} style={{transform:learnOpen?'rotate(180deg)':undefined}}/></button>{learnOpen&&<div className="nav-children">{tracks.map(t=>navLink(`/learn/${t.id}`,t.title))}{navLink('/guides','Company guides')}{navLink('/blog','Studio journal')}</div>}<button className={`nav-group ${segments[0]==='practice'?'current':''}`} aria-expanded={practiceOpen} onClick={()=>setPracticeOpen(!practiceOpen)}><Code2 size={17}/><span>Practice</span><ChevronDown size={14} style={{transform:practiceOpen?'rotate(180deg)':undefined}}/></button>{practiceOpen&&<div className="nav-children">{practiceTracks.map(t=>navLink(`/practice/${t}`,practiceLabels[t]))}{navLink('/premium/mock','Mock interviews')}{navLink('/premium/projects','Project workbench')}{navLink('/history','Practice history')}{navLink('/learn/behavioral/stories','Your story bank')}</div>}<button className={`nav-group ${segments[0]==='community'?'current':''}`} aria-expanded={communityOpen} onClick={()=>setCommunityOpen(!communityOpen)}><Users size={17}/><span>Community</span><ChevronDown size={14} style={{transform:communityOpen?'rotate(180deg)':undefined}}/></button>{communityOpen&&<div className="nav-children">{navLink('/community/questions','Interview questions')}{navLink('/community/stories','Preparation stories')}{navLink('/community/submissions/system-design','System design library')}{navLink('/community/submissions/low-level-design','Object design library')}{navLink('/community/discussion','Ask the community')}</div>}{navLink('/quiz','Quizzes',ClipboardCheck)}{navLink('/premium/studio','Premium Studio',Sparkles)}{data.capabilities.staff&&navLink('/staff','Staff operations',Settings2)}<div className="sidebar-nudge"><Sparkles size={18}/><strong>A little more room to grow.</strong><p>{data.capabilities.commerce==='disabled'?'Premium subscriptions are not enabled yet.':'Review sandbox subscription options.'}</p><Link to="/pricing">See what’s included <ArrowRight size={14}/></Link></div></div><div className="sidebar-bottom">{data.user?<><Link className="sidebar-profile" to="/account"><span className="avatar">{data.user.name[0]}</span><div><strong>{data.user.name}</strong><span>Studio member</span></div><Settings2 size={16}/></Link><div className="sidebar-bottom-links">        <Link to="/support"><LifeBuoy size={15}/> Help</Link><button onClick={()=>act(async()=>{await signOutAuth();await refresh();navigate('/');})}><LogOut size={15}/> Sign out</button></div></>:<Link className="button" to="/login">Make this Studio yours <ArrowRight size={15}/></Link>}</div></aside>{mobileOpen&&<button className="mobile-backdrop" aria-label="Close navigation backdrop" onClick={closeNavigation}/>}</>}
-    <div className="app-body"><header className={`topbar ${publicLayout?'public-topbar':''}`}>{publicLayout?brand:<><button ref={navigationTrigger} className="icon-button mobile-menu" aria-label="Open navigation" aria-controls="studio-navigation" aria-expanded={mobileOpen} onClick={()=>setMobileOpen(true)}><Menu size={21}/></button><Link className="header-search" to="/search"><Search size={16}/><span>Search the Studio</span><kbd>⌘ K</kbd></Link></>}<nav className="topbar-actions" aria-label="Utility navigation">{publicLayout&&<><Link to="/learn">Learn</Link><Link to="/practice">Practice</Link><Link to="/community/questions" className="public-community-link">Community</Link></>}<Link to="/pricing" className="pricing-top-link">Plans</Link>{!isAuth&&<Link className="tutor-link" to="/tutor"><GraduationCap size={17}/><span>{data.capabilities.ai?'AI Tutor':'Study helper'}</span></Link>}{isLanding?<Link className="button small" to="/login">Your Studio <ArrowRight size={14}/></Link>:!isAuth&&<Link className="button small premium-top-link" to={data.user?'/account':'/login'}>{data.user?'Your account':'Sign in'}</Link>}<button className="theme-toggle icon-button" onClick={toggleTheme} aria-label={theme==='dark'?'Switch to light theme':'Switch to dark theme'}>{theme==='dark'?<Sun size={18}/>:<Moon size={18}/>}</button></nav></header><main id="main" tabIndex={-1} className={`main-content ${isLanding?'landing-content':''} ${isAuth?'auth-content':''}`}><ScreenBoundary key={data.user?.id ?? 'signed-out'} resetKey={`${path}${location.search}`} {...screenFocus}><Suspense fallback={<ScreenLoading/>}><ScreenReady {...screenFocus}>{content}</ScreenReady></Suspense></ScreenBoundary></main>{!isLanding&&!isAuth&&<div className="shell-footer"><span>Small steps. Stronger interviews.</span><div><Link to="/faq">FAQ</Link><Link to="/privacy">Privacy</Link><Link to="/support">Support</Link></div></div>}</div>
+    {!publicLayout&&<>
+      <aside id="studio-navigation" className={`sidebar ${mobileOpen?'mobile-open':''}`} aria-label="Primary navigation">
+        <div className="sidebar-brand">{brand}<button ref={navigationClose} className="icon-button mobile-close" aria-label="Close navigation" onClick={closeNavigation}><X size={20}/></button></div>
+        <div className="sidebar-nav">
+          <span className="nav-section-label">WORKSPACE</span>
+          {navLink('/dashboard','Overview',Home)}
+          {navLink('/history','Practice archive',Layers3)}
+          {navLink('/premium/plans','Study plans',CalendarDays)}
+          <div className="nav-divider"/>
+          <span className="nav-section-label">THE WORK</span>
+          <button className={`nav-group ${segments[0]==='learn'?'current':''}`} aria-expanded={learnOpen} onClick={()=>setLearnOpen(!learnOpen)}><BookOpen size={17}/><span>Learn</span><ChevronDown size={14} style={{transform:learnOpen?'rotate(180deg)':undefined}}/></button>
+          {learnOpen&&<div className="nav-children">{navLink('/learn','All learning tracks')}{tracks.map(track=>navLink(`/learn/${track.id}`,track.title))}{navLink('/learn/courses','Structured courses')}</div>}
+          <button className={`nav-group ${segments[0]==='practice'?'current':''}`} aria-expanded={practiceOpen} onClick={()=>setPracticeOpen(!practiceOpen)}><Code2 size={17}/><span>Practice</span><ChevronDown size={14} style={{transform:practiceOpen?'rotate(180deg)':undefined}}/></button>
+          {practiceOpen&&<div className="nav-children">{navLink('/practice','All practice')}{practiceTracks.map(track=>navLink(`/practice/${track}`,practiceLabels[track]))}{navLink('/premium/mock','Mock interviews')}{navLink('/premium/projects','Project workbench')}{navLink('/learn/behavioral/stories','Story bank')}</div>}
+          {navLink('/quiz','Test your knowledge',ClipboardCheck)}
+          {navLink('/tutor',data.capabilities.ai?'AI tutor':'Study helper',GraduationCap)}
+          <div className="nav-divider"/>
+          <span className="nav-section-label">PERSPECTIVE</span>
+          <button className={`nav-group ${segments[0]==='community'?'current':''}`} aria-expanded={communityOpen} onClick={()=>setCommunityOpen(!communityOpen)}><Users size={17}/><span>Community</span><ChevronDown size={14} style={{transform:communityOpen?'rotate(180deg)':undefined}}/></button>
+          {communityOpen&&<div className="nav-children">{navLink('/community/questions','Interview questions')}{navLink('/community/stories','Preparation stories')}{navLink('/community/submissions/system-design','System design library')}{navLink('/community/submissions/low-level-design','Object design library')}{navLink('/community/discussion','Discussions')}</div>}
+          {navLink('/guides','Company guides',Network)}
+          {navLink('/blog','Studio journal',BookOpen)}
+          {data.capabilities.staff&&<><div className="nav-divider"/>{navLink('/staff','Staff operations',Settings2)}{data.capabilities.staff.roles.includes('administrator')&&navLink('/admin/invitations','Invitations',Users)}</>}
+        </div>
+        <div className="sidebar-bottom">{data.user?<><Link className="sidebar-profile" to="/account"><span className="avatar">{data.user.name[0]}</span><div><strong>{data.user.name}</strong><span>Personal workspace</span></div><Settings2 size={16}/></Link><div className="sidebar-bottom-links"><Link to="/support"><LifeBuoy size={15}/> Support</Link><button onClick={()=>act(async()=>{await signOutAuth();await refresh();navigate('/');})}><LogOut size={15}/> Sign out</button></div></>:<Link className="button" to="/login">Sign in to your Studio <ArrowRight size={15}/></Link>}</div>
+      </aside>
+      {mobileOpen&&<button className="mobile-backdrop" aria-label="Close navigation backdrop" onClick={closeNavigation}/>}
+    </>}
+    <div className="app-body">
+      <header className={`topbar ${publicLayout?'public-topbar':''}`}>
+        {publicLayout?brand:<><button ref={navigationTrigger} className="icon-button mobile-menu" aria-label="Open navigation" aria-controls="studio-navigation" aria-expanded={mobileOpen} onClick={()=>setMobileOpen(true)}><Menu size={21}/></button><Link className="header-search" to="/search"><Search size={17}/><span>Search lessons, practice, and more</span><kbd>⌘ K</kbd></Link></>}
+        <nav className="topbar-actions" aria-label="Utility navigation">
+          {publicLayout&&<><Link to="/learn">Library</Link><Link to="/practice">Practice</Link><Link to="/community/questions" className="public-community-link">Community</Link></>}
+          {!isAuth&&<Link className="text-link header-account" to={data.user?'/account':'/login'}>{data.user?'Account':'Sign in'}<ArrowRight size={15}/></Link>}
+          <button className="theme-toggle icon-button" onClick={toggleTheme} aria-label={theme==='dark'?'Switch to light theme':'Switch to dark theme'}>{theme==='dark'?<Sun size={18}/>:<Moon size={18}/>}</button>
+        </nav>
+      </header>
+      <main id="main" tabIndex={-1} className={`main-content ${isLanding?'landing-content':''} ${isAuth?'auth-content':''}`}>
+        {isAuth&&<aside className="auth-introduction"><span className="eyebrow">YOUR THINKING. YOUR WORKSPACE.</span><h2>A little more<br/><em>deliberate.</em></h2><p>Build the knowledge. Work through the decisions. Keep what you learn.</p><div><StudioMark/><span>INTERVIEW STUDIO<br/>PREPARE WITH INTENTION</span></div></aside>}
+        <ScreenBoundary key={data.user?.id ?? 'signed-out'} resetKey={`${path}${location.search}`} {...screenFocus}><Suspense fallback={<ScreenLoading/>}><ScreenReady {...screenFocus}>{content}</ScreenReady></Suspense></ScreenBoundary>
+      </main>
+      {!isLanding&&!isAuth&&<div className="shell-footer"><span>Prepare with intention.</span><div><Link to="/faq">FAQ</Link><Link to="/privacy">Privacy</Link><Link to="/support">Support</Link></div></div>}
+    </div>
     {toast&&<div className={`toast ${toast.error?'error':''}`} role={toast.error?'alert':'status'}><span>{toast.error?<X size={17}/>:<Sparkles size={17}/>}</span>{toast.text}</div>}
   </div>;
 }

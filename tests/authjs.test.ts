@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Account, Profile } from 'next-auth';
 import { assertSocialAdmission, socialProof, type SocialProof } from '../server/auth/admission';
-import { AuthConfigurationError, invitationHash, loadAuthSettings } from '../server/auth/config';
+import { AuthConfigurationError, configuredSocialProviders, invitationHash, loadAuthSettings } from '../server/auth/config';
 import {
   decryptTotpSecret,
   encryptTotpSecret,
@@ -25,7 +25,7 @@ const environment = {
   AUTH_MFA_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64url'),
 };
 
-test('Auth.js configuration is all-or-nothing, canonical and stores only invitation fingerprints', () => {
+test('Auth.js requires complete core settings and complete optional provider pairs', () => {
   assert.equal(loadAuthSettings({}), null);
   const config = loadAuthSettings(environment);
   assert.ok(config);
@@ -37,6 +37,7 @@ test('Auth.js configuration is all-or-nothing, canonical and stores only invitat
   assert.equal(JSON.stringify(config).includes('invited@example.com'), false);
   assert.equal(config.mfaEncryptionKey.byteLength, 32);
   for (const [key, value] of Object.entries(environment)) {
+    if (key === 'AUTH_INVITED_EMAILS') continue;
     const malformed = { ...environment, [key]: undefined };
     assert.throws(() => loadAuthSettings(malformed), (error: unknown) => {
       assert.ok(error instanceof AuthConfigurationError);
@@ -48,6 +49,28 @@ test('Auth.js configuration is all-or-nothing, canonical and stores only invitat
     assert.throws(() => loadAuthSettings({ ...environment, AUTH_MFA_ENCRYPTION_KEY: value }),
       /AUTH_MFA_ENCRYPTION_KEY/);
   }
+});
+
+test('password-only deployments do not advertise unavailable social providers or require a static invite list', () => {
+  const config = loadAuthSettings({
+    NEXTAUTH_URL: environment.NEXTAUTH_URL,
+    NEXTAUTH_SECRET: environment.NEXTAUTH_SECRET,
+    AUTH_MFA_ENCRYPTION_KEY: environment.AUTH_MFA_ENCRYPTION_KEY,
+  });
+  assert.ok(config);
+  assert.equal(config.google, null);
+  assert.equal(config.facebook, null);
+  assert.deepEqual(config.inviteEmailHashes, []);
+  assert.deepEqual(configuredSocialProviders(config), []);
+  assert.deepEqual(configuredSocialProviders(loadAuthSettings({
+    NEXTAUTH_URL: environment.NEXTAUTH_URL,
+    NEXTAUTH_SECRET: environment.NEXTAUTH_SECRET,
+    AUTH_MFA_ENCRYPTION_KEY: environment.AUTH_MFA_ENCRYPTION_KEY,
+    AUTH_GOOGLE_CLIENT_ID: '', AUTH_GOOGLE_CLIENT_SECRET: '',
+    AUTH_FACEBOOK_CLIENT_ID: '', AUTH_FACEBOOK_CLIENT_SECRET: '',
+  })), []);
+  assert.deepEqual(configuredSocialProviders(loadAuthSettings(environment)), ['google', 'facebook']);
+  assert.throws(() => loadAuthSettings({ ...environment, AUTH_GOOGLE_CLIENT_SECRET: undefined }), /AUTH_GOOGLE_CLIENT_SECRET/);
 });
 
 test('TOTP secrets are encrypted per owner and authenticator or recovery values are one-way and replay-aware', () => {

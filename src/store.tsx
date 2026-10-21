@@ -83,7 +83,7 @@ export function StudioProvider({ children }: { children: ReactNode }) {
       auth: {
         mode: 'managed',
         system: 'authjs',
-        providers: ['google', 'facebook'],
+        providers: [],
         legacyLink: false,
         securityLifecycle: false,
       },

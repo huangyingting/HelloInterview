@@ -29,16 +29,16 @@ export function createAuthOptions(): NextAuthOptions {
     },
     pages: { signIn: '/auth', error: '/auth' },
     providers: [
-      GoogleProvider({
+      ...(settings.google ? [GoogleProvider({
         clientId: settings.google.clientId,
         clientSecret: settings.google.clientSecret,
         authorization: { params: { prompt: 'select_account', scope: 'openid email profile' } },
-      }),
-      FacebookProvider({
+      })] : []),
+      ...(settings.facebook ? [FacebookProvider({
         clientId: settings.facebook.clientId,
         clientSecret: settings.facebook.clientSecret,
         authorization: { params: { scope: 'public_profile,email' } },
-      }),
+      })] : []),
     ],
     callbacks: {
       async signIn({ account, profile }) {

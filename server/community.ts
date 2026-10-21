@@ -65,7 +65,8 @@ function post(value: unknown): CommunityPost {
 export class CommunityReads {
   constructor(private readonly db: Database) {}
   private visible(alias='p') {
-    return `NOT EXISTS(SELECT 1 FROM community_moderation_targets moderation
+    return `${alias}.sample=0 AND EXISTS(SELECT 1 FROM users author WHERE author.id=${alias}.author_id AND author.demo=0)
+      AND NOT EXISTS(SELECT 1 FROM community_moderation_targets moderation
       WHERE moderation.target_type='post' AND moderation.target_id=${alias}.id AND moderation.state='hidden')
       AND NOT EXISTS(SELECT 1 FROM community_mutes mute WHERE mute.owner_id=? AND mute.subject_id=${alias}.author_id
         AND mute.state='muted')

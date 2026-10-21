@@ -518,8 +518,8 @@ export interface Bootstrap {
     billing?: { mode: 'sandbox'; checkout: boolean };
     aiPolicy?: { model: string; notice: string; consent: 'sandbox-ai-usage-v1'; monthlyUnits: number };
     ai: boolean;
-    commerce: 'demo' | 'disabled';
-    community: 'local' | 'read-only';
+    commerce: 'disabled';
+    community: 'managed' | 'read-only';
     aiModel: string | null;
     fieldMetrics: boolean;
     participantPolicy?: ParticipantPolicy;

@@ -43,8 +43,8 @@ async function findAccountByEmail(normalizedEmail: string): Promise<PasswordAcco
     LEFT JOIN password_credentials pc ON pc.user_id = u.id
     LEFT JOIN managed_identities ei
       ON ei.user_id = u.id AND ei.provider = 'email'
-    WHERE lower(a.contact_email) = ${normalizedEmail}
-       OR lower(u.email) = ${normalizedEmail}
+    WHERE u.demo=0 AND (lower(a.contact_email) = ${normalizedEmail}
+       OR lower(u.email) = ${normalizedEmail})
     LIMIT 1
   `;
   return rows[0] ?? null;
@@ -220,7 +220,7 @@ export async function requestPasswordReset(input: {
     expiresAt,
   });
 
-  if (delivery.status !== 'sent') {
+  if (delivery.status !== 'queued') {
     await prisma.password_credentials.updateMany({
       where: { user_id: account.user_id, reset_token_hash: tokenHash },
       data: { reset_token_hash: null, reset_expires_at: null, updated_at: now },

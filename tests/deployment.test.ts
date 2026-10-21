@@ -34,7 +34,7 @@ test('Auth.js service preflight configuration is complete and secret-free', () =
   assert.equal(config.billing, null);
   for (const malformed of [
     { NEXTAUTH_SECRET: undefined },
-    { AUTH_INVITED_EMAILS: undefined },
+    { AUTH_MFA_ENCRYPTION_KEY: undefined },
     { PRIVACY_RETENTION_NOTICE: undefined },
     { TRUST_PROXY: undefined },
   ]) {
@@ -97,8 +97,12 @@ test('Azure VM runtime consumes only the verified release and remains secret-gat
 
   const installer = await readFile('deploy/azure-vm/install-runtime-units.sh', 'utf8');
   assert.match(installer, /interview-studio-preflight\.service/);
+  assert.match(installer, /interview-studio-account-mail-worker\.service/);
   assert.match(installer, /systemctl disable interview-studio\.service/);
   assert.doesNotMatch(installer, /systemctl (?:enable|start|restart)/);
+  const mailWorker = await readFile('deploy/azure-vm/interview-studio-account-mail-worker.service', 'utf8');
+  assert.match(mailWorker, /node dist-server\/account-admission\/cli\.js worker/);
+  assert.match(mailWorker, /--read-only.*--cap-drop ALL.*--security-opt no-new-privileges/);
 
   const serviceEnv = await readFile('deploy/azure-vm/service.env.example', 'utf8');
   for (const setting of ['NEXTAUTH_URL', 'NEXTAUTH_SECRET', 'AUTH_GOOGLE_CLIENT_ID',

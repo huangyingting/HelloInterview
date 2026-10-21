@@ -12,11 +12,12 @@ install -o root -g root -m 0644 "$script_dir/grant-runtime.sql" /usr/local/share
 for unit in \
   interview-studio.service \
   interview-studio-privacy-worker.service \
+  interview-studio-account-mail-worker.service \
   interview-studio-preflight.service \
   interview-studio-migrate.service
 do
   install -o root -g root -m 0644 "$script_dir/$unit" "/etc/systemd/system/$unit"
 done
 systemctl daemon-reload
-systemctl disable interview-studio.service interview-studio-privacy-worker.service >/dev/null 2>&1 || true
+systemctl disable interview-studio.service interview-studio-privacy-worker.service interview-studio-account-mail-worker.service >/dev/null 2>&1 || true
 echo "Interview Studio units were installed and remain disabled."

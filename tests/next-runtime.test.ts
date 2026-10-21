@@ -139,6 +139,7 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
   await migrateJobs(migration);
   await migration.close();
   const previous = process.env.DATABASE_URL;
+  const previousCommunity = process.env.COMMUNITY_WRITES_ENABLED;
   process.env.DATABASE_URL = url.href;
   for (const key of ['NEXTAUTH_URL', 'NEXTAUTH_SECRET', 'AUTH_GOOGLE_CLIENT_ID', 'AUTH_GOOGLE_CLIENT_SECRET',
     'AUTH_FACEBOOK_CLIENT_ID', 'AUTH_FACEBOOK_CLIENT_SECRET', 'AUTH_INVITED_EMAILS',
@@ -157,6 +158,7 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     AUTH_FACEBOOK_CLIENT_SECRET: 'facebook-secret',
     AUTH_INVITED_EMAILS: 'next-auth-owner@example.test',
     AUTH_MFA_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64url'),
+    COMMUNITY_WRITES_ENABLED: 'true',
     STRIPE_TEST_ACCOUNT_ID: 'acct_NextRuntimeFixture',
     STRIPE_TEST_SECRET_KEY: 'rk_test_NextRuntimeFixtureOnly',
     STRIPE_TEST_WEBHOOK_SECRET: 'whsec_NextRuntimeFixtureOnly',
@@ -171,6 +173,7 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     await closeNextPrivacyService();
     await prismaConnection().close();
     if (previous === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = previous;
+    if (previousCommunity === undefined) delete process.env.COMMUNITY_WRITES_ENABLED; else process.env.COMMUNITY_WRITES_ENABLED = previousCommunity;
     try { await root.exec(`DROP SCHEMA ${schema} CASCADE`); } finally { await root.close(); }
   });
   const db = prismaConnection();
@@ -189,6 +192,7 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
   assert.equal(bootstrapResponse.status, 200);
   assert.equal(bootstrapPayload.user, null);
   assert.equal(bootstrapPayload.capabilities.auth.system, 'authjs');
+  assert.equal(bootstrapPayload.capabilities.community, 'managed');
   assert.equal(bootstrapPayload.capabilities.access.state, 'visitor');
   assert.deepEqual(bootstrapPayload.capabilities.billing, { mode: 'sandbox', checkout: true });
   const owner = 'next-public-owner';
@@ -756,12 +760,32 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
   }));
   const updatedComment = await updatedCommentResponse.json();
   assert.equal(updatedComment.revision, 1);
+  process.env.COMMUNITY_WRITES_ENABLED = 'false';
+  const pausedBootstrap = await bootstrap(new Request('https://studio.fixture/api/bootstrap', { headers: { Cookie: accountCookies } }));
+  assert.equal((await pausedBootstrap.json()).capabilities.community, 'read-only');
+  const pausedRoutes = [
+    [createPostRoute, '/api/posts', 'POST'],
+    [postActionRoute, '/api/posts/actions', 'POST'],
+    [createCommentRoute, '/api/comments', 'POST'],
+    [createCommentSubmissionRoute, '/api/comments/submissions', 'POST'],
+    [updateOwnedPostRoute, '/api/posts/owned', 'PUT'],
+    [updateOwnedCommentRoute, '/api/comments/owned', 'PUT'],
+  ] as const;
+  const beforePaused = await db.prepare('SELECT count(*) AS count FROM comments').get();
+  for (const [route, path, method] of pausedRoutes) {
+    const result = await route(new Request(`https://studio.fixture${path}`, {
+      method, headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf }, body: '{}',
+    }));
+    assert.equal(result.status, 403, path);
+  }
+  assert.deepEqual(await db.prepare('SELECT count(*) AS count FROM comments').get(), beforePaused);
   const deletedCommentResponse = await deleteOwnedCommentRoute(new Request('https://studio.fixture/api/comments/owned', {
     method: 'DELETE',
     headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
     body: JSON.stringify({ id: commentId, revision: 1, requestId: randomUUID() }),
   }));
   assert.equal((await deletedCommentResponse.json()).receipt.status, 'tombstoned');
+  process.env.COMMUNITY_WRITES_ENABLED = 'true';
   const directCommentResponse = await createCommentRoute(new Request('https://studio.fixture/api/comments', {
     method: 'POST',
     headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
@@ -772,12 +796,14 @@ test('Next.js health, readiness, Prisma transactions and visitor bootstrap use t
     }),
   }));
   assert.equal((await directCommentResponse.json()).comment.isMine, true);
+  process.env.COMMUNITY_WRITES_ENABLED = 'false';
   const deletedPostResponse = await deleteOwnedPostRoute(new Request('https://studio.fixture/api/posts/owned', {
     method: 'DELETE',
     headers: { Cookie: accountCookies, 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
     body: JSON.stringify({ id: createdPostId, revision: updatedPost.revision }),
   }));
   assert.deepEqual(await deletedPostResponse.json(), { deleted: true });
+  process.env.COMMUNITY_WRITES_ENABLED = 'true';
   const restrictionId = randomUUID();
   const now = new Date();
   const restrictionExpires = new Date(now.getTime() + 3600000).toISOString();

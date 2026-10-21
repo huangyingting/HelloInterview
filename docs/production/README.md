@@ -99,6 +99,7 @@ service with defined recovery and support commitments.
 | [65 - Next.js owned sandbox billing](65-nextjs-owned-sandbox-billing.md) | Auth.js/CSRF owned billing Route Handlers, bounded raw Stripe webhooks and Prisma transaction-coupled worker completion; sandbox only with deployment and live-commerce gates remaining | Billing, identity and full-stack |
 | [66 - Managed AI native worker](66-managed-ai-native-worker.md) | Explicit Azure policy, consent-gated Next.js admission/status/cancellation, native claim fencing, measured token cost and atomic Prisma publication; no authentic Azure or public-beta enablement | AI, privacy and operations |
 | [67 - Next.js standalone release](67-next-standalone-release.md) | Sanitized standalone artifact, Next-only application container, retained worker entrypoints, authenticated restart/encrypted-restore acceptance and zero-legacy source cleanup; Azure cutover remains | Platform, full-stack and operations |
+| [69 - Editorial product workspace](69-editorial-product-workspace.md) | Distinctive product UI, self-hosted typography, migration 42 marker-only demo cleanup, preserved training content, password-only admission, gated community publishing and compiled account email delivery | Product, full-stack and operations |
 
 Read 01 and 07 for prioritization; use 02 as the technical foundation, then the
 relevant feature specification. The roadmap's work-package IDs are intended to

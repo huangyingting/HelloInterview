@@ -52,7 +52,7 @@ export async function pruneAccountAdmissionRecords(
     prisma.account_email_outbox.deleteMany({
       where: {
         OR: [
-          { expires_at: { lte: now } },
+          { status: { not: 'sending' }, expires_at: { lte: now } },
           {
             status: { in: ['sent', 'failed', 'unconfirmed', 'expired'] },
             created_at: { lt: terminalInvitationCutoff },

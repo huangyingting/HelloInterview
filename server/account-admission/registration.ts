@@ -390,7 +390,7 @@ export async function registerInPublicMode(input: {
     expiresAt,
   });
 
-  if (delivery.status !== 'sent') {
+  if (delivery.status !== 'queued') {
     await prisma.pending_registrations.deleteMany({
       where: { normalized_email: normalizedEmail, token_hash: tokenHash },
     });
