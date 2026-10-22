@@ -1,7 +1,8 @@
 # Next.js standalone release
 
-**Status: release and recovery checkpoint; the operated Azure upstream remains
-disabled behind the canonical 503.**
+**Status: release and recovery checkpoint.** The upstream was disabled when this
+checkpoint shipped; [70](70-azure-private-beta-activation.md) records its subsequent
+password-only private-beta activation.
 
 The production application container now starts the Next.js standalone server,
 not the Express bundle. Migration and worker commands remain separately compiled
@@ -76,5 +77,6 @@ All legacy Vite, React Router, Express, Auth0/OIDC broker, and SQLite
 service-runtime code and tests have been removed from the repository; only the
 explicit read-only `server/db/legacy-import.ts` maintenance utility uses
 built-in `node:sqlite` for offline snapshot inspection. Authentic Google/Facebook
-provider acceptance, exact-SHA Azure smoke/rollback evidence, and Caddy cutover
-remain required before opening `https://interview.genisisiq.com`.
+provider acceptance remains required before enabling those providers. Exact-SHA
+password-only Azure activation and live smoke evidence are recorded in
+[70](70-azure-private-beta-activation.md); that bounded beta does not require OAuth.
