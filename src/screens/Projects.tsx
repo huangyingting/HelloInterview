@@ -9,6 +9,7 @@ import { runCode, type TestResult } from '../sandbox';
 import { request, useStudio, waitForManagedAi, type ManagedAiReceipt } from '../store';
 import { ContentStatus, useContent } from '../content';
 import { download } from '../download';
+import { Select } from '../components/Select';
 
 export function ProjectsPage({ id }: { id?: string }) {
   return id ? <ProjectEditor id={id} /> : <ProjectSetup />;
@@ -39,7 +40,7 @@ function ProjectSetup() {
     <PremiumAccess feature="project.create"><div className="two-column"><form className="panel premium-form" onSubmit={e => { e.preventDefault(); void act(async () => {
       const result = await request<{ state: UserState; project: ProjectWorkspace }>('/api/projects', { title, problemId, files });
       setState(result.state); navigate(`/premium/projects/${result.project.id}`);
-    }); }}><h2>A bounded project task</h2><label>Project title<input aria-label="Project title" value={title} onChange={e => setTitle(e.target.value)} minLength={3} maxLength={100} required /></label><label>Acceptance task<select aria-label="Project task" value={problemId} onChange={e => setProblemId(e.target.value)}>{problems.filter(p => p.track === 'ai-coding').map(p => <option value={p.id} key={p.id}>{p.title}</option>)}</select></label>
+    }); }}><h2>A bounded project task</h2><label>Project title<input aria-label="Project title" value={title} onChange={e => setTitle(e.target.value)} minLength={3} maxLength={100} required /></label><label>Acceptance task<Select aria-label="Project task" value={problemId} onValueChange={selectedValue => setProblemId(selectedValue)} options={problems.filter(p => p.track === 'ai-coding').map(p => ({ value: p.id, label: p.title }))}/></label>
       <button type="button" className="button secondary small" onClick={() => act(async () => setFiles(await starterFiles(problemId)))}>Use starter files <Code2 size={16} /></button>
       <label>Or import your text source files<input aria-label="Import source files" type="file" multiple disabled={pending} accept=".js,.jsx,.ts,.tsx,.json,.md,.css,.html,.py,.go,.java" onChange={e => {
         const input = e.currentTarget, selected = [...(input.files || [])];

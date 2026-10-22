@@ -8,6 +8,7 @@ import type { UserState } from '../../shared/types';
 import { IconTile, Progress } from '../components/primitives';
 import { request, useStudio } from '../store';
 import { trackIcons } from '../track-icons';
+import { Select } from '../components/Select';
 
 export function Dashboard() {
   const { data, setState, act, notify, pending } = useStudio();
@@ -61,7 +62,7 @@ export function Dashboard() {
         }}>
           <label>Company<input list="companies" required minLength={2} maxLength={80} placeholder="Where are you interviewing?" value={company} onChange={event => setCompany(event.target.value)}/></label>
           <datalist id="companies">{companies.map(item => <option key={item} value={item}/>)}</datalist>
-          <label>Level<select value={level} onChange={event => setLevel(event.target.value)}>{levels.map(item => <option key={item}>{item}</option>)}</select></label>
+          <label>Level<Select aria-label="Level" value={level} onValueChange={selectedValue => setLevel(selectedValue)} options={levels.map(item => ({ value: item, label: item }))}/></label>
           <label>Role<input required minLength={2} maxLength={80} value={role} onChange={event => setRole(event.target.value)}/></label>
           <label>Interview date (optional)<input type="date" value={date} onChange={event => setDate(event.target.value)}/></label>
           <button className="button" disabled={pending}>Save target <ArrowRight size={16}/></button>

@@ -151,3 +151,42 @@ test('editorial text and primary actions retain AA contrast in both themes', asy
     for (const result of contrast) expect(result.ratio, `${theme} ${result.selector}`).toBeGreaterThanOrEqual(4.5);
   }
 });
+
+test('compact workspace retains hierarchy and uses custom target selection', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await signIn(page);
+  const density = await page.evaluate(() => ({
+    header: document.querySelector('.topbar')!.getBoundingClientRect().height,
+    inset: parseFloat(getComputedStyle(document.querySelector('.main-content')!).paddingTop),
+    panel: parseFloat(getComputedStyle(document.querySelector('.learning-path')!).paddingTop),
+    gap: parseFloat(getComputedStyle(document.querySelector('.dashboard-grid')!).columnGap),
+  }));
+  expect(density).toEqual({ header: 64, inset: 24, panel: 18, gap: 18 });
+  await page.getByRole('button', { name: 'Add target', exact: true }).click();
+  const level = page.getByRole('combobox', { name: 'Level', exact: true });
+  await level.click();
+  await page.getByRole('option', { name: 'Staff', exact: true }).click();
+  await expect(level).toHaveText('Staff');
+  await expect(page.locator('select')).toHaveCount(0);
+  await expectReflow(page);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path: testInfo.outputPath('compact-workspace.png'), fullPage: true });
+});
+
+test('custom selectors update real practice filters and company navigation', async ({ page }) => {
+  await page.goto('/practice/code');
+  const difficulty = page.getByRole('combobox', { name: 'Filter difficulty', exact: true });
+  await difficulty.click();
+  await page.getByRole('option', { name: 'Hard', exact: true }).click();
+  const badges = page.locator('.practice-row > .badge');
+  expect(await badges.count()).toBeGreaterThan(0);
+  await expect(badges).toHaveText(Array(await badges.count()).fill('Hard'));
+  await page.goto('/guides/meta/senior');
+  await page.getByRole('combobox', { name: 'Guide company', exact: true }).click();
+  await page.getByRole('option', { name: 'Google', exact: true }).click();
+  await expect(page).toHaveURL(/\/guides\/google\/senior$/);
+  await page.getByRole('combobox', { name: 'Guide level', exact: true }).click();
+  await page.getByRole('option', { name: 'Staff', exact: true }).click();
+  await expect(page).toHaveURL(/\/guides\/google\/staff$/);
+  await expect(page.getByRole('listbox')).toHaveCount(0);
+});

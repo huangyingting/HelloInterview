@@ -7,6 +7,7 @@ import { AuthPrompt, Badge, Empty, IconTile, NotFound, PageHeading, Progress, So
 import { request, useStudio } from '../store';
 import { ContentStatus, useContent } from '../content';
 import { download } from '../download';
+import { Select } from '../components/Select';
 
 export function QuizIndex() {
   const {data}=useStudio(),[track,setTrack]=useState('all'),[history,setHistory]=useState('');
@@ -37,7 +38,7 @@ export function QuizRunner({topic}:{topic:string}) {
   const sessionId = params.get('session');
   if(sessionId)return <TopicQuizSession id={sessionId} topic={topic} label={label}/>;
   if(!questions.length)return <><PageHeading title="Your review deck is clear." description="Keep learning. Future missed questions will appear here."/><Link className="button" to="/quiz">Explore quizzes <ArrowRight size={16}/></Link></>;
-  return <div className="quiz-setup"><IconTile icon={ClipboardCheck}/><span className="eyebrow">{label}</span><h1>Let’s see what stuck.</h1><p>{questions.length} questions. A little reasoning, a little reflection.<br />You’ll get an explanation after each saved answer.</p><label>Interview level<select aria-label="Quiz interview level" value={level} onChange={e=>setLevel(e.target.value)}>{['Junior','Mid-level','Senior','Staff'].map(l=><option key={l}>{l}</option>)}</select></label><p className="fine-print">Level is shown for context. These original questions are not adaptively generated.</p><button className="button" disabled={pending} onClick={()=>act(async()=>{const session=await request<QuizSessionView>('/api/quiz-sessions',{topic});navigate(`/quiz/${topic}?session=${session.id}`,{replace:true});})}>Start quiz <ArrowRight size={17}/></button><Link className="text-link" to="/quiz">Back to all topics</Link></div>;
+  return <div className="quiz-setup"><IconTile icon={ClipboardCheck}/><span className="eyebrow">{label}</span><h1>Let’s see what stuck.</h1><p>{questions.length} questions. A little reasoning, a little reflection.<br />You’ll get an explanation after each saved answer.</p><label>Interview level<Select aria-label="Quiz interview level" value={level} onValueChange={selectedValue => setLevel(selectedValue)} options={['Junior', 'Mid-level', 'Senior', 'Staff'].map(l => ({ value: l, label: l }))}/></label><p className="fine-print">Level is shown for context. These original questions are not adaptively generated.</p><button className="button" disabled={pending} onClick={()=>act(async()=>{const session=await request<QuizSessionView>('/api/quiz-sessions',{topic});navigate(`/quiz/${topic}?session=${session.id}`,{replace:true});})}>Start quiz <ArrowRight size={17}/></button><Link className="text-link" to="/quiz">Back to all topics</Link></div>;
 }
 function TopicQuizSession({ id, topic, label }: { id: string; topic: string; label: string }) {
   const resource = useContent<QuizSessionView>(`/api/quiz-sessions/${encodeURIComponent(id)}`);

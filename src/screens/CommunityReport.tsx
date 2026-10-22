@@ -6,6 +6,7 @@ import type {
   CommunityRestrictionAppealPage,CommunityRestrictionAppealReceipt,CommunityRestrictionStatus,
 } from '../../shared/types';
 import {request,useStudio} from '../store';
+import { Select } from '../components/Select';
 
 const labels:Record<CommunityReportCategory,string>={
   spam:'Spam or deceptive content',harassment:'Harassment or abuse',privacy:'Private or sensitive information',
@@ -32,9 +33,7 @@ export function CommunityReportControl({targetType,targetId}:{targetType:'post'|
   return <div className="community-report-control">
     <button className="text-button" aria-expanded={open} onClick={()=>setOpen(value=>!value)}>Report {targetType}</button>
     {open&&<form className="panel" onSubmit={event=>{event.preventDefault();void submit();}}>
-      <label>Policy concern<select value={category} onChange={event=>setCategory(event.target.value as CommunityReportCategory)}>
-        {Object.entries(labels).map(([value,label])=><option value={value} key={value}>{label}</option>)}
-      </select></label>
+      <label>Policy concern<Select aria-label="Policy concern" value={category} onValueChange={selectedValue => setCategory(selectedValue as CommunityReportCategory)} options={Object.entries(labels).map(([value, label]) => ({ value: value, label: label }))}/></label>
       <label>What should a moderator review?
         <textarea required minLength={20} maxLength={1000} value={details} onChange={event=>setDetails(event.target.value)}
           placeholder="Describe the specific concern without adding unrelated private information."/>

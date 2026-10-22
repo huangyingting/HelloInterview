@@ -9,6 +9,7 @@ import { request, useStudio } from '../store';
 import { QuizAnswerChoices, SavedQuizReport } from './Quiz';
 import { ContentStatus, useContent } from '../content';
 import { download } from '../download';
+import { Select } from '../components/Select';
 
 export function CustomQuizPage({ id }: { id?: string }) {
   return id ? <CustomQuizSession id={id} /> : <CustomQuizBuilder />;
@@ -24,7 +25,7 @@ function CustomQuizBuilder() {
       setState(result.state); navigate(`/quiz/custom/${result.quiz.id}`);
     }); }}><label>Session title<input aria-label="Custom quiz title" value={title} onChange={e => setTitle(e.target.value)} required minLength={3} maxLength={100} /></label>
       <fieldset className="custom-topic-grid"><legend>Select topics</legend>{quizTopics.map(topic => <label key={topic.id}><input type="checkbox" aria-label={`Quiz topic: ${topic.title}`} checked={topics.includes(topic.id)} onChange={e => setTopics(e.target.checked ? [...topics, topic.id] : topics.filter(id => id !== topic.id))} /><span><strong>{topic.title}</strong><small>{topic.count} original questions</small></span></label>)}</fieldset>
-      <div className="form-grid"><label>Question pool<select aria-label="Custom quiz pool" value={mode} onChange={e => setMode(e.target.value === 'missed' ? 'missed' : 'all')}><option value="all">All selected questions</option><option value="missed">Only my missed questions</option></select></label><label>Session length<input aria-label="Custom quiz question count" type="number" min={1} max={Math.min(20, pool.length)} required value={count} onChange={e => setCount(e.target.value)} /></label></div>
+      <div className="form-grid"><label>Question pool<Select aria-label="Custom quiz pool" value={mode} onValueChange={selectedValue => setMode(selectedValue === 'missed' ? 'missed' : 'all')} options={[{ value: "all", label: "All selected questions" }, { value: "missed", label: "Only my missed questions" }]}/></label><label>Session length<input aria-label="Custom quiz question count" type="number" min={1} max={Math.min(20, pool.length)} required value={count} onChange={e => setCount(e.target.value)} /></label></div>
       <p className={valid ? 'muted' : 'error-text'} aria-live="polite">{pool.length ? `${pool.length} matching questions. Choose a whole number between 1 and ${Math.min(20, pool.length)}.` : 'No questions match. Select more topics or take a regular quiz first to build your missed-question deck.'}</p>
       <button className="button" disabled={pending || !valid}>Create custom quiz <ArrowRight size={16} /></button>
     </form></PremiumAccess>

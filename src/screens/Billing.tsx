@@ -4,6 +4,7 @@ import { sandboxOffers, type SandboxBillingView, type SandboxOffer } from '../..
 import type { IdentitySecurity } from '../../shared/types';
 import { AuthPrompt, Badge, PageHeading } from '../components';
 import { request, useStudio } from '../store';
+import { Select } from '../components/Select';
 
 interface SavedRequest { key: string; offer: SandboxOffer; previousSubscriptionRef?: string; acknowledged?: true }
 function savedRequest(key: string): SavedRequest | null {
@@ -220,9 +221,9 @@ export function SandboxBillingPage() {
       {!intentReady && <p>Saved retry information must be loaded before reserving a new intent. Reload owned status; an unknown request must not be replaced.</p>}
       {!view.enabled && <p>New sandbox checkout is disabled by the operator. Existing owned intents are retained for reconciliation.</p>}
       {intent && !savedResolved && <p>A saved request will be reused exactly. An unknown response never creates a replacement request key.</p>}
-      <label>Reference offer<select aria-label="Reference offer" value={offer} disabled={pending || !!intent && !savedResolved} onChange={event => {
-        const value = sandboxOffers.find(offer => offer === event.target.value); if (value) setOffer(value);
-      }}>{sandboxOffers.map(value => <option key={value} value={value}>{labels[value]}</option>)}</select></label>
+      <label>Reference offer<Select aria-label="Reference offer" value={offer} disabled={pending || !!intent && !savedResolved} onValueChange={selectedValue => {
+        const value = sandboxOffers.find(offer => offer === selectedValue); if (value) setOffer(value);
+      }} options={sandboxOffers.map(value => ({ value, label: labels[value] }))}/></label>
       <label><input type="checkbox" checked={!!consentReady} onChange={event => {
         if (recheckoutTarget) setRecheckoutAcknowledgedFor(event.target.checked ? recheckoutTarget : null);
         else setAcknowledged(event.target.checked);

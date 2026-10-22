@@ -7,6 +7,7 @@ import type {
 } from '../../shared/types';
 import {Badge,PageHeading} from '../components';
 import {request,useStudio} from '../store';
+import { Select } from '../components/Select';
 
 const roleLabels:Record<StaffRole,string>={
   'support-agent':'Support agent',moderator:'Moderator','content-editor':'Content editor',
@@ -75,9 +76,7 @@ function StaffSupportCard({value,onChange}:{value:StaffSupportTicket;onChange:(t
     {value.assignment!=='other'&&<button className="button secondary small" disabled={pending||reason.trim().length<20}
       onClick={()=>void update({assignment:value.assignment==='me'?'none':'me'})}>{value.assignment==='me'?'Release assignment':'Assign to me'}</button>}
     <form onSubmit={event=>{event.preventDefault();void update({status});}}>
-      <label>Handling status<select value={status} onChange={event=>setStatus(event.target.value as StaffSupportTicket['status'])}>
-        <option value="open">Open</option><option value="pending">Pending owner</option><option value="resolved">Resolved</option>
-      </select></label>
+      <label>Handling status<Select aria-label="Handling status" value={status} onValueChange={selectedValue => setStatus(selectedValue as StaffSupportTicket['status'])} options={[{ value: 'open', label: 'Open' }, { value: 'pending', label: 'Pending owner' }, { value: 'resolved', label: 'Resolved' }]}/></label>
       <button className="button secondary small" disabled={pending||reason.trim().length<20||status===value.status}>Apply status</button>
     </form>
     {value.ownerAccess&&value.assignment!=='other'&&<form onSubmit={event=>{event.preventDefault();void respond();}}>
@@ -150,9 +149,7 @@ function StaffModerationCard({value,administrator,onChange}:{value:StaffCommunit
         placeholder="Record the specific policy and evidence reviewed."/>
     </label>
     {available&&value.assignment!==null&&<label>Restriction duration
-      <select value={durationHours} onChange={event=>setDurationHours(Number(event.target.value) as 24|168|720)}>
-        <option value={24}>24 hours</option><option value={168}>7 days</option><option value={720}>30 days</option>
-      </select>
+      <Select aria-label="Restriction duration" value={durationHours} onValueChange={selectedValue => setDurationHours(Number(selectedValue) as 24 | 168 | 720)} options={[{ value: 24, label: '24 hours' }, { value: 168, label: '7 days' }, { value: 720, label: '30 days' }]}/>
     </label>}
     {available&&<button className="button secondary small" disabled={pending||reason.trim().length<20}
       onClick={()=>void apply(value.assignment==='me'?'release':'claim')}>{value.assignment==='me'?'Release report':'Claim report'}</button>}
@@ -191,9 +188,7 @@ function StaffRestrictionCard({value,administrator,onChange}:{value:StaffCommuni
         placeholder="Record the reviewed policy and evidence for this change."/>
     </label>
     <label>New duration from now
-      <select value={durationHours} onChange={event=>setDurationHours(Number(event.target.value) as 24|168|720)}>
-        <option value={24}>24 hours</option><option value={168}>7 days</option><option value={720}>30 days</option>
-      </select>
+      <Select aria-label="New duration from now" value={durationHours} onValueChange={selectedValue => setDurationHours(Number(selectedValue) as 24 | 168 | 720)} options={[{ value: 24, label: '24 hours' }, { value: 168, label: '7 days' }, { value: 720, label: '30 days' }]}/>
     </label>
     <button className="button secondary small" disabled={pending||reason.trim().length<20}
       onClick={()=>void apply('extend')}>Extend restriction</button>
@@ -403,13 +398,7 @@ export function StaffInvitationsSection() {
         <input required type="email" maxLength={254} value={inviteEmail} onChange={event => setInviteEmail(event.target.value)} placeholder="candidate@example.com"/>
       </label>
       <label>Expires in days
-        <select value={expiresInDays} onChange={event => setExpiresInDays(Number(event.target.value))}>
-          <option value={1}>1 day</option>
-          <option value={3}>3 days</option>
-          <option value={7}>7 days</option>
-          <option value={14}>14 days</option>
-          <option value={30}>30 days</option>
-        </select>
+        <Select aria-label="Expires in days" value={expiresInDays} onValueChange={selectedValue => setExpiresInDays(Number(selectedValue))} options={[{ value: 1, label: '1 day' }, { value: 3, label: '3 days' }, { value: 7, label: '7 days' }, { value: 14, label: '14 days' }, { value: 30, label: '30 days' }]}/>
       </label>
       <label>
         <input type="checkbox" checked={sendEmail} onChange={event => setSendEmail(event.target.checked)}/>{' '}
