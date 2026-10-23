@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { contentResearchDate, contentSources } from '../../shared/content/sources';
+import { getContentSource } from '../../shared/content/sources';
 import type { QuizQuestion, SourceReference } from '../../shared/types';
 
 const id=z.string().min(1).max(200);
@@ -21,9 +21,9 @@ export const questionSnapshotSchema:z.ZodType<QuizQuestion[]>=z.array(z.strictOb
 });
 export function publishedQuestion(question:QuizQuestion):QuizQuestion {
   const sources:SourceReference[]=(question.sourceIds??[]).map(id=>{
-    const source=Object.entries(contentSources).find(([key])=>key===id)?.[1];
+    const source=getContentSource(id);
     if(!source)throw new Error('An authored question references an unknown source.');
-    return {id,...source,researchDate:contentResearchDate};
+    return source;
   });
   return {...question,sources};
 }

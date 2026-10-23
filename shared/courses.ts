@@ -2,6 +2,7 @@ import type { Course, CourseStep } from './types';
 import { systemDesignLessons } from './content/system-design-lessons';
 import { codingLessons } from './content/coding-lessons';
 import { lowLevelDesignLessons } from './content/low-level-design-lessons';
+import { aiEngineeringLessons } from './content/ai-engineering-lessons';
 import { problems, quizTopics } from './catalog';
 
 const reading = (track: string, id: string, title: string): CourseStep => ({ id: `${track}-${id}`, type: 'lesson', title, resource: `${track}/${id}`, to: `/learn/${track}/${id}` });
@@ -10,6 +11,16 @@ const practice = (track: string, id: string, title: string): CourseStep => ({ id
 const video = (course: string, title: string): CourseStep => ({ id: `video-${course}`, type: 'video', title, resource: course, to: `/learn/courses/${course}/video/${course}` });
 
 export const courses: Course[] = [
+  { id: 'ai-engineering', title: 'AI engineering: from evidence to reliable systems', description: 'Eight original lessons, six knowledge checks, and four worked architecture exercises. Build retrieval, bounded agents, inference, adaptation, and multimodal systems. Topic-informed by a public preparation catalog, not official company questions. No premium steps or live model access required.', track: 'ml-system-design', units: [
+    { title: 'Establish the model, evidence, and quality contract', lessons: ['llm-foundations', 'rag-retrieval', 'llm-evaluation'], quizzes: ['llm-foundations', 'rag-retrieval', 'llm-evaluation'], exercises: ['ai-knowledge-assistant'] },
+    { title: 'Give tools bounded authority', lessons: ['agent-workflows', 'ai-safety'], quizzes: ['agent-workflows'], exercises: ['ai-support-agent'] },
+    { title: 'Operate within a measured serving budget', lessons: ['inference-serving'], quizzes: ['inference-serving'], exercises: ['ai-inference-gateway'] },
+    { title: 'Adapt behavior and preserve multimodal evidence', lessons: ['model-adaptation', 'multimodal-systems'], quizzes: ['model-adaptation'], exercises: ['ai-document-review'] },
+  ].map(unit => ({ title: unit.title, steps: [
+    ...unit.lessons.map(id => reading('ml-system-design', id, aiEngineeringLessons.find(lesson => lesson.id === id)!.title)),
+    ...unit.quizzes.map(id => quiz(id, `Check: ${quizTopics.find(topic => topic.id === id)!.title}`)),
+    ...unit.exercises.map(id => practice('ml-system-design', id, problems.find(problem => problem.id === id)!.title)),
+  ] })) },
   { id: 'low-level-design-complete', title: 'Low-level design: the complete Studio path', description: '12 substantial lessons, eight knowledge checks, and eight original worked models. Four new JavaScript exercises complement four preserved open-ended briefs. Includes existing premium-demo concurrency and limiter steps; sequential references do not prove production concurrency.', track: 'low-level-design', units: [
     { title: 'Own the behavior and model the invariant', lessons: ['introduction','object-modeling','design-principles'], quizzes: ['object-modeling','design-principles'], exercises: ['parcel-lockers','parking-garage'] },
     { title: 'Make contracts and transitions observable', lessons: ['interfaces','state-machines','error-contracts'], quizzes: ['interfaces','state-machines','error-contracts'], exercises: ['board-game','lld-workflow-engine'] },

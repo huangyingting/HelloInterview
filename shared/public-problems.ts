@@ -778,5 +778,57 @@ export const problems: ProblemMetadata[] = [
     "runnable": true,
     "caseSummary": "",
     "calculationCount": 0
+  },
+  {
+    "id": "ai-knowledge-assistant",
+    "track": "ml-system-design",
+    "title": "Design a Permission-Aware Knowledge Assistant",
+    "difficulty": "Medium",
+    "description": "Answer employee questions over changing private documents with grounded citations and immediate access revocation.",
+    "hasWorkedCase": true,
+    "hasSolution": false,
+    "exampleCount": 0,
+    "runnable": false,
+    "caseSummary": "Keep source authority outside the language model: version evidence, recheck access, and evaluate supported answers against a search baseline.",
+    "calculationCount": 3
+  },
+  {
+    "id": "ai-support-agent",
+    "track": "ml-system-design",
+    "title": "Design an Approval-Gated Support Agent",
+    "difficulty": "Hard",
+    "description": "Draft support answers and propose subscription changes while retaining human control and recovering ambiguous tool outcomes.",
+    "hasWorkedCase": true,
+    "hasSolution": false,
+    "exampleCount": 0,
+    "runnable": false,
+    "caseSummary": "A durable application-owned state machine lets the model propose actions while authorization, approval, and external receipts establish what actually happened.",
+    "calculationCount": 2
+  },
+  {
+    "id": "ai-inference-gateway",
+    "track": "ml-system-design",
+    "title": "Design a Bounded LLM Inference Gateway",
+    "difficulty": "Hard",
+    "description": "Serve multiple tenants through a measured inference pool with token budgets, deadline-aware admission, and truthful streaming failures.",
+    "hasWorkedCase": true,
+    "hasSolution": false,
+    "exampleCount": 0,
+    "runnable": false,
+    "caseSummary": "A gateway coordinates bounded reservations, compatible routing, and truthful attempt states while the serving pool is sized for actual token distributions.",
+    "calculationCount": 3
+  },
+  {
+    "id": "ai-document-review",
+    "track": "ml-system-design",
+    "title": "Design a Traceable Document Review Pipeline",
+    "difficulty": "Medium",
+    "description": "Extract invoice fields from scans and tables, preserve source evidence, and publish only verified or approved records.",
+    "hasWorkedCase": true,
+    "hasSolution": false,
+    "exampleCount": 0,
+    "runnable": false,
+    "caseSummary": "Immutable evidence and versioned proposals separate probabilistic extraction from the approved business record.",
+    "calculationCount": 3
   }
 ];

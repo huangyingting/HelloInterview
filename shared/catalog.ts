@@ -8,6 +8,9 @@ import { codingQuestions } from './content/coding-questions';
 import { lowLevelDesignLessons } from './content/low-level-design-lessons';
 import { additionalLowLevelDesignProblems, lowLevelDesignSolutions } from './content/low-level-design-cases';
 import { lowLevelDesignQuestions } from './content/low-level-design-questions';
+import { aiEngineeringLessons } from './content/ai-engineering-lessons';
+import { aiEngineeringProblems, aiEngineeringCaseStudies } from './content/ai-engineering-cases';
+import { aiEngineeringQuestions } from './content/ai-engineering-questions';
 
 const lesson = (
   id: string, title: string, group: string, summary: string,
@@ -81,8 +84,8 @@ export const tracks: Track[] = [
     ],
   },
   {
-    id: 'ml-system-design', title: 'ML System Design', short: 'Connect models to real products',
-    description: 'Design the data, evaluation, and serving system around a useful model.',
+    id: 'ml-system-design', title: 'ML & AI System Design', short: 'Connect models to reliable products',
+    description: 'Design data, retrieval, bounded agents, evaluation, and serving around useful models.',
     color: '#4c869a',
     lessons: [
       lesson('introduction', 'Start with the product metric', 'Foundations', 'A model score matters only when it improves the user outcome.', [
@@ -103,6 +106,7 @@ export const tracks: Track[] = [
         { title: 'Separate retrieval from ranking', body: 'Approximate nearest-neighbor search reduces millions of candidates to a manageable set. A more expensive ranker can then compare that set.' },
         { title: 'Version the representation', body: 'Mixing embeddings from incompatible model versions can damage relevance. Plan index updates and a rollback path.' },
       ], 'Design an embedding index refresh for newly published documents.', true),
+      ...aiEngineeringLessons,
     ],
   },
   {
@@ -130,9 +134,10 @@ export const tracks: Track[] = [
 export const companies = ['Meta', 'Google', 'Amazon', 'Microsoft', 'Apple', 'OpenAI', 'Anthropic', 'Stripe', 'Airbnb', 'Netflix'];
 export const levels = ['Junior', 'Mid-level', 'Senior', 'Staff', 'Manager'] as const;
 export const regions = ['Global', 'North America', 'Europe', 'Asia Pacific'] as const;
-export const practiceTracks = ['system-design', 'low-level-design', 'ai-coding', 'behavioral', 'code-review', 'code'];
+export const practiceTracks = ['system-design', 'low-level-design', 'ml-system-design', 'ai-coding', 'behavioral', 'code-review', 'code'];
 export const practiceLabels: Record<string, string> = {
   'system-design': 'System Design', 'low-level-design': 'Low-Level Design',
+  'ml-system-design': 'AI System Design',
   'ai-coding': 'AI-Assisted Coding', behavioral: 'Behavioral', 'code-review': 'Code Review',
   code: 'Coding & Algorithms',
 };
@@ -161,8 +166,9 @@ const originalProblems: Problem[] = [
   { id: 'upload-review', track: 'code-review', title: 'Review a file upload handler', difficulty: 'Hard', description: 'Inspect validation, storage boundaries, and failure handling in the upload handler.', requirements: ['Define acceptable input size.', 'Validate names and content.', 'Prevent overwriting unrelated files.', 'Report failure accurately.'], keywords: [['size', 'limit'], ['path', 'validate'], ['unique', 'overwrite'], ['error', 'failure'], ['test', 'content']], starter: 'async function upload(req) {\n  await storage.write(req.body.filename, req.body.data);\n  return { uploaded: true };\n}', premium: true },
 ];
 
-export const problems: Problem[] = [...originalProblems, ...additionalSystemDesignProblems, ...codingProblems, ...additionalLowLevelDesignProblems].map(problem => ({
-  ...problem, workedCase: systemDesignCaseStudies.find(study => study.problemId === problem.id),
+const caseStudies = [...systemDesignCaseStudies, ...aiEngineeringCaseStudies];
+export const problems: Problem[] = [...originalProblems, ...additionalSystemDesignProblems, ...codingProblems, ...additionalLowLevelDesignProblems, ...aiEngineeringProblems].map(problem => ({
+  ...problem, workedCase: caseStudies.find(study => study.problemId === problem.id) ?? problem.workedCase,
   solution: lowLevelDesignSolutions[problem.id] ?? problem.solution,
 }));
 
@@ -190,7 +196,7 @@ const originalQuizQuestions: QuizQuestion[] = [
   {id:'ml-3',topic:'evaluation',prompt:'Which feature is valid at prediction time?',options:['A future cancellation event','An outcome only known next week','A prior activity count available at the decision timestamp','A later refund decision'],correct:2,explanation:'Valid features must exist when the prediction is made; future outcomes introduce leakage.'},
 ];
 
-export const quizQuestions: QuizQuestion[] = [...originalQuizQuestions, ...systemDesignQuestions, ...codingQuestions, ...lowLevelDesignQuestions];
+export const quizQuestions: QuizQuestion[] = [...originalQuizQuestions, ...systemDesignQuestions, ...codingQuestions, ...lowLevelDesignQuestions, ...aiEngineeringQuestions];
 
 export const quizTopics = [...new Set(quizQuestions.map(q => q.topic))].map(id => {
   const track = tracks.find(t => t.lessons.some(l => l.id === id))!;

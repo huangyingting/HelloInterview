@@ -28,6 +28,7 @@ export const regions: readonly ['Global', 'North America', 'Europe', 'Asia Pacif
 export const practiceLabels: Record<string, string> = {
   "system-design": "System Design",
   "low-level-design": "Low-Level Design",
+  "ml-system-design": "AI System Design",
   "ai-coding": "AI-Assisted Coding",
   "behavioral": "Behavioral",
   "code-review": "Code Review",
@@ -36,6 +37,7 @@ export const practiceLabels: Record<string, string> = {
 export const practiceTracks: string[] = [
   "system-design",
   "low-level-design",
+  "ml-system-design",
   "ai-coding",
   "behavioral",
   "code-review",
@@ -79,9 +81,9 @@ export const navigationTracks: Pick<TrackMetadata, 'id' | 'title' | 'short' | 'd
   },
   {
     "id": "ml-system-design",
-    "title": "ML System Design",
-    "short": "Connect models to real products",
-    "description": "Design the data, evaluation, and serving system around a useful model.",
+    "title": "ML & AI System Design",
+    "short": "Connect models to reliable products",
+    "description": "Design data, retrieval, bounded agents, evaluation, and serving around useful models.",
     "color": "#4c869a"
   },
   {

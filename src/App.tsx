@@ -86,6 +86,7 @@ export function App() {
     else if(segments[1]==='courses')content=segments[2]?<CoursePage id={segments[2]} videoId={segments[3]==='video'?segments[4]:undefined} key={path}/>:<CourseIndex/>;
     else if(segments[1]==='changelog')content=<InfoPage id="changelog"/>;
     else if(segments[1]==='system-design'&&segments[2]==='cases')content=<CaseLibrary/>;
+    else if(segments[1]==='ml-system-design'&&segments[2]==='cases')content=<CaseLibrary track="ml-system-design"/>;
     else if(segments[1]==='code'&&segments[2]==='solutions')content=<CodingLibrary/>;
     else if(segments[1]==='low-level-design'&&segments[2]==='solutions')content=<CodingLibrary track="low-level-design"/>;
     else if(segments[1]==='behavioral'&&['stories','story-builder'].includes(segments[2]))content=<StoryBank key={path}/>;
@@ -95,6 +96,7 @@ export function App() {
     if(!segments[1]||segments[1]==='overview')content=<PracticeIndex/>;
     else if(!segments[2])content=<PracticeList track={segments[1]} key={path}/>;
     else if(segments[1]==='system-design'&&segments[3]==='writeup')content=<CaseReader problemId={segments[2]} key={path}/>;
+    else if(segments[1]==='ml-system-design'&&segments[3]==='writeup')content=<CaseReader track="ml-system-design" problemId={segments[2]} key={path}/>;
     else if(segments[1]==='code'&&segments[3]==='writeup')content=<CodingReader problemId={segments[2]} key={path}/>;
     else if(segments[1]==='low-level-design'&&segments[3]==='writeup')content=<CodingReader track="low-level-design" problemId={segments[2]} key={path}/>;
     else content=<PracticeSession track={segments[1]} id={segments[2]} key={`${path}${location.search}`}/>;

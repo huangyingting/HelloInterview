@@ -1,6 +1,7 @@
 import { test, expect, type Page } from './browser-fixtures';
 import { browserAccount } from './browser-account';
 import { problems, tracks } from '../shared/public-catalog';
+import { aiEngineeringQuestions } from '../shared/content/ai-engineering-questions';
 
 async function signIn(page: Page) {
   await page.goto('/login');
@@ -189,4 +190,59 @@ test('custom selectors update real practice filters and company navigation', asy
   await page.getByRole('option', { name: 'Staff', exact: true }).click();
   await expect(page).toHaveURL(/\/guides\/google\/staff$/);
   await expect(page.getByRole('listbox')).toHaveCount(0);
+});
+
+test('an invited member persists AI course progress, sourced quiz results and an architecture attempt', async ({ page }, testInfo) => {
+  test.setTimeout(90000);
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('response', response => { if (response.status() >= 500 && response.url().includes('/api/')) errors.push(`HTTP ${response.status()} ${new URL(response.url()).pathname}`); });
+  await signIn(page);
+  await page.goto('/learn/courses/ai-engineering');
+  await page.getByRole('button', { name: 'Enroll in this course', exact: false }).click();
+  await expect(page.getByRole('link', { name: 'Continue your path', exact: false })).toBeVisible();
+  await page.reload();
+  await page.getByRole('link', { name: 'Continue your path', exact: false }).click();
+  await expect(page).toHaveURL(/\/learn\/ml-system-design\/llm-foundations$/);
+  await page.getByRole('button', { name: 'Mark as read', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Completed', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('link', { name: 'Check your understanding', exact: false }).click();
+  await page.getByRole('button', { name: 'Start quiz', exact: false }).click();
+  const pool = aiEngineeringQuestions.filter(question => question.topic === 'llm-foundations');
+  for (let index = 0; index < pool.length; index++) {
+    const question = pool[index];
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(question.prompt);
+    await page.getByRole('radio', { name: question.options[question.correct], exact: false }).check();
+    await page.getByRole('button', { name: 'Check answer', exact: false }).click();
+    await expect(page.locator('.quiz-answer-explanation')).toContainText(question.explanation);
+    await expect(page.locator('.content-sources')).toContainText('2026-10-23');
+    await page.getByRole('button', { name: index === pool.length - 1 ? 'Finish quiz' : 'Next question', exact: false }).click();
+  }
+  await expect(page.locator('.result-score')).toHaveText('4/ 4');
+  await page.reload();
+  await expect(page.locator('.quiz-explanations article')).toHaveCount(4);
+  await expect(page.locator('.quiz-explanations .content-sources').first()).toContainText('2026-10-23');
+  await page.goto('/practice/ml-system-design/ai-knowledge-assistant');
+  await page.getByRole('button', { name: 'Start practice', exact: false }).click();
+  await expect(page.getByRole('tab', { name: 'Architecture', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tab', { name: 'Code editor', exact: true })).toHaveCount(0);
+  await page.getByRole('combobox', { name: 'Diagram component', exact: true }).click();
+  await page.getByRole('option', { name: 'Retriever', exact: true }).click();
+  await page.getByRole('button', { name: 'Add component', exact: false }).click();
+  await expect(page.getByRole('button', { name: 'Move Retriever component', exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'Explanation', exact: true }).click();
+  const answer = 'Version each source and chunk. Compare hybrid retrieval with lexical search. Recheck tenant permission and authorization before evidence enters a model. Require supported citations or abstain. Evaluate recall, supported answers, freshness, latency, and cost against a search-only baseline.';
+  await page.getByRole('textbox', { name: 'Practice explanation', exact: true }).fill(answer);
+  await page.getByRole('button', { name: 'Save draft', exact: false }).click();
+  await expect(page.locator('.workspace-status')).toHaveText('Saved to your account');
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Move Retriever component', exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: 'Explanation', exact: true }).click();
+  await expect(page.getByRole('textbox', { name: 'Practice explanation', exact: true })).toHaveValue(answer);
+  await page.getByRole('button', { name: 'Get feedback', exact: false }).click();
+  await expect(page.locator('.feedback-panel')).toContainText('Local rubric · not AI');
+  await page.goto('/learn/courses/ai-engineering');
+  await expect(page.locator('.course-hero')).toContainText('3 of 18 steps complete');
+  await page.screenshot({ path: testInfo.outputPath('ai-engineering-course.png'), fullPage: true });
+  expect(errors).toEqual([]);
 });

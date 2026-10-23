@@ -1456,9 +1456,9 @@ export const tracks: TrackMetadata[] = [
   },
   {
     "id": "ml-system-design",
-    "title": "ML System Design",
-    "short": "Connect models to real products",
-    "description": "Design the data, evaluation, and serving system around a useful model.",
+    "title": "ML & AI System Design",
+    "short": "Connect models to reliable products",
+    "description": "Design data, retrieval, bounded agents, evaluation, and serving around useful models.",
     "color": "#4c869a",
     "lessons": [
       {
@@ -1492,6 +1492,180 @@ export const tracks: TrackMetadata[] = [
         "minutes": 10,
         "summary": "Find candidates efficiently, then rank them for the task.",
         "premium": true
+      },
+      {
+        "id": "llm-foundations",
+        "title": "From tokens to a defensible LLM system",
+        "group": "AI engineering foundations",
+        "minutes": 3,
+        "summary": "Connect tokenization, attention, context, and decoding to product constraints rather than model trivia.",
+        "objectives": [
+          "Trace the tensors in causal attention.",
+          "Distinguish model capacity from runtime memory.",
+          "Choose a baseline and a measurable failure policy."
+        ],
+        "sourceIds": [
+          "torch-attention",
+          "vllm-optimization",
+          "ai-interview-topic-map"
+        ],
+        "relatedProblemIds": [
+          "ai-inference-gateway"
+        ],
+        "quizTopic": "llm-foundations"
+      },
+      {
+        "id": "rag-retrieval",
+        "title": "Retrieval that is relevant, current, and authorized",
+        "group": "Evidence and evaluation",
+        "minutes": 3,
+        "summary": "Build a RAG pipeline with measurable retrieval, source versions, explicit permissions, and supported claims.",
+        "objectives": [
+          "Separate retrieval quality from answer quality.",
+          "Explain hybrid ranking and reranking budgets.",
+          "Handle source changes and permission revocation without leaking evidence."
+        ],
+        "sourceIds": [
+          "azure-hybrid-ranking",
+          "owasp-object-auth",
+          "llm-evals"
+        ],
+        "relatedProblemIds": [
+          "ai-knowledge-assistant",
+          "ai-document-review"
+        ],
+        "quizTopic": "rag-retrieval"
+      },
+      {
+        "id": "llm-evaluation",
+        "title": "Evaluation gates that survive real users",
+        "group": "Evidence and evaluation",
+        "minutes": 3,
+        "summary": "Build task-specific datasets, calibrated judgments, and regression gates for prompts, retrieval, and agents.",
+        "objectives": [
+          "Specify an evaluation population and failure taxonomy.",
+          "Calibrate automated judges against human decisions.",
+          "Design a versioned release gate with operational guardrails."
+        ],
+        "sourceIds": [
+          "llm-evals",
+          "effective-agents",
+          "sre-monitoring"
+        ],
+        "relatedProblemIds": [
+          "ai-knowledge-assistant",
+          "ai-support-agent",
+          "ai-document-review"
+        ],
+        "quizTopic": "llm-evaluation"
+      },
+      {
+        "id": "agent-workflows",
+        "title": "Agents with bounded authority and recoverable actions",
+        "group": "Tools and trust boundaries",
+        "minutes": 3,
+        "summary": "Treat tool calls as proposals in a durable workflow, not instructions the server must obey.",
+        "objectives": [
+          "Choose a fixed workflow before an autonomous loop.",
+          "Bind approvals to exact action parameters.",
+          "Recover unknown external outcomes without duplicate effects."
+        ],
+        "sourceIds": [
+          "effective-agents",
+          "stripe-idempotency",
+          "owasp-prompt-injection"
+        ],
+        "relatedProblemIds": [
+          "ai-support-agent"
+        ],
+        "quizTopic": "agent-workflows"
+      },
+      {
+        "id": "ai-safety",
+        "title": "Trust boundaries for retrieved and generated content",
+        "group": "Tools and trust boundaries",
+        "minutes": 3,
+        "summary": "Contain prompt injection and data exposure with server-side boundaries, not claims of a perfect prompt.",
+        "objectives": [
+          "Keep source text separate from executable authority.",
+          "Protect prompts, caches, logs, and output rendering.",
+          "Design safety tests that inspect actual effects."
+        ],
+        "sourceIds": [
+          "owasp-prompt-injection",
+          "owasp-object-auth",
+          "effective-agents"
+        ],
+        "relatedProblemIds": [
+          "ai-knowledge-assistant",
+          "ai-support-agent"
+        ],
+        "quizTopic": "agent-workflows"
+      },
+      {
+        "id": "inference-serving",
+        "title": "Serving LLMs within latency, memory, and cost budgets",
+        "group": "Operating AI systems",
+        "minutes": 3,
+        "summary": "Estimate KV memory, separate prefill from decode, and diagnose queueing before choosing an optimization.",
+        "objectives": [
+          "Calculate a simplified KV-cache footprint with units.",
+          "Separate first-token latency, token cadence, and throughput.",
+          "Choose bounded batching, caching, and fallback policies."
+        ],
+        "sourceIds": [
+          "vllm-optimization",
+          "torch-attention",
+          "sre-overload"
+        ],
+        "relatedProblemIds": [
+          "ai-inference-gateway"
+        ],
+        "quizTopic": "inference-serving"
+      },
+      {
+        "id": "model-adaptation",
+        "title": "Choose prompting, retrieval, or model adaptation",
+        "group": "AI engineering foundations",
+        "minutes": 3,
+        "summary": "Diagnose the failure before selecting SFT, LoRA, preference optimization, or a simpler data-path fix.",
+        "objectives": [
+          "Match an intervention to a measured failure.",
+          "Calculate low-rank adapter parameter counts.",
+          "Distinguish supervised examples from preference and reward data."
+        ],
+        "sourceIds": [
+          "peft-lora",
+          "trl-dpo",
+          "llm-evals"
+        ],
+        "relatedProblemIds": [
+          "ai-knowledge-assistant",
+          "ai-document-review"
+        ],
+        "quizTopic": "model-adaptation"
+      },
+      {
+        "id": "multimodal-systems",
+        "title": "Documents and voice: preserve structure and time",
+        "group": "Operating AI systems",
+        "minutes": 3,
+        "summary": "Design multimodal pipelines with traceable evidence, correctable uncertainty, and explicit interruption semantics.",
+        "objectives": [
+          "Preserve document layout and field provenance.",
+          "Budget end-to-end voice latency without adding percentiles.",
+          "Evaluate semantic errors and safe cancellation across modalities."
+        ],
+        "sourceIds": [
+          "document-layout",
+          "llm-evals",
+          "effective-agents"
+        ],
+        "relatedProblemIds": [
+          "ai-document-review",
+          "ai-support-agent"
+        ],
+        "quizTopic": "llm-evaluation"
       }
     ]
   },

@@ -49,7 +49,7 @@ test('coding flagship meets its exact scope and all resource links resolve', () 
   assert.equal(codingQuestions.length, 177);
   assert.ok(practiceTracks.includes('code'));
   assert.equal(practiceLabels.code, 'Coding & Algorithms');
-  assert.equal(courses.length, 7);
+  assert.equal(courses.length, 8);
   for (const lesson of lessons) {
     const text = prose(lesson.sections);
     assert.ok(words(text) >= 500, `${lesson.id} needs 500 instructional words, excluding code and metadata`);

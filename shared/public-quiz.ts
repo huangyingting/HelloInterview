@@ -197,6 +197,42 @@ export const quizTopics: { id: string; title: string; track: string; count: numb
     "title": "Testing contracts and state histories",
     "track": "low-level-design",
     "count": 10
+  },
+  {
+    "id": "llm-foundations",
+    "title": "From tokens to a defensible LLM system",
+    "track": "ml-system-design",
+    "count": 4
+  },
+  {
+    "id": "rag-retrieval",
+    "title": "Retrieval that is relevant, current, and authorized",
+    "track": "ml-system-design",
+    "count": 4
+  },
+  {
+    "id": "agent-workflows",
+    "title": "Agents with bounded authority and recoverable actions",
+    "track": "ml-system-design",
+    "count": 4
+  },
+  {
+    "id": "llm-evaluation",
+    "title": "Evaluation gates that survive real users",
+    "track": "ml-system-design",
+    "count": 4
+  },
+  {
+    "id": "inference-serving",
+    "title": "Serving LLMs within latency, memory, and cost budgets",
+    "track": "ml-system-design",
+    "count": 4
+  },
+  {
+    "id": "model-adaptation",
+    "title": "Choose prompting, retrieval, or model adaptation",
+    "track": "ml-system-design",
+    "count": 4
   }
 ];
 export const questionIndex: { id: string; topic: string }[] = [
@@ -1971,5 +2007,101 @@ export const questionIndex: { id: string; topic: string }[] = [
   {
     "id": "lld-q-077",
     "topic": "testing-designs"
+  },
+  {
+    "id": "ai-eng-001",
+    "topic": "llm-foundations"
+  },
+  {
+    "id": "ai-eng-002",
+    "topic": "llm-foundations"
+  },
+  {
+    "id": "ai-eng-003",
+    "topic": "llm-foundations"
+  },
+  {
+    "id": "ai-eng-004",
+    "topic": "llm-foundations"
+  },
+  {
+    "id": "ai-eng-005",
+    "topic": "rag-retrieval"
+  },
+  {
+    "id": "ai-eng-006",
+    "topic": "rag-retrieval"
+  },
+  {
+    "id": "ai-eng-007",
+    "topic": "rag-retrieval"
+  },
+  {
+    "id": "ai-eng-008",
+    "topic": "rag-retrieval"
+  },
+  {
+    "id": "ai-eng-009",
+    "topic": "agent-workflows"
+  },
+  {
+    "id": "ai-eng-010",
+    "topic": "agent-workflows"
+  },
+  {
+    "id": "ai-eng-011",
+    "topic": "agent-workflows"
+  },
+  {
+    "id": "ai-eng-012",
+    "topic": "agent-workflows"
+  },
+  {
+    "id": "ai-eng-013",
+    "topic": "llm-evaluation"
+  },
+  {
+    "id": "ai-eng-014",
+    "topic": "llm-evaluation"
+  },
+  {
+    "id": "ai-eng-015",
+    "topic": "llm-evaluation"
+  },
+  {
+    "id": "ai-eng-016",
+    "topic": "llm-evaluation"
+  },
+  {
+    "id": "ai-eng-017",
+    "topic": "inference-serving"
+  },
+  {
+    "id": "ai-eng-018",
+    "topic": "inference-serving"
+  },
+  {
+    "id": "ai-eng-019",
+    "topic": "inference-serving"
+  },
+  {
+    "id": "ai-eng-020",
+    "topic": "inference-serving"
+  },
+  {
+    "id": "ai-eng-021",
+    "topic": "model-adaptation"
+  },
+  {
+    "id": "ai-eng-022",
+    "topic": "model-adaptation"
+  },
+  {
+    "id": "ai-eng-023",
+    "topic": "model-adaptation"
+  },
+  {
+    "id": "ai-eng-024",
+    "topic": "model-adaptation"
   }
 ];

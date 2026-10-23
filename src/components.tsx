@@ -2,7 +2,7 @@ import { Bookmark, Check, MessageSquare } from 'lucide-react';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { request, useStudio } from './store';
 import type { Comment, CommunityCommentPage, ContentSection, SourceReference, UserState } from '../shared/types';
-import { contentResearchDate, contentSources } from '../shared/content/sources';
+import { getContentSource } from '../shared/content/sources';
 import { getTrack, problems } from '../shared/public-catalog';
 import { AuthPrompt } from './components/access';
 export { AuthPrompt, NotFound, PremiumAccess, PremiumGate } from './components/access';
@@ -10,9 +10,10 @@ export { Badge, CardLink, Empty, Footer, IconTile, PageHeading, Progress } from 
 
 export function SourceLinks({ ids, sources }: { ids?: string[]; sources?: SourceReference[] }) {
   if (!ids?.length) return null;
-  const date=sources?.length?[...new Set(sources.map(source=>source.researchDate))].join(', '):contentResearchDate;
+  const references = sources ?? ids.flatMap(id => { const source = getContentSource(id); return source ? [source] : []; });
+  const date=[...new Set(references.map(source=>source.researchDate))].join(', ');
   return <div className="content-sources"><h4>Sources and further reading</h4><p className="fine-print">Original synthesis informed by public documentation. Research date: {date}; not expert-reviewed.</p><ul>{ids.map(id => {
-    const source=sources?sources.find(source=>source.id===id):Object.entries(contentSources).find(([key])=>key===id)?.[1];
+    const source=references.find(source=>source.id===id);
     return source?<li key={id}><a href={source.url} target="_blank" rel="noopener noreferrer">{source.title}</a><span> · {source.publisher}</span></li>:<li key={id}>Source reference unavailable: {id}</li>;
   })}</ul></div>;
 }

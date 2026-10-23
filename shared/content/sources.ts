@@ -31,7 +31,23 @@ export const contentSources = {
   'pg-constraints': { title: 'Data Definition Constraints', publisher: 'PostgreSQL', url: 'https://www.postgresql.org/docs/current/ddl-constraints.html' },
   'pg-locks': { title: 'Explicit Locking and Deadlocks', publisher: 'PostgreSQL', url: 'https://www.postgresql.org/docs/current/explicit-locking.html' },
   'w3c-scxml': { title: 'State Chart XML: States, Events, and Transitions', publisher: 'W3C', url: 'https://www.w3.org/TR/scxml/' },
+  'ai-interview-topic-map': { title: 'AI Engineering Interview Questions Company Wise (topic reference, pinned revision)', publisher: 'Outcome School / pallavi-shekhar', url: 'https://github.com/pallavi-shekhar/ai-engineering-interview-questions-company-wise/tree/f07f8f47d32004f29ead658b14382a27dc7cb2f4', researchDate: '2026-10-23' },
+  'torch-attention': { title: 'Scaled Dot Product Attention: Masks, Scaling, and Implementation', publisher: 'PyTorch', url: 'https://docs.pytorch.org/docs/2.14/generated/torch.nn.functional.scaled_dot_product_attention.html', researchDate: '2026-10-23' },
+  'azure-hybrid-ranking': { title: 'Hybrid Search Ranking with Reciprocal Rank Fusion', publisher: 'Microsoft Learn', url: 'https://learn.microsoft.com/en-us/azure/search/hybrid-search-ranking', researchDate: '2026-10-23' },
+  'effective-agents': { title: 'Building Effective Agents (workflow design principles)', publisher: 'Anthropic', url: 'https://www.anthropic.com/research/building-effective-agents', researchDate: '2026-10-23' },
+  'llm-evals': { title: 'Evaluation Best Practices (methodology, not a platform dependency)', publisher: 'OpenAI', url: 'https://developers.openai.com/api/docs/guides/evaluation-best-practices', researchDate: '2026-10-23' },
+  'vllm-optimization': { title: 'Optimization and Tuning: Scheduling and KV Cache Pressure', publisher: 'vLLM', url: 'https://docs.vllm.ai/en/stable/configuration/optimization/', researchDate: '2026-10-23' },
+  'peft-lora': { title: 'LoRA: Low-Rank Adaptation and Adapter Merging', publisher: 'Hugging Face', url: 'https://huggingface.co/docs/peft/main/en/conceptual_guides/lora', researchDate: '2026-10-23' },
+  'trl-dpo': { title: 'Direct Preference Optimization: Training and Preference Data', publisher: 'Hugging Face', url: 'https://huggingface.co/docs/trl/en/dpo_trainer', researchDate: '2026-10-23' },
+  'owasp-prompt-injection': { title: 'LLM01: Prompt Injection and Layered Mitigations', publisher: 'OWASP GenAI Security Project', url: 'https://genai.owasp.org/llmrisk/llm01-prompt-injection/', researchDate: '2026-10-23' },
+  'document-layout': { title: 'Document Layout Analysis: Text, Tables, and Structure', publisher: 'Microsoft Learn', url: 'https://learn.microsoft.com/en-us/azure/ai-services/document-intelligence/prebuilt/layout?view=doc-intel-4.0.0', researchDate: '2026-10-23' },
 } as const;
 
 export type SourceId = keyof typeof contentSources;
 export const contentResearchDate = '2026-10-08';
+
+export function getContentSource(id: string) {
+  const source = Object.entries(contentSources).find(([key]) => key === id)?.[1];
+  if (!source) return undefined;
+  return { id, ...source, researchDate: 'researchDate' in source ? source.researchDate : contentResearchDate };
+}

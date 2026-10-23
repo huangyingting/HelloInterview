@@ -2,6 +2,160 @@
 import type { Course } from './types';
 export const courses: Course[] = [
   {
+    "id": "ai-engineering",
+    "title": "AI engineering: from evidence to reliable systems",
+    "description": "Eight original lessons, six knowledge checks, and four worked architecture exercises. Build retrieval, bounded agents, inference, adaptation, and multimodal systems. Topic-informed by a public preparation catalog, not official company questions. No premium steps or live model access required.",
+    "track": "ml-system-design",
+    "units": [
+      {
+        "title": "Establish the model, evidence, and quality contract",
+        "steps": [
+          {
+            "id": "ml-system-design-llm-foundations",
+            "type": "lesson",
+            "title": "From tokens to a defensible LLM system",
+            "resource": "ml-system-design/llm-foundations",
+            "to": "/learn/ml-system-design/llm-foundations"
+          },
+          {
+            "id": "ml-system-design-rag-retrieval",
+            "type": "lesson",
+            "title": "Retrieval that is relevant, current, and authorized",
+            "resource": "ml-system-design/rag-retrieval",
+            "to": "/learn/ml-system-design/rag-retrieval"
+          },
+          {
+            "id": "ml-system-design-llm-evaluation",
+            "type": "lesson",
+            "title": "Evaluation gates that survive real users",
+            "resource": "ml-system-design/llm-evaluation",
+            "to": "/learn/ml-system-design/llm-evaluation"
+          },
+          {
+            "id": "quiz-llm-foundations",
+            "type": "quiz",
+            "title": "Check: From tokens to a defensible LLM system",
+            "resource": "llm-foundations",
+            "to": "/quiz/llm-foundations"
+          },
+          {
+            "id": "quiz-rag-retrieval",
+            "type": "quiz",
+            "title": "Check: Retrieval that is relevant, current, and authorized",
+            "resource": "rag-retrieval",
+            "to": "/quiz/rag-retrieval"
+          },
+          {
+            "id": "quiz-llm-evaluation",
+            "type": "quiz",
+            "title": "Check: Evaluation gates that survive real users",
+            "resource": "llm-evaluation",
+            "to": "/quiz/llm-evaluation"
+          },
+          {
+            "id": "practice-ai-knowledge-assistant",
+            "type": "practice",
+            "title": "Design a Permission-Aware Knowledge Assistant",
+            "resource": "ai-knowledge-assistant",
+            "to": "/practice/ml-system-design/ai-knowledge-assistant"
+          }
+        ]
+      },
+      {
+        "title": "Give tools bounded authority",
+        "steps": [
+          {
+            "id": "ml-system-design-agent-workflows",
+            "type": "lesson",
+            "title": "Agents with bounded authority and recoverable actions",
+            "resource": "ml-system-design/agent-workflows",
+            "to": "/learn/ml-system-design/agent-workflows"
+          },
+          {
+            "id": "ml-system-design-ai-safety",
+            "type": "lesson",
+            "title": "Trust boundaries for retrieved and generated content",
+            "resource": "ml-system-design/ai-safety",
+            "to": "/learn/ml-system-design/ai-safety"
+          },
+          {
+            "id": "quiz-agent-workflows",
+            "type": "quiz",
+            "title": "Check: Agents with bounded authority and recoverable actions",
+            "resource": "agent-workflows",
+            "to": "/quiz/agent-workflows"
+          },
+          {
+            "id": "practice-ai-support-agent",
+            "type": "practice",
+            "title": "Design an Approval-Gated Support Agent",
+            "resource": "ai-support-agent",
+            "to": "/practice/ml-system-design/ai-support-agent"
+          }
+        ]
+      },
+      {
+        "title": "Operate within a measured serving budget",
+        "steps": [
+          {
+            "id": "ml-system-design-inference-serving",
+            "type": "lesson",
+            "title": "Serving LLMs within latency, memory, and cost budgets",
+            "resource": "ml-system-design/inference-serving",
+            "to": "/learn/ml-system-design/inference-serving"
+          },
+          {
+            "id": "quiz-inference-serving",
+            "type": "quiz",
+            "title": "Check: Serving LLMs within latency, memory, and cost budgets",
+            "resource": "inference-serving",
+            "to": "/quiz/inference-serving"
+          },
+          {
+            "id": "practice-ai-inference-gateway",
+            "type": "practice",
+            "title": "Design a Bounded LLM Inference Gateway",
+            "resource": "ai-inference-gateway",
+            "to": "/practice/ml-system-design/ai-inference-gateway"
+          }
+        ]
+      },
+      {
+        "title": "Adapt behavior and preserve multimodal evidence",
+        "steps": [
+          {
+            "id": "ml-system-design-model-adaptation",
+            "type": "lesson",
+            "title": "Choose prompting, retrieval, or model adaptation",
+            "resource": "ml-system-design/model-adaptation",
+            "to": "/learn/ml-system-design/model-adaptation"
+          },
+          {
+            "id": "ml-system-design-multimodal-systems",
+            "type": "lesson",
+            "title": "Documents and voice: preserve structure and time",
+            "resource": "ml-system-design/multimodal-systems",
+            "to": "/learn/ml-system-design/multimodal-systems"
+          },
+          {
+            "id": "quiz-model-adaptation",
+            "type": "quiz",
+            "title": "Check: Choose prompting, retrieval, or model adaptation",
+            "resource": "model-adaptation",
+            "to": "/quiz/model-adaptation"
+          },
+          {
+            "id": "practice-ai-document-review",
+            "type": "practice",
+            "title": "Design a Traceable Document Review Pipeline",
+            "resource": "ai-document-review",
+            "to": "/practice/ml-system-design/ai-document-review"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "id": "low-level-design-complete",
     "title": "Low-level design: the complete Studio path",
     "description": "12 substantial lessons, eight knowledge checks, and eight original worked models. Four new JavaScript exercises complement four preserved open-ended briefs. Includes existing premium-demo concurrency and limiter steps; sequential references do not prove production concurrency.",
