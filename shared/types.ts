@@ -370,6 +370,7 @@ export interface Course {
   description: string;
   track: TrackId;
   premium?: boolean;
+  sourceIds?: SourceId[];
   units: { title: string; steps: CourseStep[] }[];
 }
 export interface CommunityPost {

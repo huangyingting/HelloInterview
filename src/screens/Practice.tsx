@@ -13,7 +13,7 @@ import { Select } from '../components/Select';
 export function PracticeIndex() {
   const descriptions: Record<string, string> = {
     'system-design': 'Architecture decisions and a movable diagram canvas.',
-    'ml-system-design': 'Retrieval, bounded agents, inference, and multimodal architecture.',
+    'ml-system-design': 'AI architecture designs and runnable retrieval and agent labs.',
     'low-level-design': 'Object models, invariants, and clear code contracts.',
     'ai-coding': 'Original coding tasks with isolated JavaScript tests.',
     behavioral: 'Specific stories, honest reflection, and a clear structure.',
@@ -77,7 +77,7 @@ export function Diagram({nodes,edges,onNodes,onEdges}:{nodes:DiagramNode[];edges
 export function PracticeSession({track,id}:{track:string;id:string}) {
   const { can,data,setState,act,notify,pending,refresh}=useStudio(),[params]=useSearchParams(),navigate=useNavigate();
   const metadata=problems.find(p=>p.id===id&&p.track===track);
-  const design=track==='system-design'||track==='ml-system-design', destination=track==='ml-system-design'?'model':'db';
+  const design=(track==='system-design'||track==='ml-system-design')&&!metadata?.runnable, destination=track==='ml-system-design'?'model':'db';
   const access = !!metadata && (!metadata.premium || can('content.premium.read'));
   const resource = useContent<PracticeProblem>(access ? `/api/content/problems/${encodeURIComponent(id)}` : null);
   const problem = resource.value;

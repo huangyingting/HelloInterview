@@ -3,6 +3,7 @@ import { systemDesignLessons } from './content/system-design-lessons';
 import { codingLessons } from './content/coding-lessons';
 import { lowLevelDesignLessons } from './content/low-level-design-lessons';
 import { aiEngineeringLessons } from './content/ai-engineering-lessons';
+import { aiLabLessons } from './content/ai-lab-lessons';
 import { problems, quizTopics } from './catalog';
 
 const reading = (track: string, id: string, title: string): CourseStep => ({ id: `${track}-${id}`, type: 'lesson', title, resource: `${track}/${id}`, to: `/learn/${track}/${id}` });
@@ -21,6 +22,23 @@ export const courses: Course[] = [
     ...unit.quizzes.map(id => quiz(id, `Check: ${quizTopics.find(topic => topic.id === id)!.title}`)),
     ...unit.exercises.map(id => practice('ml-system-design', id, problems.find(problem => problem.id === id)!.title)),
   ] })) },
+  ...([
+    { id: 'retrieval-engineering', title: 'Retrieval engineering: build, measure, improve', description: 'Three original lessons, two knowledge checks, and two runnable JavaScript labs. Follow the project-oriented progression of LLM Zoomcamp and Maxime Labonne\'s LLM Course through reproducible ingestion, evidence packing, and ranking experiments. No paid API or GPU required; independent Studio material, not upstream certification.', sourceIds: ['llm-course-roadmap', 'llm-zoomcamp', 'pgvector-search'], units: [
+      { title: 'Prepare evidence and pack a bounded context', lessons: ['retrieval-ingestion', 'retrieval-ranking'], quizzes: ['retrieval-ranking'], exercises: ['lab-context-packer'] },
+      { title: 'Measure the ranking before releasing it', lessons: ['retrieval-experiments'], quizzes: ['retrieval-experiments'], exercises: ['lab-retrieval-metrics'] },
+    ] },
+    { id: 'agent-engineering', title: 'Agent execution: tools, memory, recovery', description: 'Three original lessons, two knowledge checks, and two runnable JavaScript labs. Extend the Hugging Face Agents Course\'s tool-and-project progression with strict proposal checks, scoped memory, and recoverable operation histories. No paid API or GPU required; independent Studio material, not upstream certification.', sourceIds: ['hf-agents-course', 'mcp-tools', 'langgraph-persistence'], units: [
+      { title: 'Define and validate the tool boundary', lessons: ['agent-tool-contracts'], quizzes: ['agent-tool-contracts'], exercises: ['lab-tool-dispatch'] },
+      { title: 'Keep context useful and operations recoverable', lessons: ['agent-context-state', 'agent-recovery'], quizzes: ['agent-recovery'], exercises: ['lab-agent-reducer'] },
+    ] },
+  ] satisfies { id: string; title: string; description: string; sourceIds: NonNullable<Course['sourceIds']>; units: { title: string; lessons: string[]; quizzes: string[]; exercises: string[] }[] }[]).map(course => ({
+    ...course, track: 'ml-system-design' as const,
+    units: course.units.map(unit => ({ title: unit.title, steps: [
+      ...unit.lessons.map(id => reading('ml-system-design', id, aiLabLessons.find(lesson => lesson.id === id)!.title)),
+      ...unit.quizzes.map(id => quiz(id, `Check: ${quizTopics.find(topic => topic.id === id)!.title}`)),
+      ...unit.exercises.map(id => practice('ml-system-design', id, problems.find(problem => problem.id === id)!.title)),
+    ] })),
+  })),
   { id: 'low-level-design-complete', title: 'Low-level design: the complete Studio path', description: '12 substantial lessons, eight knowledge checks, and eight original worked models. Four new JavaScript exercises complement four preserved open-ended briefs. Includes existing premium-demo concurrency and limiter steps; sequential references do not prove production concurrency.', track: 'low-level-design', units: [
     { title: 'Own the behavior and model the invariant', lessons: ['introduction','object-modeling','design-principles'], quizzes: ['object-modeling','design-principles'], exercises: ['parcel-lockers','parking-garage'] },
     { title: 'Make contracts and transitions observable', lessons: ['interfaces','state-machines','error-contracts'], quizzes: ['interfaces','state-machines','error-contracts'], exercises: ['board-game','lld-workflow-engine'] },

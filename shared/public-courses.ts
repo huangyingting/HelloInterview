@@ -156,6 +156,150 @@ export const courses: Course[] = [
     ]
   },
   {
+    "id": "retrieval-engineering",
+    "title": "Retrieval engineering: build, measure, improve",
+    "description": "Three original lessons, two knowledge checks, and two runnable JavaScript labs. Follow the project-oriented progression of LLM Zoomcamp and Maxime Labonne's LLM Course through reproducible ingestion, evidence packing, and ranking experiments. No paid API or GPU required; independent Studio material, not upstream certification.",
+    "track": "ml-system-design",
+    "sourceIds": [
+      "llm-course-roadmap",
+      "llm-zoomcamp",
+      "pgvector-search"
+    ],
+    "units": [
+      {
+        "title": "Prepare evidence and pack a bounded context",
+        "steps": [
+          {
+            "id": "ml-system-design-retrieval-ingestion",
+            "type": "lesson",
+            "title": "Build a reproducible retrieval dataset",
+            "resource": "ml-system-design/retrieval-ingestion",
+            "to": "/learn/ml-system-design/retrieval-ingestion"
+          },
+          {
+            "id": "ml-system-design-retrieval-ranking",
+            "type": "lesson",
+            "title": "Tune retrieval without confusing scores and evidence",
+            "resource": "ml-system-design/retrieval-ranking",
+            "to": "/learn/ml-system-design/retrieval-ranking"
+          },
+          {
+            "id": "quiz-retrieval-ranking",
+            "type": "quiz",
+            "title": "Check: Tune retrieval without confusing scores and evidence",
+            "resource": "retrieval-ranking",
+            "to": "/quiz/retrieval-ranking"
+          },
+          {
+            "id": "practice-lab-context-packer",
+            "type": "practice",
+            "title": "Pack a Ranked Evidence Budget",
+            "resource": "lab-context-packer",
+            "to": "/practice/ml-system-design/lab-context-packer"
+          }
+        ]
+      },
+      {
+        "title": "Measure the ranking before releasing it",
+        "steps": [
+          {
+            "id": "ml-system-design-retrieval-experiments",
+            "type": "lesson",
+            "title": "Evaluate rankings and make a release decision",
+            "resource": "ml-system-design/retrieval-experiments",
+            "to": "/learn/ml-system-design/retrieval-experiments"
+          },
+          {
+            "id": "quiz-retrieval-experiments",
+            "type": "quiz",
+            "title": "Check: Evaluate rankings and make a release decision",
+            "resource": "retrieval-experiments",
+            "to": "/quiz/retrieval-experiments"
+          },
+          {
+            "id": "practice-lab-retrieval-metrics",
+            "type": "practice",
+            "title": "Evaluate a Deduplicated Retrieval Ranking",
+            "resource": "lab-retrieval-metrics",
+            "to": "/practice/ml-system-design/lab-retrieval-metrics"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "agent-engineering",
+    "title": "Agent execution: tools, memory, recovery",
+    "description": "Three original lessons, two knowledge checks, and two runnable JavaScript labs. Extend the Hugging Face Agents Course's tool-and-project progression with strict proposal checks, scoped memory, and recoverable operation histories. No paid API or GPU required; independent Studio material, not upstream certification.",
+    "track": "ml-system-design",
+    "sourceIds": [
+      "hf-agents-course",
+      "mcp-tools",
+      "langgraph-persistence"
+    ],
+    "units": [
+      {
+        "title": "Define and validate the tool boundary",
+        "steps": [
+          {
+            "id": "ml-system-design-agent-tool-contracts",
+            "type": "lesson",
+            "title": "Tools are typed proposals, not ambient authority",
+            "resource": "ml-system-design/agent-tool-contracts",
+            "to": "/learn/ml-system-design/agent-tool-contracts"
+          },
+          {
+            "id": "quiz-agent-tool-contracts",
+            "type": "quiz",
+            "title": "Check: Tools are typed proposals, not ambient authority",
+            "resource": "agent-tool-contracts",
+            "to": "/quiz/agent-tool-contracts"
+          },
+          {
+            "id": "practice-lab-tool-dispatch",
+            "type": "practice",
+            "title": "Validate a Version-Bound Tool Proposal",
+            "resource": "lab-tool-dispatch",
+            "to": "/practice/ml-system-design/lab-tool-dispatch"
+          }
+        ]
+      },
+      {
+        "title": "Keep context useful and operations recoverable",
+        "steps": [
+          {
+            "id": "ml-system-design-agent-context-state",
+            "type": "lesson",
+            "title": "Separate conversation, memory, and business state",
+            "resource": "ml-system-design/agent-context-state",
+            "to": "/learn/ml-system-design/agent-context-state"
+          },
+          {
+            "id": "ml-system-design-agent-recovery",
+            "type": "lesson",
+            "title": "Resume an agent without replaying its side effects",
+            "resource": "ml-system-design/agent-recovery",
+            "to": "/learn/ml-system-design/agent-recovery"
+          },
+          {
+            "id": "quiz-agent-recovery",
+            "type": "quiz",
+            "title": "Check: Resume an agent without replaying its side effects",
+            "resource": "agent-recovery",
+            "to": "/quiz/agent-recovery"
+          },
+          {
+            "id": "practice-lab-agent-reducer",
+            "type": "practice",
+            "title": "Reduce a Recoverable Agent Operation History",
+            "resource": "lab-agent-reducer",
+            "to": "/practice/ml-system-design/lab-agent-reducer"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "id": "low-level-design-complete",
     "title": "Low-level design: the complete Studio path",
     "description": "12 substantial lessons, eight knowledge checks, and eight original worked models. Four new JavaScript exercises complement four preserved open-ended briefs. Includes existing premium-demo concurrency and limiter steps; sequential references do not prove production concurrency.",

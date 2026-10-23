@@ -3,6 +3,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNod
 import { signOutAuth } from './auth-client';
 import { Link, useLocation, useNavigate } from './navigation';
 import { practiceLabels, practiceTracks, navigationTracks as tracks } from "../shared/public-navigation";
+import { problems } from '../shared/public-problems';
 import { isCommunityKind, parseStudioAddress } from '../shared/community-routes';
 import { AuthPrompt, NotFound } from './components/access';
 import { useStudio } from './store';
@@ -89,6 +90,7 @@ export function App() {
     else if(segments[1]==='ml-system-design'&&segments[2]==='cases')content=<CaseLibrary track="ml-system-design"/>;
     else if(segments[1]==='code'&&segments[2]==='solutions')content=<CodingLibrary/>;
     else if(segments[1]==='low-level-design'&&segments[2]==='solutions')content=<CodingLibrary track="low-level-design"/>;
+    else if(segments[1]==='ml-system-design'&&segments[2]==='solutions')content=<CodingLibrary track="ml-system-design"/>;
     else if(segments[1]==='behavioral'&&['stories','story-builder'].includes(segments[2]))content=<StoryBank key={path}/>;
     else if(segments.length===2)content=<TrackOverview id={segments[1]}/>;
     else content=<LessonPage trackId={segments[1]} lessonId={segments.at(-1)!} key={path}/>;
@@ -96,7 +98,7 @@ export function App() {
     if(!segments[1]||segments[1]==='overview')content=<PracticeIndex/>;
     else if(!segments[2])content=<PracticeList track={segments[1]} key={path}/>;
     else if(segments[1]==='system-design'&&segments[3]==='writeup')content=<CaseReader problemId={segments[2]} key={path}/>;
-    else if(segments[1]==='ml-system-design'&&segments[3]==='writeup')content=<CaseReader track="ml-system-design" problemId={segments[2]} key={path}/>;
+    else if(segments[1]==='ml-system-design'&&segments[3]==='writeup')content=problems.some(problem=>problem.track==='ml-system-design'&&problem.id===segments[2]&&problem.hasSolution)?<CodingReader track="ml-system-design" problemId={segments[2]} key={path}/>:<CaseReader track="ml-system-design" problemId={segments[2]} key={path}/>;
     else if(segments[1]==='code'&&segments[3]==='writeup')content=<CodingReader problemId={segments[2]} key={path}/>;
     else if(segments[1]==='low-level-design'&&segments[3]==='writeup')content=<CodingReader track="low-level-design" problemId={segments[2]} key={path}/>;
     else content=<PracticeSession track={segments[1]} id={segments[2]} key={`${path}${location.search}`}/>;

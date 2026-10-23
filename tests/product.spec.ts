@@ -2,6 +2,8 @@ import { test, expect, type Page } from './browser-fixtures';
 import { browserAccount } from './browser-account';
 import { problems, tracks } from '../shared/public-catalog';
 import { aiEngineeringQuestions } from '../shared/content/ai-engineering-questions';
+import { aiLabProblems } from '../shared/content/ai-lab-problems';
+import { aiLabQuestions } from '../shared/content/ai-lab-questions';
 
 async function signIn(page: Page) {
   await page.goto('/login');
@@ -244,5 +246,57 @@ test('an invited member persists AI course progress, sourced quiz results and an
   await page.goto('/learn/courses/ai-engineering');
   await expect(page.locator('.course-hero')).toContainText('3 of 18 steps complete');
   await page.screenshot({ path: testInfo.outputPath('ai-engineering-course.png'), fullPage: true });
+  expect(errors).toEqual([]);
+});
+
+test('an invited member runs all four AI labs and retains independent follow-up course progress', async ({ page }) => {
+  test.setTimeout(120000);
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('response', response => { if (response.status() >= 500 && response.url().includes('/api/')) errors.push(`HTTP ${response.status()} ${new URL(response.url()).pathname}`); });
+  await signIn(page);
+  for (const [course, lesson] of [['retrieval-engineering', 'retrieval-ingestion'], ['agent-engineering', 'agent-tool-contracts']]) {
+    await page.goto(`/learn/courses/${course}`);
+    await page.getByRole('button', { name: 'Enroll in this course', exact: false }).click();
+    await expect(page.getByRole('link', { name: 'Continue your path', exact: false })).toBeVisible();
+    await page.goto(`/learn/ml-system-design/${lesson}`);
+    await page.getByRole('button', { name: 'Mark as read', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Completed', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  }
+  for (const problem of aiLabProblems) {
+    await page.goto(`/practice/ml-system-design/${problem.id}`);
+    await page.getByRole('button', { name: 'Start practice', exact: false }).click();
+    await expect(page.getByRole('tab', { name: 'Code editor', exact: true })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tab', { name: 'Architecture', exact: true })).toHaveCount(0);
+    await page.getByRole('textbox', { name: 'Code editor', exact: true }).fill(problem.solution!.code);
+    await page.getByRole('button', { name: 'Run tests', exact: false }).click();
+    await expect(page.locator('.test-results .passed')).toHaveCount(problem.testCases!.length);
+    await expect(page.locator('.test-results .failed')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Save draft', exact: false }).click();
+    await expect(page.locator('.workspace-status')).toHaveText('Saved to your account');
+    await page.reload();
+    await expect(page.getByRole('textbox', { name: 'Code editor', exact: true })).toHaveValue(problem.solution!.code);
+    await page.getByRole('tab', { name: 'Explanation', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Practice explanation', exact: true }).fill('Preserve the specified invariant and input identity. Use explicit budget, schema, tenant, approval, rank, and version checks. Keep unknown operation outcomes for reconciliation. Compare every valid and rejected transition with the stated examples; these bounded tests are not proof of production authority or distributed correctness.');
+    await page.getByRole('button', { name: 'Get feedback', exact: false }).click();
+    await expect(page.locator('.feedback-panel')).toContainText('Local rubric · not AI');
+  }
+  await page.goto('/quiz/retrieval-ranking');
+  await page.getByRole('button', { name: 'Start quiz', exact: false }).click();
+  const pool = aiLabQuestions.filter(question => question.topic === 'retrieval-ranking');
+  for (const [index, question] of pool.entries()) {
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(question.prompt);
+    await page.getByRole('radio', { name: question.options[question.correct], exact: false }).check();
+    await page.getByRole('button', { name: 'Check answer', exact: false }).click();
+    await expect(page.locator('.quiz-answer-explanation')).toContainText(question.explanation);
+    await page.getByRole('button', { name: index === pool.length - 1 ? 'Finish quiz' : 'Next question', exact: false }).click();
+  }
+  await expect(page.locator('.result-score')).toHaveText('4/ 4');
+  await page.reload();
+  await expect(page.locator('.quiz-explanations article')).toHaveCount(4);
+  for (const [course, complete] of [['retrieval-engineering', 4], ['agent-engineering', 3]] as const) {
+    await page.goto(`/learn/courses/${course}`);
+    await expect(page.locator('.course-hero')).toContainText(`${complete} of 7 steps complete`);
+  }
   expect(errors).toEqual([]);
 });

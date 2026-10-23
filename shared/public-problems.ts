@@ -830,5 +830,57 @@ export const problems: ProblemMetadata[] = [
     "runnable": false,
     "caseSummary": "Immutable evidence and versioned proposals separate probabilistic extraction from the approved business record.",
     "calculationCount": 3
+  },
+  {
+    "id": "lab-context-packer",
+    "track": "ml-system-design",
+    "title": "Pack a Ranked Evidence Budget",
+    "difficulty": "Easy",
+    "description": "Implement a deterministic context packer over trusted synthetic passage metadata without network or model calls.",
+    "hasWorkedCase": false,
+    "hasSolution": true,
+    "exampleCount": 7,
+    "runnable": true,
+    "caseSummary": "",
+    "calculationCount": 0
+  },
+  {
+    "id": "lab-retrieval-metrics",
+    "track": "ml-system-design",
+    "title": "Evaluate a Deduplicated Retrieval Ranking",
+    "difficulty": "Medium",
+    "description": "Calculate explicit precision, recall, reciprocal rank, and answerable-query macro averages from binary relevance fixtures.",
+    "hasWorkedCase": false,
+    "hasSolution": true,
+    "exampleCount": 7,
+    "runnable": true,
+    "caseSummary": "",
+    "calculationCount": 0
+  },
+  {
+    "id": "lab-tool-dispatch",
+    "track": "ml-system-design",
+    "title": "Validate a Version-Bound Tool Proposal",
+    "difficulty": "Medium",
+    "description": "Build a pure readiness gate for document reads and tag proposals with strict arguments, tenant scope, and exact approvals.",
+    "hasWorkedCase": false,
+    "hasSolution": true,
+    "exampleCount": 7,
+    "runnable": true,
+    "caseSummary": "",
+    "calculationCount": 0
+  },
+  {
+    "id": "lab-agent-reducer",
+    "track": "ml-system-design",
+    "title": "Reduce a Recoverable Agent Operation History",
+    "difficulty": "Hard",
+    "description": "Implement a bounded sequential operation model that preserves payload identity, approval, dispatch budget, and unknown outcomes.",
+    "hasWorkedCase": false,
+    "hasSolution": true,
+    "exampleCount": 7,
+    "runnable": true,
+    "caseSummary": "",
+    "calculationCount": 0
   }
 ];

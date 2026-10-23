@@ -20,7 +20,7 @@ const exercises: ProblemMetadata[] = problems.map(problem => ({
   calculationCount: problem.workedCase?.calculations.length ?? 0,
 }));
 const publicCourses=courses.map(course=>({
-  id:course.id,title:course.title,description:course.description,track:course.track,premium:course.premium,
+  id:course.id,title:course.title,description:course.description,track:course.track,premium:course.premium,sourceIds:course.sourceIds,
   units:course.units.map(unit=>({title:unit.title,steps:unit.steps.map(step=>({id:step.id,type:step.type,title:step.title,resource:step.resource,to:step.to}))})),
 }));
 const fields = { tracks: metadata, problems: exercises, quizTopics, questionIndex: quizQuestions.map(({ id, topic }) => ({ id, topic })), companies, levels, regions, practiceLabels, practiceTracks, courses: publicCourses,

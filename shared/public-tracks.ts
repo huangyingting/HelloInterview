@@ -1666,6 +1666,135 @@ export const tracks: TrackMetadata[] = [
           "ai-support-agent"
         ],
         "quizTopic": "llm-evaluation"
+      },
+      {
+        "id": "retrieval-ingestion",
+        "title": "Build a reproducible retrieval dataset",
+        "group": "Retrieval engineering lab",
+        "minutes": 3,
+        "summary": "Turn source changes into inspectable index generations instead of an unrepeatable collection of embeddings.",
+        "objectives": [
+          "Identify the artifacts needed to reproduce retrieval.",
+          "Separate source identity from chunk and model versions.",
+          "Plan deletion, backfill, and rollback without restoring revoked evidence."
+        ],
+        "sourceIds": [
+          "llm-course-roadmap",
+          "llm-zoomcamp",
+          "pgvector-search"
+        ],
+        "relatedProblemIds": [
+          "lab-context-packer"
+        ],
+        "quizTopic": "retrieval-ranking"
+      },
+      {
+        "id": "retrieval-ranking",
+        "title": "Tune retrieval without confusing scores and evidence",
+        "group": "Retrieval engineering lab",
+        "minutes": 4,
+        "summary": "Compare exact and approximate search, filtering, rank fusion, and deterministic context packing.",
+        "objectives": [
+          "Choose a similarity contract and exact baseline.",
+          "Explain why approximate filtering can reduce returned candidates.",
+          "Implement a stable evidence budget policy without pretending it is an optimal knapsack solver."
+        ],
+        "sourceIds": [
+          "pgvector-search",
+          "azure-hybrid-ranking",
+          "llm-course-roadmap"
+        ],
+        "relatedProblemIds": [
+          "lab-context-packer",
+          "lab-retrieval-metrics"
+        ],
+        "quizTopic": "retrieval-ranking"
+      },
+      {
+        "id": "retrieval-experiments",
+        "title": "Evaluate rankings and make a release decision",
+        "group": "Retrieval engineering lab",
+        "minutes": 3,
+        "summary": "Implement retrieval metrics with declared denominators and separate answerable queries from abstention cases.",
+        "objectives": [
+          "Calculate precision, recall, and reciprocal rank consistently.",
+          "Prevent duplicate results and unanswerable items from inflating scores.",
+          "Design a paired retrieval experiment with release and rollback criteria."
+        ],
+        "sourceIds": [
+          "llm-zoomcamp",
+          "llm-evals",
+          "pgvector-search"
+        ],
+        "relatedProblemIds": [
+          "lab-retrieval-metrics"
+        ],
+        "quizTopic": "retrieval-experiments"
+      },
+      {
+        "id": "agent-tool-contracts",
+        "title": "Tools are typed proposals, not ambient authority",
+        "group": "Agent execution lab",
+        "minutes": 3,
+        "summary": "Build a deterministic tool gate and compare framework capabilities without confusing schemas with authorization.",
+        "objectives": [
+          "Validate a named tool and exact argument shape.",
+          "Bind access and approval to current server-owned state.",
+          "Explain what MCP and agent frameworks standardize and what they do not."
+        ],
+        "sourceIds": [
+          "hf-agents-course",
+          "mcp-tools",
+          "owasp-prompt-injection"
+        ],
+        "relatedProblemIds": [
+          "lab-tool-dispatch"
+        ],
+        "quizTopic": "agent-tool-contracts"
+      },
+      {
+        "id": "agent-context-state",
+        "title": "Separate conversation, memory, and business state",
+        "group": "Agent execution lab",
+        "minutes": 3,
+        "summary": "Choose what an agent remembers, who can read it, and which records remain authoritative after a restart.",
+        "objectives": [
+          "Distinguish thread checkpoints from cross-thread memory.",
+          "Keep conversation summaries subordinate to operation receipts.",
+          "Design bounded context and memory retention with tenant isolation."
+        ],
+        "sourceIds": [
+          "hf-agents-course",
+          "langgraph-persistence",
+          "effective-agents"
+        ],
+        "relatedProblemIds": [
+          "lab-context-packer",
+          "lab-agent-reducer"
+        ],
+        "quizTopic": "agent-recovery"
+      },
+      {
+        "id": "agent-recovery",
+        "title": "Resume an agent without replaying its side effects",
+        "group": "Agent execution lab",
+        "minutes": 3,
+        "summary": "Model durable intent, approval, dispatch, ambiguity, and confirmation as explicit observable transitions.",
+        "objectives": [
+          "Define stable operation identity and payload compatibility.",
+          "Preserve an unknown state after a timeout.",
+          "Test every history prefix and distinguish a pure reducer from durable execution."
+        ],
+        "sourceIds": [
+          "langgraph-persistence",
+          "stripe-idempotency",
+          "effective-agents"
+        ],
+        "relatedProblemIds": [
+          "lab-agent-reducer",
+          "lab-tool-dispatch"
+        ],
+        "quizTopic": "agent-recovery"
       }
     ]
   },

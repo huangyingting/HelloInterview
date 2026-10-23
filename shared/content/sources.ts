@@ -41,6 +41,12 @@ export const contentSources = {
   'trl-dpo': { title: 'Direct Preference Optimization: Training and Preference Data', publisher: 'Hugging Face', url: 'https://huggingface.co/docs/trl/en/dpo_trainer', researchDate: '2026-10-23' },
   'owasp-prompt-injection': { title: 'LLM01: Prompt Injection and Layered Mitigations', publisher: 'OWASP GenAI Security Project', url: 'https://genai.owasp.org/llmrisk/llm01-prompt-injection/', researchDate: '2026-10-23' },
   'document-layout': { title: 'Document Layout Analysis: Text, Tables, and Structure', publisher: 'Microsoft Learn', url: 'https://learn.microsoft.com/en-us/azure/ai-services/document-intelligence/prebuilt/layout?view=doc-intel-4.0.0', researchDate: '2026-10-23' },
+  'llm-course-roadmap': { title: 'LLM Course: Engineer Roadmap (pinned topic reference)', publisher: 'Maxime Labonne', url: 'https://github.com/mlabonne/llm-course/tree/7abd96e8284bfae232048fdb77b52397a2114847', researchDate: '2026-10-23' },
+  'hf-agents-course': { title: 'Hugging Face Agents Course (pinned curriculum reference)', publisher: 'Hugging Face', url: 'https://github.com/huggingface/agents-course/tree/3c469e773ec04e5f338b727ff20e3a6ea823ff81', researchDate: '2026-10-23' },
+  'llm-zoomcamp': { title: 'LLM Zoomcamp (pinned curriculum reference)', publisher: 'DataTalks.Club', url: 'https://github.com/DataTalksClub/llm-zoomcamp/tree/1c42efbeb8141c183e7ae51698ad912c70c06a06', researchDate: '2026-10-23' },
+  'pgvector-search': { title: 'pgvector: Exact Search, Approximate Indexes, and Filtering', publisher: 'pgvector contributors', url: 'https://github.com/pgvector/pgvector', researchDate: '2026-10-23' },
+  'langgraph-persistence': { title: 'LangGraph Persistence: Checkpointers and Stores', publisher: 'LangChain', url: 'https://docs.langchain.com/oss/python/langgraph/persistence', researchDate: '2026-10-23' },
+  'mcp-tools': { title: 'MCP Tools: Schemas, Results, and Trust Considerations', publisher: 'Model Context Protocol', url: 'https://modelcontextprotocol.io/specification/2025-11-25/server/tools', researchDate: '2026-10-23' },
 } as const;
 
 export type SourceId = keyof typeof contentSources;

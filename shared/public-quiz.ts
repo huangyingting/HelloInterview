@@ -233,6 +233,30 @@ export const quizTopics: { id: string; title: string; track: string; count: numb
     "title": "Choose prompting, retrieval, or model adaptation",
     "track": "ml-system-design",
     "count": 4
+  },
+  {
+    "id": "retrieval-ranking",
+    "title": "Tune retrieval without confusing scores and evidence",
+    "track": "ml-system-design",
+    "count": 4
+  },
+  {
+    "id": "retrieval-experiments",
+    "title": "Evaluate rankings and make a release decision",
+    "track": "ml-system-design",
+    "count": 4
+  },
+  {
+    "id": "agent-tool-contracts",
+    "title": "Tools are typed proposals, not ambient authority",
+    "track": "ml-system-design",
+    "count": 4
+  },
+  {
+    "id": "agent-recovery",
+    "title": "Resume an agent without replaying its side effects",
+    "track": "ml-system-design",
+    "count": 4
   }
 ];
 export const questionIndex: { id: string; topic: string }[] = [
@@ -2103,5 +2127,69 @@ export const questionIndex: { id: string; topic: string }[] = [
   {
     "id": "ai-eng-024",
     "topic": "model-adaptation"
+  },
+  {
+    "id": "ai-lab-001",
+    "topic": "retrieval-ranking"
+  },
+  {
+    "id": "ai-lab-002",
+    "topic": "retrieval-ranking"
+  },
+  {
+    "id": "ai-lab-003",
+    "topic": "retrieval-ranking"
+  },
+  {
+    "id": "ai-lab-004",
+    "topic": "retrieval-ranking"
+  },
+  {
+    "id": "ai-lab-005",
+    "topic": "retrieval-experiments"
+  },
+  {
+    "id": "ai-lab-006",
+    "topic": "retrieval-experiments"
+  },
+  {
+    "id": "ai-lab-007",
+    "topic": "retrieval-experiments"
+  },
+  {
+    "id": "ai-lab-008",
+    "topic": "retrieval-experiments"
+  },
+  {
+    "id": "ai-lab-009",
+    "topic": "agent-tool-contracts"
+  },
+  {
+    "id": "ai-lab-010",
+    "topic": "agent-tool-contracts"
+  },
+  {
+    "id": "ai-lab-011",
+    "topic": "agent-tool-contracts"
+  },
+  {
+    "id": "ai-lab-012",
+    "topic": "agent-tool-contracts"
+  },
+  {
+    "id": "ai-lab-013",
+    "topic": "agent-recovery"
+  },
+  {
+    "id": "ai-lab-014",
+    "topic": "agent-recovery"
+  },
+  {
+    "id": "ai-lab-015",
+    "topic": "agent-recovery"
+  },
+  {
+    "id": "ai-lab-016",
+    "topic": "agent-recovery"
   }
 ];

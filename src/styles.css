@@ -342,7 +342,7 @@ button:hover,a:hover { color: var(--accent); }
 .callout p { font-size: 11px; margin-top: 4px; }
 .back-link { font-size: 11px; color: var(--muted); display: inline-flex; gap: 7px; align-items: center; margin-bottom: 23px; }
 .article-layout { display: grid; grid-template-columns: minmax(0,1fr) 230px; gap: 28px; max-width: 1060px; margin: 0 auto; }
-.lesson-article { min-width: 0; }
+.lesson-article { min-width: 0; overflow-wrap: anywhere; }
 .lesson-cover { border-radius: 14px; height: 150px; background: color-mix(in srgb,var(--track-color) 11%,var(--surface)); display: flex; align-items: center; position: relative; padding: 32px; overflow: hidden; }
 .lesson-cover>span { font-size: 29px; letter-spacing: -1.1px; font-weight: 500; position: relative; z-index: 1; }
 .lesson-cover>svg { position: absolute; right: 38px; transform: rotate(-10deg); color: var(--track-color); opacity: .55; }

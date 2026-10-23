@@ -11,6 +11,9 @@ import { lowLevelDesignQuestions } from './content/low-level-design-questions';
 import { aiEngineeringLessons } from './content/ai-engineering-lessons';
 import { aiEngineeringProblems, aiEngineeringCaseStudies } from './content/ai-engineering-cases';
 import { aiEngineeringQuestions } from './content/ai-engineering-questions';
+import { aiLabLessons } from './content/ai-lab-lessons';
+import { aiLabProblems } from './content/ai-lab-problems';
+import { aiLabQuestions } from './content/ai-lab-questions';
 
 const lesson = (
   id: string, title: string, group: string, summary: string,
@@ -107,6 +110,7 @@ export const tracks: Track[] = [
         { title: 'Version the representation', body: 'Mixing embeddings from incompatible model versions can damage relevance. Plan index updates and a rollback path.' },
       ], 'Design an embedding index refresh for newly published documents.', true),
       ...aiEngineeringLessons,
+      ...aiLabLessons,
     ],
   },
   {
@@ -167,7 +171,7 @@ const originalProblems: Problem[] = [
 ];
 
 const caseStudies = [...systemDesignCaseStudies, ...aiEngineeringCaseStudies];
-export const problems: Problem[] = [...originalProblems, ...additionalSystemDesignProblems, ...codingProblems, ...additionalLowLevelDesignProblems, ...aiEngineeringProblems].map(problem => ({
+export const problems: Problem[] = [...originalProblems, ...additionalSystemDesignProblems, ...codingProblems, ...additionalLowLevelDesignProblems, ...aiEngineeringProblems, ...aiLabProblems].map(problem => ({
   ...problem, workedCase: caseStudies.find(study => study.problemId === problem.id) ?? problem.workedCase,
   solution: lowLevelDesignSolutions[problem.id] ?? problem.solution,
 }));
@@ -196,7 +200,7 @@ const originalQuizQuestions: QuizQuestion[] = [
   {id:'ml-3',topic:'evaluation',prompt:'Which feature is valid at prediction time?',options:['A future cancellation event','An outcome only known next week','A prior activity count available at the decision timestamp','A later refund decision'],correct:2,explanation:'Valid features must exist when the prediction is made; future outcomes introduce leakage.'},
 ];
 
-export const quizQuestions: QuizQuestion[] = [...originalQuizQuestions, ...systemDesignQuestions, ...codingQuestions, ...lowLevelDesignQuestions, ...aiEngineeringQuestions];
+export const quizQuestions: QuizQuestion[] = [...originalQuizQuestions, ...systemDesignQuestions, ...codingQuestions, ...lowLevelDesignQuestions, ...aiEngineeringQuestions, ...aiLabQuestions];
 
 export const quizTopics = [...new Set(quizQuestions.map(q => q.topic))].map(id => {
   const track = tracks.find(t => t.lessons.some(l => l.id === id))!;

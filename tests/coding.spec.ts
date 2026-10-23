@@ -1,5 +1,5 @@
 import { test, expect } from './browser-fixtures';
-import { problems } from '../shared/catalog';
+import { practiceTracks, problems } from '../shared/catalog';
 import { contentSources } from '../shared/content/sources';
 
 test('coding discovery connects sourced lessons, dedicated practice and actual reference solutions', async ({ page }) => {
@@ -47,6 +47,6 @@ test('coding readers and navigation stay bounded on mobile in both themes', asyn
   await expect(page.getByRole('link', { name: 'Browse worked solutions', exact: false })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await page.goto('/practice');
-  await expect(page.locator('.learning-index .track-card')).toHaveCount(6);
+  await expect(page.locator('.learning-index .track-card')).toHaveCount(practiceTracks.length);
   await expect(page.locator('.learning-index a[href="/practice/code"]')).toContainText('24 exercises');
 });
