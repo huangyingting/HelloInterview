@@ -86,6 +86,14 @@ export interface ContentSection {
   bullets?: string[];
   code?: string;
   diagram?: string;
+  flow?: LearningFlow;
+  visualization?: VisualLabKind;
+}
+export type VisualLabKind = 'attention' | 'sampling' | 'kv-cache' | 'streaming' | 'context-budget';
+export interface LearningFlow {
+  title: string;
+  summary: string;
+  steps: { id: string; title: string; detail: string }[];
 }
 export interface Lesson {
   id: string;

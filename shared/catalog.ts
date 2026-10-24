@@ -14,6 +14,8 @@ import { aiEngineeringQuestions } from './content/ai-engineering-questions';
 import { aiLabLessons } from './content/ai-lab-lessons';
 import { aiLabProblems } from './content/ai-lab-problems';
 import { aiLabQuestions } from './content/ai-lab-questions';
+import { dojoLessons } from './content/dojo-lessons';
+import { dojoQuestions } from './content/dojo-questions';
 
 const lesson = (
   id: string, title: string, group: string, summary: string,
@@ -111,6 +113,7 @@ export const tracks: Track[] = [
       ], 'Design an embedding index refresh for newly published documents.', true),
       ...aiEngineeringLessons,
       ...aiLabLessons,
+      ...dojoLessons,
     ],
   },
   {
@@ -200,7 +203,7 @@ const originalQuizQuestions: QuizQuestion[] = [
   {id:'ml-3',topic:'evaluation',prompt:'Which feature is valid at prediction time?',options:['A future cancellation event','An outcome only known next week','A prior activity count available at the decision timestamp','A later refund decision'],correct:2,explanation:'Valid features must exist when the prediction is made; future outcomes introduce leakage.'},
 ];
 
-export const quizQuestions: QuizQuestion[] = [...originalQuizQuestions, ...systemDesignQuestions, ...codingQuestions, ...lowLevelDesignQuestions, ...aiEngineeringQuestions, ...aiLabQuestions];
+export const quizQuestions: QuizQuestion[] = [...originalQuizQuestions, ...systemDesignQuestions, ...codingQuestions, ...lowLevelDesignQuestions, ...aiEngineeringQuestions, ...aiLabQuestions, ...dojoQuestions];
 
 export const quizTopics = [...new Set(quizQuestions.map(q => q.topic))].map(id => {
   const track = tracks.find(t => t.lessons.some(l => l.id === id))!;

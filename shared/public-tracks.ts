@@ -1795,6 +1795,135 @@ export const tracks: TrackMetadata[] = [
           "lab-tool-dispatch"
         ],
         "quizTopic": "agent-recovery"
+      },
+      {
+        "id": "attention-mechanics",
+        "title": "Read an attention map without overclaiming",
+        "group": "Model behavior lab",
+        "minutes": 3,
+        "summary": "Trace causal masking and normalized attention, then separate a useful calculation from a causal explanation of model behavior.",
+        "objectives": [
+          "Calculate a causal attention row with the mask applied first.",
+          "Explain the roles and dimensions of Q, K, and V.",
+          "Recognize the limits of attention visualizations and efficient kernels."
+        ],
+        "sourceIds": [
+          "dojo-topic-map",
+          "torch-attention",
+          "llm-evals"
+        ],
+        "relatedProblemIds": [
+          "ai-knowledge-assistant"
+        ],
+        "quizTopic": "attention-mechanics"
+      },
+      {
+        "id": "decoding-controls",
+        "title": "Change decoding without inventing confidence",
+        "group": "Model behavior lab",
+        "minutes": 3,
+        "summary": "Inspect temperature, top-k, and top-p as distribution transforms rather than truth or permission controls.",
+        "objectives": [
+          "Normalize logits stably after temperature scaling.",
+          "Specify the ordering of top-k and nucleus filtering.",
+          "Separate decoding variability from factual quality and reproducibility."
+        ],
+        "sourceIds": [
+          "dojo-topic-map",
+          "hf-generation",
+          "llm-evals"
+        ],
+        "relatedProblemIds": [
+          "ai-inference-gateway"
+        ],
+        "quizTopic": "decoding-controls"
+      },
+      {
+        "id": "kv-capacity",
+        "title": "Account for KV memory before admitting work",
+        "group": "Inference economics lab",
+        "minutes": 3,
+        "summary": "Calculate full-attention cache size with explicit units and identify the memory costs the estimate leaves out.",
+        "objectives": [
+          "Derive KV bytes from layers, heads, width, tokens, and concurrency.",
+          "Separate weights, KV state, and allocation overhead.",
+          "Explain when cache layout and attention architecture change the estimate."
+        ],
+        "sourceIds": [
+          "dojo-topic-map",
+          "hf-kv-cache",
+          "vllm-optimization"
+        ],
+        "relatedProblemIds": [
+          "ai-inference-gateway"
+        ],
+        "quizTopic": "kv-capacity"
+      },
+      {
+        "id": "streaming-service-levels",
+        "title": "Measure the first token and the useful finish",
+        "group": "Inference economics lab",
+        "minutes": 3,
+        "summary": "Trace a request timeline and distinguish first-token latency, completion latency, throughput, and quality-qualified goodput.",
+        "objectives": [
+          "Calculate first-token and final-token timing without an off-by-one interval.",
+          "Define latency boundaries before comparing measurements.",
+          "Evaluate throughput together with quality, deadlines, and useful outcomes."
+        ],
+        "sourceIds": [
+          "dojo-topic-map",
+          "sre-slos",
+          "vllm-optimization"
+        ],
+        "relatedProblemIds": [
+          "ai-inference-gateway"
+        ],
+        "quizTopic": "streaming-service-levels"
+      },
+      {
+        "id": "context-contracts",
+        "title": "Assemble context under evidence and token contracts",
+        "group": "Prompt and context lab",
+        "minutes": 3,
+        "summary": "Keep instructions, history, evidence, and output reserves distinct while making packing and overflow observable.",
+        "objectives": [
+          "Calculate available evidence capacity after fixed reservations.",
+          "Apply eligibility before ordered context selection.",
+          "Preserve provenance and authority when summarizing or compressing context."
+        ],
+        "sourceIds": [
+          "dojo-topic-map",
+          "owasp-prompt-injection",
+          "hf-generation"
+        ],
+        "relatedProblemIds": [
+          "lab-context-packer",
+          "ai-knowledge-assistant"
+        ],
+        "quizTopic": "context-contracts"
+      },
+      {
+        "id": "structured-proposals",
+        "title": "Validate generated structures before business actions",
+        "group": "Prompt and context lab",
+        "minutes": 4,
+        "summary": "Separate schema adherence, semantic correctness, authorization, approval, and confirmed execution.",
+        "objectives": [
+          "Handle completed, refused, incomplete, and invalid responses separately.",
+          "Explain why schema-valid fields are not sufficient business authority.",
+          "Version a prompt-and-validator contract and test unsafe proposals without side effects."
+        ],
+        "sourceIds": [
+          "dojo-topic-map",
+          "structured-output-contracts",
+          "owasp-object-auth",
+          "mcp-tools"
+        ],
+        "relatedProblemIds": [
+          "lab-tool-dispatch",
+          "lab-agent-reducer"
+        ],
+        "quizTopic": "structured-proposals"
       }
     ]
   },

@@ -4,6 +4,8 @@ import { problems, tracks } from '../shared/public-catalog';
 import { aiEngineeringQuestions } from '../shared/content/ai-engineering-questions';
 import { aiLabProblems } from '../shared/content/ai-lab-problems';
 import { aiLabQuestions } from '../shared/content/ai-lab-questions';
+import { dojoQuestions } from '../shared/content/dojo-questions';
+import { contentSources } from '../shared/content/sources';
 
 async function signIn(page: Page) {
   await page.goto('/login');
@@ -299,4 +301,44 @@ test('an invited member runs all four AI labs and retains independent follow-up 
     await expect(page.locator('.course-hero')).toContainText(`${complete} of 7 steps complete`);
   }
   expect(errors).toEqual([]);
+});
+
+test('Dojo course enrollment and sourced quiz progress persist while visual exploration never marks lessons read', async ({ page }) => {
+  test.setTimeout(120000);
+  await signIn(page);
+  for (const [course, lesson, total] of [['model-behavior', 'attention-mechanics', 6], ['inference-economics', 'kv-capacity', 6], ['prompt-contracts', 'context-contracts', 7]] as const) {
+    await page.goto(`/learn/courses/${course}`);
+    const before = Number((await page.locator('.course-hero h2').innerText()).match(/^(\d+) of/)![1]);
+    await page.getByRole('button', { name: 'Enroll in this course', exact: false }).click();
+    await expect(page.getByRole('link', { name: 'Continue your path', exact: false })).toBeVisible();
+    await page.goto(`/learn/ml-system-design/${lesson}`);
+    await page.locator('.learning-flow').getByRole('button', { name: 'Next step', exact: false }).click();
+    await page.locator('.ai-visual-lab input[type="range"]').first().focus();
+    await page.keyboard.press('End');
+    await page.goto(`/learn/courses/${course}`);
+    await expect(page.locator('.course-hero')).toContainText(`${before} of ${total} steps complete`);
+    await page.goto(`/learn/ml-system-design/${lesson}`);
+    await page.getByRole('button', { name: 'Mark as read', exact: true }).click();
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Completed', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await page.goto(`/quiz/${lesson}`);
+    await page.getByRole('button', { name: 'Start quiz', exact: false }).click();
+    const pool = dojoQuestions.filter(question => question.topic === lesson);
+    for (const [index, question] of pool.entries()) {
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(question.prompt);
+      await page.getByRole('radio', { name: question.options[question.correct], exact: false }).check();
+      await page.getByRole('button', { name: 'Check answer', exact: false }).click();
+      await expect(page.locator('.quiz-answer-explanation')).toContainText(question.explanation);
+      await page.getByRole('button', { name: index === pool.length - 1 ? 'Finish quiz' : 'Next question', exact: false }).click();
+    }
+    await expect(page.locator('.result-score')).toHaveText('4/ 4');
+    await page.reload();
+    await expect(page.locator('.quiz-explanations article')).toHaveCount(4);
+    for (const id of pool[0].sourceIds ?? []) {
+      const source = Object.entries(contentSources).find(([key]) => key === id)![1];
+      await expect(page.locator('.quiz-explanations article').first().locator(`.content-sources a[href="${source.url}"]`)).toBeVisible();
+    }
+    await page.goto(`/learn/courses/${course}`);
+    await expect(page.locator('.course-hero')).toContainText(`${before + 2} of ${total} steps complete`);
+  }
 });

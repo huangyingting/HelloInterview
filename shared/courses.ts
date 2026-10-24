@@ -4,6 +4,7 @@ import { codingLessons } from './content/coding-lessons';
 import { lowLevelDesignLessons } from './content/low-level-design-lessons';
 import { aiEngineeringLessons } from './content/ai-engineering-lessons';
 import { aiLabLessons } from './content/ai-lab-lessons';
+import { dojoLessons } from './content/dojo-lessons';
 import { problems, quizTopics } from './catalog';
 
 const reading = (track: string, id: string, title: string): CourseStep => ({ id: `${track}-${id}`, type: 'lesson', title, resource: `${track}/${id}`, to: `/learn/${track}/${id}` });
@@ -12,6 +13,23 @@ const practice = (track: string, id: string, title: string): CourseStep => ({ id
 const video = (course: string, title: string): CourseStep => ({ id: `video-${course}`, type: 'video', title, resource: course, to: `/learn/courses/${course}/video/${course}` });
 
 export const courses: Course[] = [
+  ...([
+    { id: 'model-behavior', title: 'Model behavior: attention and decoding', description: 'Two original visual lessons, two knowledge checks, and an architecture exercise, with the existing LLM foundations as a bridge. Explore causal attention and sampling distributions locally. Topic-selected from the local LLM Dojo curriculum; no captured content or upstream runtime is imported.', lessons: ['attention-mechanics', 'decoding-controls'], bridge: 'llm-foundations', exercises: ['ai-knowledge-assistant'], sourceIds: ['dojo-topic-map', 'torch-attention', 'hf-generation'] },
+    { id: 'inference-economics', title: 'Inference economics: memory and latency', description: 'Two original visual lessons, two knowledge checks, and a serving design exercise, connected to the existing inference lesson. Calculate KV payload and trace streaming latency without a GPU or provider account. Original Studio material, topic-selected from the local LLM Dojo curriculum.', lessons: ['kv-capacity', 'streaming-service-levels'], bridge: 'inference-serving', exercises: ['ai-inference-gateway'], sourceIds: ['dojo-topic-map', 'hf-kv-cache', 'sre-slos'] },
+    { id: 'prompt-contracts', title: 'Prompt and context: evidence before actions', description: 'Two original visual lessons, two knowledge checks, and two existing runnable labs, connected to the AI safety lesson. Pack a context budget, trace proposal validation, and implement exact contracts. Original Studio material, topic-selected from the local LLM Dojo curriculum.', lessons: ['context-contracts', 'structured-proposals'], bridge: 'ai-safety', exercises: ['lab-context-packer', 'lab-tool-dispatch'], sourceIds: ['dojo-topic-map', 'structured-output-contracts', 'owasp-prompt-injection'] },
+  ] satisfies { id: string; title: string; description: string; lessons: string[]; bridge: string; exercises: string[]; sourceIds: NonNullable<Course['sourceIds']> }[]).map(course => ({
+    id: course.id, title: course.title, description: course.description, sourceIds: course.sourceIds, track: 'ml-system-design' as const,
+    units: [
+      { title: 'Explore the mechanism and check the contract', steps: course.lessons.flatMap(id => [
+        reading('ml-system-design', id, dojoLessons.find(lesson => lesson.id === id)!.title),
+        quiz(id, `Check: ${quizTopics.find(topic => topic.id === id)!.title}`),
+      ]) },
+      { title: 'Connect the visual model to product decisions', steps: [
+        reading('ml-system-design', course.bridge, aiEngineeringLessons.find(lesson => lesson.id === course.bridge)!.title),
+        ...course.exercises.map(id => practice('ml-system-design', id, problems.find(problem => problem.id === id)!.title)),
+      ] },
+    ],
+  })),
   { id: 'ai-engineering', title: 'AI engineering: from evidence to reliable systems', description: 'Eight original lessons, six knowledge checks, and four worked architecture exercises. Build retrieval, bounded agents, inference, adaptation, and multimodal systems. Topic-informed by a public preparation catalog, not official company questions. No premium steps or live model access required.', track: 'ml-system-design', units: [
     { title: 'Establish the model, evidence, and quality contract', lessons: ['llm-foundations', 'rag-retrieval', 'llm-evaluation'], quizzes: ['llm-foundations', 'rag-retrieval', 'llm-evaluation'], exercises: ['ai-knowledge-assistant'] },
     { title: 'Give tools bounded authority', lessons: ['agent-workflows', 'ai-safety'], quizzes: ['agent-workflows'], exercises: ['ai-support-agent'] },

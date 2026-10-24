@@ -37,16 +37,16 @@ test('flagship inventory meets the exact promised scope without replacing other 
   assert.equal(topics.length, 12);
   assert.equal(systemDesignQuestions.length, 168);
   assert.equal(tracks.length, 7);
-  assert.equal(tracks.reduce((count, track) => count + track.lessons.length, 0), 88);
+  assert.equal(tracks.reduce((count, track) => count + track.lessons.length, 0), 94);
   assert.equal(problems.length, 67);
-  assert.equal(quizQuestions.length, 483);
-  assert.equal(quizTopics.length, 43);
+  assert.equal(quizQuestions.length, 507);
+  assert.equal(quizTopics.length, 49);
   assert.match(contentResearchDate, /^\d{4}-\d{2}-\d{2}$/);
 });
 
 test('AI engineering adds a complete original path without replacing the existing ML resources', () => {
   const track = tracks.find(track => track.id === 'ml-system-design')!;
-  assert.equal(track.lessons.length, 18);
+  assert.equal(track.lessons.length, 24);
   assert.deepEqual(track.lessons.slice(0, 4).map(lesson => lesson.id), ['introduction', 'feature-engineering', 'evaluation', 'embeddings']);
   assert.equal(track.lessons.find(lesson => lesson.id === 'embeddings')!.premium, true);
   assert.deepEqual(quizQuestions.filter(question => /^ml-\d$/.test(question.id)).map(question => ({ id: question.id, options: question.options, correct: question.correct })), [

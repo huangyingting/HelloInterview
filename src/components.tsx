@@ -5,6 +5,7 @@ import type { Comment, CommunityCommentPage, ContentSection, SourceReference, Us
 import { getContentSource } from '../shared/content/sources';
 import { getTrack, problems } from '../shared/public-catalog';
 import { AuthPrompt } from './components/access';
+import { LearningFlow } from './components/LearningFlow';
 export { AuthPrompt, NotFound, PremiumAccess, PremiumGate } from './components/access';
 export { Badge, CardLink, Empty, Footer, IconTile, PageHeading, Progress } from './components/primitives';
 
@@ -20,8 +21,9 @@ export function SourceLinks({ ids, sources }: { ids?: string[]; sources?: Source
 export function ArchitectureFigure({ text, label = 'Original architecture sketch' }: { text: string; label?: string }) {
   return <figure className="architecture-figure" aria-label={label}><figcaption>{label}</figcaption><pre><code>{text}</code></pre></figure>;
 }
+const AIVisualLab = lazy(() => import('./components/AIVisualLab'));
 export function ContentSections({ sections }: { sections: ContentSection[] }) {
-  return <>{sections.map((section, i) => <section id={`section-${i}`} key={section.title}><h2>{section.title}</h2>{section.body.split(/\n\s*\n/).map((paragraph, j) => <p key={j}>{paragraph}</p>)}{section.bullets && <ul>{section.bullets.map(bullet => <li key={bullet}>{bullet}</li>)}</ul>}{section.code && <pre><code>{section.code}</code></pre>}{section.diagram && <ArchitectureFigure text={section.diagram} />}</section>)}</>;
+  return <>{sections.map((section, i) => <section id={`section-${i}`} key={section.title}><h2>{section.title}</h2>{section.body.split(/\n\s*\n/).map((paragraph, j) => <p key={j}>{paragraph}</p>)}{section.bullets && <ul>{section.bullets.map(bullet => <li key={bullet}>{bullet}</li>)}</ul>}{section.code && <pre><code>{section.code}</code></pre>}{section.diagram && <ArchitectureFigure text={section.diagram} />}{section.flow && <LearningFlow flow={section.flow}/>} {section.visualization && <Suspense fallback={<p role="status">Loading interactive diagram...</p>}><AIVisualLab kind={section.visualization}/></Suspense>}</section>)}</>;
 }
 
 export function ReadButton({ track, lesson, compact = false }: { track: string; lesson: string; compact?: boolean }) {

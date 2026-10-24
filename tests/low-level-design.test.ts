@@ -35,8 +35,8 @@ test('LLD scope has deep lessons, sourced worked models, resolved resources and 
   assert.equal(topics.length,8);
   assert.equal(questions.length,80);
   assert.equal(lowLevelDesignQuestions.length,77);
-  assert.equal(Object.keys(contentSources).length,48);
-  assert.equal(courses.length,10);
+  assert.equal(Object.keys(contentSources).length,52);
+  assert.equal(courses.length,13);
   for (const lesson of lessons) {
     assert.ok(words(prose(lesson.sections)) >= 500, lesson.id);
     assert.ok(lesson.sections.length >= 4);

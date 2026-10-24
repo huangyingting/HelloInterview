@@ -2,6 +2,208 @@
 import type { Course } from './types';
 export const courses: Course[] = [
   {
+    "id": "model-behavior",
+    "title": "Model behavior: attention and decoding",
+    "description": "Two original visual lessons, two knowledge checks, and an architecture exercise, with the existing LLM foundations as a bridge. Explore causal attention and sampling distributions locally. Topic-selected from the local LLM Dojo curriculum; no captured content or upstream runtime is imported.",
+    "track": "ml-system-design",
+    "sourceIds": [
+      "dojo-topic-map",
+      "torch-attention",
+      "hf-generation"
+    ],
+    "units": [
+      {
+        "title": "Explore the mechanism and check the contract",
+        "steps": [
+          {
+            "id": "ml-system-design-attention-mechanics",
+            "type": "lesson",
+            "title": "Read an attention map without overclaiming",
+            "resource": "ml-system-design/attention-mechanics",
+            "to": "/learn/ml-system-design/attention-mechanics"
+          },
+          {
+            "id": "quiz-attention-mechanics",
+            "type": "quiz",
+            "title": "Check: Read an attention map without overclaiming",
+            "resource": "attention-mechanics",
+            "to": "/quiz/attention-mechanics"
+          },
+          {
+            "id": "ml-system-design-decoding-controls",
+            "type": "lesson",
+            "title": "Change decoding without inventing confidence",
+            "resource": "ml-system-design/decoding-controls",
+            "to": "/learn/ml-system-design/decoding-controls"
+          },
+          {
+            "id": "quiz-decoding-controls",
+            "type": "quiz",
+            "title": "Check: Change decoding without inventing confidence",
+            "resource": "decoding-controls",
+            "to": "/quiz/decoding-controls"
+          }
+        ]
+      },
+      {
+        "title": "Connect the visual model to product decisions",
+        "steps": [
+          {
+            "id": "ml-system-design-llm-foundations",
+            "type": "lesson",
+            "title": "From tokens to a defensible LLM system",
+            "resource": "ml-system-design/llm-foundations",
+            "to": "/learn/ml-system-design/llm-foundations"
+          },
+          {
+            "id": "practice-ai-knowledge-assistant",
+            "type": "practice",
+            "title": "Design a Permission-Aware Knowledge Assistant",
+            "resource": "ai-knowledge-assistant",
+            "to": "/practice/ml-system-design/ai-knowledge-assistant"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "inference-economics",
+    "title": "Inference economics: memory and latency",
+    "description": "Two original visual lessons, two knowledge checks, and a serving design exercise, connected to the existing inference lesson. Calculate KV payload and trace streaming latency without a GPU or provider account. Original Studio material, topic-selected from the local LLM Dojo curriculum.",
+    "track": "ml-system-design",
+    "sourceIds": [
+      "dojo-topic-map",
+      "hf-kv-cache",
+      "sre-slos"
+    ],
+    "units": [
+      {
+        "title": "Explore the mechanism and check the contract",
+        "steps": [
+          {
+            "id": "ml-system-design-kv-capacity",
+            "type": "lesson",
+            "title": "Account for KV memory before admitting work",
+            "resource": "ml-system-design/kv-capacity",
+            "to": "/learn/ml-system-design/kv-capacity"
+          },
+          {
+            "id": "quiz-kv-capacity",
+            "type": "quiz",
+            "title": "Check: Account for KV memory before admitting work",
+            "resource": "kv-capacity",
+            "to": "/quiz/kv-capacity"
+          },
+          {
+            "id": "ml-system-design-streaming-service-levels",
+            "type": "lesson",
+            "title": "Measure the first token and the useful finish",
+            "resource": "ml-system-design/streaming-service-levels",
+            "to": "/learn/ml-system-design/streaming-service-levels"
+          },
+          {
+            "id": "quiz-streaming-service-levels",
+            "type": "quiz",
+            "title": "Check: Measure the first token and the useful finish",
+            "resource": "streaming-service-levels",
+            "to": "/quiz/streaming-service-levels"
+          }
+        ]
+      },
+      {
+        "title": "Connect the visual model to product decisions",
+        "steps": [
+          {
+            "id": "ml-system-design-inference-serving",
+            "type": "lesson",
+            "title": "Serving LLMs within latency, memory, and cost budgets",
+            "resource": "ml-system-design/inference-serving",
+            "to": "/learn/ml-system-design/inference-serving"
+          },
+          {
+            "id": "practice-ai-inference-gateway",
+            "type": "practice",
+            "title": "Design a Bounded LLM Inference Gateway",
+            "resource": "ai-inference-gateway",
+            "to": "/practice/ml-system-design/ai-inference-gateway"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "prompt-contracts",
+    "title": "Prompt and context: evidence before actions",
+    "description": "Two original visual lessons, two knowledge checks, and two existing runnable labs, connected to the AI safety lesson. Pack a context budget, trace proposal validation, and implement exact contracts. Original Studio material, topic-selected from the local LLM Dojo curriculum.",
+    "track": "ml-system-design",
+    "sourceIds": [
+      "dojo-topic-map",
+      "structured-output-contracts",
+      "owasp-prompt-injection"
+    ],
+    "units": [
+      {
+        "title": "Explore the mechanism and check the contract",
+        "steps": [
+          {
+            "id": "ml-system-design-context-contracts",
+            "type": "lesson",
+            "title": "Assemble context under evidence and token contracts",
+            "resource": "ml-system-design/context-contracts",
+            "to": "/learn/ml-system-design/context-contracts"
+          },
+          {
+            "id": "quiz-context-contracts",
+            "type": "quiz",
+            "title": "Check: Assemble context under evidence and token contracts",
+            "resource": "context-contracts",
+            "to": "/quiz/context-contracts"
+          },
+          {
+            "id": "ml-system-design-structured-proposals",
+            "type": "lesson",
+            "title": "Validate generated structures before business actions",
+            "resource": "ml-system-design/structured-proposals",
+            "to": "/learn/ml-system-design/structured-proposals"
+          },
+          {
+            "id": "quiz-structured-proposals",
+            "type": "quiz",
+            "title": "Check: Validate generated structures before business actions",
+            "resource": "structured-proposals",
+            "to": "/quiz/structured-proposals"
+          }
+        ]
+      },
+      {
+        "title": "Connect the visual model to product decisions",
+        "steps": [
+          {
+            "id": "ml-system-design-ai-safety",
+            "type": "lesson",
+            "title": "Trust boundaries for retrieved and generated content",
+            "resource": "ml-system-design/ai-safety",
+            "to": "/learn/ml-system-design/ai-safety"
+          },
+          {
+            "id": "practice-lab-context-packer",
+            "type": "practice",
+            "title": "Pack a Ranked Evidence Budget",
+            "resource": "lab-context-packer",
+            "to": "/practice/ml-system-design/lab-context-packer"
+          },
+          {
+            "id": "practice-lab-tool-dispatch",
+            "type": "practice",
+            "title": "Validate a Version-Bound Tool Proposal",
+            "resource": "lab-tool-dispatch",
+            "to": "/practice/ml-system-design/lab-tool-dispatch"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "id": "ai-engineering",
     "title": "AI engineering: from evidence to reliable systems",
     "description": "Eight original lessons, six knowledge checks, and four worked architecture exercises. Build retrieval, bounded agents, inference, adaptation, and multimodal systems. Topic-informed by a public preparation catalog, not official company questions. No premium steps or live model access required.",

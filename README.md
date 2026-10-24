@@ -28,6 +28,15 @@ The [editorial workspace and production data runbook](docs/production/69-editori
 records the redesigned experience, preserved training content, targeted demo-data
 cleanup, optional social providers and packaged account-email delivery.
 
+The AI & ML library includes original architecture, retrieval, and agent paths.
+Three additional Dojo-topic paths at `/learn/courses/model-behavior`,
+`/learn/courses/inference-economics`, and `/learn/courses/prompt-contracts`
+connect six new lessons and quizzes to existing practice. Native step-through
+diagrams and five local visual labs cover attention, sampling, KV memory,
+stream timing, and context budgets. They require no provider or GPU; no captured
+Dojo pages, assets, or compiled bundles are imported. See the
+[AI course and diagram boundaries](docs/CONTENT-CURRICULUM.md#ai-courses-and-native-dojo-topic-diagrams).
+
 ## Run locally
 
 Requirements:

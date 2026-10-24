@@ -47,6 +47,10 @@ export const contentSources = {
   'pgvector-search': { title: 'pgvector: Exact Search, Approximate Indexes, and Filtering', publisher: 'pgvector contributors', url: 'https://github.com/pgvector/pgvector', researchDate: '2026-10-23' },
   'langgraph-persistence': { title: 'LangGraph Persistence: Checkpointers and Stores', publisher: 'LangChain', url: 'https://docs.langchain.com/oss/python/langgraph/persistence', researchDate: '2026-10-23' },
   'mcp-tools': { title: 'MCP Tools: Schemas, Results, and Trust Considerations', publisher: 'Model Context Protocol', url: 'https://modelcontextprotocol.io/specification/2025-11-25/server/tools', researchDate: '2026-10-23' },
+  'dojo-topic-map': { title: 'LLM Dojo curriculum map (topic selection only, pinned local repository)', publisher: 'huangyingting/llmdojo', url: 'https://github.com/huangyingting/llmdojo/tree/3e9e39a6655962e18a99de2e2b6e8497841bcef4', researchDate: '2026-10-24' },
+  'hf-generation': { title: 'Generation Configuration: Sampling and Output Limits', publisher: 'Hugging Face Transformers', url: 'https://huggingface.co/docs/transformers/main/en/main_classes/text_generation', researchDate: '2026-10-24' },
+  'hf-kv-cache': { title: 'Cache Strategies: Dynamic, Static, and Quantized Caches', publisher: 'Hugging Face Transformers', url: 'https://huggingface.co/docs/transformers/main/en/kv_cache', researchDate: '2026-10-24' },
+  'structured-output-contracts': { title: 'Structured Model Outputs: Schemas and Refusal Handling', publisher: 'OpenAI', url: 'https://developers.openai.com/api/docs/guides/structured-outputs', researchDate: '2026-10-24' },
 } as const;
 
 export type SourceId = keyof typeof contentSources;

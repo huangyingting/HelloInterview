@@ -46,7 +46,7 @@ test('AI engineering is discoverable through the ML track, course, practice, sea
   page.on('pageerror', error => errors.push(error.message));
   await page.goto('/learn/ml-system-design');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('ML & AI System Design');
-  await expect(page.locator('.lesson-row')).toHaveCount(18);
+  await expect(page.locator('.lesson-row')).toHaveCount(24);
   await page.getByRole('link', { name: 'Explore the course', exact: false }).click();
   await expect(page).toHaveURL(/\/learn\/courses\/ai-engineering$/);
   await expect(page.locator('.course-hero')).toContainText('0 of 18 steps complete');
@@ -75,7 +75,7 @@ test('AI engineering is discoverable through the ML track, course, practice, sea
   await expect(page.locator('.search-results a[href="/practice/ml-system-design/ai-support-agent/writeup"]')).toBeVisible();
   await page.goto('/quiz');
   await page.getByRole('button', { name: 'AI & ML', exact: true }).click();
-  await expect(page.locator('.quiz-topic-row')).toHaveCount(11);
+  await expect(page.locator('.quiz-topic-row')).toHaveCount(17);
   expect(errors).toEqual([]);
 });
 

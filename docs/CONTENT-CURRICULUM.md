@@ -2,7 +2,8 @@
 
 The first substantial content expansion focuses on System Design; the second
 builds a Coding & Algorithms flagship; the third expands Low-Level Design.
-The other four disciplines remain starter libraries, not completed textbooks. This is
+AI & ML now includes architecture, runnable labs, and native visual courses.
+Behavioral, AI-Assisted Coding, and Negotiation remain starter libraries. This is
 independently written instructional material, not copied Hello Interview
 content, an official company solution bank, or evidence of interview readiness.
 
@@ -22,8 +23,8 @@ assumptions, numerical annotations, diagrams, code, question prompts, and
 answer choices are excluded. Thus the totals do not count navigation or
 metadata as teaching depth.
 
-The whole application now contains seven tracks, 74 lessons, 59 practice
-problems, 33 quiz topics, 443 questions, and seven courses. The System Design flagship accounts
+The whole application now contains seven tracks, 94 lessons, 67 practice
+problems, 49 quiz topics, 507 questions, and thirteen courses. The System Design flagship accounts
 for 24 lessons, 16 problems, 12 topics, and 180 questions. Four original short
 animated clips and three journal articles remain unchanged.
 
@@ -379,8 +380,95 @@ and both reports survived another production-process restart using the same
 SQLite database. All **57 original-application screenshots** and unique
 manifest entries were verified. Temporary QA authentication state was removed.
 
-This remains original, source-informed material without independent human
-expert review or reference-platform parity. Behavioral, AI-Assisted Coding,
-ML System Design, and Negotiation remain starter-depth. The static catalog's
-larger client bundle (approximately 1.55 MB minified, 480 KB gzip) is a known
-delivery limitation, not a publishing system.
+This expansion remains original, source-informed material without independent
+human expert review or reference-platform parity. At that milestone, Behavioral,
+AI-Assisted Coding, ML System Design, and Negotiation remained starter-depth;
+the AI expansion below supersedes the ML status. The approximately 1.55 MB
+minified / 480 KB gzip static-client measurement above is historical, not a
+budget or measurement of the current deferred-content Next.js build.
+
+## AI courses and native Dojo-topic diagrams
+
+The ML & AI System Design track now has 24 lessons, eight practice exercises,
+and 17 quiz topics. Existing short ML lessons, premium flags, question IDs,
+architecture exercises, runnable labs, and enrolled-course step contracts are
+preserved. Six courses share this track: the AI engineering architecture path,
+retrieval and agent execution follow-ups, and three visual follow-ups.
+
+| New path | New lessons | Whole-topic quizzes | Existing bridge and practice |
+| --- | --- | --- | --- |
+| `/learn/courses/model-behavior` | Attention mechanics; decoding controls | 2, four questions each | LLM foundations; knowledge-assistant architecture |
+| `/learn/courses/inference-economics` | KV capacity; streaming service levels | 2, four questions each | Inference serving; inference-gateway architecture |
+| `/learn/courses/prompt-contracts` | Context contracts; structured proposals | 2, four questions each | AI safety; context packer and tool-proposal labs |
+
+These add six original lessons (587-601 instructional words each), 24 original
+question explanations, six step-through SVG flow diagrams, and five local
+interactive visual labs. The first two paths have six steps; the third has
+seven. A lesson or practice resource completed elsewhere contributes to every
+course referencing it, following the existing shared-progress model.
+Manipulating a diagram or calculator does not mark a lesson read or complete
+practice. Explicit reading, canonical quiz reports, and completed practice
+attempts continue to determine course progress.
+
+### Provenance and reuse boundary
+
+The explicitly requested sibling `../llmdojo` was inspected at revision
+`3e9e39a6655962e18a99de2e2b6e8497841bcef4`. Its module/topic titles and named
+visualization concepts informed the selection. It stores captured SSR trees
+and compiled client bundles, so **none of its page prose, diagrams, bundles,
+assets, dynamic module loader, account data, or authentication bridge is
+imported or executed here**. This is independent Studio material, not a port of
+the upstream course or a claim of affiliation or certification.
+
+Course and lesson references retain that pinned topic-map link. Technical
+definitions are separately grounded in PyTorch attention, Hugging Face
+generation/cache documentation, OpenAI structured-output documentation,
+OWASP, and the existing serving/evaluation sources. New references record
+2026-10-24 without changing research dates of earlier sources.
+
+### Diagram and calculation contracts
+
+`ContentSection.flow` is a typed ordered sequence with node titles and detailed
+step explanations. `LearningFlow` renders text-only React SVG nodes with unique
+marker IDs, direct selection, back/next/reset controls, live detail, and an
+ordered text alternative. The bounded horizontal viewport follows the selected
+step without animation. There is no arbitrary SVG, HTML, Mermaid execution, or
+graph import path. Existing ASCII references and the saved architecture editor
+remain unchanged.
+
+`ContentSection.visualization` selects one of five statically registered,
+lazy-loaded labs. `shared/ai-visuals.ts` owns their pure calculations and rejects
+invalid ranges instead of returning invented success values:
+
+- **Causal attention:** synthetic pre-scaled scores; softmax of the visible
+  prefix only; masked future positions remain exactly zero. It is not a model
+  weight inspector, a full transformer, or a causal explanation of an answer.
+- **Sampling:** stable temperature scaling, top-k selection, renormalization,
+  top-p prefix, then renormalization. Ties preserve original order. Other
+  runtimes can order transforms differently; this is not factual confidence.
+- **KV cache:** `2 * layers * kvHeads * headDimension * tokens * sequences *
+  bytesPerElement`, reported in binary MiB/GiB. The uniform full-attention
+  payload model excludes weights, activations, paging, scales, sharing,
+  replication, and allocator overhead. It cannot establish device fit.
+- **Streaming:** queue plus prefill includes first-token production; final
+  time adds `(outputTokens - 1) * interval`. A deadline pass is only a timing
+  classification, not measured quality-qualified goodput or a GPU benchmark.
+- **Context:** reserve instructions/schema, history, and output first, then
+  greedily pack unique eligible synthetic evidence in order, skipping oversized
+  items. Overcommitted fixed reservations produce an explicit error and no
+  packed evidence. The fixture eligibility switch is not real authorization
+  and its supplied token costs do not implement a tokenizer.
+
+All calculations and controls are local, credential-free, network-free
+experiments. They do not call a model or mutate account progress. Content still
+loads through the existing content API and normal account actions still use
+the existing authenticated service.
+
+`tests/dojo.test.ts` checks content depth, references, grading, metadata
+separation, safe SVG text, independent causal rows and invariants, sampling
+mass/cutoffs/ties, byte arithmetic, timing boundaries, context overflow, and
+invalid input. `tests/dojo.spec.ts` covers discovery, all flow controls, actual
+calculator results, no provider calls or progress writes, 320px light/dark
+reflow, reduced motion, and forced colors. The final Dojo scenario in
+`tests/product.spec.ts` verifies enrollment, explicit reading, saved sourced
+quiz reports, and persistent shared-resource course progress.

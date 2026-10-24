@@ -257,6 +257,42 @@ export const quizTopics: { id: string; title: string; track: string; count: numb
     "title": "Resume an agent without replaying its side effects",
     "track": "ml-system-design",
     "count": 4
+  },
+  {
+    "id": "attention-mechanics",
+    "title": "Read an attention map without overclaiming",
+    "track": "ml-system-design",
+    "count": 4
+  },
+  {
+    "id": "decoding-controls",
+    "title": "Change decoding without inventing confidence",
+    "track": "ml-system-design",
+    "count": 4
+  },
+  {
+    "id": "kv-capacity",
+    "title": "Account for KV memory before admitting work",
+    "track": "ml-system-design",
+    "count": 4
+  },
+  {
+    "id": "streaming-service-levels",
+    "title": "Measure the first token and the useful finish",
+    "track": "ml-system-design",
+    "count": 4
+  },
+  {
+    "id": "context-contracts",
+    "title": "Assemble context under evidence and token contracts",
+    "track": "ml-system-design",
+    "count": 4
+  },
+  {
+    "id": "structured-proposals",
+    "title": "Validate generated structures before business actions",
+    "track": "ml-system-design",
+    "count": 4
   }
 ];
 export const questionIndex: { id: string; topic: string }[] = [
@@ -2191,5 +2227,101 @@ export const questionIndex: { id: string; topic: string }[] = [
   {
     "id": "ai-lab-016",
     "topic": "agent-recovery"
+  },
+  {
+    "id": "dojo-001",
+    "topic": "attention-mechanics"
+  },
+  {
+    "id": "dojo-002",
+    "topic": "attention-mechanics"
+  },
+  {
+    "id": "dojo-003",
+    "topic": "attention-mechanics"
+  },
+  {
+    "id": "dojo-004",
+    "topic": "attention-mechanics"
+  },
+  {
+    "id": "dojo-005",
+    "topic": "decoding-controls"
+  },
+  {
+    "id": "dojo-006",
+    "topic": "decoding-controls"
+  },
+  {
+    "id": "dojo-007",
+    "topic": "decoding-controls"
+  },
+  {
+    "id": "dojo-008",
+    "topic": "decoding-controls"
+  },
+  {
+    "id": "dojo-009",
+    "topic": "kv-capacity"
+  },
+  {
+    "id": "dojo-010",
+    "topic": "kv-capacity"
+  },
+  {
+    "id": "dojo-011",
+    "topic": "kv-capacity"
+  },
+  {
+    "id": "dojo-012",
+    "topic": "kv-capacity"
+  },
+  {
+    "id": "dojo-013",
+    "topic": "streaming-service-levels"
+  },
+  {
+    "id": "dojo-014",
+    "topic": "streaming-service-levels"
+  },
+  {
+    "id": "dojo-015",
+    "topic": "streaming-service-levels"
+  },
+  {
+    "id": "dojo-016",
+    "topic": "streaming-service-levels"
+  },
+  {
+    "id": "dojo-017",
+    "topic": "context-contracts"
+  },
+  {
+    "id": "dojo-018",
+    "topic": "context-contracts"
+  },
+  {
+    "id": "dojo-019",
+    "topic": "context-contracts"
+  },
+  {
+    "id": "dojo-020",
+    "topic": "context-contracts"
+  },
+  {
+    "id": "dojo-021",
+    "topic": "structured-proposals"
+  },
+  {
+    "id": "dojo-022",
+    "topic": "structured-proposals"
+  },
+  {
+    "id": "dojo-023",
+    "topic": "structured-proposals"
+  },
+  {
+    "id": "dojo-024",
+    "topic": "structured-proposals"
   }
 ];
