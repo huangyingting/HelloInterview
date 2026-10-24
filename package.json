@@ -16,7 +16,7 @@
     "build:workers": "rm -rf dist-server && esbuild server/db/cli.ts server/jobs/index.ts server/billing/cli.ts server/ai/cli.ts server/staff/cli.ts server/privacy/cli.ts server/preflight/cli.ts server/usage/index.ts server/account-admission/cli.ts --bundle --platform=node --target=node24 --format=esm --packages=external --outdir=dist-server --outbase=server && esbuild scripts/bootstrap-admin.ts --bundle --platform=node --target=node24 --format=esm --packages=external --outfile=dist-server/bootstrap-admin.js",
     "start": "npm run start:next",
     "test": "playwright test",
-    "test:unit": "tsx --test tests/config.test.ts tests/deployment.test.ts tests/domain.test.ts tests/preparation.test.ts tests/account-mail.test.ts tests/premium.test.ts tests/content.test.ts tests/ai-labs.test.ts tests/dojo.test.ts tests/coding.test.ts tests/low-level-design.test.ts tests/access.test.ts tests/usage-calendar.test.ts tests/web-vitals.test.ts",
+    "test:unit": "tsx --test tests/config.test.ts tests/deployment.test.ts tests/domain.test.ts tests/preparation.test.ts tests/account-mail.test.ts tests/premium.test.ts tests/content.test.ts tests/ai-labs.test.ts tests/dojo.test.ts tests/curriculum-activities.test.ts tests/coding.test.ts tests/low-level-design.test.ts tests/access.test.ts tests/usage-calendar.test.ts tests/web-vitals.test.ts",
     "test:db": "npm run build && tsx --test tests/database.test.ts",
     "test:jobs": "npm run build && tsx --test tests/jobs.test.ts",
     "test:identity": "npm run build:next && tsx --test tests/authjs.test.ts tests/account-admission.test.ts tests/identity-limits.test.ts tests/staff.test.ts",

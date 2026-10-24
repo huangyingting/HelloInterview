@@ -75,7 +75,7 @@ test('AI engineering is discoverable through the ML track, course, practice, sea
   await expect(page.locator('.search-results a[href="/practice/ml-system-design/ai-support-agent/writeup"]')).toBeVisible();
   await page.goto('/quiz');
   await page.getByRole('button', { name: 'AI & ML', exact: true }).click();
-  await expect(page.locator('.quiz-topic-row')).toHaveCount(17);
+  await expect(page.locator('.quiz-topic-row')).toHaveCount(20);
   expect(errors).toEqual([]);
 });
 

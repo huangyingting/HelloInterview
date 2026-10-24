@@ -5,6 +5,7 @@ import { aiEngineeringQuestions } from '../shared/content/ai-engineering-questio
 import { aiLabProblems } from '../shared/content/ai-lab-problems';
 import { aiLabQuestions } from '../shared/content/ai-lab-questions';
 import { dojoQuestions } from '../shared/content/dojo-questions';
+import { practicalQuestions } from '../shared/content/practical-questions';
 import { contentSources } from '../shared/content/sources';
 
 async function signIn(page: Page) {
@@ -341,4 +342,47 @@ test('Dojo course enrollment and sourced quiz progress persist while visual expl
     await page.goto(`/learn/courses/${course}`);
     await expect(page.locator('.course-hero')).toContainText(`${before + 2} of ${total} steps complete`);
   }
+});
+
+test('original-track local activities never mutate member progress and new sourced quizzes persist with correct lesson return links', async ({ page }) => {
+  test.setTimeout(120000);
+  await signIn(page);
+  const beforeResponse = await page.request.get('/api/bootstrap');
+  expect(beforeResponse.ok()).toBe(true);
+  const before = (await beforeResponse.json()).state;
+  await page.goto('/learn/behavioral/introduction');
+  await page.locator('.learning-flow-steps button').last().click();
+  await page.getByRole('slider', { name: 'Personal action seconds', exact: true }).focus();
+  await page.keyboard.press('End');
+  await page.locator('.lesson-check input').first().check();
+  await page.locator('.lesson-check button[type="submit"]').click();
+  await expect(page.locator('.lesson-check-feedback')).toBeVisible();
+  await page.reload();
+  await expect(page.locator('.lesson-check-feedback')).toHaveCount(0);
+  const afterResponse = await page.request.get('/api/bootstrap');
+  expect(afterResponse.ok()).toBe(true);
+  expect((await afterResponse.json()).state).toEqual(before);
+  for (const topic of ['behavioral-storytelling', 'ai-coding-ownership', 'feature-engineering', 'compensation']) {
+    const pool = practicalQuestions.filter(question => question.topic === topic);
+    await page.goto(`/quiz/${topic}`);
+    await page.getByRole('button', { name: 'Start quiz', exact: false }).click();
+    for (const [index, question] of pool.entries()) {
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(question.prompt);
+      await page.getByRole('radio', { name: question.options[question.correct], exact: false }).check();
+      await page.getByRole('button', { name: 'Check answer', exact: false }).click();
+      await expect(page.locator('.quiz-answer-explanation')).toContainText(question.explanation);
+      await page.getByRole('button', { name: index === pool.length - 1 ? 'Finish quiz' : 'Next question', exact: false }).click();
+    }
+    await expect(page.locator('.result-score')).toHaveText('3/ 3');
+    await page.reload();
+    await expect(page.locator('.quiz-explanations article')).toHaveCount(3);
+    const source = Object.entries(contentSources).find(([id]) => id === pool[0].sourceIds![0])![1];
+    await expect(page.locator(`.quiz-explanations article .content-sources a[href="${source.url}"]`).first()).toBeVisible();
+  }
+  const finalResponse = await page.request.get('/api/bootstrap');
+  expect(finalResponse.ok()).toBe(true);
+  const state = (await finalResponse.json()).state;
+  expect(state.read).toEqual(before.read);
+  expect(state.attempts).toEqual(before.attempts);
+  expect(state.quizzes.length).toBe(before.quizzes.length + 4);
 });

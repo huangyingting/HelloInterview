@@ -51,6 +51,9 @@ export const contentSources = {
   'hf-generation': { title: 'Generation Configuration: Sampling and Output Limits', publisher: 'Hugging Face Transformers', url: 'https://huggingface.co/docs/transformers/main/en/main_classes/text_generation', researchDate: '2026-10-24' },
   'hf-kv-cache': { title: 'Cache Strategies: Dynamic, Static, and Quantized Caches', publisher: 'Hugging Face Transformers', url: 'https://huggingface.co/docs/transformers/main/en/kv_cache', researchDate: '2026-10-24' },
   'structured-output-contracts': { title: 'Structured Model Outputs: Schemas and Refusal Handling', publisher: 'OpenAI', url: 'https://developers.openai.com/api/docs/guides/structured-outputs', researchDate: '2026-10-24' },
+  'mit-behavioral': { title: 'The STAR Method for Behavioral Interviews', publisher: 'MIT Career Advising & Professional Development', url: 'https://capd.mit.edu/resources/the-star-method-for-behavioral-interviews/', researchDate: '2026-10-24' },
+  'mit-offers': { title: 'Negotiate Job Offers', publisher: 'MIT Career Advising & Professional Development', url: 'https://capd.mit.edu/channels/negotiate-job-offers/', researchDate: '2026-10-24' },
+  'feature-point-in-time': { title: 'Point-in-Time Feature Joins', publisher: 'Feast', url: 'https://docs.feast.dev/getting-started/concepts/point-in-time-joins', researchDate: '2026-10-24' },
 } as const;
 
 export type SourceId = keyof typeof contentSources;

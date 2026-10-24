@@ -16,13 +16,15 @@ import { aiLabProblems } from './content/ai-lab-problems';
 import { aiLabQuestions } from './content/ai-lab-questions';
 import { dojoLessons } from './content/dojo-lessons';
 import { dojoQuestions } from './content/dojo-questions';
+import { withLearningActivities } from './content/lesson-activities';
+import { practicalQuestions } from './content/practical-questions';
 
 const lesson = (
   id: string, title: string, group: string, summary: string,
   sections: Lesson['sections'], exercise: string, premium = false,
 ): Lesson => ({ id, title, group, summary, sections, exercise, premium, minutes: 6 + sections.length * 2 });
 
-export const tracks: Track[] = [
+const originalTracks: Track[] = [
   {
     id: 'system-design', title: 'System Design', short: 'Build systems that scale',
     description: 'Turn an ambiguous problem into a clear, defensible architecture.',
@@ -138,6 +140,8 @@ export const tracks: Track[] = [
   },
 ];
 
+export const tracks: Track[] = originalTracks.map(withLearningActivities);
+
 export const companies = ['Meta', 'Google', 'Amazon', 'Microsoft', 'Apple', 'OpenAI', 'Anthropic', 'Stripe', 'Airbnb', 'Netflix'];
 export const levels = ['Junior', 'Mid-level', 'Senior', 'Staff', 'Manager'] as const;
 export const regions = ['Global', 'North America', 'Europe', 'Asia Pacific'] as const;
@@ -198,17 +202,19 @@ const originalQuizQuestions: QuizQuestion[] = [
   {id:'object-1',topic:'design-principles',prompt:'What is a useful sign of high cohesion?',options:['A class owns unrelated concerns','Related responsibilities change together','Every method is static','There are no tests'],correct:1,difficulty:'Easy',sourceIds:['fowler-tell','fowler-di'],explanation:'High cohesion groups behavior and data that participate in the same responsibility and tend to evolve for related reasons. That makes a meaningful change easier to localize and inspect. Evaluate concrete change scenarios rather than counting methods or assuming static functions solve ownership. A class can have several operations when they jointly protect one lifecycle and its invariants.'},
   {id:'object-2',topic:'design-principles',prompt:'Which dependency direction improves domain testability?',options:['Domain logic depends on a concrete remote service','Domain logic depends on a small contract implemented by adapters','All layers import each other','Tests always require production data'],correct:1,difficulty:'Easy',sourceIds:['fowler-di','fowler-unit'],explanation:'A domain-facing capability can describe the business observations and updates needed without requiring provider-specific construction or network access. Adapters implement that contract and can be supplied directly. A faithful test double supports deterministic domain tests, while integration tests still establish actual database or provider guarantees. A small interface does not eliminate coupling if its semantics remain unspecified.'},
   {id:'object-3',topic:'design-principles',prompt:'When is composition particularly helpful?',options:['When policies vary independently','When every class needs a deeper hierarchy','When all interfaces must be removed','When behavior should be hidden from tests'],correct:0,difficulty:'Easy',sourceIds:['fowler-di','js-classes'],explanation:'Composition allows independently varying policies to be supplied without multiplying inheritance combinations. For example, a session owner can use a pricing function while retaining its own lifecycle checks. The collaborator still needs a defined contract for inputs, units, results, and failures. Use this boundary for a demonstrated variation rather than building machinery for every hypothetical future change.'},
-  {id:'ml-1',topic:'evaluation',prompt:'Why can a random split be misleading for time-dependent data?',options:['It always removes labels','It can allow future or related information to leak into evaluation','It makes every model identical','It is impossible to implement'],correct:1,explanation:'A split must reflect the prediction setting. Temporal or entity-aware splits can prevent misleading leakage.'},
-  {id:'ml-2',topic:'evaluation',prompt:'What is a useful online guardrail for a recommendation model?',options:['Only the training loss','Serving latency and harmful outcomes','Source file count','The number of model parameters alone'],correct:1,explanation:'A product experiment should monitor user and operational risks, not just an offline model score.'},
-  {id:'ml-3',topic:'evaluation',prompt:'Which feature is valid at prediction time?',options:['A future cancellation event','An outcome only known next week','A prior activity count available at the decision timestamp','A later refund decision'],correct:2,explanation:'Valid features must exist when the prediction is made; future outcomes introduce leakage.'},
+  {id:'ml-1',topic:'evaluation',prompt:'Why can a random split be misleading for time-dependent data?',options:['It always removes labels','It can allow future or related information to leak into evaluation','It makes every model identical','It is impossible to implement'],correct:1,difficulty:'Easy',sourceIds:['llm-evals','feature-point-in-time'],explanation:'A split should reflect the real prediction setting. Randomly mixing related entities or later observations into evaluation can expose information unavailable to the historical decision. Temporal or entity-aware separation can reduce that leakage, but the right boundary depends on the task. Preserve a held-out population and reconstruct point-in-time feature availability rather than treating a high offline score as universal generalization.'},
+  {id:'ml-2',topic:'evaluation',prompt:'What is a useful online guardrail for a recommendation model?',options:['Only the training loss','Serving latency and harmful outcomes','Source file count','The number of model parameters alone'],correct:1,difficulty:'Easy',sourceIds:['llm-evals','sre-slos'],explanation:'A product experiment should monitor user and operational risks as well as the intended benefit. Serving latency and harmful outcomes can worsen even when an offline score improves. Define eligible observations, experiment assignment, critical slices, and stopping rules before interpreting results. Training loss and parameter count describe other properties and cannot substitute for evidence about the actual user experience.'},
+  {id:'ml-3',topic:'evaluation',prompt:'Which feature is valid at prediction time?',options:['A future cancellation event','An outcome only known next week','A prior activity count available at the decision timestamp','A later refund decision'],correct:2,difficulty:'Easy',sourceIds:['feature-point-in-time'],explanation:'Features must represent information available at the prediction boundary. A prior activity count can be valid when its value and transformation were actually available then; a later cancellation or refund outcome leaks future information. Event occurrence alone is insufficient if processing delivers the feature after the decision. Reconstruct availability and transformation versions when evaluating historical examples.'},
 ];
 
-export const quizQuestions: QuizQuestion[] = [...originalQuizQuestions, ...systemDesignQuestions, ...codingQuestions, ...lowLevelDesignQuestions, ...aiEngineeringQuestions, ...aiLabQuestions, ...dojoQuestions];
+export const quizQuestions: QuizQuestion[] = [...originalQuizQuestions, ...systemDesignQuestions, ...codingQuestions, ...lowLevelDesignQuestions, ...aiEngineeringQuestions, ...aiLabQuestions, ...dojoQuestions, ...practicalQuestions];
 
 export const quizTopics = [...new Set(quizQuestions.map(q => q.topic))].map(id => {
-  const track = tracks.find(t => t.lessons.some(l => l.id === id))!;
-  const selected = track.lessons.find(l => l.id === id)!;
-  return { id, title: selected.title, track: track.id, count: quizQuestions.filter(q => q.topic === id).length };
+  const track = tracks.find(t => t.lessons.some(l => l.id === id))
+    ?? tracks.find(t => t.lessons.some(l => l.quizTopic === id));
+  if (!track) throw new Error(`Quiz topic has no lesson owner: ${id}`);
+  const selected = track.lessons.find(l => l.id === id) ?? track.lessons.find(l => l.quizTopic === id)!;
+  return { id, title: selected.title, track: track.id, lessonId: selected.id, count: quizQuestions.filter(q => q.topic === id).length };
 });
 
 export function getTrack(id: string): Track | undefined {

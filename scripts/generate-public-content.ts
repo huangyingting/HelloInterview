@@ -9,6 +9,12 @@ const metadata: TrackMetadata[] = tracks.map(track => ({
     id:lesson.id,title:lesson.title,group:lesson.group,minutes:lesson.minutes,summary:lesson.summary,
     premium:lesson.premium,objectives:lesson.objectives,sourceIds:lesson.sourceIds,
     relatedProblemIds:lesson.relatedProblemIds,quizTopic:lesson.quizTopic,
+    activities: {
+      flow: lesson.sections.some(section => !!section.flow),
+      check: lesson.sections.some(section => !!section.check),
+      lab: lesson.sections.some(section => !!section.lab || !!section.visualization)
+        || (track.id === 'code' && ['two-pointers','sliding-window','binary-search','graph-search','dynamic-programming'].includes(lesson.id)),
+    },
   })),
 }));
 const exercises: ProblemMetadata[] = problems.map(problem => ({
@@ -26,7 +32,7 @@ const publicCourses=courses.map(course=>({
 const fields = { tracks: metadata, problems: exercises, quizTopics, questionIndex: quizQuestions.map(({ id, topic }) => ({ id, topic })), companies, levels, regions, practiceLabels, practiceTracks, courses: publicCourses,
   navigationTracks: metadata.map(({id,title,short,description,color})=>({id,title,short,description,color})) };
 const types: Record<keyof typeof fields, string> = {
-  tracks: 'TrackMetadata[]', problems: 'ProblemMetadata[]', quizTopics: '{ id: string; title: string; track: string; count: number }[]',
+  tracks: 'TrackMetadata[]', problems: 'ProblemMetadata[]', quizTopics: '{ id: string; title: string; track: string; lessonId: string; count: number }[]',
   questionIndex: '{ id: string; topic: string }[]', companies: 'string[]', levels: 'readonly Level[]',
   regions: "readonly ['Global', 'North America', 'Europe', 'Asia Pacific']", practiceLabels: 'Record<string, string>',
   practiceTracks: 'string[]', courses: 'Course[]',

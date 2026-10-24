@@ -24,7 +24,7 @@ answer choices are excluded. Thus the totals do not count navigation or
 metadata as teaching depth.
 
 The whole application now contains seven tracks, 94 lessons, 67 practice
-problems, 49 quiz topics, 507 questions, and thirteen courses. The System Design flagship accounts
+problems, 62 quiz topics, 549 questions, and thirteen courses. The System Design flagship accounts
 for 24 lessons, 16 problems, 12 topics, and 180 questions. Four original short
 animated clips and three journal articles remain unchanged.
 
@@ -390,7 +390,7 @@ budget or measurement of the current deferred-content Next.js build.
 ## AI courses and native Dojo-topic diagrams
 
 The ML & AI System Design track now has 24 lessons, eight practice exercises,
-and 17 quiz topics. Existing short ML lessons, premium flags, question IDs,
+and 20 quiz topics (17 at the original Dojo expansion). Existing short ML lessons, premium flags, question IDs,
 architecture exercises, runnable labs, and enrolled-course step contracts are
 preserved. Six courses share this track: the AI engineering architecture path,
 retrieval and agent execution follow-ups, and three visual follow-ups.
@@ -472,3 +472,108 @@ calculator results, no provider calls or progress writes, 320px light/dark
 reflow, reduced motion, and forced colors. The final Dojo scenario in
 `tests/product.spec.ts` verifies enrollment, explicit reading, saved sourced
 quiz reports, and persistent shared-resource course progress.
+
+## Whole-library interactive upgrade
+
+The native features now extend to all seven tracks rather than only the new
+AI paths. **88 original lessons gained independently authored decision traces**;
+the six Dojo-topic flows remain intact. All **94 lessons** have a local
+understanding check and a valid saved-quiz link. **75 lessons** expose a
+topic-appropriate interactive experiment; chapters without a meaningful local
+mechanism receive a trace and check rather than an unrelated calculator.
+
+| Track | Lessons with traces and local checks | Lessons with labs |
+| --- | ---: | ---: |
+| System Design | 24 | 15 |
+| Coding & Algorithms | 24 | 24 |
+| Low-Level Design | 12 | 5 |
+| Behavioral | 4 | 4 |
+| AI-Assisted Coding | 3 | 2 |
+| ML & AI System Design | 24 | 22 |
+| Salary Negotiation | 3 | 3 |
+
+These are feature counts, not equivalent instructional depth, certification,
+or expert review across tracks. Existing paragraphs, exercises, reading-time
+estimates, premium flags, resource identities, and course step definitions
+remain unchanged. Optional exploration is not counted as extra reading time.
+The three original ML questions retain their prompts, options, and answer
+positions while receiving fuller sourced explanations.
+
+### Authoring and delivery
+
+`shared/content/*-activities.ts` supplies a distinct scenario, ordered
+decisions, and a prediction question for each lesson. The canonical catalog
+applies these through `withLearningActivities`, cloning sections rather than
+mutating exported source material. A missing activity definition is an
+authoring error, not a generic fallback. Each trace follows that chapter's
+actual invariant, data path, or decision; it is not an automatically generated
+list of section headings.
+
+`ContentSection.check` carries a local question and explanation. Its native
+radio group requires an explicit selection, reveals feedback only after
+submission, and supports retry. `ContentSection.lab` is a closed discriminated
+union for the lazily loaded native experiments; existing
+`ContentSection.visualization` and five algorithm playgrounds remain supported.
+Navigation between lessons resets ephemeral state so a previous answer or
+selected flow step cannot leak into the next lesson.
+
+Public metadata exposes only activity-presence booleans, never the inline
+answer, flow prose, lab configuration, or complete lesson. Discovery shows the
+real lab coverage, and lesson navigation links directly to each activity.
+Quiz topics carry an explicit `lessonId`: a topic identifier such as
+`behavioral-storytelling` is not assumed to be a lesson route. The quiz library
+now filters all seven tracks.
+
+### Experiments and limits
+
+Ten new local models cover workload/storage/bandwidth, queue backlog, TTL and
+invalidation, token-bucket refill, versioned writes, retrieval metrics,
+point-in-time feature availability, release gates, story time budgets, and
+hypothetical vesting. `shared/curriculum-models.ts` validates input and owns
+their calculations.
+
+The nineteen additional algorithm models compute three bounded fixtures each
+in `shared/algorithm-experiments.ts`: pair oracles, operation growth,
+frequency counting, prefix sums, half-open interval merging, monotonic stacks,
+link reversal, bounded heaps, tree levels, nonnegative shortest paths,
+topological order, union-find, subsets, sequence DP, interval scheduling,
+tries, four-neighbor flood fill, bit counts, and differential testing.
+Their input selector, state controls, reset, and optional final-result reveal
+operate on computed state. They are trusted fixed algorithms, not an extension
+to arbitrary-code execution or a replacement for existing runnable exercises.
+
+Every model states its assumptions beside the controls. In particular,
+capacity excludes overhead and skew; the queue uses constant fluid rates;
+TTL is not live authority; local compare-and-swap does not prove distributed
+atomicity; undefined precision/recall denominators remain N/A; an empty
+evaluation cannot pass a release gate. Story timing is not a score of
+leadership or interview readiness. Vesting arithmetic uses an invented
+48-month schedule and 12-month cliff, not a liquidity promise, forecast, or
+financial, tax, or legal advice. No personal story text is requested.
+
+### Questions, sources, and progress
+
+**42 new four-choice questions** cover fourteen under-served topic pools,
+adding thirteen topics and extending the existing ML evaluation pool from
+three to six. Each new pool contributes three distinct questions with sourced
+explanations. The full bank is now **549 questions across 62 topics**; the
+flagship System Design, Coding, and LLD bank counts are unchanged. MIT CAPD
+behavioral/offer guidance and Feast point-in-time documentation bring the
+source registry to **55 entries**, without redating prior references.
+
+Local checks do not call the account service or contribute to a score,
+review deck, reading completion, enrollment, or certificate. Only the existing
+canonical quiz workflow saves answers and reports. Historical question IDs,
+saved answer positions, snapshot provenance, scores, and course completion
+contracts remain stable; old reports must not display newly added questions
+as retroactively skipped.
+
+`tests/curriculum-activities.test.ts` enforces full coverage, unchanged source
+paragraphs, correct discovery and lesson routes, all new question pools,
+independent numeric expectations, exact boundaries, invalid inputs, and all
+57 algorithm fixtures. Browser coverage spans original free lessons, protected
+premium boundaries, keyboard prediction/retry, actual model controls and reset,
+client-navigation isolation, mobile themes, reduced motion, and forced colors.
+The final original-track member scenario in `tests/product.spec.ts` compares
+the real account state before and after local exploration, then completes and
+reloads sourced quizzes across four newly covered track areas.

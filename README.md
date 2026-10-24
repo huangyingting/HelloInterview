@@ -37,6 +37,15 @@ stream timing, and context budgets. They require no provider or GPU; no captured
 Dojo pages, assets, or compiled bundles are imported. See the
 [AI course and diagram boundaries](docs/CONTENT-CURRICULUM.md#ai-courses-and-native-dojo-topic-diagrams).
 
+The same learning tools now cover the existing library: all **94 lessons**
+have a step-through trace and local understanding check, **75** include an
+interactive lab, and every lesson links to a saved quiz. The bank contains
+**549 questions across 62 topics**, including new behavioral, AI-coding,
+ML-foundation, and negotiation checks. Local exploration never marks lessons
+complete or changes account progress. See the
+[whole-library upgrade](docs/CONTENT-CURRICULUM.md#whole-library-interactive-upgrade)
+for the model assumptions, authoring contract, and preserved content boundaries.
+
 ## Run locally
 
 Requirements:

@@ -28,7 +28,12 @@ export const tracks: TrackMetadata[] = [
           "short-links",
           "document-sync"
         ],
-        "quizTopic": "requirements"
+        "quizTopic": "requirements",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": false
+        }
       },
       {
         "id": "requirements",
@@ -50,7 +55,12 @@ export const tracks: TrackMetadata[] = [
           "ticket-reservations",
           "payment-ledger"
         ],
-        "quizTopic": "requirements"
+        "quizTopic": "requirements",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": false
+        }
       },
       {
         "id": "capacity-estimation",
@@ -73,7 +83,12 @@ export const tracks: TrackMetadata[] = [
           "video-delivery",
           "metrics-platform"
         ],
-        "quizTopic": "capacity-estimation"
+        "quizTopic": "capacity-estimation",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "api-design",
@@ -96,7 +111,12 @@ export const tracks: TrackMetadata[] = [
           "payment-ledger",
           "webhook-delivery"
         ],
-        "quizTopic": "api-design"
+        "quizTopic": "api-design",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "data-modeling",
@@ -119,7 +139,12 @@ export const tracks: TrackMetadata[] = [
           "search-service",
           "team-chat"
         ],
-        "quizTopic": "data-modeling"
+        "quizTopic": "data-modeling",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": false
+        }
       },
       {
         "id": "transactions",
@@ -141,7 +166,12 @@ export const tracks: TrackMetadata[] = [
           "ticket-reservations",
           "payment-ledger"
         ],
-        "quizTopic": "replication"
+        "quizTopic": "replication",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "caching",
@@ -163,7 +193,12 @@ export const tracks: TrackMetadata[] = [
           "short-links",
           "activity-feed"
         ],
-        "quizTopic": "caching"
+        "quizTopic": "caching",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "http-caching",
@@ -185,7 +220,12 @@ export const tracks: TrackMetadata[] = [
           "video-delivery",
           "object-storage"
         ],
-        "quizTopic": "caching"
+        "quizTopic": "caching",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "queues",
@@ -208,7 +248,12 @@ export const tracks: TrackMetadata[] = [
           "job-scheduler",
           "webhook-delivery"
         ],
-        "quizTopic": "queues"
+        "quizTopic": "queues",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "event-streams",
@@ -231,7 +276,12 @@ export const tracks: TrackMetadata[] = [
           "activity-feed",
           "search-service"
         ],
-        "quizTopic": "queues"
+        "quizTopic": "queues",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "replication",
@@ -256,7 +306,12 @@ export const tracks: TrackMetadata[] = [
           "document-sync",
           "payment-ledger"
         ],
-        "quizTopic": "replication"
+        "quizTopic": "replication",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": false
+        }
       },
       {
         "id": "sharding",
@@ -281,7 +336,12 @@ export const tracks: TrackMetadata[] = [
           "metrics-platform",
           "location-matching"
         ],
-        "quizTopic": "sharding"
+        "quizTopic": "sharding",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "load-balancing",
@@ -303,7 +363,12 @@ export const tracks: TrackMetadata[] = [
           "api-gateway",
           "team-chat"
         ],
-        "quizTopic": "reliability"
+        "quizTopic": "reliability",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "rate-limiting",
@@ -325,7 +390,12 @@ export const tracks: TrackMetadata[] = [
           "api-gateway",
           "notification-platform"
         ],
-        "quizTopic": "security"
+        "quizTopic": "security",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "reliability",
@@ -348,7 +418,12 @@ export const tracks: TrackMetadata[] = [
           "object-storage",
           "job-scheduler"
         ],
-        "quizTopic": "reliability"
+        "quizTopic": "reliability",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "observability",
@@ -370,7 +445,12 @@ export const tracks: TrackMetadata[] = [
           "metrics-platform",
           "webhook-delivery"
         ],
-        "quizTopic": "observability"
+        "quizTopic": "observability",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "security",
@@ -393,7 +473,12 @@ export const tracks: TrackMetadata[] = [
           "search-service",
           "api-gateway"
         ],
-        "quizTopic": "security"
+        "quizTopic": "security",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": false
+        }
       },
       {
         "id": "object-storage",
@@ -416,7 +501,12 @@ export const tracks: TrackMetadata[] = [
           "document-sync",
           "video-delivery"
         ],
-        "quizTopic": "data-modeling"
+        "quizTopic": "data-modeling",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "search-indexing",
@@ -438,7 +528,12 @@ export const tracks: TrackMetadata[] = [
           "search-service",
           "document-sync"
         ],
-        "quizTopic": "data-modeling"
+        "quizTopic": "data-modeling",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": false
+        }
       },
       {
         "id": "realtime",
@@ -461,7 +556,12 @@ export const tracks: TrackMetadata[] = [
           "collaborative-editor",
           "location-matching"
         ],
-        "quizTopic": "queues"
+        "quizTopic": "queues",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": false
+        }
       },
       {
         "id": "stream-processing",
@@ -483,7 +583,12 @@ export const tracks: TrackMetadata[] = [
           "metrics-platform",
           "activity-feed"
         ],
-        "quizTopic": "observability"
+        "quizTopic": "observability",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": false
+        }
       },
       {
         "id": "multi-region",
@@ -508,7 +613,12 @@ export const tracks: TrackMetadata[] = [
           "document-sync",
           "object-storage"
         ],
-        "quizTopic": "replication"
+        "quizTopic": "replication",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": false
+        }
       },
       {
         "id": "migrations",
@@ -532,7 +642,12 @@ export const tracks: TrackMetadata[] = [
           "search-service",
           "metrics-platform"
         ],
-        "quizTopic": "reliability"
+        "quizTopic": "reliability",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "tradeoffs",
@@ -556,7 +671,12 @@ export const tracks: TrackMetadata[] = [
           "notification-platform",
           "collaborative-editor"
         ],
-        "quizTopic": "tradeoffs"
+        "quizTopic": "tradeoffs",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       }
     ]
   },
@@ -587,7 +707,12 @@ export const tracks: TrackMetadata[] = [
           "alg-pair-load",
           "alg-frequent-tags"
         ],
-        "quizTopic": "arrays-hashing"
+        "quizTopic": "arrays-hashing",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "complexity",
@@ -611,7 +736,12 @@ export const tracks: TrackMetadata[] = [
           "alg-frequent-tags",
           "alg-peak-workload"
         ],
-        "quizTopic": "arrays-hashing"
+        "quizTopic": "arrays-hashing",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "arrays-hashing",
@@ -634,7 +764,12 @@ export const tracks: TrackMetadata[] = [
           "alg-frequent-tags",
           "alg-pair-load"
         ],
-        "quizTopic": "arrays-hashing"
+        "quizTopic": "arrays-hashing",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "two-pointers",
@@ -656,7 +791,12 @@ export const tracks: TrackMetadata[] = [
         "relatedProblemIds": [
           "alg-pair-load"
         ],
-        "quizTopic": "two-pointers"
+        "quizTopic": "two-pointers",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "sliding-window",
@@ -678,7 +818,12 @@ export const tracks: TrackMetadata[] = [
         "relatedProblemIds": [
           "alg-window-budget"
         ],
-        "quizTopic": "sliding-window"
+        "quizTopic": "sliding-window",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "prefix-sum",
@@ -700,7 +845,12 @@ export const tracks: TrackMetadata[] = [
         "relatedProblemIds": [
           "alg-prefix-queries"
         ],
-        "quizTopic": "prefix-sum"
+        "quizTopic": "prefix-sum",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "intervals",
@@ -722,7 +872,12 @@ export const tracks: TrackMetadata[] = [
           "alg-merge-slots",
           "alg-choose-slots"
         ],
-        "quizTopic": "arrays-hashing"
+        "quizTopic": "arrays-hashing",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "stacks",
@@ -743,7 +898,12 @@ export const tracks: TrackMetadata[] = [
           "alg-balanced-signals",
           "alg-next-higher"
         ],
-        "quizTopic": "stacks"
+        "quizTopic": "stacks",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "linked-lists",
@@ -765,7 +925,12 @@ export const tracks: TrackMetadata[] = [
           "alg-chain-reverse",
           "alg-chain-cycle"
         ],
-        "quizTopic": "linked-lists"
+        "quizTopic": "linked-lists",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "binary-search",
@@ -787,7 +952,12 @@ export const tracks: TrackMetadata[] = [
           "alg-first-threshold",
           "alg-peak-workload"
         ],
-        "quizTopic": "binary-search"
+        "quizTopic": "binary-search",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "heaps",
@@ -809,7 +979,12 @@ export const tracks: TrackMetadata[] = [
           "alg-top-priorities",
           "alg-frequent-tags"
         ],
-        "quizTopic": "heaps"
+        "quizTopic": "heaps",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "trees",
@@ -831,7 +1006,12 @@ export const tracks: TrackMetadata[] = [
           "alg-tree-depth",
           "alg-level-sums"
         ],
-        "quizTopic": "trees"
+        "quizTopic": "trees",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "graph-search",
@@ -852,7 +1032,12 @@ export const tracks: TrackMetadata[] = [
           "alg-network-route",
           "alg-island-count"
         ],
-        "quizTopic": "graphs"
+        "quizTopic": "graphs",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "graphs",
@@ -875,7 +1060,12 @@ export const tracks: TrackMetadata[] = [
           "alg-cluster-count",
           "alg-release-order"
         ],
-        "quizTopic": "graphs"
+        "quizTopic": "graphs",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "topological-sort",
@@ -896,7 +1086,12 @@ export const tracks: TrackMetadata[] = [
         "relatedProblemIds": [
           "alg-release-order"
         ],
-        "quizTopic": "graphs"
+        "quizTopic": "graphs",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "union-find",
@@ -916,7 +1111,12 @@ export const tracks: TrackMetadata[] = [
         "relatedProblemIds": [
           "alg-cluster-count"
         ],
-        "quizTopic": "graphs"
+        "quizTopic": "graphs",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "backtracking",
@@ -937,7 +1137,12 @@ export const tracks: TrackMetadata[] = [
         "relatedProblemIds": [
           "alg-subset-loads"
         ],
-        "quizTopic": "backtracking"
+        "quizTopic": "backtracking",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "dynamic-programming",
@@ -959,7 +1164,12 @@ export const tracks: TrackMetadata[] = [
         "relatedProblemIds": [
           "alg-min-coins"
         ],
-        "quizTopic": "dynamic-programming"
+        "quizTopic": "dynamic-programming",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "dp-sequences",
@@ -980,7 +1190,12 @@ export const tracks: TrackMetadata[] = [
         "relatedProblemIds": [
           "alg-nondecreasing-route"
         ],
-        "quizTopic": "dynamic-programming"
+        "quizTopic": "dynamic-programming",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "greedy",
@@ -1002,7 +1217,12 @@ export const tracks: TrackMetadata[] = [
           "alg-choose-slots",
           "alg-min-coins"
         ],
-        "quizTopic": "arrays-hashing"
+        "quizTopic": "arrays-hashing",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "tries",
@@ -1023,7 +1243,12 @@ export const tracks: TrackMetadata[] = [
         "relatedProblemIds": [
           "alg-prefix-directory"
         ],
-        "quizTopic": "arrays-hashing"
+        "quizTopic": "arrays-hashing",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "matrices",
@@ -1043,7 +1268,12 @@ export const tracks: TrackMetadata[] = [
         "relatedProblemIds": [
           "alg-island-count"
         ],
-        "quizTopic": "graphs"
+        "quizTopic": "graphs",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "bit-manipulation",
@@ -1065,7 +1295,12 @@ export const tracks: TrackMetadata[] = [
         "relatedProblemIds": [
           "alg-bit-count"
         ],
-        "quizTopic": "arrays-hashing"
+        "quizTopic": "arrays-hashing",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "testing-solutions",
@@ -1091,7 +1326,12 @@ export const tracks: TrackMetadata[] = [
           "alg-release-order",
           "alg-nondecreasing-route"
         ],
-        "quizTopic": "arrays-hashing"
+        "quizTopic": "arrays-hashing",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       }
     ]
   },
@@ -1122,7 +1362,12 @@ export const tracks: TrackMetadata[] = [
           "parcel-lockers",
           "lld-inventory-ledger"
         ],
-        "quizTopic": "object-modeling"
+        "quizTopic": "object-modeling",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": false
+        }
       },
       {
         "id": "object-modeling",
@@ -1145,7 +1390,12 @@ export const tracks: TrackMetadata[] = [
           "lld-inventory-ledger",
           "parcel-lockers"
         ],
-        "quizTopic": "object-modeling"
+        "quizTopic": "object-modeling",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": false
+        }
       },
       {
         "id": "design-principles",
@@ -1168,7 +1418,12 @@ export const tracks: TrackMetadata[] = [
           "parking-garage",
           "lld-lru-cache"
         ],
-        "quizTopic": "design-principles"
+        "quizTopic": "design-principles",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": false
+        }
       },
       {
         "id": "interfaces",
@@ -1191,7 +1446,12 @@ export const tracks: TrackMetadata[] = [
           "parking-garage",
           "lld-inventory-ledger"
         ],
-        "quizTopic": "interfaces"
+        "quizTopic": "interfaces",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": false
+        }
       },
       {
         "id": "state-machines",
@@ -1213,7 +1473,12 @@ export const tracks: TrackMetadata[] = [
           "board-game",
           "lld-workflow-engine"
         ],
-        "quizTopic": "state-machines"
+        "quizTopic": "state-machines",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "error-contracts",
@@ -1236,7 +1501,12 @@ export const tracks: TrackMetadata[] = [
           "lld-file-catalog",
           "lld-workflow-engine"
         ],
-        "quizTopic": "error-contracts"
+        "quizTopic": "error-contracts",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": false
+        }
       },
       {
         "id": "concurrency",
@@ -1260,7 +1530,12 @@ export const tracks: TrackMetadata[] = [
           "lld-workflow-engine",
           "parking-garage"
         ],
-        "quizTopic": "concurrency"
+        "quizTopic": "concurrency",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "collections",
@@ -1283,7 +1558,12 @@ export const tracks: TrackMetadata[] = [
           "lld-lru-cache",
           "rate-limiter"
         ],
-        "quizTopic": "collections"
+        "quizTopic": "collections",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "patterns",
@@ -1306,7 +1586,12 @@ export const tracks: TrackMetadata[] = [
           "lld-file-catalog",
           "parking-garage"
         ],
-        "quizTopic": "design-principles"
+        "quizTopic": "design-principles",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": false
+        }
       },
       {
         "id": "persistence",
@@ -1330,7 +1615,12 @@ export const tracks: TrackMetadata[] = [
           "lld-inventory-ledger",
           "lld-workflow-engine"
         ],
-        "quizTopic": "concurrency"
+        "quizTopic": "concurrency",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "testing-designs",
@@ -1353,7 +1643,12 @@ export const tracks: TrackMetadata[] = [
           "lld-inventory-ledger",
           "board-game"
         ],
-        "quizTopic": "testing-designs"
+        "quizTopic": "testing-designs",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "design-walkthrough",
@@ -1376,7 +1671,12 @@ export const tracks: TrackMetadata[] = [
           "lld-file-catalog",
           "lld-workflow-engine"
         ],
-        "quizTopic": "testing-designs"
+        "quizTopic": "testing-designs",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": false
+        }
       }
     ]
   },
@@ -1393,7 +1693,16 @@ export const tracks: TrackMetadata[] = [
         "group": "Storytelling",
         "minutes": 12,
         "summary": "Replace general claims with a specific moment, decision, and outcome.",
-        "premium": false
+        "premium": false,
+        "sourceIds": [
+          "mit-behavioral"
+        ],
+        "quizTopic": "behavioral-storytelling",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "conflict",
@@ -1401,7 +1710,16 @@ export const tracks: TrackMetadata[] = [
         "group": "Common situations",
         "minutes": 12,
         "summary": "Show how you evaluate another perspective and move the work forward.",
-        "premium": false
+        "premium": false,
+        "sourceIds": [
+          "mit-behavioral"
+        ],
+        "quizTopic": "behavioral-conflict",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "leadership",
@@ -1409,7 +1727,16 @@ export const tracks: TrackMetadata[] = [
         "group": "Growth",
         "minutes": 12,
         "summary": "Make your influence visible without overstating ownership.",
-        "premium": true
+        "premium": true,
+        "sourceIds": [
+          "mit-behavioral"
+        ],
+        "quizTopic": "behavioral-leadership",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "failure",
@@ -1417,7 +1744,16 @@ export const tracks: TrackMetadata[] = [
         "group": "Common situations",
         "minutes": 10,
         "summary": "Own your part, explain the recovery, and show a concrete change.",
-        "premium": false
+        "premium": false,
+        "sourceIds": [
+          "mit-behavioral"
+        ],
+        "quizTopic": "behavioral-failure",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       }
     ]
   },
@@ -1434,7 +1770,16 @@ export const tracks: TrackMetadata[] = [
         "group": "Foundations",
         "minutes": 12,
         "summary": "Use an assistant to accelerate implementation, not to outsource judgment.",
-        "premium": false
+        "premium": false,
+        "sourceIds": [
+          "fowler-unit"
+        ],
+        "quizTopic": "ai-coding-ownership",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "verification",
@@ -1442,7 +1787,16 @@ export const tracks: TrackMetadata[] = [
         "group": "Engineering workflow",
         "minutes": 12,
         "summary": "Check the output, not how plausible the explanation sounds.",
-        "premium": false
+        "premium": false,
+        "sourceIds": [
+          "fowler-unit"
+        ],
+        "quizTopic": "verification",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "codebase-navigation",
@@ -1450,7 +1804,17 @@ export const tracks: TrackMetadata[] = [
         "group": "Engineering workflow",
         "minutes": 10,
         "summary": "Trace one user action from interface to persistence.",
-        "premium": true
+        "premium": true,
+        "sourceIds": [
+          "fowler-unit",
+          "fowler-di"
+        ],
+        "quizTopic": "codebase-navigation",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": false
+        }
       }
     ]
   },
@@ -1467,7 +1831,17 @@ export const tracks: TrackMetadata[] = [
         "group": "Foundations",
         "minutes": 12,
         "summary": "A model score matters only when it improves the user outcome.",
-        "premium": false
+        "premium": false,
+        "sourceIds": [
+          "llm-evals",
+          "sre-slos"
+        ],
+        "quizTopic": "ml-product-metrics",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "feature-engineering",
@@ -1475,7 +1849,17 @@ export const tracks: TrackMetadata[] = [
         "group": "Core concepts",
         "minutes": 10,
         "summary": "Use only information that will exist at prediction time.",
-        "premium": false
+        "premium": false,
+        "sourceIds": [
+          "llm-evals",
+          "feature-point-in-time"
+        ],
+        "quizTopic": "feature-engineering",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "evaluation",
@@ -1483,7 +1867,16 @@ export const tracks: TrackMetadata[] = [
         "group": "Core concepts",
         "minutes": 12,
         "summary": "Measure whether a model generalizes and whether the product improves.",
-        "premium": false
+        "premium": false,
+        "sourceIds": [
+          "llm-evals"
+        ],
+        "quizTopic": "evaluation",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "embeddings",
@@ -1491,7 +1884,17 @@ export const tracks: TrackMetadata[] = [
         "group": "Serving",
         "minutes": 10,
         "summary": "Find candidates efficiently, then rank them for the task.",
-        "premium": true
+        "premium": true,
+        "sourceIds": [
+          "pgvector-search",
+          "azure-hybrid-ranking"
+        ],
+        "quizTopic": "embeddings",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "llm-foundations",
@@ -1512,7 +1915,12 @@ export const tracks: TrackMetadata[] = [
         "relatedProblemIds": [
           "ai-inference-gateway"
         ],
-        "quizTopic": "llm-foundations"
+        "quizTopic": "llm-foundations",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "rag-retrieval",
@@ -1534,7 +1942,12 @@ export const tracks: TrackMetadata[] = [
           "ai-knowledge-assistant",
           "ai-document-review"
         ],
-        "quizTopic": "rag-retrieval"
+        "quizTopic": "rag-retrieval",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "llm-evaluation",
@@ -1557,7 +1970,12 @@ export const tracks: TrackMetadata[] = [
           "ai-support-agent",
           "ai-document-review"
         ],
-        "quizTopic": "llm-evaluation"
+        "quizTopic": "llm-evaluation",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "agent-workflows",
@@ -1578,7 +1996,12 @@ export const tracks: TrackMetadata[] = [
         "relatedProblemIds": [
           "ai-support-agent"
         ],
-        "quizTopic": "agent-workflows"
+        "quizTopic": "agent-workflows",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "ai-safety",
@@ -1600,7 +2023,12 @@ export const tracks: TrackMetadata[] = [
           "ai-knowledge-assistant",
           "ai-support-agent"
         ],
-        "quizTopic": "agent-workflows"
+        "quizTopic": "agent-workflows",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "inference-serving",
@@ -1621,7 +2049,12 @@ export const tracks: TrackMetadata[] = [
         "relatedProblemIds": [
           "ai-inference-gateway"
         ],
-        "quizTopic": "inference-serving"
+        "quizTopic": "inference-serving",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "model-adaptation",
@@ -1643,7 +2076,12 @@ export const tracks: TrackMetadata[] = [
           "ai-knowledge-assistant",
           "ai-document-review"
         ],
-        "quizTopic": "model-adaptation"
+        "quizTopic": "model-adaptation",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "multimodal-systems",
@@ -1665,7 +2103,12 @@ export const tracks: TrackMetadata[] = [
           "ai-document-review",
           "ai-support-agent"
         ],
-        "quizTopic": "llm-evaluation"
+        "quizTopic": "llm-evaluation",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": false
+        }
       },
       {
         "id": "retrieval-ingestion",
@@ -1686,7 +2129,12 @@ export const tracks: TrackMetadata[] = [
         "relatedProblemIds": [
           "lab-context-packer"
         ],
-        "quizTopic": "retrieval-ranking"
+        "quizTopic": "retrieval-ranking",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": false
+        }
       },
       {
         "id": "retrieval-ranking",
@@ -1708,7 +2156,12 @@ export const tracks: TrackMetadata[] = [
           "lab-context-packer",
           "lab-retrieval-metrics"
         ],
-        "quizTopic": "retrieval-ranking"
+        "quizTopic": "retrieval-ranking",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "retrieval-experiments",
@@ -1729,7 +2182,12 @@ export const tracks: TrackMetadata[] = [
         "relatedProblemIds": [
           "lab-retrieval-metrics"
         ],
-        "quizTopic": "retrieval-experiments"
+        "quizTopic": "retrieval-experiments",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "agent-tool-contracts",
@@ -1750,7 +2208,12 @@ export const tracks: TrackMetadata[] = [
         "relatedProblemIds": [
           "lab-tool-dispatch"
         ],
-        "quizTopic": "agent-tool-contracts"
+        "quizTopic": "agent-tool-contracts",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "agent-context-state",
@@ -1772,7 +2235,12 @@ export const tracks: TrackMetadata[] = [
           "lab-context-packer",
           "lab-agent-reducer"
         ],
-        "quizTopic": "agent-recovery"
+        "quizTopic": "agent-recovery",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "agent-recovery",
@@ -1794,7 +2262,12 @@ export const tracks: TrackMetadata[] = [
           "lab-agent-reducer",
           "lab-tool-dispatch"
         ],
-        "quizTopic": "agent-recovery"
+        "quizTopic": "agent-recovery",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "attention-mechanics",
@@ -1815,7 +2288,12 @@ export const tracks: TrackMetadata[] = [
         "relatedProblemIds": [
           "ai-knowledge-assistant"
         ],
-        "quizTopic": "attention-mechanics"
+        "quizTopic": "attention-mechanics",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "decoding-controls",
@@ -1836,7 +2314,12 @@ export const tracks: TrackMetadata[] = [
         "relatedProblemIds": [
           "ai-inference-gateway"
         ],
-        "quizTopic": "decoding-controls"
+        "quizTopic": "decoding-controls",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "kv-capacity",
@@ -1857,7 +2340,12 @@ export const tracks: TrackMetadata[] = [
         "relatedProblemIds": [
           "ai-inference-gateway"
         ],
-        "quizTopic": "kv-capacity"
+        "quizTopic": "kv-capacity",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "streaming-service-levels",
@@ -1878,7 +2366,12 @@ export const tracks: TrackMetadata[] = [
         "relatedProblemIds": [
           "ai-inference-gateway"
         ],
-        "quizTopic": "streaming-service-levels"
+        "quizTopic": "streaming-service-levels",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "context-contracts",
@@ -1900,7 +2393,12 @@ export const tracks: TrackMetadata[] = [
           "lab-context-packer",
           "ai-knowledge-assistant"
         ],
-        "quizTopic": "context-contracts"
+        "quizTopic": "context-contracts",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "structured-proposals",
@@ -1923,7 +2421,12 @@ export const tracks: TrackMetadata[] = [
           "lab-tool-dispatch",
           "lab-agent-reducer"
         ],
-        "quizTopic": "structured-proposals"
+        "quizTopic": "structured-proposals",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       }
     ]
   },
@@ -1940,7 +2443,16 @@ export const tracks: TrackMetadata[] = [
         "group": "Negotiation",
         "minutes": 12,
         "summary": "Know your priorities and what information you still need.",
-        "premium": false
+        "premium": false,
+        "sourceIds": [
+          "mit-offers"
+        ],
+        "quizTopic": "salary-offer-basics",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "compensation",
@@ -1948,7 +2460,16 @@ export const tracks: TrackMetadata[] = [
         "group": "Compensation",
         "minutes": 10,
         "summary": "Do not compare headline grant values without their assumptions.",
-        "premium": false
+        "premium": false,
+        "sourceIds": [
+          "mit-offers"
+        ],
+        "quizTopic": "compensation",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       },
       {
         "id": "counteroffer",
@@ -1956,7 +2477,16 @@ export const tracks: TrackMetadata[] = [
         "group": "Negotiation",
         "minutes": 10,
         "summary": "Be specific, professional, and ready to explain your reasoning.",
-        "premium": false
+        "premium": false,
+        "sourceIds": [
+          "mit-offers"
+        ],
+        "quizTopic": "counteroffer",
+        "activities": {
+          "flow": true,
+          "check": true,
+          "lab": true
+        }
       }
     ]
   }

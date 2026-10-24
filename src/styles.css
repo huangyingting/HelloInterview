@@ -402,6 +402,32 @@ button:hover,a:hover { color: var(--accent); }
 .visual-metrics span,.visual-metrics strong { display: block; }
 .visual-metrics span { font-size: 12px; color: var(--muted); }
 .visual-metrics strong { font-size: 20px; letter-spacing: -.4px; }
+.curriculum-lab,.lesson-check { min-width: 0; margin: 20px 0; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.curriculum-lab>header { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.curriculum-lab h3 { margin: 4px 0 0; }
+.curriculum-lab .visual-metrics { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,130px),1fr)); gap: 12px; margin: 16px 0; }
+.visual-metrics dt { color: var(--muted); font-size: 12px; }
+.visual-metrics dd { margin: 4px 0 0; font-size: 20px; font-weight: 600; letter-spacing: -.4px; overflow-wrap: anywhere; }
+.lesson-check fieldset { min-width: 0; border: 0; padding: 0; margin: 10px 0; }
+.lesson-check legend { font-weight: 600; font-size: 15px; margin-bottom: 10px; }
+.lesson-check label { display: flex; align-items: flex-start; gap: 10px; margin: 6px 0; padding: 9px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; cursor: pointer; }
+.lesson-check input[type="radio"] { width: auto; flex: 0 0 auto; margin-top: 3px; accent-color: var(--accent); }
+.lesson-check-feedback { border-left: 2px solid var(--accent); padding-left: 12px; margin: 12px 0; }
+.lesson-check-feedback p,.lesson-check>.fine-print,.curriculum-lab>.fine-print { margin-top: 10px; font-size: 12px; }
+.lab-choice-grid { display: flex; flex-wrap: wrap; gap: 10px 16px; margin-bottom: 10px; }
+.lab-state { padding: 12px; border: 1px solid var(--border); border-radius: 4px; margin: 12px 0; min-width: 0; }
+.lab-cells { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.lab-cells>span { max-width: 100%; overflow-wrap: anywhere; border: 1px solid var(--border); border-radius: 3px; padding: 6px 9px; color: var(--text); background: var(--accent-light); font-family: var(--mono); font-size: 12px; }
+.lab-result summary { cursor: pointer; font-size: 13px; }
+.lab-table { width: 100%; min-width: 420px; border-collapse: collapse; font-size: 12px; }
+.lab-table th,.lab-table td { padding: 8px; border: 1px solid var(--border); text-align: left; }
+.lab-table caption { text-align: left; margin-bottom: 8px; color: var(--muted); }
+.lab-event-log { max-height: 200px; overflow: auto; font-size: 12px; }
+.track-activity-summary,.lesson-activity-label { color: var(--muted); font-size: 12px; }
+.track-activity-summary { margin: 12px 0 18px; }
+.lesson-activity-label { display: block; margin-top: 4px; }
+.lesson-activity-nav { display: flex; flex-wrap: wrap; gap: 8px 14px; border-block: 1px solid var(--border); padding: 12px 0; margin: 16px 0; font-size: 12px; }
+.lesson-activity-nav a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 .attention-matrix { border-collapse: collapse; width: 100%; min-width: 300px; font-family: var(--mono); font-size: 11px; }
 .attention-matrix caption { text-align: left; font-family: inherit; color: var(--muted); padding: 8px 0; }
 .attention-matrix td,.attention-matrix th { border: 1px solid var(--border); padding: 8px; text-align: center; }

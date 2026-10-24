@@ -88,7 +88,20 @@ export interface ContentSection {
   diagram?: string;
   flow?: LearningFlow;
   visualization?: VisualLabKind;
+  check?: UnderstandingCheck;
+  lab?: LessonLab;
 }
+export interface UnderstandingCheck {
+  id: string;
+  prompt: string;
+  options: string[];
+  correct: number;
+  explanation: string;
+}
+export type AlgorithmExperimentKind = 'pair-oracle' | 'growth' | 'frequency' | 'prefix' | 'intervals' | 'stack' | 'reverse' | 'heap' | 'tree' | 'weighted-graph' | 'topological' | 'union-find' | 'subsets' | 'sequence-dp' | 'greedy' | 'trie' | 'flood-fill' | 'bits' | 'oracle';
+export type LessonLab =
+  | { kind: 'algorithm'; algorithm: AlgorithmExperimentKind }
+  | { kind: 'capacity' | 'queue' | 'cache' | 'token-bucket' | 'versioned-write' | 'retrieval-metrics' | 'feature-time' | 'release-gate' | 'story-budget' | 'offer-vesting' };
 export type VisualLabKind = 'attention' | 'sampling' | 'kv-cache' | 'streaming' | 'context-budget';
 export interface LearningFlow {
   title: string;
@@ -174,7 +187,9 @@ export interface SourceReference {
   url:string;
   researchDate:string;
 }
-export type LessonMetadata = Omit<Lesson, 'sections' | 'exercise'>;
+export type LessonMetadata = Omit<Lesson, 'sections' | 'exercise'> & {
+  activities?: { flow: boolean; check: boolean; lab: boolean };
+};
 export type TrackMetadata = Omit<Track, 'lessons'> & { lessons: LessonMetadata[] };
 export interface ProblemMetadata {
   id: string;

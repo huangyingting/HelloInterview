@@ -39,8 +39,8 @@ test('flagship inventory meets the exact promised scope without replacing other 
   assert.equal(tracks.length, 7);
   assert.equal(tracks.reduce((count, track) => count + track.lessons.length, 0), 94);
   assert.equal(problems.length, 67);
-  assert.equal(quizQuestions.length, 507);
-  assert.equal(quizTopics.length, 49);
+  assert.equal(quizQuestions.length, 549);
+  assert.equal(quizTopics.length, 62);
   assert.match(contentResearchDate, /^\d{4}-\d{2}-\d{2}$/);
 });
 

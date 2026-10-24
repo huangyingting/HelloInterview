@@ -2,10 +2,7 @@ import { useState, type ReactNode } from 'react';
 import type { VisualLabKind } from '../../shared/types';
 import { causalAttention, contextBudget, kvCacheBytes, samplingDistribution, streamMetrics } from '../../shared/ai-visuals';
 import { Select } from './Select';
-
-function Slider({ label, value, min, max, step = 1, onChange }: { label: string; value: number; min: number; max: number; step?: number; onChange: (value: number) => void }) {
-  return <label className="visual-slider">{label}<output>{value}</output><input aria-label={label} type="range" min={min} max={max} step={step} value={value} onChange={event => onChange(Number(event.target.value))}/></label>;
-}
+import { LabSlider as Slider } from './LabControls';
 function Shell({ title, children, note }: { title: string; children: ReactNode; note: string }) {
   return <section className="ai-visual-lab" aria-label={title}><header><span className="eyebrow">CHANGE ONE ASSUMPTION</span><h3>{title}</h3></header>{children}<p className="fine-print">{note} These controls are local experiments, not saved course completion.</p></section>;
 }

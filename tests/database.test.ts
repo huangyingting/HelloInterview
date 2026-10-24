@@ -123,6 +123,39 @@ test('versioned assessment answers are single-owner and revision-fenced across P
   await db.prepare('DELETE FROM users WHERE id=?').run(owner);
   assert.equal((await db.prepare('SELECT id FROM assessment_sessions WHERE user_id=?').all(owner)).length,0);
 });
+test('historical ML assessments keep their three-question snapshot after the evaluation pool expands', async t => {
+  const { db, url } = await fixture(t), owner = await account(db);
+  const replica = postgresConnection(url);
+  t.after(() => replica.close());
+  const archived = quizQuestions.filter(question => /^ml-[1-3]$/.test(question.id)).map(question => ({
+    id: question.id, topic: question.topic, prompt: question.prompt, options: [...question.options], correct: question.correct,
+    explanation: `Archived explanation for ${question.id}, before the curriculum expansion.`,
+  }));
+  assert.equal(archived.length, 3);
+  assert.equal(quizQuestions.filter(question => question.topic === 'evaluation').length, 6);
+  const repository = new ContentRepository(db), restarted = new ContentRepository(replica);
+  const initial = await db.transaction(() => repository.createSession(owner, 'evaluation', archived));
+  assert.equal(initial.total, 3);
+  let revision = initial.revision;
+  const answers: Record<string, number> = {};
+  for (const question of archived) {
+    const result = await restarted.answerSession(owner, initial.id, question.id, question.correct, revision);
+    revision = result.session.revision;
+    answers[question.id] = question.correct;
+    assert.equal(result.feedback.explanation, question.explanation);
+  }
+  const finished = await db.transaction(() => restarted.finishSession(owner, initial.id, revision));
+  const report = await restarted.report(initial.id, answers, finished.session.contentVersion, archived.map(question => question.id), 3);
+  assert.equal(report.total, 3);
+  assert.equal(report.score, 3);
+  assert.equal(report.provenance, 'versioned');
+  assert.deepEqual(report.questions.map(question => question.explanation), archived.map(question => question.explanation));
+  const unversioned = await restarted.report('legacy-evaluation', answers, undefined, Object.keys(answers), 2);
+  assert.equal(unversioned.provenance, 'legacy-unversioned');
+  assert.equal(unversioned.total, 3);
+  assert.equal(unversioned.score, 2, 'Report loading must not regrade a historical score.');
+  assert.deepEqual(unversioned.questions.map(question => question.id), archived.map(question => question.id));
+});
 test('PostgreSQL owned rows preserve every collection, source bytes, owner isolation and unchanged rows', async t => {
   const { db } = await fixture(t);
   const state = emptyState();
