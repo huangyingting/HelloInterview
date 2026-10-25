@@ -45,9 +45,9 @@ animated clips and three journal articles remain unchanged.
 
 `/learn/courses/system-design-complete` connects all 24 readings, 12 whole-topic
 quizzes, and 16 guided exercises in **52 steps**. It is explicitly a text-based
-curriculum, not a new long-form video course. Some steps use the existing local
-premium-demo entitlement. The original four curricula and their identifiers
-remain unchanged.
+curriculum, not a new long-form video course. Some steps require current
+server-verified premium access. The original four structured course IDs and
+their completion steps remain unchanged.
 
 ## Worked-design library
 
@@ -143,9 +143,11 @@ documentation before using a design in production.
 The curriculum is a useful initial handbook and casebook, not full parity with
 the reference platform. It does not add a verified company-report corpus,
 long-form videos, a live IDE, production payments, or equivalent content depth
-in the remaining four disciplines. The static catalog is currently bundled in
-the client; its increased payload is a known delivery tradeoff, not a server-side
-content publishing or editorial management system.
+in Behavioral, AI-Assisted Coding, and Negotiation. The ML & AI expansion below
+supersedes its earlier starter-depth status. Only generated discovery metadata is
+bundled in the client; lesson bodies, worked solutions, lab configuration, and quiz
+keys are delivered through authorized private/no-store Next.js handlers. This is
+not a server-side content publishing or editorial management system.
 
 ## Verification
 
@@ -299,7 +301,7 @@ the expanded corpus has **91,345 counted instructional words**.
 `/learn/courses/low-level-design-complete` connects **28 unique steps**:
 12 readings, eight whole-topic quizzes, and eight practice exercises.
 It has no new videos, and retains the existing concurrency lesson and limiter
-exercise's premium-demo gates. The original six-step object design course
+exercise's premium access gates. The original six-step object design course
 and concurrency course remain available.
 
 1. Requirements, object identity/value modeling, responsibility and dependency direction.
@@ -371,8 +373,8 @@ hard active-key admission limits. Browser coverage exercises discovery, real
 reference code, responsive light/dark readers, old-versus-new quiz archives,
 saved runnable drafts, and enrollment.
 
-The delivered expansion passes **38 domain/content checks, seven provider/
-restart checks, and 36 browser workflows**. A genuine production 3/3 object
+At the pre-Next.js milestone, the delivered expansion passed **38 domain/content
+checks, seven provider/restart checks, and 36 browser workflows**. A genuine production 3/3 object
 design report was created before upgrading the question bank; it remains a
 three-question archive afterward, while a new whole-topic attempt grades
 10/10. The actual session, course enrollment, saved inventory-code draft,
@@ -520,6 +522,9 @@ selected flow step cannot leak into the next lesson.
 Public metadata exposes only activity-presence booleans, never the inline
 answer, flow prose, lab configuration, or complete lesson. Discovery shows the
 real lab coverage, and lesson navigation links directly to each activity.
+Section activities have their own focusable anchors, distinct from the enclosing
+reading section; the existing algorithm playground retains `#algorithm-lab`.
+Search includes activity-presence keywords and a saved-quiz category.
 Quiz topics carry an explicit `lessonId`: a topic identifier such as
 `behavioral-storytelling` is not assumed to be a lesson route. The quiz library
 now filters all seven tracks.
@@ -568,6 +573,14 @@ saved answer positions, snapshot provenance, scores, and course completion
 contracts remain stable; old reports must not display newly added questions
 as retroactively skipped.
 
+Course outlines derive their activity counts from their actual saved steps,
+label protected lessons/exercises, and distinguish mixed-access paths from
+premium-only courses. Local checks are never advertised as saved quiz steps.
+The original behavioral course remains a six-step reading/video/practice path;
+its new lesson quizzes do not silently alter existing completion records.
+After a track is complete, dashboard recommendations continue to the next
+unfinished track; all seven tracks remain visible in the workspace.
+
 `tests/curriculum-activities.test.ts` enforces full coverage, unchanged source
 paragraphs, correct discovery and lesson routes, all new question pools,
 independent numeric expectations, exact boundaries, invalid inputs, and all
@@ -577,3 +590,8 @@ client-navigation isolation, mobile themes, reduced motion, and forced colors.
 The final original-track member scenario in `tests/product.spec.ts` compares
 the real account state before and after local exploration, then completes and
 reloads sourced quizzes across four newly covered track areas.
+`tests/consistency.spec.ts` checks every course outline against its saved steps
+and premium resources, exact activity anchors, negotiation links, experiment
+and quiz search, current release notices, all seven dashboard tracks, and
+narrow-screen layouts. README inventory and recommendation fallbacks also have
+unit regression coverage.

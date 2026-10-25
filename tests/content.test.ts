@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { problems, quizQuestions, quizTopics, tracks } from '../shared/catalog';
 import { courses } from '../shared/courses';
@@ -42,6 +43,21 @@ test('flagship inventory meets the exact promised scope without replacing other 
   assert.equal(quizQuestions.length, 549);
   assert.equal(quizTopics.length, 62);
   assert.match(contentResearchDate, /^\d{4}-\d{2}-\d{2}$/);
+});
+
+test('current README inventory matches the canonical curriculum and course copy distinguishes saved quizzes', async () => {
+  const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+  const row = (label: string) => readme.split('\n').find(line => line.startsWith(`| ${label} |`))!;
+  const allLessons = tracks.flatMap(track => track.lessons);
+  assert.match(row('Learning'), new RegExp(`${allLessons.length} original lessons`));
+  assert.match(row('Learning'), new RegExp(`${publicTracks.flatMap(track => track.lessons).filter(lesson => lesson.activities?.lab).length} lessons with interactive labs`));
+  assert.match(row('Courses'), new RegExp(`${courses.length} structured paths`));
+  assert.match(row('Practice'), new RegExp(`${problems.length} original exercises`));
+  assert.match(row('Quizzes'), new RegExp(`${quizTopics.length} topics and ${quizQuestions.length} questions`));
+  assert.ok(!readme.includes('illustrative community entries'));
+  for (const course of courses) {
+    assert.doesNotMatch(course.description, /premium-demo|knowledge checks/);
+  }
 });
 
 test('AI engineering adds a complete original path without replacing the existing ML resources', () => {

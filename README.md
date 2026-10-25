@@ -385,20 +385,20 @@ retained evidence exists.
 
 | Area | Functionality |
 | --- | --- |
-| Learning | Seven tracks, 74 original lessons; 24 substantial sourced lessons each for System Design and Coding, plus 12 for Low-Level Design, objectives, exercises, outlines, progress, bookmarks, comments, and five algorithm labs |
-| Courses | Seven structured paths, including 52-step System Design, 60-step Coding, and 28-step Low-Level Design text/quiz/practice paths |
-| Practice | 59 original exercises; 16 worked System Design references, 24 executable Coding exercises, eight worked object models including four runnable stateful exercises |
+| Learning | Seven tracks, 94 original lessons with step-through diagrams and local understanding checks; 75 lessons with interactive labs, plus objectives, exercises, outlines, progress, bookmarks, and comments |
+| Courses | 13 structured paths, including 52-step System Design, 60-step Coding, 28-step Low-Level Design, and six AI engineering/visual paths; saved steps and premium requirements are explicit |
+| Practice | 67 original exercises; 16 worked System Design references, four worked AI architectures, 24 executable Coding exercises, four runnable retrieval/agent labs, and eight worked object models including four runnable stateful exercises |
 | Workspaces | Movable architecture nodes and directed connections, diagram export, saved drafts, history, explanation editor, timer, feedback |
 | Coding | Dedicated algorithm practice, original reference implementations, complexity analysis, isolated JavaScript `solve(input)` example execution and deadline; code-review line references |
 | Behavioral | Micro/mini/full sessions, company and level context, browser speech synthesis, private STAR story CRUD and export |
-| Quizzes | 33 topics and 443 questions; System Design and Coding each have 180 sourced questions, plus 80 Low-Level Design questions, canonical scoring, explanations, history, and review |
+| Quizzes | 62 topics and 549 questions across all seven tracks; canonical scoring, sourced explanations, immutable question snapshots, history, and review, separate from local lesson checks |
 | Premium mocks | Original topic-adaptive three/five-turn conversations, saved drafts/transcripts, optional managed AI grading, reports and export |
 | Custom quizzes | Mixed-topic or missed-only sessions, preserved question order, resume, canonical scores and review-deck updates |
 | Study plans | Company/level-focused two/four-week schedules, real progress integration, reflections and export |
 | Project workbench | Imported source snapshots, immutable baselines, multi-file editing, isolated JS examples, reviews, exact patch and JSON export |
 | Community | Privacy-safe feeds, search, filters, sorting, pagination, discussions, moderation, appeals, personal muting and relationship blocking |
-| Discovery | Cross-library search, company/level planning guides, three original journal articles, retrieval-based study helper |
-| Identity and privacy | Invited Google sign-in, link-only Facebook, encrypted TOTP MFA + recovery codes, session controls, durable privacy exports and 7-day deletion cooling-off |
+| Discovery | Cross-library search including lesson activities and saved quizzes, company/level planning guides, three original journal articles, retrieval-based study helper |
+| Identity and privacy | Invitation/password admission, optional Google sign-in and link-only Facebook, encrypted TOTP MFA + recovery codes, session controls, durable privacy exports and 7-day deletion cooling-off |
 | Access, billing and support | Server-verified PostgreSQL entitlements, optional sandbox Stripe Checkout/Portal/reconciliation, and private member support receipts with MFA staff operations |
 | Interface | Responsive desktop/mobile navigation, persisted light/dark theme, keyboard shortcuts, focus styles, visible errors |
 
@@ -506,15 +506,18 @@ also have independent stateful test oracles.
 
 This expansion contributes **13,824 counted instructional words**: 6,323 in
 lessons, 3,118 in worked reasoning, and 4,383 in explanations. The three expanded
-disciplines total **91,345 words**, excluding code and metadata. Seven new
-primary references from MDN, Martin Fowler, PostgreSQL, and W3C bring the
-shared registry to 32.
+disciplines total **91,345 words**, excluding code and metadata. The primary
+references from MDN, Martin Fowler, PostgreSQL, and W3C remain in the shared
+registry alongside the newer AI, behavioral, and negotiation references.
 
 These are bounded sequential teaching models, **not verified production
 transactions, payment providers, distributed caches, or filesystem services**.
-The remaining four tracks are still starter-depth. The four short video clips,
-generic company guides, and illustrative community entries are unchanged.
-None of the expanded curricula has independent human expert review.
+Behavioral, AI-Assisted Coding, and Negotiation remain starter-depth; the ML & AI
+track has since expanded to 24 lessons with architecture, retrieval, agent, and
+visual courses. The four short original video clips and generic company guides
+remain limited. Community feeds start empty and contain only actual member
+contributions, not seeded examples. None of the expanded curricula has
+independent human expert review.
 
 ## Configuration and optional managed AI
 

@@ -4,7 +4,7 @@ export const courses: Course[] = [
   {
     "id": "model-behavior",
     "title": "Model behavior: attention and decoding",
-    "description": "Two original visual lessons, two knowledge checks, and an architecture exercise, with the existing LLM foundations as a bridge. Explore causal attention and sampling distributions locally. Topic-selected from the local LLM Dojo curriculum; no captured content or upstream runtime is imported.",
+    "description": "Two original visual lessons, two saved quizzes, and an architecture exercise, with the existing LLM foundations as a bridge. Explore causal attention and sampling distributions locally. Topic-selected from the local LLM Dojo curriculum; no captured content or upstream runtime is imported.",
     "track": "ml-system-design",
     "sourceIds": [
       "dojo-topic-map",
@@ -69,7 +69,7 @@ export const courses: Course[] = [
   {
     "id": "inference-economics",
     "title": "Inference economics: memory and latency",
-    "description": "Two original visual lessons, two knowledge checks, and a serving design exercise, connected to the existing inference lesson. Calculate KV payload and trace streaming latency without a GPU or provider account. Original Studio material, topic-selected from the local LLM Dojo curriculum.",
+    "description": "Two original visual lessons, two saved quizzes, and a serving design exercise, connected to the existing inference lesson. Calculate KV payload and trace streaming latency without a GPU or provider account. Original Studio material, topic-selected from the local LLM Dojo curriculum.",
     "track": "ml-system-design",
     "sourceIds": [
       "dojo-topic-map",
@@ -134,7 +134,7 @@ export const courses: Course[] = [
   {
     "id": "prompt-contracts",
     "title": "Prompt and context: evidence before actions",
-    "description": "Two original visual lessons, two knowledge checks, and two existing runnable labs, connected to the AI safety lesson. Pack a context budget, trace proposal validation, and implement exact contracts. Original Studio material, topic-selected from the local LLM Dojo curriculum.",
+    "description": "Two original visual lessons, two saved quizzes, and two existing runnable labs, connected to the AI safety lesson. Pack a context budget, trace proposal validation, and implement exact contracts. Original Studio material, topic-selected from the local LLM Dojo curriculum.",
     "track": "ml-system-design",
     "sourceIds": [
       "dojo-topic-map",
@@ -206,7 +206,7 @@ export const courses: Course[] = [
   {
     "id": "ai-engineering",
     "title": "AI engineering: from evidence to reliable systems",
-    "description": "Eight original lessons, six knowledge checks, and four worked architecture exercises. Build retrieval, bounded agents, inference, adaptation, and multimodal systems. Topic-informed by a public preparation catalog, not official company questions. No premium steps or live model access required.",
+    "description": "Eight original lessons, six saved quizzes, and four worked architecture exercises. Build retrieval, bounded agents, inference, adaptation, and multimodal systems. Topic-informed by a public preparation catalog, not official company questions. No premium steps or live model access required.",
     "track": "ml-system-design",
     "units": [
       {
@@ -360,7 +360,7 @@ export const courses: Course[] = [
   {
     "id": "retrieval-engineering",
     "title": "Retrieval engineering: build, measure, improve",
-    "description": "Three original lessons, two knowledge checks, and two runnable JavaScript labs. Follow the project-oriented progression of LLM Zoomcamp and Maxime Labonne's LLM Course through reproducible ingestion, evidence packing, and ranking experiments. No paid API or GPU required; independent Studio material, not upstream certification.",
+    "description": "Three original lessons, two saved quizzes, and two runnable JavaScript labs. Follow the project-oriented progression of LLM Zoomcamp and Maxime Labonne's LLM Course through reproducible ingestion, evidence packing, and ranking experiments. No paid API or GPU required; independent Studio material, not upstream certification.",
     "track": "ml-system-design",
     "sourceIds": [
       "llm-course-roadmap",
@@ -432,7 +432,7 @@ export const courses: Course[] = [
   {
     "id": "agent-engineering",
     "title": "Agent execution: tools, memory, recovery",
-    "description": "Three original lessons, two knowledge checks, and two runnable JavaScript labs. Extend the Hugging Face Agents Course's tool-and-project progression with strict proposal checks, scoped memory, and recoverable operation histories. No paid API or GPU required; independent Studio material, not upstream certification.",
+    "description": "Three original lessons, two saved quizzes, and two runnable JavaScript labs. Extend the Hugging Face Agents Course's tool-and-project progression with strict proposal checks, scoped memory, and recoverable operation histories. No paid API or GPU required; independent Studio material, not upstream certification.",
     "track": "ml-system-design",
     "sourceIds": [
       "hf-agents-course",
@@ -504,7 +504,7 @@ export const courses: Course[] = [
   {
     "id": "low-level-design-complete",
     "title": "Low-level design: the complete Studio path",
-    "description": "12 substantial lessons, eight knowledge checks, and eight original worked models. Four new JavaScript exercises complement four preserved open-ended briefs. Includes existing premium-demo concurrency and limiter steps; sequential references do not prove production concurrency.",
+    "description": "12 substantial lessons, eight saved quizzes, and eight original worked models. Four new JavaScript exercises complement four preserved open-ended briefs. Includes premium concurrency and limiter steps; sequential references do not prove production concurrency.",
     "track": "low-level-design",
     "units": [
       {
@@ -728,7 +728,7 @@ export const courses: Course[] = [
   {
     "id": "coding-complete",
     "title": "Coding: the complete Studio path",
-    "description": "24 substantial lessons, 12 knowledge checks, and 24 runnable algorithm exercises with original reference solutions. JavaScript example runner; includes the existing premium-demo DP lesson, not a full online judge or video course.",
+    "description": "24 substantial lessons, 12 saved quizzes, and 24 runnable algorithm exercises with original reference solutions. JavaScript example runner; includes the premium DP lesson, not a full online judge or video course.",
     "track": "code",
     "units": [
       {
@@ -1186,7 +1186,7 @@ export const courses: Course[] = [
   {
     "id": "system-design-complete",
     "title": "System design: the complete Studio path",
-    "description": "24 substantial lessons, 12 knowledge checks, and 16 original design exercises with worked references. Source-informed text; includes premium-demo steps, not a new video library.",
+    "description": "24 substantial lessons, 12 saved quizzes, and 16 original design exercises with worked references. Source-informed text; includes premium steps, not a new video library.",
     "track": "system-design",
     "units": [
       {

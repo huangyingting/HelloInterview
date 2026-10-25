@@ -428,6 +428,7 @@ button:hover,a:hover { color: var(--accent); }
 .lesson-activity-label { display: block; margin-top: 4px; }
 .lesson-activity-nav { display: flex; flex-wrap: wrap; gap: 8px 14px; border-block: 1px solid var(--border); padding: 12px 0; margin: 16px 0; font-size: 12px; }
 .lesson-activity-nav a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.lesson-activity-target,#algorithm-lab { min-width: 0; scroll-margin-top: 90px; }
 .attention-matrix { border-collapse: collapse; width: 100%; min-width: 300px; font-family: var(--mono); font-size: 11px; }
 .attention-matrix caption { text-align: left; font-family: inherit; color: var(--muted); padding: 8px 0; }
 .attention-matrix td,.attention-matrix th { border: 1px solid var(--border); padding: 8px; text-align: center; }

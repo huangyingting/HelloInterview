@@ -20,9 +20,10 @@ export function nextPreparationStep(state: UserState) {
   }
   const started = tracks.find(track => track.lessons.some(lesson => state.read.includes(`${track.id}/${lesson.id}`))
     && track.lessons.some(lesson => !state.read.includes(`${track.id}/${lesson.id}`)));
-  const track = started ?? tracks.find(item => item.id === 'system-design')!;
-  const lesson = track.lessons.find(item => !state.read.includes(`${track.id}/${item.id}`));
-  if (lesson) return { label: started ? 'CONTINUE LEARNING' : 'YOUR FIRST GOOD STEP', title: lesson.title,
+  const track = started ?? tracks.find(item => item.lessons.some(lesson => !state.read.includes(`${item.id}/${lesson.id}`)));
+  const lesson = track?.lessons.find(item => !state.read.includes(`${track.id}/${item.id}`));
+  const hasReadLessons = tracks.some(item => item.lessons.some(lesson => state.read.includes(`${item.id}/${lesson.id}`)));
+  if (track && lesson) return { label: started ? 'CONTINUE LEARNING' : hasReadLessons ? 'EXPLORE ANOTHER TRACK' : 'YOUR FIRST GOOD STEP', title: lesson.title,
     description: `${track.title} / ${lesson.minutes} min read`, to: `/learn/${track.id}/${lesson.id}`,
     action: started ? 'Continue lesson' : 'Start learning', kind: 'lesson' };
   return { label: 'PUT YOUR KNOWLEDGE TO WORK', title: 'Choose your next challenge.',

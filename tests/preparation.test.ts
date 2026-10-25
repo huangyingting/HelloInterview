@@ -34,3 +34,24 @@ test('community publishing is an explicit deployment capability and invalid flag
   assert.equal(communityParticipationEnabled({ COMMUNITY_WRITES_ENABLED: 'true' }), true);
   assert.throws(() => communityParticipationEnabled({ COMMUNITY_WRITES_ENABLED: 'yes' }), /COMMUNITY_WRITES_ENABLED/);
 });
+
+test('finishing a track recommends another unfinished track rather than abandoning unread lessons', () => {
+  const state = emptyState();
+  for (const track of tracks) {
+    const next = nextPreparationStep(state);
+    assert.equal(next.to, `/learn/${track.id}/${track.lessons[0].id}`);
+    assert.equal(next.kind, 'lesson');
+    if (state.read.length) assert.equal(next.label, 'EXPLORE ANOTHER TRACK');
+    state.read.push(...track.lessons.map(lesson => `${track.id}/${lesson.id}`));
+  }
+  assert.equal(nextPreparationStep(state).to, '/practice');
+});
+
+test('the original behavioral course retains its six saved steps without retroactively adding new quizzes', () => {
+  const course = courses.find(item => item.id === 'behavioral')!;
+  assert.deepEqual(course.units.flatMap(unit => unit.steps).map(step => [step.type, step.resource]), [
+    ['lesson', 'behavioral/introduction'], ['video', 'behavioral'],
+    ['lesson', 'behavioral/conflict'], ['practice', 'conflict-story'],
+    ['lesson', 'behavioral/failure'], ['practice', 'setback-story'],
+  ]);
+});

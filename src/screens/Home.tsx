@@ -40,7 +40,7 @@ export function Dashboard() {
     <div className="dashboard-grid"><div className="dashboard-main">
       <section className="panel learning-path">
         <div className="section-heading"><div><span className="eyebrow">BUILD YOUR FOUNDATION</span><h2>Your learning paths</h2></div><Link className="text-link" to="/learn">All tracks <ArrowRight size={16}/></Link></div>
-        {tracks.slice(0, 4).map(track => {
+        {tracks.map(track => {
           const count = track.lessons.filter(lesson => data.state.read.includes(`${track.id}/${lesson.id}`)).length;
           const lesson = track.lessons.find(item => !data.state.read.includes(`${track.id}/${item.id}`));
           const to = lesson ? `/learn/${track.id}/${lesson.id}` : `/learn/${track.id}`;
